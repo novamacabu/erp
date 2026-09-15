@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light only">
+<meta name="theme-color" content="#FFFFFF">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ERP NMB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0B1628; --orange: #F1612F; --orange-ink: #C94314;
+    --ink: #16181D; --ink-2: #5B6068; --line: #E5E5E1; --soft: #F7F7F5; --white: #FFFFFF;
+    --ok: #197A46; --warn: #9A6A00; --err: #B3271E;
+    --sidebar: 250px;
+    color-scheme: light only;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: "Manrope", "Segoe UI", system-ui, sans-serif; background: var(--white); color: var(--ink); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  .wordmark { font-weight: 800; letter-spacing: -0.02em; font-size: 19px; color: var(--navy); }
+  .wordmark b { color: var(--orange); font-weight: 800; }
+
+  /* ---------- Login ---------- */
+  #login { display: none; min-height: 100%; flex-direction: column; }
+  #login.on { display: flex; }
+  .lg-top { padding: 26px 6vw; border-bottom: 1px solid var(--line); }
+  .lg-body { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 48px 6vw; max-width: 860px; }
+  .lg-body h1 { font-size: clamp(34px, 5.2vw, 58px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.08; color: var(--navy); }
+  .lg-body h1::after { content: ""; display: block; width: 72px; height: 5px; background: var(--orange); margin-top: 26px; }
+  .lg-body > p { margin-top: 24px; font-size: 17px; color: var(--ink-2); max-width: 52ch; }
+  .btn-ms { margin-top: 36px; display: inline-flex; align-items: center; gap: 12px; padding: 15px 26px; background: var(--navy); color: var(--white); border: 0; border-radius: 4px; font-weight: 700; font-size: 15px; align-self: flex-start; }
+  .btn-ms:hover { background: #142238; }
+  .login-note { margin-top: 16px; font-size: 13px; color: var(--ink-2); }
+  .login-err { margin-top: 18px; padding: 12px 16px; border-left: 3px solid var(--err); background: #FBEDEC; color: var(--err); font-size: 14px; display: none; max-width: 60ch; }
+  .lg-foot { padding: 22px 6vw; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
+
+  /* ---------- App ---------- */
+  #app { display: none; min-height: 100%; }
+  #app.on { display: block; }
+  .topbar { position: sticky; top: 0; z-index: 30; height: 60px; background: var(--white); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 14px; padding: 0 22px; }
+  .topbar .spacer { flex: 1; }
+  .hamb { display: none; background: none; border: 0; width: 40px; height: 40px; border-radius: 4px; color: var(--navy); }
+  .hamb:hover { background: var(--soft); }
+  .user-chip { display: flex; align-items: center; gap: 10px; }
+  .user-chip .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--navy); color: var(--white); display: grid; place-items: center; font-weight: 700; font-size: 12px; overflow: hidden; }
+  .user-chip .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .user-chip .who { line-height: 1.25; font-size: 13px; font-weight: 600; color: var(--navy); }
+  .user-chip .who span { display: block; font-size: 11px; font-weight: 500; color: var(--ink-2); }
+  .btn-exit { background: none; border: 1px solid var(--line); color: var(--navy); padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; }
+  .btn-exit:hover { border-color: var(--navy); }
+
+  .layout { display: grid; grid-template-columns: var(--sidebar) 1fr; min-height: calc(100% - 60px); }
+  .sidebar { border-right: 1px solid var(--line); padding: 26px 14px 20px; position: sticky; top: 60px; height: calc(100vh - 60px); overflow-y: auto; background: var(--white); display: flex; flex-direction: column; }
+  .nav-group { margin-bottom: 22px; }
+  .nav-group h3 { font-size: 12px; font-weight: 700; color: var(--ink-2); padding: 0 12px 8px; }
+  .nav a { display: flex; align-items: center; gap: 11px; padding: 9px 12px; text-decoration: none; font-size: 14px; font-weight: 500; color: var(--ink); border-left: 2px solid transparent; }
+  .nav a:hover { background: var(--soft); }
+  .nav a.active { border-left-color: var(--orange); color: var(--navy); font-weight: 700; background: var(--soft); }
+  .nav a svg { flex-shrink: 0; color: var(--ink-2); }
+  .nav a.active svg { color: var(--orange-ink); }
+  .nav a .tag { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--ink-2); }
+  .sidebar .version { margin-top: auto; font-size: 12px; color: var(--ink-2); padding: 16px 12px 0; border-top: 1px solid var(--line); line-height: 1.6; }
+
+  main { padding: 46px 52px 80px; max-width: 1120px; width: 100%; }
+  .page h1 { font-size: clamp(26px, 3vw, 36px); font-weight: 800; letter-spacing: -0.02em; color: var(--navy); line-height: 1.15; }
+  .page .lead { color: var(--ink-2); margin-top: 10px; margin-bottom: 34px; max-width: 66ch; font-size: 16px; }
+
+  .banner { display: flex; gap: 12px; padding: 16px 18px; border-left: 3px solid var(--warn); background: #FBF6E9; color: #5C4300; margin-bottom: 30px; font-size: 14px; max-width: 86ch; }
+  .banner b { font-weight: 700; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+  .tile { display: block; text-decoration: none; padding: 24px 22px 26px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--white); transition: background .12s ease; }
+  .tile:hover { background: var(--soft); }
+  .tile svg { color: var(--navy); }
+  .tile h3 { font-size: 17px; font-weight: 700; color: var(--navy); margin-top: 14px; letter-spacing: -0.01em; }
+  .tile .area { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+  .tile .st { display: inline-flex; align-items: center; gap: 7px; margin-top: 16px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+  .tile .st i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-2); }
+  .tile .st.proximo { color: var(--orange-ink); } .tile .st.proximo i { background: var(--orange); }
+
+  .empty { padding: 64px 24px; border: 1px solid var(--line); text-align: left; max-width: 640px; }
+  .empty h2 { font-size: 20px; font-weight: 700; color: var(--navy); }
+  .empty p { color: var(--ink-2); margin-top: 8px; max-width: 52ch; }
+
+  /* Diagnóstico */
+  .checks { border: 1px solid var(--line); max-width: 860px; }
+  .check { display: grid; grid-template-columns: 26px 1fr; gap: 14px; padding: 16px 18px; border-bottom: 1px solid var(--line); align-items: start; }
+  .check:last-child { border-bottom: 0; }
+  .check .st { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: var(--white); background: var(--ink-2); }
+  .check.ok .st { background: var(--ok); } .check.warn .st { background: var(--warn); } .check.err .st { background: var(--err); }
+  .check.run .st { background: var(--line); color: var(--ink-2); }
+  .check h4 { font-size: 14px; font-weight: 700; color: var(--navy); }
+  .check p { font-size: 13px; color: var(--ink-2); margin-top: 3px; word-break: break-word; }
+  .check code { font-family: Consolas, Menlo, monospace; font-size: 12px; background: var(--soft); padding: 1px 5px; }
+  .actions { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn { padding: 11px 20px; border-radius: 4px; border: 1px solid var(--line); background: var(--white); font-weight: 700; font-size: 14px; color: var(--navy); }
+  .btn:hover { border-color: var(--navy); }
+  .btn.primary { background: var(--navy); border-color: var(--navy); color: var(--white); }
+  .btn.primary:hover { background: #142238; }
+  .btn:disabled, .btn.primary:disabled { opacity: .5; cursor: default; }
+
+  .setup-card { border: 1px solid var(--line); padding: 24px 26px; max-width: 860px; }
+  .setup-card h2 { font-size: 20px; font-weight: 800; color: var(--navy); letter-spacing: -0.01em; }
+  .setup-card p.desc { color: var(--ink-2); margin-top: 6px; max-width: 60ch; }
+  .setup-meta { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; color: var(--ink-2); }
+  .setup-meta b { color: var(--navy); font-weight: 700; }
+  .setup-log { margin-top: 20px; border-top: 1px solid var(--line); }
+  .setup-log .check { padding: 12px 0; }
+  .setup-log .check:first-child { padding-top: 16px; }
+  .setup-log .check:last-child { border-bottom: 0; }
+  .setup-log .check .st { width: 20px; height: 20px; font-size: 11px; }
+  .setup-log .check h4 { font-size: 13px; }
+  .setup-log .check p { font-size: 12px; margin-top: 2px; }
+
+  /* Módulo Contas a Pagar */
+  .cap-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); margin-bottom: 26px; }
+  .kpi { padding: 18px 20px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--white); cursor: pointer; text-align: left; font: inherit; color: inherit; }
+  .kpi:hover { background: var(--soft); }
+  .kpi.on { background: var(--soft); box-shadow: inset 0 -3px 0 var(--orange); }
+  .kpi .lbl { font-size: 11px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+  .kpi .val { font-size: 26px; font-weight: 800; color: var(--navy); letter-spacing: -0.02em; margin-top: 6px; line-height: 1; }
+  .kpi .sub { font-size: 12px; color: var(--ink-2); margin-top: 6px; }
+  .kpi.venc .val { color: var(--err); }
+  .kpi.pago .val { color: var(--ok); }
+
+  .cap-tools { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+  .cap-tools .grow { flex: 1; min-width: 160px; }
+  .cap-tools select, .cap-tools input { padding: 9px 12px; border: 1px solid var(--line); border-radius: 4px; font: inherit; font-size: 13px; background: var(--white); color: var(--ink); }
+  .cap-tools select:focus, .cap-tools input:focus { border-color: var(--navy); outline: none; }
+
+  .cap-table { width: 100%; border-collapse: collapse; border: 1px solid var(--line); font-size: 14px; background: var(--white); }
+  .cap-table th { text-align: left; padding: 11px 14px; background: var(--soft); font-weight: 700; color: var(--navy); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--line); }
+  .cap-table td { padding: 13px 14px; border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: top; }
+  .cap-table tr { cursor: pointer; }
+  .cap-table tr:hover td { background: var(--soft); }
+  .cap-table td.right { text-align: right; font-variant-numeric: tabular-nums; }
+  .cap-table .desc { font-weight: 700; color: var(--navy); }
+  .cap-table .sup { color: var(--ink-2); font-size: 12px; margin-top: 2px; }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .pill i { width: 6px; height: 6px; border-radius: 50%; }
+  .st-aguardando { background: #F0F0EE; color: #5B6068; } .st-aguardando i { background: #5B6068; }
+  .st-pendente   { background: #FBF6E9; color: #9A6A00; } .st-pendente i   { background: #9A6A00; }
+  .st-aprovado   { background: #E7EFFB; color: #1C3D6E; } .st-aprovado i   { background: #1C3D6E; }
+  .st-pago       { background: #E4F3EA; color: #197A46; } .st-pago i       { background: #197A46; }
+  .st-vencido    { background: #FBEDEC; color: #B3271E; } .st-vencido i    { background: #B3271E; }
+
+  .cap-empty { padding: 60px 24px; text-align: left; border: 1px solid var(--line); max-width: 640px; }
+  .cap-empty h3 { color: var(--navy); font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+  .cap-empty p { color: var(--ink-2); max-width: 52ch; }
+  .cap-empty .actions { margin-top: 18px; }
+
+  /* Modal */
+  .modal-back { position: fixed; inset: 0; background: rgba(11,22,40,0.55); z-index: 60; display: none; align-items: flex-start; justify-content: center; padding: 40px 20px; overflow-y: auto; }
+  .modal-back.on { display: flex; }
+  .modal { background: var(--white); max-width: 640px; width: 100%; border: 1px solid var(--line); }
+  .modal.wide { max-width: 920px; }
+  .modal-head { padding: 20px 26px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 14px; }
+  .modal-head h2 { flex: 1; font-size: 20px; font-weight: 800; color: var(--navy); letter-spacing: -0.01em; }
+  .modal-head .x { background: none; border: 0; font-size: 22px; color: var(--ink-2); padding: 4px 10px; cursor: pointer; }
+  .modal-body { padding: 26px; }
+  .modal-foot { padding: 16px 26px; border-top: 1px solid var(--line); display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
+  .modal-foot .grow { flex: 1; font-size: 13px; color: var(--ink-2); }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .field label { display: block; font-size: 12px; font-weight: 700; color: var(--ink-2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .field label .req { color: var(--err); margin-left: 3px; }
+  .field input, .field select, .field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 4px; font: inherit; font-size: 14px; background: var(--white); color: var(--ink); }
+  .field textarea { min-height: 80px; resize: vertical; font-family: inherit; }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--navy); outline: none; }
+  .field.error input, .field.error select, .field.error textarea { border-color: var(--err); }
+  .field .err-msg { font-size: 12px; color: var(--err); margin-top: 4px; display: none; }
+  .field.error .err-msg { display: block; }
+
+  .import-help { background: var(--soft); border-left: 3px solid var(--navy); padding: 14px 18px; margin-bottom: 16px; font-size: 13px; color: var(--ink); line-height: 1.55; }
+  .import-help b { color: var(--navy); }
+  .import-help code { font-family: Consolas, Menlo, monospace; background: var(--white); padding: 2px 5px; font-size: 12px; border: 1px solid var(--line); }
+  .import-ta { width: 100%; min-height: 180px; padding: 12px; border: 1px solid var(--line); border-radius: 4px; font-family: Consolas, Menlo, monospace; font-size: 13px; resize: vertical; }
+  .import-preview { margin-top: 18px; max-height: 340px; overflow-y: auto; border: 1px solid var(--line); }
+  .import-preview table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .import-preview th { position: sticky; top: 0; padding: 9px 12px; background: var(--soft); font-weight: 700; color: var(--navy); border-bottom: 1px solid var(--line); text-align: left; font-size: 11px; text-transform: uppercase; }
+  .import-preview td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .import-preview tr.bad td { background: #FBEDEC; color: #7A1E17; }
+  .import-preview tr.ok td { }
+  .import-summary { font-size: 13px; color: var(--ink-2); margin-top: 10px; }
+  .import-summary b.ok { color: var(--ok); } .import-summary b.err { color: var(--err); }
+
+  .toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); background: var(--navy); color: var(--white); padding: 13px 20px; border-radius: 4px; font-size: 14px; display: none; z-index: 50; max-width: 90vw; }
+  .toast.on { display: block; }
+
+  .scrim { display: none; position: fixed; inset: 60px 0 0 0; background: rgba(11,22,40,0.45); z-index: 20; }
+  @media (max-width: 880px) {
+    .hamb { display: block; }
+    .user-chip .who { display: none; }
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { position: fixed; top: 60px; left: 0; bottom: 0; width: min(300px, 84vw); transform: translateX(-100%); transition: transform .18s ease; z-index: 25; height: auto; }
+    body.nav-open .sidebar { transform: none; }
+    body.nav-open .scrim { display: block; }
+    main { padding: 28px 20px 70px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== LOGIN ===================== -->
+<section id="login" aria-label="Entrar">
+  <header class="lg-top"><div class="wordmark">ERP <b>NMB</b></div></header>
+  <div class="lg-body">
+    <h1>O dia a dia da Nova Macabu, em um só lugar.</h1>
+    <p>Contas, caixa, dívidas, frota e pessoas. Os dados ficam no SharePoint da empresa e você entra com a mesma conta do e-mail e do Teams, sem senha nova.</p>
+    <button class="btn-ms" id="btnLogin" type="button">
+      <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><rect x="1" y="1" width="8.5" height="8.5" fill="#F25022"/><rect x="10.5" y="1" width="8.5" height="8.5" fill="#7FBA00"/><rect x="1" y="10.5" width="8.5" height="8.5" fill="#00A4EF"/><rect x="10.5" y="10.5" width="8.5" height="8.5" fill="#FFB900"/></svg>
+      Entrar com Microsoft
+    </button>
+    <div class="login-err" id="loginErr"></div>
+    <p class="login-note">Se você já está logado no Outlook neste aparelho, entra direto.</p>
+  </div>
+  <footer class="lg-foot">Transportadora Nova Macabu</footer>
+</section>
+
+<!-- ===================== APP ===================== -->
+<section id="app">
+  <header class="topbar">
+    <button class="hamb" id="btnNav" type="button" aria-label="Abrir menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <div class="wordmark">ERP <b>NMB</b></div>
+    <div class="spacer"></div>
+    <div class="user-chip">
+      <div class="avatar" id="avatar">·</div>
+      <div class="who"><div id="userName">—</div><span id="userRole">—</span></div>
+    </div>
+    <button class="btn-exit" id="btnLogout" type="button">Sair</button>
+  </header>
+
+  <div class="scrim" id="scrim"></div>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <nav class="nav" id="nav"></nav>
+      <div class="version">ERP NMB versão 0.4<br>Dados no SharePoint. Login Microsoft 365.</div>
+    </aside>
+    <main id="main"></main>
+  </div>
+</section>
+
+<div class="toast" id="toast" role="status"></div>
+<div class="modal-back" id="modalBack"><div class="modal" id="modal"></div></div>
+
+<script src="msal-browser.min.js"></script>
+<script>
+/* =====================================================================
+   ERP NMB — shell v0.4
+   Front-end estático (GitHub Pages) · Login Entra ID (MSAL) · Dados via Microsoft Graph
+   Nenhum dado da empresa vive neste arquivo.
+   ===================================================================== */
+
+const CONFIG = {
+  clientId: "f988f311-02eb-4996-8276-60fe1503f186",
+  tenantId: "2deb7ae0-1c71-4b04-8cad-8b8e7e56cb44",
+  scopes: ["User.Read", "Sites.ReadWrite.All", "Sites.Manage.All", "Files.ReadWrite.All", "GroupMember.Read.All"],
+  spHost: "novamacabu.sharepoint.com",
+  sites: { financeiro: "/sites/financeiro" },
+  groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
+  version: "v0.4"
+};
+
+/* Ícones de linha (stroke), 20px */
+const ICONS = {
+  home: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>',
+  invoice: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l4 4v16H6z"/><path d="M14 2v5h5"/><path d="M9 12h6M9 16h6"/></svg>',
+  cash: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 5-7 4 5"/><path d="M3 21h18"/></svg>',
+  bank: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6"/><path d="M5 9v9M9.5 9v9M14.5 9v9M19 9v9"/><path d="M3 21h18"/></svg>',
+  bus: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M4 11h16"/><path d="M8 21v-4M16 21v-4"/><circle cx="8.5" cy="14.5" r="0.6"/><circle cx="15.5" cy="14.5" r="0.6"/></svg>',
+  wrench: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6.5a4 4 0 0 0-5.6 4.9L3 17.3V21h3.7l5.9-5.9a4 4 0 0 0 4.9-5.6L14.6 12l-2.6-2.6z"/></svg>',
+  people: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c.6-3.3 2.8-5 5.5-5s4.9 1.7 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.8 14.6c2.3.2 4 1.7 4.6 4.4"/></svg>',
+  chart: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-8M21 20H3"/></svg>',
+  pulse: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12L16 12h5"/></svg>',
+  settings: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'
+};
+
+/* Módulos: quem vê o quê. "groups" = qualquer um destes libera o módulo (admin sempre vê). */
+const MODULES = [
+  { id: "inicio",     path: "#/inicio",                       icon: "home",    name: "Início",              area: null,          groups: ["*"] },
+  { id: "cap",        path: "#/financeiro/contas-a-pagar",     icon: "invoice", name: "Contas a Pagar",      area: "Financeiro",  groups: ["financeiro", "diretoria"], status: "ativo" },
+  { id: "caixa",      path: "#/financeiro/fluxo-de-caixa",     icon: "cash",    name: "Fluxo de Caixa",      area: "Financeiro",  groups: ["financeiro", "diretoria"], status: "planejado" },
+  { id: "dividas",    path: "#/financeiro/dividas",            icon: "bank",    name: "Gestão de Dívidas",   area: "Financeiro",  groups: ["diretoria"],               status: "migração" },
+  { id: "frota",      path: "#/operacional/frota",             icon: "bus",     name: "Frota",               area: "Operacional", groups: ["operacional", "diretoria"], status: "planejado" },
+  { id: "manut",      path: "#/operacional/manutencao",        icon: "wrench",  name: "Manutenção",          area: "Operacional", groups: ["operacional", "diretoria"], status: "planejado" },
+  { id: "rh",         path: "#/rh/funcionarios",               icon: "people",  name: "Funcionários",        area: "Pessoas",     groups: ["rh", "diretoria"],          status: "planejado" },
+  { id: "diretoria",  path: "#/diretoria",                     icon: "chart",   name: "Painel da Diretoria", area: "Diretoria",   groups: ["diretoria"],                status: "planejado" },
+  { id: "diag",       path: "#/diagnostico",                   icon: "pulse",   name: "Diagnóstico",         area: "Sistema",     groups: ["*"] },
+  { id: "config",     path: "#/configuracao",                  icon: "settings",name: "Configuração",        area: "Sistema",     groups: [] }
+];
+
+/* ---------------------- Definição da lista Contas a Pagar ---------------------- */
+const CAP_LIST = {
+  displayName: "Contas a Pagar",
+  description: "Financeiro NMB · contas a pagar do dia a dia. Origem única para o Fluxo de Caixa.",
+  siteKey: "financeiro",
+  titleAs: "Descrição",
+  columns: [
+    { name: "Fornecedor",         displayName: "Fornecedor",           required: true,  text: { allowMultipleLines: false, maxLength: 255 } },
+    { name: "CNPJ",               displayName: "CNPJ",                                  text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Categoria",          displayName: "Categoria",                             choice: { choices: ["Combustível","Manutenção","Folha","Impostos","Seguros","Utilidades","Comunicação","Aluguel","Outros"], displayAs: "dropDownMenu", allowTextEntry: false } },
+    { name: "Vencimento",         displayName: "Vencimento",           required: true,  dateTime: { displayAs: "standard", format: "dateOnly" } },
+    { name: "Valor",              displayName: "Valor (R$)",           required: true,  number: { decimalPlaces: "two", displayAs: "number", minimum: 0 } },
+    { name: "Status",             displayName: "Status",               required: true,  choice: { choices: ["Aguardando NF","Pendente","Aprovado","Pago","Vencido"], displayAs: "dropDownMenu", allowTextEntry: false } },
+    { name: "FormaPagamento",     displayName: "Forma de Pagamento",                    choice: { choices: ["PIX","Boleto","TED","Débito Automático","Cartão"], displayAs: "dropDownMenu", allowTextEntry: false } },
+    { name: "Responsavel",        displayName: "Responsável Pagamento",                 personOrGroup: { allowMultipleSelection: false, chooseFromType: "peopleOnly" } },
+    { name: "DataPagamento",      displayName: "Data do Pagamento",                     dateTime: { displayAs: "standard", format: "dateOnly" } },
+    { name: "Observacoes",        displayName: "Observações",                           text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "RefDocumento",       displayName: "Ref. documento",                        text: { allowMultipleLines: false, maxLength: 50 } }
+  ]
+};
+
+/* Executa o setup, chamando cb(update) a cada passo com {id,label,state,note} */
+async function setupCAP(cb) {
+  const steps = [];
+  const push = (id, label) => { const s = { id, label, state: "run", note: "" }; steps.push(s); cb(steps); return s; };
+  const finish = (s, state, note) => { s.state = state; s.note = note || ""; cb(steps); };
+
+  const s1 = push("site", "Localizar site /sites/financeiro");
+  let site;
+  try { site = await SP.site(CONFIG.sites[CAP_LIST.siteKey]); finish(s1, "ok", site.displayName); }
+  catch (e) { finish(s1, "err", e.message); return steps; }
+
+  const s1b = push("perm", "Verificar permissão de escrita no site");
+  try {
+    const drives = await graphAll(`/sites/${site.id}/drives?$select=id,name`);
+    const drive = drives[0];
+    if (!drive) { finish(s1b, "warn", "Site sem bibliotecas — pulando teste"); }
+    else {
+      const probe = `.erp-probe-${Date.now()}.txt`;
+      await graph(`/drives/${drive.id}/root:/${probe}:/content`, { method: "PUT", body: new Blob(["ping"], { type: "text/plain" }), headers: { "Content-Type": "text/plain" } });
+      await graph(`/drives/${drive.id}/root:/${probe}`, { method: "DELETE" });
+      finish(s1b, "ok", `Escrita permitida na biblioteca ${drive.name}`);
+    }
+  } catch (e) {
+    finish(s1b, "err", `Sem permissão de escrita neste site. ${e.message}. Você é proprietário do site "${site.displayName}"? Abra o SharePoint → Configurações → Permissões do site e confirme "Controle total".`);
+    return steps;
+  }
+
+  const s2 = push("list", `Criar lista "${CAP_LIST.displayName}"`);
+  let list;
+  try {
+    const lists = await SP.lists(site.id);
+    list = lists.find(l => l.displayName === CAP_LIST.displayName);
+    if (list) finish(s2, "skip", "Já existia — reaproveitando");
+    else { list = await graph(`/sites/${site.id}/lists`, { method: "POST", body: { displayName: CAP_LIST.displayName, description: CAP_LIST.description, list: { template: "genericList" } } }); finish(s2, "ok", "Criada"); }
+  } catch (e) { finish(s2, "err", e.message); return steps; }
+
+  const s3 = push("title", `Renomear coluna Título para "${CAP_LIST.titleAs}"`);
+  try {
+    const cols = await graphAll(`/sites/${site.id}/lists/${list.id}/columns?$select=id,name,displayName,required,readOnly`);
+    const title = cols.find(c => c.name === "Title");
+    if (title && title.displayName === CAP_LIST.titleAs) finish(s3, "skip", "Já estava renomeada");
+    else if (title) { await graph(`/sites/${site.id}/lists/${list.id}/columns/${title.id}`, { method: "PATCH", body: { displayName: CAP_LIST.titleAs, required: true } }); finish(s3, "ok", "Renomeada e marcada como obrigatória"); }
+    else finish(s3, "warn", "Coluna Título não encontrada — pulando");
+  } catch (e) { finish(s3, "warn", e.message); }
+
+  const existing = new Set();
+  try { (await graphAll(`/sites/${site.id}/lists/${list.id}/columns?$select=name`)).forEach(c => existing.add(c.name)); } catch (_) {}
+
+  for (const col of CAP_LIST.columns) {
+    const s = push(`col-${col.name}`, `Criar coluna "${col.displayName}"`);
+    if (existing.has(col.name)) { finish(s, "skip", "Já existia"); continue; }
+    try { await graph(`/sites/${site.id}/lists/${list.id}/columns`, { method: "POST", body: col }); finish(s, "ok", `Tipo: ${detectType(col)}`); }
+    catch (e) { finish(s, "err", e.message); }
+  }
+
+  const s4 = push("done", "Verificar resultado");
+  try {
+    const cols = await graphAll(`/sites/${site.id}/lists/${list.id}/columns?$select=displayName,name,hidden`);
+    const userCols = cols.filter(c => !c.hidden).map(c => c.displayName);
+    finish(s4, "ok", `Lista pronta com ${userCols.length} colunas: ${userCols.join(", ")}`);
+  } catch (e) { finish(s4, "warn", e.message); }
+
+  return steps;
+}
+function detectType(col) { for (const k of ["text","choice","dateTime","number","currency","personOrGroup","boolean","hyperlinkOrPicture"]) if (col[k]) return k; return "?"; }
+const isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+const redirectUri = isLocal ? location.origin : location.origin + location.pathname.replace(/index\.html$/, "");
+
+const pca = new msal.PublicClientApplication({
+  auth: { clientId: CONFIG.clientId, authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`, redirectUri, navigateToLoginRequestUrl: false },
+  cache: { cacheLocation: "localStorage" }
+});
+
+let account = null;
+const session = { me: null, groups: [], roles: new Set(), configMode: false };
+
+async function getToken() {
+  const req = { scopes: CONFIG.scopes, account };
+  try { return (await pca.acquireTokenSilent(req)).accessToken; }
+  catch (e) {
+    if (e instanceof msal.InteractionRequiredAuthError) { await pca.acquireTokenRedirect(req); return null; }
+    throw e;
+  }
+}
+
+/* ---------------------- Camada Graph ---------------------- */
+const GRAPH = "https://graph.microsoft.com/v1.0";
+
+async function graph(path, opts = {}, attempt = 0) {
+  const token = await getToken();
+  if (!token) throw new Error("Sessão expirada. Entre novamente.");
+  const url = path.startsWith("http") ? path : GRAPH + path;
+  const headers = Object.assign({ Authorization: `Bearer ${token}` }, opts.headers || {});
+  const init = { method: opts.method || "GET", headers };
+  if (opts.body !== undefined) {
+    if (opts.body instanceof Blob || opts.body instanceof ArrayBuffer) init.body = opts.body;
+    else { headers["Content-Type"] = "application/json"; init.body = JSON.stringify(opts.body); }
+  }
+  const res = await fetch(url, init);
+  if ((res.status === 429 || res.status === 503) && attempt < 4) {
+    const wait = (parseInt(res.headers.get("Retry-After") || "2", 10)) * 1000;
+    await new Promise(r => setTimeout(r, wait));
+    return graph(path, opts, attempt + 1);
+  }
+  if (res.status === 204) return null;
+  const ct = res.headers.get("content-type") || "";
+  const data = ct.includes("json") ? await res.json() : await res.blob();
+  if (!res.ok) {
+    const e = (data && data.error) || {};
+    const rid = (e.innerError && (e.innerError["request-id"] || e.innerError.requestId)) || res.headers.get("request-id") || "";
+    const parts = [e.message || `Graph ${res.status}`];
+    if (e.code) parts.push(`código: ${e.code}`);
+    if (rid) parts.push(`request-id: ${rid}`);
+    const err = new Error(parts.join(" · "));
+    err.status = res.status; err.code = e.code; err.requestId = rid; err.raw = e;
+    throw err;
+  }
+  return data;
+}
+
+/* Lê todas as páginas de uma coleção Graph */
+async function graphAll(path) {
+  let out = [], next = path;
+  while (next) { const page = await graph(next); out = out.concat(page.value || []); next = page["@odata.nextLink"]; }
+  return out;
+}
+
+/* Helpers de SharePoint (base para os módulos) */
+const SP = {
+  site: (relPath) => graph(`/sites/${CONFIG.spHost}:${relPath}`),
+  lists: (siteId) => graphAll(`/sites/${siteId}/lists?$select=id,displayName,webUrl,list`),
+  items: (siteId, listId, q = "") => graphAll(`/sites/${siteId}/lists/${listId}/items?$expand=fields${q}`),
+  create: (siteId, listId, fields) => graph(`/sites/${siteId}/lists/${listId}/items`, { method: "POST", body: { fields } }),
+  update: (siteId, listId, itemId, fields) => graph(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`, { method: "PATCH", body: fields }),
+  upload: (driveId, folderPath, fileName, blob) => graph(`/drives/${driveId}/root:/${folderPath}/${encodeURIComponent(fileName)}:/content`, { method: "PUT", body: blob, headers: { "Content-Type": blob.type || "application/octet-stream" } })
+};
+
+/* ---------------------- Sessão e perfil ---------------------- */
+async function loadProfile() {
+  session.me = await graph("/me?$select=displayName,mail,userPrincipalName,jobTitle");
+  const groups = await graphAll("/me/memberOf?$select=displayName,id");
+  session.groups = groups.map(g => g.displayName).filter(Boolean);
+  session.roles = new Set();
+  for (const [role, name] of Object.entries(CONFIG.groups)) if (session.groups.includes(name)) session.roles.add(role);
+  session.configMode = session.roles.size === 0;
+  try {
+    const blob = await graph("/me/photo/$value");
+    if (blob instanceof Blob && blob.size) document.getElementById("avatar").innerHTML = `<img src="${URL.createObjectURL(blob)}" alt="">`;
+  } catch (_) { /* sem foto: mantém iniciais */ }
+}
+
+function roleLabel() {
+  if (session.roles.has("admin")) return "Administrador";
+  if (session.configMode) return "Sem grupo do ERP (modo configuração)";
+  const map = { financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" };
+  return [...session.roles].map(r => map[r]).join(" e ");
+}
+
+function canSee(mod) {
+  if (mod.groups.includes("*")) return true;
+  if (mod.groups.length === 0) return session.roles.has("admin");
+  if (session.roles.has("admin") || session.configMode) return true;
+  return mod.groups.some(g => session.roles.has(g));
+}
+
+/* ---------------------- UI ---------------------- */
+const $ = (id) => document.getElementById(id);
+function toast(msg, ms = 3200) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), ms); }
+function initials(name) { return (name || "?").split(" ").filter(Boolean).slice(0, 2).map(s => s[0]).join("").toUpperCase(); }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+function renderNav() {
+  const visible = MODULES.filter(canSee);
+  const areas = [...new Set(visible.map(m => m.area))];
+  let html = "";
+  for (const area of areas) {
+    const mods = visible.filter(m => m.area === area);
+    html += `<div class="nav-group">${area ? `<h3>${esc(area)}</h3>` : ""}`;
+    for (const m of mods) html += `<a href="${m.path}" data-id="${m.id}">${ICONS[m.icon]}${esc(m.name)}${m.status ? `<span class="tag">${esc(m.status)}</span>` : ""}</a>`;
+    html += `</div>`;
+  }
+  $("nav").innerHTML = html;
+}
+
+function route() {
+  const hash = location.hash || "#/inicio";
+  const mod = MODULES.find(m => m.path === hash) || MODULES[0];
+  if (!canSee(mod)) { location.hash = "#/inicio"; return; }
+  document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("active", a.dataset.id === mod.id));
+  document.body.classList.remove("nav-open");
+  const main = $("main");
+  if (mod.id === "inicio") main.innerHTML = pageHome();
+  else if (mod.id === "diag") { main.innerHTML = pageDiag(); runDiag(); }
+  else if (mod.id === "config") main.innerHTML = pageConfig();
+  else if (mod.id === "cap") { main.innerHTML = pageCAP(); renderCAP(); }
+  else main.innerHTML = pageModulePlaceholder(mod);
+  window.scrollTo(0, 0);
+}
+
+function pageHome() {
+  const first = (session.me?.displayName || "").split(" ")[0];
+  const tiles = MODULES.filter(m => canSee(m) && !["inicio", "diag"].includes(m.id)).map(m => `
+    <a class="tile" href="${m.path}">
+      ${ICONS[m.icon]}
+      <h3>${esc(m.name)}</h3>
+      <div class="area">${esc(m.area)}</div>
+      <span class="st ${m.status === "próximo" ? "proximo" : ""}"><i></i>${esc(m.status || "")}</span>
+    </a>`).join("");
+  const banner = session.configMode
+    ? `<div class="banner"><div><b>Você não está em nenhum grupo usado pelo ERP</b> (ERP-Admins, Financeiro, Diretoria, Operacional, RH), então o sistema está mostrando todos os módulos. Adicione sua conta ao grupo certo no Microsoft 365 e entre de novo.</div></div>`
+    : "";
+  return `<div class="page">
+    <h1>Olá, ${esc(first)}</h1>
+    <p class="lead">Este é o shell do ERP: login, permissões e conexão com o SharePoint já funcionam. Os módulos entram um a um, começando por Contas a Pagar.</p>
+    ${banner}
+    <div class="tiles">${tiles}</div>
+  </div>`;
+}
+
+function pageModulePlaceholder(mod) {
+  const texts = {
+    "próximo": "Este é o primeiro módulo em construção. A lista no SharePoint é a base; a tela aparece aqui na próxima versão.",
+    "migração": "A Gestão de Dívidas segue no ar no endereço atual até a migração para o SharePoint ser concluída.",
+    "planejado": "Módulo previsto no roadmap. Entra depois do bloco Financeiro."
+  };
+  return `<div class="page">
+    <h1>${esc(mod.name)}</h1>
+    <p class="lead">${esc(mod.area)}</p>
+    <div class="empty"><h2>Em construção</h2><p>${esc(texts[mod.status] || "")}</p></div>
+  </div>`;
+}
+
+/* ---------------------- Diagnóstico ---------------------- */
+const CHECKS = [
+  { id: "login",  title: "Login Microsoft" },
+  { id: "token",  title: "Token para o Microsoft Graph" },
+  { id: "me",     title: "Perfil do usuário" },
+  { id: "groups", title: "Grupos usados pelo ERP" },
+  { id: "site",   title: "Site SharePoint /sites/financeiro" },
+  { id: "lists",  title: "Listas do site" },
+  { id: "cap",    title: "Lista \"Contas a Pagar\"" },
+  { id: "drive",  title: "Biblioteca de documentos" }
+];
+
+function pageDiag() {
+  return `<div class="page">
+    <h1>Diagnóstico</h1>
+    <p class="lead">Confere, passo a passo, se o app consegue entrar, ler seu perfil e alcançar o SharePoint. Use esta tela sempre que algo parecer errado.</p>
+    <div class="checks" id="checks">${CHECKS.map(c => `<div class="check run" id="chk-${c.id}"><div class="st">…</div><div><h4>${esc(c.title)}</h4><p>Verificando</p></div></div>`).join("")}</div>
+    <div class="actions"><button class="btn primary" onclick="runDiag()">Executar de novo</button><button class="btn" onclick="copyDiag()">Copiar resultado</button></div>
+  </div>`;
+}
+
+const diagResult = {};
+function setCheck(id, state, text) {
+  diagResult[id] = { state, text };
+  const el = $(`chk-${id}`); if (!el) return;
+  el.className = `check ${state}`;
+  el.querySelector(".st").textContent = { ok: "✓", warn: "!", err: "✕", run: "…" }[state];
+  el.querySelector("p").innerHTML = text;
+}
+
+async function runDiag() {
+  CHECKS.forEach(c => setCheck(c.id, "run", "Verificando"));
+  setCheck("login", "ok", `${esc(account.username)} · tenant <code>${CONFIG.tenantId}</code>`);
+  try {
+    const t = await getToken();
+    setCheck("token", t ? "ok" : "err", t ? `Token obtido (${t.length} caracteres) · escopos: ${CONFIG.scopes.join(", ")}` : "Sem token");
+  } catch (e) { setCheck("token", "err", esc(e.message)); return; }
+
+  setCheck("me", "ok", `${esc(session.me.displayName)} · ${esc(session.me.mail || session.me.userPrincipalName)}${session.me.jobTitle ? " · " + esc(session.me.jobTitle) : ""}`);
+
+  const used = Object.values(CONFIG.groups);
+  const erp = session.groups.filter(g => used.includes(g));
+  if (erp.length) setCheck("groups", "ok", `Você está em: ${erp.map(esc).join(", ")} · papel: ${esc(roleLabel())} · todos os seus grupos: ${session.groups.map(esc).join(", ")}`);
+  else setCheck("groups", "warn", `Nenhum dos grupos usados pelo ERP (${used.map(esc).join(", ")}) entre seus grupos: ${session.groups.map(esc).join(", ") || "nenhum"}. Adicione sua conta ao grupo certo (item 0.2 do roadmap).`);
+
+  let site = null;
+  try {
+    site = await SP.site(CONFIG.sites.financeiro);
+    setCheck("site", "ok", `${esc(site.displayName)} · <code>${esc(site.id)}</code>`);
+  } catch (e) { setCheck("site", "err", `${esc(e.message)}. Confirme o endereço do site e se você tem acesso a ele.`); ["lists", "cap", "drive"].forEach(id => setCheck(id, "err", "Depende do site")); return; }
+
+  let lists = [];
+  try {
+    lists = await SP.lists(site.id);
+    const visible = lists.filter(l => !l.list?.hidden);
+    setCheck("lists", "ok", `${visible.length} listas/bibliotecas visíveis: ${visible.map(l => esc(l.displayName)).join(", ") || "nenhuma"}`);
+  } catch (e) { setCheck("lists", "err", esc(e.message)); }
+
+  const cap = lists.find(l => /contas a pagar/i.test(l.displayName));
+  if (cap) {
+    try {
+      const items = await SP.items(site.id, cap.id, "&$top=200");
+      const cols = await graphAll(`/sites/${site.id}/lists/${cap.id}/columns?$select=displayName,name,hidden`);
+      const userCols = cols.filter(c => !c.hidden).map(c => c.displayName);
+      setCheck("cap", "ok", `Encontrada · ${items.length} itens · colunas: ${userCols.map(esc).join(", ")}`);
+    } catch (e) { setCheck("cap", "warn", `Lista encontrada, mas não foi possível ler os itens: ${esc(e.message)}`); }
+  } else setCheck("cap", "warn", `Ainda não existe no site. Crie a lista "Contas a Pagar" com as 13 colunas (item 1.1 do roadmap).`);
+
+  try {
+    const drives = await graphAll(`/sites/${site.id}/drives?$select=id,name,webUrl`);
+    setCheck("drive", drives.length ? "ok" : "warn", drives.length ? drives.map(d => `${esc(d.name)} <code>${esc(d.id)}</code>`).join("<br>") : "Nenhuma biblioteca encontrada");
+  } catch (e) { setCheck("drive", "err", esc(e.message)); }
+}
+
+function copyDiag() {
+  const lines = CHECKS.map(c => { const r = diagResult[c.id] || {}; return `[${(r.state || "?").toUpperCase()}] ${c.title}: ${(r.text || "").replace(/<[^>]+>/g, "")}`; });
+  const txt = `ERP NMB ${CONFIG.version} · Diagnóstico · ${new Date().toLocaleString("pt-BR")}\n${location.href}\n\n${lines.join("\n")}`;
+  navigator.clipboard.writeText(txt).then(() => toast("Resultado copiado")).catch(() => toast("Não foi possível copiar"));
+}
+
+/* ---------------------- Configuração inicial ---------------------- */
+function pageConfig() {
+  return `<div class="page">
+    <h1>Configuração</h1>
+    <p class="lead">Cria e verifica as estruturas de dados no SharePoint. Cada módulo é executado uma vez; passos que já existirem são pulados. Só administradores enxergam esta tela.</p>
+
+    <section class="setup-card">
+      <h2>Contas a Pagar</h2>
+      <p class="desc">Cria a lista <b>${esc(CAP_LIST.displayName)}</b> no site <b>/sites/${CAP_LIST.siteKey}</b> com ${CAP_LIST.columns.length + 1} colunas (Descrição, Fornecedor, CNPJ, Categoria, Vencimento, Valor, Status, Forma de Pagamento, Responsável, Data do Pagamento, Observações e Ref. documento). Anexos ficam habilitados por padrão para NFs e comprovantes.</p>
+      <div class="setup-meta"><span><b>Onde</b> ${esc(CONFIG.spHost)}${esc(CONFIG.sites[CAP_LIST.siteKey])}</span><span><b>Colunas</b> ${CAP_LIST.columns.length + 1}</span><span><b>Reversível</b> apagar a lista pelo SharePoint desfaz tudo</span></div>
+      <div class="actions">
+        <button class="btn primary" id="btnSetupCAP">Executar setup</button>
+        <button class="btn" id="btnOpenCAP" style="display:none">Abrir no SharePoint</button>
+      </div>
+      <div class="setup-log checks" id="setupLog" style="display:none"></div>
+    </section>
+  </div>`;
+}
+
+function renderSetupSteps(steps) {
+  const log = $("setupLog"); if (!log) return;
+  log.style.display = "block";
+  const sym = { run: "…", ok: "✓", skip: "•", warn: "!", err: "✕" };
+  log.innerHTML = steps.map(s => `<div class="check ${s.state === "skip" ? "warn" : s.state}"><div class="st">${sym[s.state] || "?"}</div><div><h4>${esc(s.label)}</h4>${s.note ? `<p>${esc(s.note)}</p>` : ""}</div></div>`).join("");
+}
+
+document.addEventListener("click", async (ev) => {
+  const t = ev.target;
+  if (t && t.id === "btnSetupCAP") {
+    t.disabled = true; t.textContent = "Executando…";
+    try {
+      const steps = await setupCAP(renderSetupSteps);
+      const err = steps.find(s => s.state === "err");
+      t.textContent = err ? "Executar de novo" : "Setup concluído";
+      t.disabled = false;
+      if (!err) {
+        toast("Lista Contas a Pagar pronta no SharePoint");
+        const site = await SP.site(CONFIG.sites[CAP_LIST.siteKey]);
+        const lists = await SP.lists(site.id);
+        const list = lists.find(l => l.displayName === CAP_LIST.displayName);
+        const btn = $("btnOpenCAP");
+        if (list && btn) { btn.style.display = "inline-flex"; btn.onclick = () => window.open(list.webUrl, "_blank"); }
+      }
+    } catch (e) { toast("Falha: " + e.message, 6000); t.disabled = false; t.textContent = "Tentar de novo"; }
+  }
+});
+
+/* =====================================================================
+   MÓDULO CONTAS A PAGAR
+   ===================================================================== */
+const CAP_STATE = { site: null, list: null, items: [], filter: { kpi: null, status: "", categoria: "", busca: "" } };
+
+function fmtBRL(v) { const n = Number(v || 0); return "R$ " + n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtDate(iso) { if (!iso) return "—"; const d = new Date(iso); if (isNaN(d)) return String(iso); return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }); }
+function todayISO() { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
+function ymd(d) { const x = new Date(d); const p = n => String(n).padStart(2,"0"); return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}`; }
+function slugStatus(s) { return { "Aguardando NF":"aguardando", "Pendente":"pendente", "Aprovado":"aprovado", "Pago":"pago", "Vencido":"vencido" }[s] || "aguardando"; }
+function statusPill(s) { return `<span class="pill st-${slugStatus(s)}"><i></i>${esc(s || "—")}</span>`; }
+function catList() { return CAP_LIST.columns.find(c => c.name === "Categoria").choice.choices; }
+function statusOptions() { return CAP_LIST.columns.find(c => c.name === "Status").choice.choices; }
+function formaOptions() { return CAP_LIST.columns.find(c => c.name === "FormaPagamento").choice.choices; }
+
+async function loadCAP() {
+  if (!CAP_STATE.site) CAP_STATE.site = await SP.site(CONFIG.sites[CAP_LIST.siteKey]);
+  if (!CAP_STATE.list) {
+    const lists = await SP.lists(CAP_STATE.site.id);
+    CAP_STATE.list = lists.find(l => l.displayName === CAP_LIST.displayName);
+  }
+  if (!CAP_STATE.list) throw new Error(`A lista "${CAP_LIST.displayName}" ainda não existe. Vá em Sistema → Configuração.`);
+  const items = await SP.items(CAP_STATE.site.id, CAP_STATE.list.id);
+  CAP_STATE.items = items.map(it => Object.assign({ _id: it.id }, it.fields || {}));
+  return CAP_STATE.items;
+}
+
+function classifyItem(it) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const venc = it.Vencimento ? new Date(it.Vencimento) : null;
+  if (venc) venc.setHours(0,0,0,0);
+  const dias = venc ? Math.round((venc - today) / 86400000) : null;
+  const pago = it.Status === "Pago";
+  return { venc, dias, pago };
+}
+
+function kpiCounts() {
+  const now = new Date(); const mesRef = { y: now.getFullYear(), m: now.getMonth() };
+  const acc = { venc: [], hoje: [], sete: [], pagas: [] };
+  for (const it of CAP_STATE.items) {
+    const c = classifyItem(it);
+    const v = Number(it.Valor || 0);
+    if (!c.pago && c.dias !== null && c.dias < 0) acc.venc.push({ it, v });
+    if (!c.pago && c.dias === 0) acc.hoje.push({ it, v });
+    if (!c.pago && c.dias !== null && c.dias > 0 && c.dias <= 7) acc.sete.push({ it, v });
+    if (c.pago && it.DataPagamento) {
+      const p = new Date(it.DataPagamento);
+      if (p.getFullYear() === mesRef.y && p.getMonth() === mesRef.m) acc.pagas.push({ it, v });
+    }
+  }
+  const sum = a => a.reduce((s,x)=>s+x.v,0);
+  return { venc: { n: acc.venc.length, v: sum(acc.venc), it: acc.venc }, hoje: { n: acc.hoje.length, v: sum(acc.hoje), it: acc.hoje }, sete: { n: acc.sete.length, v: sum(acc.sete), it: acc.sete }, pagas: { n: acc.pagas.length, v: sum(acc.pagas), it: acc.pagas } };
+}
+
+function filteredItems() {
+  const f = CAP_STATE.filter; let arr = CAP_STATE.items.slice();
+  if (f.kpi) {
+    const k = kpiCounts()[f.kpi];
+    if (k) arr = k.it.map(x => x.it);
+  }
+  if (f.status)    arr = arr.filter(it => (it.Status || "") === f.status);
+  if (f.categoria) arr = arr.filter(it => (it.Categoria || "") === f.categoria);
+  if (f.busca) {
+    const q = f.busca.toLowerCase();
+    arr = arr.filter(it => [it.Title, it.Fornecedor, it.CNPJ, it.Observacoes, it.RefDocumento].some(x => (x || "").toLowerCase().includes(q)));
+  }
+  arr.sort((a,b) => (a.Vencimento || "").localeCompare(b.Vencimento || ""));
+  return arr;
+}
+
+function pageCAP() {
+  return `<div class="page">
+    <h1>Contas a Pagar</h1>
+    <p class="lead">Todas as contas do dia a dia da NMB. Origem única para o Fluxo de Caixa. Clique nos números para filtrar.</p>
+    <div id="capBody"><div class="cap-empty"><h3>Carregando…</h3><p>Buscando os dados no SharePoint.</p></div></div>
+  </div>`;
+}
+
+async function renderCAP() {
+  const body = $("capBody"); if (!body) return;
+  try { await loadCAP(); }
+  catch (e) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(e.message)}</p></div>`; return; }
+  paintCAP();
+}
+
+function paintCAP() {
+  const body = $("capBody"); if (!body) return;
+  const total = CAP_STATE.items.length;
+  if (total === 0) {
+    body.innerHTML = `<div class="cap-empty">
+      <h3>Ainda não há contas cadastradas</h3>
+      <p>Você pode cadastrar uma conta por vez ou importar várias de uma vez colando de uma planilha.</p>
+      <div class="actions"><button class="btn primary" onclick="capNew()">Cadastrar conta</button><button class="btn" onclick="capImport()">Importar em lote</button></div>
+    </div>`;
+    return;
+  }
+  const k = kpiCounts();
+  const f = CAP_STATE.filter;
+  const kpi = (id, cls, lbl, data) => `<button class="kpi ${cls} ${f.kpi===id?"on":""}" onclick="capKPI('${id}')"><div class="lbl">${esc(lbl)}</div><div class="val">${data.n}</div><div class="sub">${esc(fmtBRL(data.v))}</div></button>`;
+  const rows = filteredItems().map(it => {
+    const c = classifyItem(it);
+    const marc = !c.pago && c.dias !== null && c.dias < 0 ? "Vencido" : it.Status;
+    return `<tr onclick="capEdit('${esc(it._id)}')">
+      <td><div class="desc">${esc(it.Title || "—")}</div><div class="sup">${esc(it.Fornecedor || "")}${it.CNPJ ? " · " + esc(it.CNPJ) : ""}</div></td>
+      <td>${esc(it.Categoria || "—")}</td>
+      <td>${fmtDate(it.Vencimento)}</td>
+      <td class="right">${esc(fmtBRL(it.Valor))}</td>
+      <td>${statusPill(marc)}</td>
+      <td>${esc(it.FormaPagamento || "—")}</td>
+    </tr>`;
+  }).join("");
+  body.innerHTML = `
+    <div class="cap-kpis">
+      ${kpi("venc", "venc", "Vencidas", k.venc)}
+      ${kpi("hoje", "", "Vencem hoje", k.hoje)}
+      ${kpi("sete", "", "Próximos 7 dias", k.sete)}
+      ${kpi("pagas", "pago", "Pagas no mês", k.pagas)}
+    </div>
+    <div class="cap-tools">
+      <input type="search" class="grow" id="capBusca" placeholder="Buscar por descrição, fornecedor, CNPJ, ref..." value="${esc(f.busca)}">
+      <select id="capStatus"><option value="">Todos os status</option>${statusOptions().map(s => `<option ${f.status===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
+      <select id="capCat"><option value="">Todas as categorias</option>${catList().map(s => `<option ${f.categoria===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
+      <button class="btn" onclick="capClearFilters()">Limpar</button>
+      <button class="btn" onclick="capImport()">Importar</button>
+      <button class="btn primary" onclick="capNew()">Nova conta</button>
+    </div>
+    ${rows ? `<table class="cap-table"><thead><tr><th>Descrição</th><th>Categoria</th><th>Vencimento</th><th style="text-align:right">Valor</th><th>Status</th><th>Forma</th></tr></thead><tbody>${rows}</tbody></table>`
+           : `<div class="cap-empty"><h3>Nenhuma conta encontrada</h3><p>Ajuste os filtros para ver mais resultados.</p></div>`}
+  `;
+  $("capBusca").addEventListener("input", ev => { CAP_STATE.filter.busca = ev.target.value; paintCAPTable(); });
+  $("capStatus").addEventListener("change", ev => { CAP_STATE.filter.status = ev.target.value; paintCAP(); });
+  $("capCat").addEventListener("change", ev => { CAP_STATE.filter.categoria = ev.target.value; paintCAP(); });
+}
+function paintCAPTable() { /* reserva: repintar só linhas quando busca mudar */ paintCAP(); }
+window.capKPI = (id) => { CAP_STATE.filter.kpi = CAP_STATE.filter.kpi === id ? null : id; paintCAP(); };
+window.capClearFilters = () => { CAP_STATE.filter = { kpi: null, status: "", categoria: "", busca: "" }; paintCAP(); };
+
+/* -------- Modal (compartilhado) -------- */
+function modal(html) {
+  const m = $("modal"); m.innerHTML = html;
+  const back = $("modalBack"); back.classList.add("on");
+  back.onclick = ev => { if (ev.target === back) closeModal(); };
+  document.addEventListener("keydown", escClose);
+}
+function closeModal() { $("modalBack").classList.remove("on"); $("modal").className = "modal"; document.removeEventListener("keydown", escClose); }
+function escClose(ev) { if (ev.key === "Escape") closeModal(); }
+window.closeModal = closeModal;
+
+/* -------- Nova / editar conta -------- */
+function capForm(it) {
+  const isNew = !it;
+  const v = it || { Status: "Pendente" };
+  const opt = (arr, sel, blank) => (blank ? `<option value=""></option>` : "") + arr.map(x => `<option ${x===sel?"selected":""}>${esc(x)}</option>`).join("");
+  return `<div class="modal-head"><h2>${isNew ? "Nova conta" : "Editar conta"}</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body"><div class="form-grid">
+      <div class="field full"><label>Descrição<span class="req">*</span></label><input id="fTitle" value="${esc(v.Title || "")}" placeholder="Ex.: Aluguel garagem set/26"></div>
+      <div class="field"><label>Fornecedor<span class="req">*</span></label><input id="fForn" value="${esc(v.Fornecedor || "")}"></div>
+      <div class="field"><label>CNPJ</label><input id="fCNPJ" value="${esc(v.CNPJ || "")}"></div>
+      <div class="field"><label>Categoria</label><select id="fCat">${opt(catList(), v.Categoria, true)}</select></div>
+      <div class="field"><label>Forma de pagamento</label><select id="fForma">${opt(formaOptions(), v.FormaPagamento, true)}</select></div>
+      <div class="field"><label>Vencimento<span class="req">*</span></label><input type="date" id="fVenc" value="${v.Vencimento ? ymd(v.Vencimento) : ""}"></div>
+      <div class="field"><label>Valor (R$)<span class="req">*</span></label><input type="number" step="0.01" min="0" id="fVal" value="${v.Valor ?? ""}"></div>
+      <div class="field"><label>Status<span class="req">*</span></label><select id="fSt">${opt(statusOptions(), v.Status || "Pendente", false)}</select></div>
+      <div class="field"><label>Data do pagamento</label><input type="date" id="fPag" value="${v.DataPagamento ? ymd(v.DataPagamento) : ""}"></div>
+      <div class="field full"><label>Ref. documento</label><input id="fRef" value="${esc(v.RefDocumento || "")}" placeholder="Nº da NF, contrato, boleto"></div>
+      <div class="field full"><label>Observações</label><textarea id="fObs">${esc(v.Observacoes || "")}</textarea></div>
+    </div><div class="err-msg" id="fErr" style="display:none;color:var(--err);margin-top:12px;font-size:13px;"></div></div>
+    <div class="modal-foot">${isNew ? "" : `<button class="btn" onclick="capDelete('${esc(it._id)}')" style="margin-right:auto;color:var(--err)">Excluir</button>`}<button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" id="fSave">${isNew ? "Cadastrar" : "Salvar"}</button></div>`;
+}
+window.capNew = () => { modal(capForm(null)); $("fSave").onclick = () => capSave(null); };
+window.capEdit = (id) => { const it = CAP_STATE.items.find(x => x._id === id); if (!it) return; modal(capForm(it)); $("fSave").onclick = () => capSave(it); };
+
+async function capSave(existing) {
+  const g = id => $(id).value.trim();
+  const fields = {
+    Title: g("fTitle"), Fornecedor: g("fForn"), CNPJ: g("fCNPJ") || null,
+    Categoria: g("fCat") || null, FormaPagamento: g("fForma") || null,
+    Vencimento: g("fVenc") || null, Valor: g("fVal") ? Number(g("fVal")) : null,
+    Status: g("fSt"), DataPagamento: g("fPag") || null,
+    RefDocumento: g("fRef") || null, Observacoes: g("fObs") || null
+  };
+  const missing = ["Title","Fornecedor","Vencimento","Valor","Status"].filter(k => !fields[k] && fields[k] !== 0);
+  if (missing.length) { const e = $("fErr"); e.style.display = "block"; e.textContent = "Preencha os campos obrigatórios: " + missing.map(k => ({Title:"Descrição",Fornecedor:"Fornecedor",Vencimento:"Vencimento",Valor:"Valor",Status:"Status"}[k])).join(", "); return; }
+  const btn = $("fSave"); btn.disabled = true; btn.textContent = "Salvando…";
+  try {
+    if (existing) await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, existing._id, fields);
+    else await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, fields);
+    closeModal(); toast(existing ? "Conta atualizada" : "Conta cadastrada"); await loadCAP(); paintCAP();
+  } catch (e) { const el = $("fErr"); el.style.display = "block"; el.textContent = "Erro ao salvar: " + e.message; btn.disabled = false; btn.textContent = existing ? "Salvar" : "Cadastrar"; }
+}
+window.capDelete = async (id) => {
+  if (!confirm("Excluir esta conta em definitivo? Ela sai da lista do SharePoint.")) return;
+  try { await graph(`/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/items/${id}`, { method: "DELETE" }); closeModal(); toast("Conta excluída"); await loadCAP(); paintCAP(); }
+  catch (e) { toast("Erro ao excluir: " + e.message, 6000); }
+};
+
+/* -------- Importação em lote -------- */
+const CAP_IMPORT_COLS = ["Descrição","Fornecedor","CNPJ","Categoria","Vencimento","Valor","Status","Forma de Pagamento","Data do Pagamento","Observações","Ref. documento"];
+const CAP_IMPORT_MAP = { "Descrição":"Title","Descricao":"Title","Fornecedor":"Fornecedor","CNPJ":"CNPJ","Categoria":"Categoria","Vencimento":"Vencimento","Valor":"Valor","Status":"Status","Forma de Pagamento":"FormaPagamento","Forma":"FormaPagamento","Data do Pagamento":"DataPagamento","Pagamento":"DataPagamento","Observações":"Observacoes","Observacoes":"Observacoes","Ref. documento":"RefDocumento","Ref":"RefDocumento" };
+
+function parseDateBR(s) {
+  if (!s) return null;
+  s = String(s).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (m) { let y = m[3]; if (y.length === 2) y = "20" + y; return `${y}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; }
+  m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (m) { const y = new Date().getFullYear(); return `${y}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; }
+  return null;
+}
+function parseValueBR(s) {
+  if (s === null || s === undefined || s === "") return null;
+  s = String(s).replace(/R\$\s*/i,"").trim();
+  if (s.includes(",")) s = s.replace(/\./g,"").replace(",",".");
+  const n = Number(s); return isNaN(n) ? null : n;
+}
+function detectSep(text) { const first = text.split(/\r?\n/)[0] || ""; const t = (first.match(/\t/g) || []).length; const p = (first.match(/;/g) || []).length; const c = (first.match(/,/g) || []).length; if (t >= p && t >= c && t > 0) return "\t"; if (p >= c && p > 0) return ";"; return ","; }
+function parseCSV(text, sep) {
+  const rows = []; let i=0, cell="", row=[], inQ=false;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inQ) { if (ch === '"' && text[i+1] === '"') { cell+='"'; i+=2; continue; } if (ch === '"') { inQ=false; i++; continue; } cell+=ch; i++; continue; }
+    if (ch === '"') { inQ=true; i++; continue; }
+    if (ch === sep) { row.push(cell); cell=""; i++; continue; }
+    if (ch === "\n") { row.push(cell); rows.push(row); row=[]; cell=""; i++; continue; }
+    if (ch === "\r") { i++; continue; }
+    cell+=ch; i++;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+function analyzeImport(text) {
+  const rows = parseCSV(text, detectSep(text)).filter(r => r.some(c => (c || "").trim() !== ""));
+  if (!rows.length) return { rows: [], errors: ["Cole os dados de uma planilha."] };
+  const header = rows[0].map(h => (h || "").trim());
+  const idxByField = {}; header.forEach((h, i) => { const f = CAP_IMPORT_MAP[h] || CAP_IMPORT_MAP[h.normalize("NFD").replace(/[\u0300-\u036f]/g,"")]; if (f) idxByField[f] = i; });
+  const missing = ["Title","Fornecedor","Vencimento","Valor","Status"].filter(k => idxByField[k] === undefined);
+  if (missing.length) return { rows: [], errors: [`Cabeçalho não tem as colunas obrigatórias: ${missing.map(k=>({Title:"Descrição",Fornecedor:"Fornecedor",Vencimento:"Vencimento",Valor:"Valor",Status:"Status"}[k])).join(", ")}. A primeira linha precisa ser o cabeçalho.`] };
+  const stChoices = statusOptions(), catChoices = catList(), fpChoices = formaOptions();
+  const out = [];
+  for (let r = 1; r < rows.length; r++) {
+    const raw = rows[r], fields = {}, errs = [];
+    for (const [f, i] of Object.entries(idxByField)) fields[f] = (raw[i] || "").trim();
+    if (!fields.Title) errs.push("Descrição vazia");
+    if (!fields.Fornecedor) errs.push("Fornecedor vazio");
+    const v = parseDateBR(fields.Vencimento); if (!v) errs.push(`Vencimento inválido (${fields.Vencimento || "vazio"})`); else fields.Vencimento = v;
+    const val = parseValueBR(fields.Valor); if (val === null) errs.push(`Valor inválido (${fields.Valor || "vazio"})`); else fields.Valor = val;
+    if (!stChoices.includes(fields.Status)) errs.push(`Status "${fields.Status}" inválido (use: ${stChoices.join(", ")})`);
+    if (fields.Categoria && !catChoices.includes(fields.Categoria)) errs.push(`Categoria "${fields.Categoria}" inválida`);
+    if (fields.FormaPagamento && !fpChoices.includes(fields.FormaPagamento)) errs.push(`Forma "${fields.FormaPagamento}" inválida`);
+    if (fields.DataPagamento) { const dp = parseDateBR(fields.DataPagamento); if (!dp) errs.push(`Data do pagamento inválida`); else fields.DataPagamento = dp; }
+    for (const k of Object.keys(fields)) if (fields[k] === "") delete fields[k];
+    out.push({ raw, fields, errs });
+  }
+  return { rows: out, errors: [] };
+}
+
+window.capImport = () => {
+  $("modal").className = "modal wide";
+  modal(`<div class="modal-head"><h2>Importar contas em lote</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="import-help">
+        Cole abaixo os dados de uma planilha. A <b>primeira linha</b> precisa ser o cabeçalho com estas colunas (a ordem pode variar; separador aceito: tab, ponto-e-vírgula ou vírgula):
+        <div style="margin-top:8px"><code>${CAP_IMPORT_COLS.join("</code>  <code>")}</code></div>
+        <div style="margin-top:10px"><b>Obrigatórias:</b> Descrição, Fornecedor, Vencimento, Valor, Status. Datas em <code>DD/MM/AAAA</code>. Valores em <code>1.234,56</code> ou <code>1234.56</code>. Status: ${statusOptions().map(s=>`<code>${s}</code>`).join(" ")}.</div>
+      </div>
+      <textarea class="import-ta" id="impText" placeholder="Descrição&#9;Fornecedor&#9;Categoria&#9;Vencimento&#9;Valor&#9;Status&#10;Aluguel garagem set/26&#9;João da Silva&#9;Aluguel&#9;30/09/2026&#9;3500,00&#9;Pendente"></textarea>
+      <div style="margin-top:12px;display:flex;gap:10px;align-items:center"><button class="btn" onclick="capAnalyze()">Analisar</button><span id="impSummary" class="import-summary"></span></div>
+      <div id="impPreview"></div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" id="impCommit" disabled>Importar</button></div>`);
+};
+window.capAnalyze = () => {
+  const text = $("impText").value;
+  const res = analyzeImport(text);
+  const prev = $("impPreview"), sum = $("impSummary"), commit = $("impCommit");
+  if (res.errors.length) { prev.innerHTML = ""; sum.innerHTML = `<b class="err">${esc(res.errors[0])}</b>`; commit.disabled = true; return; }
+  const ok = res.rows.filter(r => !r.errs.length).length;
+  const bad = res.rows.length - ok;
+  sum.innerHTML = `<b class="ok">${ok} válidas</b> · ${bad ? `<b class="err">${bad} com erro</b>` : "0 com erro"}`;
+  prev.innerHTML = `<div class="import-preview"><table><thead><tr><th>#</th><th>Descrição</th><th>Fornecedor</th><th>Vencto</th><th>Valor</th><th>Status</th><th>Problemas</th></tr></thead><tbody>${
+    res.rows.map((r,i) => `<tr class="${r.errs.length ? "bad" : "ok"}"><td>${i+1}</td><td>${esc(r.fields.Title||"—")}</td><td>${esc(r.fields.Fornecedor||"—")}</td><td>${fmtDate(r.fields.Vencimento)}</td><td>${r.fields.Valor!=null?esc(fmtBRL(r.fields.Valor)):"—"}</td><td>${esc(r.fields.Status||"—")}</td><td>${r.errs.length?esc(r.errs.join("; ")):"OK"}</td></tr>`).join("")
+  }</tbody></table></div>`;
+  commit.disabled = ok === 0;
+  commit.onclick = () => capCommitImport(res.rows.filter(r => !r.errs.length));
+};
+async function capCommitImport(items) {
+  const btn = $("impCommit"); const sum = $("impSummary");
+  btn.disabled = true;
+  let done = 0, failed = 0;
+  for (const it of items) {
+    try { await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, it.fields); done++; }
+    catch (e) { failed++; console.error("import row failed", e, it); }
+    sum.innerHTML = `Importando ${done}/${items.length}…${failed?` · <b class="err">${failed} falharam</b>`:""}`;
+  }
+  toast(`Importadas ${done} contas${failed?`, ${failed} falharam`:""}`);
+  closeModal();
+  await loadCAP(); paintCAP();
+}
+
+
+/* ---------------------- Boot ---------------------- */
+function showLogin(err) {
+  $("app").classList.remove("on"); $("login").classList.add("on");
+  const e = $("loginErr"); if (err) { e.textContent = err; e.style.display = "block"; } else e.style.display = "none";
+}
+
+async function enterApp() {
+  $("login").classList.remove("on"); $("app").classList.add("on");
+  $("userName").textContent = account.name || account.username;
+  $("avatar").textContent = initials(account.name || account.username);
+  $("userRole").textContent = "carregando…";
+  try {
+    await loadProfile();
+    $("userRole").textContent = roleLabel();
+    renderNav(); route();
+  } catch (e) {
+    $("userRole").textContent = "erro ao carregar perfil";
+    renderNav(); route();
+    toast("Não foi possível ler seu perfil no Microsoft Graph: " + e.message, 6000);
+  }
+}
+
+async function boot() {
+  try {
+    await pca.initialize();
+    const resp = await pca.handleRedirectPromise();
+    if (resp && resp.account) pca.setActiveAccount(resp.account);
+    if (resp) history.replaceState(null, "", location.pathname + (location.hash || "#/inicio"));
+    account = pca.getActiveAccount() || pca.getAllAccounts()[0] || null;
+    if (account) { pca.setActiveAccount(account); await enterApp(); } else showLogin();
+  } catch (e) { showLogin("Não foi possível concluir o login: " + e.message); }
+}
+
+$("btnLogin").addEventListener("click", () => pca.loginRedirect({ scopes: CONFIG.scopes, prompt: "select_account" }));
+$("btnLogout").addEventListener("click", () => pca.logoutRedirect({ account, postLogoutRedirectUri: redirectUri }));
+$("btnNav").addEventListener("click", () => document.body.classList.toggle("nav-open"));
+$("scrim").addEventListener("click", () => document.body.classList.remove("nav-open"));
+window.addEventListener("hashchange", () => { if (account) route(); });
+boot();
+</script>
+</body>
+</html>

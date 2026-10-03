@@ -2500,15 +2500,21 @@ body.vendo-como #sac-root #sac-toast{bottom:84px}
 .btn.vc-row{gap:6px}
 #permBody td.vc-td{width:1%;text-align:right}
 
-/* ---- Listas suspensas modernas ----
-   Chrome e Edge 135+ desenham a lista aberta do <select> com o visual do ERP (appearance: base-select): cartão com sombra,
-   itens com respiro, destaque ao passar o mouse e marca no item escolhido. Outros navegadores e telas de toque mantêm a
-   lista do sistema. A Escala Agência (tema claro/escuro próprio) e os seletores de status do SAC ficam como estão. */
+/* ---- Listas suspensas: a partir da v0.12.31 a regra vale para todos os módulos e está em v01231.css ---- */
+
+
+/* ==================== v0.12.31 · Listas suspensas no modelo do Fluxo de Caixa, em todos os módulos ====================
+   O desenho que estreou no Fluxo de Caixa (v0.12.29) agora vale para TODA lista suspensa do ERP, em qualquer tela, inclusive
+   nos apps embutidos (Infrações, SAC, Diesel) e na Escala Agência (com as cores do tema claro/escuro dela): cartão com
+   sombra, itens com respiro, destaque ao passar o mouse, marca laranja no item escolhido e seta que vira ao abrir.
+   Funciona no Chrome e no Edge 135+ com mouse (appearance: base-select); os outros navegadores e as telas de toque mantêm
+   a lista do sistema. Listas de várias linhas (multiple/size) não são suspensas e ficam como estão. */
 :root{--chev-up:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 5l4-4 4 4' fill='none' stroke='%231E2153' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --sel-check:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23F0541B' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E")}
 @supports (appearance: base-select) {
 @media (hover: hover) and (pointer: fine) {
-:is(.page, .modal-back .modal, .modal, #inf-root, #sac-root, #dsl-root) select:where(:not([multiple], [size]):not(#esc-root select):not(#sac-root select.ed)) {
+/* todas as listas (":is(html, #erp-listas)" só dá peso de id à regra, para vencer os estilos antigos de cada módulo) */
+:is(html, #erp-listas) select:where(:not([multiple], [size]):not(#esc-root select):not(#sac-root select.ed)) {
   &, &::picker(select) { appearance: base-select; }
   cursor: pointer; padding-inline-end: 32px !important; align-items: center; gap: 0;   /* texto no meio, como na lista antiga, mesmo com altura fixa */
   /* a seta é o fundo da própria lista (não é cortada); aberta, ela vira para cima */
@@ -2541,15 +2547,70 @@ body.vendo-como #sac-root #sac-toast{bottom:84px}
   & optgroup + optgroup { border-top: 1px solid #EDEFF2; margin-top: 4px; }
   & legend { padding: 6px 12px 4px; font-size: 10.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #8A9099; }
 }
-@starting-style { :is(.page, .modal-back .modal, .modal, #inf-root, #sac-root, #dsl-root) select:where(:not([multiple], [size]):not(#esc-root select):not(#sac-root select.ed)):open::picker(select) { opacity: 0; translate: 0 -4px; } }
+@starting-style { :is(html, #erp-listas) select:where(:not([multiple], [size]):not(#esc-root select):not(#sac-root select.ed)):open::picker(select) { opacity: 0; translate: 0 -4px; } }
 /* a lista do sistema não herdava espaçamento de letras, caixa alta nem sombra do texto do bloco; o desenho novo herdaria */
-:where(.page, .modal-back .modal, .modal, #inf-root, #sac-root, #dsl-root) select:where(:not([multiple], [size]):not(#esc-root select):not(#sac-root select.ed)),
-:where(.page, .modal-back .modal, .modal, #inf-root, #sac-root, #dsl-root) select:where(:not([multiple], [size]):not(#esc-root select):not(#sac-root select.ed))::picker(select) {
+:where(html) select:where(:not([multiple], [size]):not(#sac-root select.ed)),
+:where(html) select:where(:not([multiple], [size]):not(#sac-root select.ed))::picker(select) {
   letter-spacing: normal; word-spacing: normal; text-transform: none; text-indent: 0; text-shadow: none;
 }
+
+/* SAC · seletores de situação/categoria dentro da tabela: a pílula colorida continua igual; só a lista aberta muda */
+#sac-root select.ed {
+  &, &::picker(select) { appearance: base-select; }
+  align-items: center; white-space: nowrap; overflow: clip; overflow-clip-margin: content-box;
+  &::picker-icon { display: none; }   /* a seta da pílula já é o fundo dela */
+  &::picker(select) {
+    margin-block: 6px; padding: 6px; min-inline-size: max(anchor-size(self-inline), 180px); max-block-size: min(380px, 62vh); overflow-y: auto;
+    border: 1px solid #DCE1E8; border-radius: 12px; background: #fff; color: #1E2A32; box-shadow: 0 18px 44px rgba(16,24,40,.16), 0 3px 8px rgba(16,24,40,.08);
+    font-family: var(--f-body); font-size: 13px; letter-spacing: normal; text-transform: none;
+  }
+  & option { display: flex; align-items: center; gap: 10px; min-block-size: 34px; padding: 7px 10px 7px 12px; border-radius: 8px; color: #1E2A32; background: transparent; font-weight: 600; text-transform: none; letter-spacing: normal; cursor: pointer; white-space: nowrap; }
+  & option:hover, & option:focus-visible { background: #EEF2F8; color: var(--navy); outline: none; }
+  & option:checked { background: #E9EEF7; color: var(--navy); font-weight: 700; }
+  & option::checkmark { order: 1; margin-inline-start: auto; content: ""; width: 14px; height: 14px; background: var(--sel-check) center / 14px no-repeat; }
+}
+
+/* Escala Agência · mesmo desenho, nas cores do tema dela (escuro por padrão, claro com .light) */
+#esc-root select:where(:not([multiple], [size])) {
+  &, &::picker(select) { appearance: base-select; }
+  align-items: center; gap: 8px; line-height: normal;   /* mesma altura dos outros campos da folha (a lista do sistema usava a altura "normal") */
+  &::picker-icon { color: var(--muted); transition: rotate .18s ease; }
+  &:open::picker-icon { rotate: 180deg; }
+  &:open { border-color: var(--accent-light, #3a6aa8); box-shadow: 0 0 0 3px rgba(58,106,168,.22); }
+  &::picker(select) {
+    margin-block: 6px; padding: 6px; min-inline-size: max(anchor-size(self-inline), 180px); max-block-size: min(380px, 62vh); overflow-y: auto; scrollbar-width: thin;
+    border: 1px solid var(--border2); border-radius: 12px; background: var(--card); color: var(--text);
+    box-shadow: 0 18px 44px rgba(0,0,0,.38), 0 3px 8px rgba(0,0,0,.18); font: inherit; font-size: 14px;
+  }
+  & option { display: flex; align-items: center; gap: 10px; min-block-size: 36px; padding: 8px 10px 8px 12px; border-radius: 8px; color: var(--text); background: transparent; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  & option:hover, & option:focus-visible { background: rgba(127,127,140,.16); outline: none; }
+  & option:checked { background: rgba(58,106,168,.28); font-weight: 800; }
+  & option::checkmark { order: 1; margin-inline-start: auto; content: ""; width: 14px; height: 14px; background: var(--sel-check) center / 14px no-repeat; }
+  & option:disabled { opacity: .45; cursor: default; }
+}
+
 /* medição da largura (selAjustar): por um instante a lista volta ao desenho antigo para saber o tamanho do maior item */
 select.sel-medir { appearance: none !important; width: max-content !important; min-width: 0 !important; max-width: none !important; flex: none !important; }
 }}
+
+/* ---- Sugestões dos campos de texto (datalist) no mesmo cartão das listas · montadas pelo ERP no computador (p6) ---- */
+#erpSug{position:fixed;inset:auto;margin:0;z-index:2147483000;display:none;box-sizing:border-box;width:max-content;height:auto;min-width:200px;max-width:min(480px,calc(100vw - 16px));
+  max-height:320px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:6px;border:1px solid #DCE1E8;border-radius:12px;background:#fff;color:#1E2A32;
+  box-shadow:0 18px 44px rgba(16,24,40,.16),0 3px 8px rgba(16,24,40,.08);font-size:13.5px;font-weight:500;line-height:1.3;text-align:left;letter-spacing:normal;word-spacing:normal;text-transform:none;text-indent:0;text-shadow:none;outline:none}
+#erpSug.on{display:block}
+#erpSug:popover-open{display:block}
+#erpSug{transition:opacity .12s ease,translate .12s ease}
+@starting-style{#erpSug.on{opacity:0;translate:0 -4px}}
+@media (prefers-reduced-motion:reduce){#erpSug{transition:none}}
+#erpSug .erp-sug-it{display:flex;align-items:center;gap:10px;min-height:34px;padding:7px 10px 7px 12px;border-radius:8px;cursor:pointer;white-space:nowrap;color:#1E2A32}
+#erpSug .erp-sug-it .t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+#erpSug .erp-sug-it .l{flex:0 1 auto;min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:#7A8290}
+#erpSug .erp-sug-it mark{background:none;color:inherit;font-weight:800;padding:0}
+#erpSug .erp-sug-it.at{background:#EEF2F8;color:var(--navy)}
+#erpSug .erp-sug-it.on{background:#E9EEF7;color:var(--navy);font-weight:700}
+#erpSug .erp-sug-it.on::after{content:"";flex:0 0 14px;width:14px;height:14px;margin-left:auto;background:var(--sel-check) center/14px no-repeat}
+#erpSug .erp-sug-mais{padding:6px 12px 4px;font-size:11.5px;color:#8A9099;white-space:nowrap}
+@media print{#erpSug{display:none!important}}
 
 </style>
 </head>
@@ -2609,7 +2670,7 @@ select.sel-medir { appearance: none !important; width: max-content !important; m
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><img class="logo-nmb" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAlCAYAAADyUO83AAAPwklEQVR42s1ae3RcVbn/fd/e55yZSSbPpmkb6IPSFrHhFkKlissEqK2gooITuJQiXnmJgnjB24riMPgAQa1VL0LhigilkkHpAuVRlHZcSF9GlBaKpS19po+Qx+Q5M+fs/d0/ZpImbSiluJS91lkr65zJnv37vt/ve50hvIMlIrTq1gbVkEhZAuzgAzeM9qfvm4ANq2v5wM5aP91ZK/39J7M1J4QdHbWBAUc8ZIl9a7mdPLcPbqjDhop2oGbyxv2TTr3//bNjuwCAiAT/wqWPCng8zng1QURkAASAQuuK34zjdcvPpAN7zkL3m7Po/247pcyFAgS5QECus9UpiTyNovDfUVqxBaFoy75MSXqLCcnuLTttNBxxp1SWYZIb6e7q2NX6rwY+sOiogCdhAGD32rWVkScXnUsdexpVd9tHopIpBVvAMowX2qRKK55F9fgXn6Ha1h+/rPTGbR2T/a6O6ejvmaKsGe2QgaNpr+O5u8PF7mvumIrfrf3tXa/j37hGNIAAhBg4D5yw++5vTCvesv4a6tjXWJLtGgfyAXGQDUc3eMdVN+2vrltz09/H0B9Wb631O9tnR9icHXJcz9ECQm53yNV/EshzkZD+a+3kcbvuXnp7mojsgKz+Xd4f0QBNsZhqTCYNAGy7f9G0ig1PLuD2lsZorrsIJOjkYltWVfkIJk9/5LKNUzpXrNlWr3u7PhsSqXN0CMw5EJkXQiGn6cQJVc8+9uSPNhtzxO+W9wwDJBZTlEyaJpHwOTdfcIu79/Xrw33tRSQGPV4ZItVjfqFrP3j3pAdVZdCy8wonl/mUqyMuYEAcvFpU7P7qpJPKly9btvgf1g7duV7HYqMlmTxZgIT8u0GPaICV9dBnpRBsuyf+kVF/W/Gz4u6W2t7ePoSLosiWV6+MnPGhBWPvdSOhfdsWOoKPCTwQ+3AcebaiwrvnnusnPjW9MZEb2Le+vl41NDTYRCJh8R5eNBT8zu9e8YXyLWvu1V1vKl8EtrjSlk6d+qUZr899pv2F1LfCJJ8PjAZpQXFEPR+N6ttffPGBPxz0dr2Ox9/7oIcZYID2u+KXXj9ux/rFPemOwHUcnSup2lvy8blzowtaJ9fYnl8EVpVbACGPtpSUqG82Ny99NAgsAHAsFqNkMmnfS9Q+2sWUTJpdd1xzbvWO5sW96Y5cyHG0rRjzWsnXvj2z5obtlx4nmcczPsrBgqKI3D1nzpSZa9c+9GgQWIrFYgqAjQGQeL2SppgSOXJqfc8xYMfLO8qLfnLhxqKOXWMsKXDpqD2hG+48c+JnHvyBB2rM+DnrOaq/vFRfua556TIAqK+v16lUKpC8hGhYVVioH+goZCACQiP4sAcnQygRB7Bq8Fk+iCbNsQLNn/nQmwBavn7Bt4JLJkr6M9W5/s9NC+ThW84cPb7xl9OmzJMJE2LB1KkXt33oQ/M/OKDxgbgRj8d5IIzsuePaD3d+9byrW+Pzzm8ScQfS6TsLRUdDnDj/sws+ar3qjK3emzsmRcMhwsQpCW/ZuPYTVLC4L5fLeR5nxo11z0mlHvpLXd1VTnPzEn+oh/8i4ky66eOLilu3fskxWUBp9IQrX9oz/aOfe99139nwVkwYuL/n+zecVrb/1QX9mYyAhMTCRsMu68qy37zvyfF+UV96ri9Zn6Gd4mI8s3r1g8tRX6+RSgXvxLLMsLUz5n8tyNIJQkZIQALAcQCNIDdJiaF+J9Ly7d6GP46zLz2XsWRch93yMrrgrcC/vKOzfPxXzmoqbXtjdrova/oUC2wWJf09px7396dWvb7kjo/QVQtfGckIq/LUtirbd1Kkc0djqKcHzIRABNpTAFXvzGTHRFTGXu0bC0GAbFaunjXrknlrUo88UldX5zQ3N/tHAZ6ZYWacdtnPu9P2GmMCEPGA/GANgUmQizgOwjXHP3rP06/PdpXjMbMqKuKfrlv3698PBR+PgymRsC133Thh/Hdmv1Ta+o/Znf3ZrFWaGKyJlU6LCkLplorK5uW/bW1tjSKRgIjQyClIssaXoMdKNh1Q0GuQgY8AbsQwuNeYTGBtLmNN1s9mc7atzS6dNevSec3NzX59fb0+MvgYM5OZMWP+PekO/5pcrj8n4gfW5gpXNjAmG7Awvw7lSG/ZlOfCuf5zjBVxHLSdffbUWwFwc/NYM1Cz35qA/KPp5zU4sPmXWnKtbzrlG4ojES9KwtbmGyYGdLfloLxr99Tgu/PuJVIWDaTeIgkTAVoEmgANIQ2IhlauMBggLcKaiBxmoVwusK2twcMzZ176xVQqFRRi0qECK9A+aWbMuOzedNpebYzvM7MLkC50wPlLRHNQXPlcr1dEfzvu9M0O2VGkFDkOHlq0KNFeX1/PQIG+RCBA/HRff9+scy/a8eHLL5dZn/je/hmf/lRftOqvZSFSEAkAAhPrdNYEY9q2/ufOm2PXUQqBxI/gMQFAks8nxEBfV49YEYBAdDBjM4OCILAdHebumTMvuR4YNAId9DwRM9lp0y66L532rwqCrE9EzogkIQL3HT/9nnTJuC1nXnx2i6u5nYmkpET/FgCNHj1ahnxcAOD9V97YceKF1x6oeOmZi6r+snxZ2dYXv7D3wm9e31Ex8bFSj7WIBAAgrFVPb4+p2PPyom2LbjyDEqlADssMauQsoBzF4IN11eBjImaQ7+dMRycvrps5/5a8EWI8kJVEBKf8x2WPZrPqCmNyPjM5g/9/qBCJwJNv+tHmtpPOuRg4PhOO6D8xG5o+vXoTAEkmmw6L4M1X1WkRISjdh/6MjbTvPH/8Y996qvu0cx/rqJrcVOZAi0igAPLZJd3TripeWfXr3WvXViKZlIPpczgF8h2SzUcnN+wSCwGUN8Gw9omImdnP5YJ0h9w2Y8YldxIlTSKRsCLCp556WVNX2m80ZojnBVZGaMFEABaATrn2681EJJXlRfe5nuzKZk3wVumzbmyxEJFYCEMrThvKoKu9pGrlA0v7Tv7ws+2VJ6wv06INwWiA+602pT37J3oPf/1XpBx766oEN4wcEAvfRoCf8fMSKJxy+LFtXuOifT8bdHfz12prL7534cKF5dOnz1vW1WUuNCbrM7NTYIQFFCs+vEwnAZgAkXicRYRWrlyytaam+PJ0OjjKIkZAIjpD2lJ/typa1fSTrobL/qcrOmZHRAJlBVYxqXROglEd289rufHcb1AKwfbth4ziBug5kCyU68ig+g91gmaBWEDADG1M1nZ346rHH39jQ1+fiVmbtQfBw2cVZs+1z4weFb6rcNsMtQADACUStjCVoaefvv/55cv/t+3thhUKAGyeugzhrLANMYr0uj/vaZ0+9xN+cUVWiw8DEmJWPf2ZoHzf5u/s+d4X50x6MJXJn8QMxzeoVTvo/QEzCABmMkURWsOkGSALQIjAIsZms6gRMZaIuXC0gNl1wiHzwo8WnflpEbWXmSFDxQQ6rA6XYyk3JT/N5awRUSpXcuINt2/sGH/alV5RCSsJDAAypFl601Kydc3SHb9bekJezaIO6nuQBoAT8piHG0YEVimHP3DG+Gtd7S/U2uU8GBEiMJG1RMQgiBUKtPJ0cTEn58ypnnPeeV/JkqJiERnmUiGM0IjgHfbylLckARCxlOvo6Zc4+PjbHn6otXraXdGwp0VsQBDOQttIz4FRxSuWNMHxwIHxQTycZRaAdh0moaE2yUMV2rM9Xfza5t9833WzX3K0ZhGmQlzIg7ewjnZ1tMj+eOPGhxoXLdqdy4cYMsNInc+CONbmYjCNHIRfuKUcogSs1Ikz9q4nFrSVT3i+RENbEaMYqiugoKJ9Z92+/55ze7ZsXC+LIRDJMLFZa+3A0Q4VoZNvil555bG7y6J8gaO5D1AMiC+WyHMdVVXp3PS3lx/5qrVxPvlkqHweMIV4OkRT8q4NkIcvEMhA0DZ+/o9PxAVE6P3kzfPTpTUHwhSwBawi0t19ORPdvmEBZ9NzO8ltDZHVBiQEGSiIFGPQ64W9ZSAJCpCwJ554nbf+r0sfLyun2a7D+wHP8Tzde9zY4sbVax/4Yb5ASkhV1QF7pH783RlgkJ/57RQr6MrR7iCZm2I8Yc6clq7ahkttcQU5xrcARJiZgixKX0vN7zvtY0sCJ5LxYESI8iOGXH9/ICJH6mpPPXVfUF9fr9evX7Z6wsRoQzSqnqqq8s55PrUkmQefCg7lDx2SVGSEIHjsrTaBrFjYnq7BVpUak0bi9XrCdXc+11Y97RuRSFgLrGECZUhJpK9tVGTTC3PTdefe6XkOM2w+7GcKpfBhmXC4TfL9QJxXrFjy2oYNv/r4Cy88sBaIqQL4t/FXocD+p+AvSAEiyAZmuNUTKSP10Mf/8Pff2182cWWJQ/kiiYi7jDJl6V2ne7s3T22dNOsHUc2utdbCKwkrVoW6iIedPAiCEYJ2nPNsjjPw1lOjwzj1roJgXqX5yYIc9JQ7UpZsiFsJctR9zvzPpcOjOj3rE0BWKVLpAEHlgU0XC2zuzZraB9glhnYAKmwqdtjJtR6pp0rYfP54uwwmg9dAiX3sBjD2kE3fevJEiYRdFa9XUz7zX7t6J51+rRspYRjf5mXOujtrTNW2dTfnxk19qSM89kX0dozKCWcBGRoJBCCjxL7Loavk7VnY+F0wYIgqafD1+YgUAICzEqlA4vW65pZfLNtfNvH+aMjRttA5GlKczeZs2fon7mwb+/4/4JQzlo0ynWPzrw1hmGAVK0XEapOp6BdZqY85ax86Mjp2BgzE0YGQfxRvvG5dZQRWBYufvb6teOzGKIsWIGBYyhGTzfWFxm178WZ0Zb09etQfA6JugD0jivuhW7oc7ycrPvDG5ft/vHxmMpk0En8HVSsP4Snl46vQUf4+4Eh04oH52sCt3JE8QCLxuIwn6n/jvjsavbWProl07C3pJx0wRPukxent1LnVzz+x76zjf/ZrnH7Do5uC4qi2/udPyslH+9d/tqM7Wlz+3UdukM7FRzV6P7T7KxTug3Q4ZgMUajcDiIHkWylRgKP4iDSgRMJKLKboyoWbdi5a8MmKjc8+WdpzoKTThyUCfNII+vtQtnvLly9UO3OXjPHekCDw1N7cxC5V1mHOnzediIK89xNHr1gSEcAIyBA4P2h4V4UQswfXUSFHeVGXVYnLqtTVKtB421aakkkjsZga/9Xv/6nllE99sKtsQioSDnNUgV0JiMVSV8Y36OtxuatjGvvBxM5IzVMt5395etWnr2g52hcvw3sMDinlKaUcj9lRzFop5ahjYECDBVIISsY81xf0en3ot0LCsBZwQvBDJQfyer9VkEi8rRHoK4lX4YQa2m656GLs336JyvZ+wAbZSiKiLDm7M8Vl61BzwoMVNz/4BH7+Z7xT8A0NDTaVSqGyOvy88sQzPqwUZuPMkP8HZzXQYnCHFv0AAAAASUVORK5CYII=" alt=""><span>ERP NMB v0.12.30<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><img class="logo-nmb" src="data:image/png;base64,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" alt=""><span>ERP NMB v0.12.31<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -2645,7 +2706,7 @@ const CONFIG = {
     almoxarifado: "/sites/almoxarifado", ti: "/sites/ti", sac: "/sites/SAC"
   },
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.30",
+  version: "v0.12.31",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: Administradores Nível 1 — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não. */
   n1: ["34c45b39927a82a91d7827a84db92ff5f3fcd624a29cd4761d6849842f3f0032", "fdd176ba175159520b499051ffe7c4f5d6d783b2804256a3c829df634f9c814a", "b0be5d0012690c941a2825c28c4d16935978bebde65a1fbfff9c9cd24f2eda98"],
@@ -10410,7 +10471,7 @@ function capturarEdicao(){
     });
     if(campos.length) k.det = { exp: trDet.previousElementSibling.dataset.exp, campos };
   }
-  const a = document.activeElement;
+  let a = document.activeElement; if(a && a.tagName==="OPTION") a = a.closest("select") || a;
   if(a && a!==document.body && corpo.contains(a)){
     const tr = a.closest("tr"), ref = tr && tr.classList.contains("detalhe") ? tr.previousElementSibling : tr;
     const sujo = a.matches("input.ed-resp") ? a.value!==a.defaultValue : a.matches("select.ed") ? !!a._tecla : false;
@@ -11490,17 +11551,17 @@ function renderReceb(){
   if(!recs.length){tb.innerHTML=`<tr><td colspan="7" class="empty">Nenhum recebimento programado. Use o formulário abaixo para planejar uma entrega.</td></tr>`;return;}
   const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
   tb.innerHTML=recs.map(r=>`<tr>
-    <td class="ecell" data-tbl="r" data-id="${r.id}" data-field="data" data-type="date" data-raw="${r.data}">${brDate(r.data)}</td>
-    <td class="ecell num" data-tbl="r" data-id="${r.id}" data-field="volume" data-type="number" data-raw="${r.volume}">${fmtInt(r.volume)}</td>
-    <td class="ecell" data-tbl="r" data-id="${r.id}" data-field="ref" data-type="text" data-raw="${esc(r.ref)}">${r.ref||"—"}</td>
-    <td>${r.por||"—"}</td>
+    <td class="ecell" data-tbl="r" data-id="${esc(r.id)}" data-field="data" data-type="date" data-raw="${esc(r.data)}">${brDate(r.data)}</td>
+    <td class="ecell num" data-tbl="r" data-id="${esc(r.id)}" data-field="volume" data-type="number" data-raw="${esc(r.volume)}">${fmtInt(r.volume)}</td>
+    <td class="ecell" data-tbl="r" data-id="${esc(r.id)}" data-field="ref" data-type="text" data-raw="${esc(r.ref)}">${esc(r.ref)||"—"}</td>
+    <td>${esc(r.por)||"—"}</td>
     <td>${r.confirmado
         ?`<span class="tag ok">Confirmado</span>`
         :`<span class="tag plan">Programado</span>`}</td>
     <td>${r.confirmado
-        ?`<button class="ghost mini" data-undo-receb="${r.id}">Desfazer</button>`
-        :`<button class="confirm mini" data-conf-receb="${r.id}">Confirmar</button>`}</td>
-    <td><button class="danger" data-del-receb="${r.id}" title="Excluir">✕</button></td></tr>`).join("");
+        ?`<button class="ghost mini" data-undo-receb="${esc(r.id)}">Desfazer</button>`
+        :`<button class="confirm mini" data-conf-receb="${esc(r.id)}">Confirmar</button>`}</td>
+    <td><button class="danger" data-del-receb="${esc(r.id)}" title="Excluir">✕</button></td></tr>`).join("");
 }
 let filtroMes="todos";
 const MESES=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -11510,18 +11571,18 @@ function renderFiltroMes(){
   if(filtroMes!=="todos"&&!meses.includes(filtroMes)) filtroMes="todos";
   sel.innerHTML=`<option value="todos">Todos os meses</option>`+
     meses.map(m=>{const[y,mo]=m.split("-");
-      return `<option value="${m}" ${m===filtroMes?"selected":""}>${MESES[+mo-1]}/${y}</option>`;}).join("");
+      return `<option value="${esc(m)}" ${m===filtroMes?"selected":""}>${MESES[+mo-1]}/${esc(y)}</option>`;}).join("");
 }
 function linhasAbastHTML(rows){
   const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
-  const ec=(r,f,t,raw,shown)=>`<td class="ecell${t==="number"?" num":""}" data-tbl="a" data-id="${r.id}" data-field="${f}" data-type="${t}" data-raw="${esc(raw)}">${shown}</td>`;
+  const ec=(r,f,t,raw,shown)=>`<td class="ecell${t==="number"?" num":""}" data-tbl="a" data-id="${esc(r.id)}" data-field="${f}" data-type="${t}" data-raw="${esc(raw)}">${shown}</td>`;
   return rows.map(r=>`<tr>
-    ${ec(r,"data","date",r.data,brDate(r.data))}${ec(r,"hora","time",r.hora||"",r.hora||"—")}${ec(r,"veiculo","text",r.veiculo||"",r.veiculo||"—")}${ec(r,"linha","text",r.linha||"",r.linha||"—")}
-    ${ec(r,"motorista","text",r.motorista||"",r.motorista||"—")}${ec(r,"hodometro","number",r.hodometro||"",r.hodometro?fmtInt(r.hodometro):"—")}
-    ${ec(r,"volume","number",r.volume,`<b>${fmt(r.volume)}</b>`)}${ec(r,"frentista","text",r.frentista||"",r.frentista||"—")}<td>${r.por||"—"}</td>
+    ${ec(r,"data","date",r.data,brDate(r.data))}${ec(r,"hora","time",r.hora||"",esc(r.hora)||"—")}${ec(r,"veiculo","text",r.veiculo||"",esc(r.veiculo)||"—")}${ec(r,"linha","text",r.linha||"",esc(r.linha)||"—")}
+    ${ec(r,"motorista","text",r.motorista||"",esc(r.motorista)||"—")}${ec(r,"hodometro","number",r.hodometro||"",r.hodometro?fmtInt(r.hodometro):"—")}
+    ${ec(r,"volume","number",r.volume,`<b>${fmt(r.volume)}</b>`)}${ec(r,"frentista","text",r.frentista||"",esc(r.frentista)||"—")}<td>${esc(r.por)||"—"}</td>
     <td class="num calc">${fmt(r.bombaIni)}</td><td class="num calc">${fmt(r.bombaFim)}</td>
     <td class="num calc">${fmt(r.tanqueIni)}</td><td class="num calc">${fmt(r.tanqueFim)}</td>
-    <td><button class="danger" data-del-abast="${r.id}" title="Excluir">✕</button></td></tr>`).join("");
+    <td><button class="danger" data-del-abast="${esc(r.id)}" title="Excluir">✕</button></td></tr>`).join("");
 }
 function rodapeAbastHTML(rows){
   const total=rows.reduce((s,r)=>s+(Number(r.volume)||0),0);
@@ -11561,7 +11622,7 @@ function renderAbastFull(){
   const sel=$("filtroMesFull");
   const meses=[...new Set(alive(state.abastecimentos).map(a=>a.data.slice(0,7)))].sort().reverse();
   sel.innerHTML=`<option value="todos">Todos os meses</option>`+
-    meses.map(m=>{const[y,mo]=m.split("-");return `<option value="${m}" ${m===filtroMes?"selected":""}>${MESES[+mo-1]}/${y}</option>`;}).join("");
+    meses.map(m=>{const[y,mo]=m.split("-");return `<option value="${esc(m)}" ${m===filtroMes?"selected":""}>${MESES[+mo-1]}/${esc(y)}</option>`;}).join("");
   let rows=cadeia();
   if(filtroMes!=="todos") rows=rows.filter(r=>r.data.slice(0,7)===filtroMes);
   tb.innerHTML=rows.length?linhasAbastHTML(rows):`<tr><td colspan="14" class="empty">Nenhum abastecimento no período.</td></tr>`;
@@ -11583,7 +11644,7 @@ function renderVeic(rows){
   const tb=$("tblVeic").querySelector("tbody");
   const veics=veicResumo(rows);
   if(!veics.length){tb.innerHTML=`<tr><td colspan="6" class="empty">Sem dados no período.</td></tr>`;return;}
-  tb.innerHTML=veics.map(v=>`<tr><td><b>${v.veiculo}</b></td><td class="num">${v.n}</td>
+  tb.innerHTML=veics.map(v=>`<tr><td><b>${esc(v.veiculo)}</b></td><td class="num">${v.n}</td>
     <td class="num">${fmt(v.vol)}</td><td class="num">${fmt(v.media)}</td>
     <td class="num">${v.km!==null?fmtInt(v.km):"—"}</td>
     <td class="num">${v.kml!==null?v.kml.toLocaleString("pt-BR",{maximumFractionDigits:2}):"—"}</td></tr>`).join("");
@@ -11591,7 +11652,7 @@ function renderVeic(rows){
 /* ---- datalists (autocomplete) ---- */
 function renderDatalists(){
   const fill=(id,vals)=>{$(id).innerHTML=[...new Set(vals.filter(Boolean))].sort()
-    .map(v=>`<option value="${v}">`).join("");};
+    .map(v=>`<option value="${esc(v)}">`).join("");};
   const va=alive(state.abastecimentos);
   fill("dlVeiculo",va.map(a=>a.veiculo));
   fill("dlMotorista",va.map(a=>a.motorista));
@@ -11883,11 +11944,11 @@ function renderDash(){
   const meses=[...new Set(all.map(r=>r.data.slice(0,7)))].sort().reverse();
   if(dashMes!=="todos"&&!meses.includes(dashMes))dashMes="todos";
   $("dashMes").innerHTML='<option value="todos">Todos os meses</option>'+
-    meses.map(m=>{const[y,mo]=m.split("-");return `<option value="${m}" ${m===dashMes?"selected":""}>${MESES[+mo-1]}/${y}</option>`;}).join("");
+    meses.map(m=>{const[y,mo]=m.split("-");return `<option value="${esc(m)}" ${m===dashMes?"selected":""}>${MESES[+mo-1]}/${esc(y)}</option>`;}).join("");
   const veics=[...new Set(all.map(r=>r.veiculo||"(sem veículo)"))].sort();
   if(dashVeic!=="todos"&&!veics.includes(dashVeic))dashVeic="todos";
   $("dashVeic").innerHTML='<option value="todos">Todos os veículos</option>'+
-    veics.map(v=>`<option value="${v}" ${v===dashVeic?"selected":""}>${v}</option>`).join("");
+    veics.map(v=>`<option value="${esc(v)}" ${v===dashVeic?"selected":""}>${esc(v)}</option>`).join("");
   /* aplica filtros cruzados */
   let rows=all;
   if(dashMes!=="todos")rows=rows.filter(r=>r.data.slice(0,7)===dashMes);
@@ -15307,8 +15368,8 @@ function cxYearMonthPicker() {
   if (!anos.includes(y)) anos.push(y);
   anos.sort();
   const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-  const anoSel = `<select class="cx-ymsel" onchange="cxComp(this.value + '-' + ${JSON.stringify(m)})" aria-label="Ano">${anos.map(a => `<option value="${esc(a)}" ${a === y ? "selected" : ""}>${esc(a)}</option>`).join("")}</select>`;
-  const mesSel = `<select class="cx-ymsel" onchange="cxComp(${JSON.stringify(y)} + '-' + this.value)" aria-label="Mês">${MESES.map((lbl, i) => { const mm = String(i + 1).padStart(2, "0"); return `<option value="${mm}" ${mm === m ? "selected" : ""}>${esc(lbl)}</option>`; }).join("")}</select>`;
+  const anoSel = `<select class="cx-ymsel" onchange="cxComp(this.value + '-' + ${esc(JSON.stringify(m))})" aria-label="Ano">${anos.map(a => `<option value="${esc(a)}" ${a === y ? "selected" : ""}>${esc(a)}</option>`).join("")}</select>`;
+  const mesSel = `<select class="cx-ymsel" onchange="cxComp(${esc(JSON.stringify(y))} + '-' + this.value)" aria-label="Mês">${MESES.map((lbl, i) => { const mm = String(i + 1).padStart(2, "0"); return `<option value="${mm}" ${mm === m ? "selected" : ""}>${esc(lbl)}</option>`; }).join("")}</select>`;
   return `<div class="cx-datep"><label class="sup">Ano ${anoSel}</label><label class="sup">Mês ${mesSel}</label></div>`;
 }
 function paintCx() {
@@ -18251,26 +18312,44 @@ function vcQuemEmite() {
    Com o desenho novo (appearance: base-select) o Chrome dimensiona a lista pelo item escolhido, e a largura "pula" ao trocar
    de item. Cada lista sem largura definida ganha largura mínima igual à do maior item — como a lista do sistema fazia. */
 const SEL_MODERNO = (() => { try { return CSS.supports("appearance", "base-select") && matchMedia("(hover: hover) and (pointer: fine)").matches; } catch (e) { return false; } })();
-function selAjustar(sel) {
-  if (!sel || !sel.isConnected || sel.multiple || sel.size > 1) return;
-  const assin = sel.options.length + ":" + [...sel.options].reduce((n, o) => n + o.text.length, 0);
-  if (sel.dataset.selAss === assin) return;
-  if (getComputedStyle(sel).appearance !== "base-select") return;
-  if (!("selMin0" in sel.dataset)) sel.dataset.selMin0 = sel.style.minWidth || "";
-  sel.style.minWidth = sel.dataset.selMin0;
-  const atual = sel.getBoundingClientRect().width; if (!atual) return;   /* escondida: mede quando aparecer (foco ou clique) */
+function selAjustar(sel) { selAjustarLote([sel]); }
+/* v0.12.31: mede todas as listas da fila de uma vez (leituras juntas, escritas juntas). Medir uma a uma forçava três
+   recálculos de layout por lista — numa tabela com 75 pílulas (SAC), 120–200 ms a cada redesenho. */
+function selAjustarLote(sels) {
+  const L = [];
+  sels.forEach(sel => {
+    if (!sel || !sel.isConnected || sel.multiple || sel.size > 1) return;
+    const assin = sel.options.length + ":" + [...sel.options].reduce((n, o) => n + o.text.length, 0);
+    if (sel.dataset.selAss === assin) return;
+    if (getComputedStyle(sel).appearance !== "base-select") return;
+    L.push({ sel, assin });
+  });
+  if (!L.length) return;
+  /* escrita: volta à largura mínima original da tela */
+  L.forEach(x => { const s = x.sel; if (!("selMin0" in s.dataset)) s.dataset.selMin0 = s.style.minWidth || ""; s.style.minWidth = s.dataset.selMin0; });
+  /* leitura: largura atual (escondida = 0: mede quando aparecer, no foco ou no clique) */
+  L.forEach(x => { x.atual = x.sel.getBoundingClientRect().width; });
+  const V = L.filter(x => x.atual);
   /* largura só com o item escolhido (o que o base-select faz sozinho) */
-  const w0 = sel.style.width, f0 = sel.style.flex; sel.style.width = "max-content"; sel.style.flex = "none";
-  const soItem = sel.getBoundingClientRect().width; sel.style.width = w0; sel.style.flex = f0;
-  sel.dataset.selAss = assin;
-  if (Math.abs(atual - soItem) >= 2) return;   /* largura definida pela tela (100%, fixa, flex): não mexe */
+  V.forEach(x => { const s = x.sel; x.w0 = s.style.width; x.f0 = s.style.flex; s.style.width = "max-content"; s.style.flex = "none"; });
+  V.forEach(x => { x.soItem = x.sel.getBoundingClientRect().width; });
+  V.forEach(x => { const s = x.sel; s.style.width = x.w0; s.style.flex = x.f0; s.dataset.selAss = x.assin; });
+  /* largura definida pela tela (100%, fixa, flex): não mexe */
+  const A = V.filter(x => Math.abs(x.atual - x.soItem) < 2);
+  if (!A.length) return;
   /* largura do maior item, como a lista antiga calculava */
-  sel.classList.add("sel-medir"); const maior = sel.getBoundingClientRect().width; sel.classList.remove("sel-medir");
-  if (maior > 0) sel.style.minWidth = Math.ceil(Math.max(maior, atual)) + "px";   /* vale mesmo quando o item escolhido já é o maior */
+  A.forEach(x => x.sel.classList.add("sel-medir"));
+  A.forEach(x => { x.maior = x.sel.getBoundingClientRect().width; });
+  A.forEach(x => x.sel.classList.remove("sel-medir"));
+  A.forEach(x => {
+    const mw = getComputedStyle(x.sel).maxWidth, teto = /px$/.test(mw) ? parseFloat(mw) : NaN;   /* respeita a largura máxima em px da tela (ex.: pílulas do SAC) */
+    const maior = isFinite(teto) && teto > 0 ? Math.min(x.maior, teto) : x.maior;
+    if (maior > 0) x.sel.style.minWidth = Math.ceil(Math.max(maior, x.atual)) + "px";   /* vale mesmo quando o item escolhido já é o maior */
+  });
 }
 if (SEL_MODERNO) {
   let fila = new Set(), agendado = false;
-  const roda = () => { agendado = false; const s = fila; fila = new Set(); s.forEach(x => { try { selAjustar(x); } catch (e) { /* medida é só cosmética */ } }); };
+  const roda = () => { agendado = false; const s = [...fila]; fila = new Set(); try { selAjustarLote(s); } catch (e) { s.forEach(x => { try { selAjustarLote([x]); } catch (e2) { /* medida é só cosmética */ } }); } };
   const agenda = () => { if (fila.size && !agendado) { agendado = true; requestAnimationFrame(roda); } };
   /* lista que estava escondida (aba, painel recolhido) é medida quando ganha tamanho; a que sai da página deixa de ser observada */
   const ro = new ResizeObserver(es => { es.forEach(e => { if (!e.target.isConnected) ro.unobserve(e.target); else if (e.contentRect.width > 0 && e.target.dataset.selAss === undefined) fila.add(e.target); }); agenda(); });
@@ -18301,6 +18380,199 @@ function erpChartTinta(ids) {
   const p0 = capPainelCharts; capPainelCharts = function () { const r = p0.apply(this, arguments); erpChartTinta(["capChartCat", "capChartEvo"]); return r; };
   const c0 = capChartCC; capChartCC = function () { const r = c0.apply(this, arguments); erpChartTinta(["capChartCC"]); return r; };
 })();
+
+/* ===================== v0.12.31 · Sugestões dos campos de texto no modelo do Fluxo de Caixa =====================
+   Campos com sugestões (<datalist>: Favorecido, Subcategoria, Centro de custo, Categoria do caixa, Cargo, Veículo/Motorista/
+   Frentista do Diesel, Responsável do SAC…) abriam a lista do próprio navegador, cinza e com cara de planilha — e nenhum
+   CSS alcança essa lista. No computador (mouse), o ERP passa a mostrar as sugestões no mesmo cartão das listas suspensas:
+   itens com respiro, destaque ao passar o mouse, o trecho digitado em negrito e a marca laranja no valor atual.
+   Como funciona: o atributo "list" sai do campo (fica guardado em data-erp-list), para o navegador não abrir a lista dele;
+   o cartão é montado a partir do mesmo <datalist>, filtrando pelo que se digita (sem diferenciar acento nem maiúscula).
+   Escolher um item preenche o campo e avisa a tela como o navegador avisaria (eventos input e change).
+   Teclado: ↓/↑ andam, Enter escolhe, Esc fecha (o segundo Esc volta a valer para a tela). Clique no campo abre a lista.
+   No celular e no tablet fica a lista do sistema, que conversa melhor com o teclado da tela. */
+const SUG_MODERNO = (() => { try { return matchMedia("(hover: hover) and (pointer: fine)").matches; } catch (e) { return false; } })();
+const SUG = { el: null, inp: null, itens: [], idx: -1, q: "", raf: 0, max: 150, chave: "", escolhendo: false };
+const SUG_TIPOS = /^(|text|search|tel|url|email)$/i;
+function sugNorm(s) { return String(s == null ? "" : s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
+function sugCampo(t) { return !!(t && t.tagName === "INPUT" && SUG_TIPOS.test(t.getAttribute("type") || "")); }
+/* tira o "list" do campo (o navegador deixa de abrir a lista dele) e guarda o id do datalist */
+function sugPrepara(inp) {
+  if (!sugCampo(inp) || !inp.hasAttribute("list")) return;
+  const id = inp.getAttribute("list"); inp.removeAttribute("list");
+  if (!id) return;
+  inp.dataset.erpList = id;
+  inp.setAttribute("autocomplete", "off");   /* sem o "list", o Chrome mostraria o histórico do campo no lugar */
+  inp.setAttribute("role", "combobox"); inp.setAttribute("aria-autocomplete", "list"); inp.setAttribute("aria-expanded", "false");
+}
+function sugOpcoes(inp) {
+  const dl = document.getElementById(inp.dataset.erpList || ""); if (!dl) return [];
+  const vistos = new Set(), out = [];
+  dl.querySelectorAll("option").forEach(o => {
+    if (o.disabled) return;
+    const v = o.value; if (!v || vistos.has(v)) return; vistos.add(v);
+    const l = (o.label || "").trim();
+    out.push({ v, l: l && l !== v ? l : "", nv: sugNorm(v), nl: l && l !== v ? sugNorm(l) : "" });
+  });
+  return out;
+}
+/* trecho digitado em negrito, sem diferenciar acento nem maiúscula */
+function sugMarca(txt, q) {
+  if (!q) return esc(txt);
+  const ch = [...txt]; let n = ""; const mapa = [];
+  ch.forEach((c, i) => { for (const x of sugNorm(c)) { n += x; mapa.push(i); } });
+  const p = n.indexOf(q); if (p < 0) return esc(txt);
+  const a = mapa[p], b = mapa[p + q.length - 1] + 1;
+  return esc(ch.slice(0, a).join("")) + "<mark>" + esc(ch.slice(a, b).join("")) + "</mark>" + esc(ch.slice(b).join(""));
+}
+function sugCaixa() {
+  if (SUG.el) return SUG.el;
+  const el = document.createElement("div");
+  el.id = "erpSug"; el.setAttribute("role", "listbox"); el.setAttribute("aria-label", "Sugestões"); el.tabIndex = -1;
+  if (typeof el.showPopover === "function") el.popover = "manual";   /* camada de cima: fica acima de janelas e painéis */
+  el.addEventListener("mousedown", e => e.preventDefault());          /* o campo não perde o foco ao clicar na lista */
+  el.addEventListener("click", e => { const it = e.target.closest(".erp-sug-it"); if (it) sugEscolhe(+it.dataset.i); });
+  el.addEventListener("mousemove", e => { const it = e.target.closest(".erp-sug-it"); if (it && +it.dataset.i !== SUG.idx) sugMarcaItem(+it.dataset.i, false); });
+  document.body.appendChild(el); SUG.el = el; return el;
+}
+function sugAberta() { return !!(SUG.inp && SUG.el && SUG.el.classList.contains("on")); }
+/* abre (ou atualiza) a lista do campo. modo "digita": só o que combina com o texto; modo "abre": se nada combina, mostra tudo */
+function sugAbre(inp, modo) {
+  if (!inp || !inp.isConnected || inp.disabled || inp.readOnly || !inp.dataset.erpList) { sugFecha(); return; }
+  const todos = sugOpcoes(inp); if (!todos.length) { sugFecha(); return; }
+  const q = sugNorm(inp.value).trim();
+  let lista = q ? todos.filter(o => o.nv.includes(q) || (o.nl && o.nl.includes(q))) : todos;
+  if (q && lista.length) { const ini = lista.filter(o => o.nv.startsWith(q)); lista = ini.concat(lista.filter(o => !o.nv.startsWith(q))); }
+  const soEle = lista.length === 1 && lista[0].v === inp.value;
+  let marca = q;
+  if (modo === "abre" && (!lista.length || soEle)) { lista = todos; marca = ""; }
+  else if (!lista.length || soEle) { sugFecha(); return; }   /* digitando: nada a sugerir */
+  const el = sugCaixa();
+  if (SUG.inp && SUG.inp !== inp) sugFecha();
+  SUG.inp = inp; SUG.itens = lista; SUG.idx = -1; SUG.q = marca;
+  const mostra = lista.slice(0, SUG.max);
+  el.innerHTML = mostra.map((o, i) => `<div class="erp-sug-it${o.v === inp.value ? " on" : ""}" role="option" id="erpSug${i}" data-i="${i}" aria-selected="false"><span class="t">${sugMarca(o.v, marca)}</span>${o.l ? `<span class="l">${sugMarca(o.l, marca)}</span>` : ""}</div>`).join("")
+    + (lista.length > mostra.length ? `<div class="erp-sug-mais">+${lista.length - mostra.length} — continue digitando para filtrar</div>` : "");
+  if (!el.classList.contains("on")) {
+    el.classList.add("on");
+    if (el.popover) { try { el.showPopover(); } catch (e) { /* já aberta */ } }
+  }
+  inp.setAttribute("aria-controls", "erpSug"); inp.setAttribute("aria-expanded", "true"); inp.removeAttribute("aria-activedescendant");
+  SUG.chave = ""; sugPosiciona(); if (!sugAberta()) return;
+  el.scrollTop = 0;
+  const atual = mostra.findIndex(o => o.v === inp.value); if (atual > 0) { const it = el.children[atual]; if (it) el.scrollTop = Math.max(0, it.offsetTop - el.clientHeight / 2); }
+  if (!SUG.raf) { const laco = () => { if (!sugAberta()) { SUG.raf = 0; return; } sugPosiciona(); SUG.raf = requestAnimationFrame(laco); }; SUG.raf = requestAnimationFrame(laco); }
+}
+function sugFecha() {
+  const el = SUG.el, inp = SUG.inp;
+  if (inp) { inp.setAttribute("aria-expanded", "false"); inp.removeAttribute("aria-activedescendant"); }
+  SUG.inp = null; SUG.itens = []; SUG.idx = -1;
+  if (el && el.classList.contains("on")) {
+    el.classList.remove("on");
+    if (el.popover) { try { el.hidePopover(); } catch (e) { /* já fechada */ } }
+    el.innerHTML = "";
+  }
+}
+/* acompanha o campo: abaixo dele (ou acima, se faltar espaço), da largura dele no mínimo; fecha se o campo sumir */
+function sugPosiciona() {
+  const el = SUG.el, inp = SUG.inp; if (!el || !inp) return;
+  if (!inp.isConnected || document.activeElement !== inp) { sugFecha(); return; }
+  const r = inp.getBoundingClientRect();
+  if (!r.width && !r.height) { sugFecha(); return; }
+  const vw = document.documentElement.clientWidth || innerWidth, vh = innerHeight, gap = 6, borda = 8;
+  const chave = [r.left, r.top, r.width, r.height, vw, vh, el.scrollHeight].map(Math.round).join(",");
+  if (chave === SUG.chave) return;   /* nada mudou desde o último quadro */
+  SUG.chave = chave;
+  el.style.minWidth = Math.max(Math.round(r.width), 200) + "px";
+  const abaixo = vh - r.bottom - gap - borda, acima = r.top - gap - borda;
+  const precisa = Math.min(el.scrollHeight, 320);
+  const emCima = abaixo < Math.min(precisa, 200) && acima > abaixo;
+  el.style.maxHeight = Math.max(110, Math.min(320, emCima ? acima : abaixo)) + "px";
+  const w = el.offsetWidth;
+  el.style.left = Math.max(borda, Math.min(r.left, vw - w - borda)) + "px";
+  if (emCima) { el.style.top = "auto"; el.style.bottom = Math.round(vh - r.top + gap) + "px"; }
+  else { el.style.bottom = "auto"; el.style.top = Math.round(r.bottom + gap) + "px"; }
+}
+function sugMarcaItem(i, rola) {
+  const el = SUG.el; if (!el) return;
+  const n = Math.min(SUG.itens.length, SUG.max); if (!n) return;
+  if (i < 0) i = n - 1; if (i >= n) i = 0;
+  const ant = el.querySelector(".erp-sug-it.at"); if (ant) { ant.classList.remove("at"); ant.setAttribute("aria-selected", "false"); }
+  SUG.idx = i;
+  const it = el.children[i]; if (!it) return;
+  it.classList.add("at"); it.setAttribute("aria-selected", "true");   /* item em destaque (o que o Enter escolhe) */
+  if (SUG.inp) SUG.inp.setAttribute("aria-activedescendant", it.id);
+  if (rola) { const t = it.offsetTop, b = t + it.offsetHeight; if (t < el.scrollTop) el.scrollTop = t - 6; else if (b > el.scrollTop + el.clientHeight) el.scrollTop = b - el.clientHeight + 6; }
+}
+/* escolher: preenche o campo e avisa a tela como o navegador faria ao escolher uma sugestão */
+function sugEscolhe(i) {
+  const o = SUG.itens[i], inp = SUG.inp; if (!o || !inp) return;
+  sugFecha();
+  if (inp.value === o.v) return;
+  inp.value = o.v;
+  try { const n = inp.value.length; inp.setSelectionRange(n, n); } catch (e) { /* tipos sem cursor */ }
+  inp.__sugUlt = o.v;       /* o navegador mandaria outro "change" ao sair do campo (ele não sabe deste); ver abaixo */
+  SUG.escolhendo = true;   /* o "input" abaixo é nosso: não reabre a lista */
+  try { inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); }
+  finally { SUG.escolhendo = false; }
+}
+if (SUG_MODERNO) {
+  /* campos novos já entram sem o "list" (o navegador nem chega a mostrar a setinha dele) */
+  const varre = n => { if (!n || n.nodeType !== 1) return; if (n.tagName === "INPUT") sugPrepara(n); else if (n.querySelectorAll) n.querySelectorAll("input[list]").forEach(sugPrepara); };
+  new MutationObserver(ms => ms.forEach(m => { if (m.type === "attributes") sugPrepara(m.target); else m.addedNodes.forEach(varre); }))
+    .observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["list"] });
+  varre(document.body);
+  document.addEventListener("focusin", e => { const t = e.target; if (sugCampo(t) && t.hasAttribute("list")) sugPrepara(t); }, true);
+  document.addEventListener("focusout", e => { if (e.target === SUG.inp) sugFecha(); }, true);
+  document.addEventListener("input", e => { const t = e.target; if (SUG.escolhendo || !sugCampo(t) || !t.dataset.erpList || e.isComposing) return; sugAbre(t, "digita"); }, true);
+  /* acento digitado por tecla morta (´ + a) ou IME: o Chrome termina a composição sem mandar outro "input" — atualiza aqui */
+  document.addEventListener("compositionend", e => { const t = e.target; if (!sugCampo(t) || !t.dataset.erpList || document.activeElement !== t) return; setTimeout(() => { if (document.activeElement === t) sugAbre(t, "digita"); }, 0); }, true);
+  document.addEventListener("click", e => {
+    const t = e.target;
+    if (sugCampo(t) && t.dataset.erpList) { if (sugAberta() && SUG.inp === t) sugFecha(); else sugAbre(t, "abre"); return; }
+    if (sugAberta() && !(SUG.el && SUG.el.contains(t))) sugFecha();
+  }, true);
+  /* lista aberta: as teclas de navegação são dela (passam antes das telas, que usam Enter/Esc para gravar e fechar janelas) */
+  window.addEventListener("keydown", e => {
+    if (!sugAberta() || e.target !== SUG.inp || e.isComposing) return;
+    const n = Math.min(SUG.itens.length, SUG.max);
+    const usa = () => { e.preventDefault(); e.stopPropagation(); };
+    if (e.key === "ArrowDown" && !e.altKey) { usa(); sugMarcaItem(SUG.idx + 1, true); }
+    else if (e.key === "ArrowUp" && !e.altKey) { usa(); sugMarcaItem(SUG.idx < 0 ? n - 1 : SUG.idx - 1, true); }
+    else if (e.key === "PageDown") { usa(); sugMarcaItem(Math.min(n - 1, Math.max(0, SUG.idx) + 8), true); }
+    else if (e.key === "PageUp") { usa(); sugMarcaItem(Math.max(0, SUG.idx - 8), true); }
+    else if (e.key === "Enter" && SUG.idx >= 0 && !e.ctrlKey && !e.metaKey) { usa(); sugEscolhe(SUG.idx); }
+    else if (e.key === "Escape") { usa(); sugFecha(); }
+    else if (e.key === "Tab" || (e.key === "ArrowUp" && e.altKey)) sugFecha();
+  }, true);
+  /* lista fechada: ↓ (ou Alt+↓) abre, se a tela não usar a tecla para outra coisa */
+  document.addEventListener("keydown", e => {
+    const t = e.target;
+    if (e.defaultPrevented || sugAberta() || !sugCampo(t) || !t.dataset.erpList || e.key !== "ArrowDown" || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    e.preventDefault(); sugAbre(t, "abre"); if (sugAberta()) sugMarcaItem(Math.max(0, SUG.itens.findIndex(o => o.v === t.value)), true);
+  });
+  /* o "change" que o navegador manda ao sair do campo, com o mesmo valor que já avisamos ao escolher, é repetido: some */
+  window.addEventListener("change", e => {
+    const t = e.target; if (!e.isTrusted || !t || t.__sugUlt === undefined) return;
+    const ult = t.__sugUlt; delete t.__sugUlt;
+    if (t.value === ult) e.stopImmediatePropagation();
+  }, true);
+  window.addEventListener("hashchange", sugFecha);
+  window.addEventListener("resize", () => { if (sugAberta()) sugPosiciona(); });
+}
+
+/* ===================== v0.12.31 · teclas dentro de uma lista suspensa aberta =====================
+   Com o desenho novo (base-select), a lista aberta põe o foco no item, e as teclas passavam a chegar às telas — coisa que a
+   lista do sistema nunca deixava. Efeitos: no SAC, ↓ + Enter na pílula gravava o valor antigo; na Escala Agência, as setas
+   moviam o dia do calendário por trás da folha e o Esc fechava a folha inteira; nas janelas do ERP, o Esc fechava a janela;
+   e uma letra digitada para achar o item disparava atalhos da página (o "n" abria "Nova conta"). Agora a tecla fica com a
+   lista: o navegador continua a fazer o trabalho dela (andar, escolher, fechar), mas as telas não a recebem. */
+window.addEventListener("keydown", e => {
+  const t = e.target; if (!t || (t.tagName !== "OPTION" && t.tagName !== "SELECT")) return;
+  if ((e.ctrlKey || e.metaKey) && (e.key === "Enter" || String(e.key).toLowerCase() === "s")) return;   /* Ctrl+Enter (salvar a janela) e Ctrl+S (Escala) continuam valendo */
+  let aberta = false; try { const s = t.tagName === "SELECT" ? t : t.closest("select"); aberta = !!(s && s.matches(":open")); } catch (x) { /* navegador sem :open: lista do sistema */ }
+  if (aberta) e.stopPropagation();
+}, true);
 
 /* v0.12.21: aliases para inspeção pelo console (DevTools) e testes — não altera comportamento */
 try { window.session = session; window.MODULES = MODULES; window.canSee = canSee; } catch (e) {}

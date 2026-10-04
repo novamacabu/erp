@@ -2772,6 +2772,13 @@ main:has(.tiles)::after{content:"";position:absolute;inset:0;pointer-events:none
 @media (max-width:400px){.topbar{padding:0 8px !important;gap:6px !important}.hamb{width:36px;height:36px}.nm-simb{width:28px;height:28px}.topbar .marca,.nm-pal{gap:4px}.nm-nova{width:45.1px;height:12px}.nm-macabu{width:67.8px;height:12px}}
 @media (max-width:379px){.nm-macabu{display:none}}   /* tela muito estreita: só o símbolo e NOVA */
 
+/* v0.12.42 · município nas listas de lançamento e importação de funcionários */
+.lanc-mun-chips{margin:-12px 0 14px}.chip .n{opacity:.75;font-weight:600;margin-left:3px}
+.lanc-mun-tot{margin:0 0 18px;font-size:13.5px}.lanc-mun-tot>summary{cursor:pointer;font-weight:700;color:var(--ink-2);padding:6px 0}.lanc-mun-tot .table-wrap{margin-top:6px}
+.lanc-mun-tab tr.on td{font-weight:800;background:var(--surface)}.lanc-mun-tab tbody tr:last-child td{border-top:2px solid var(--line);font-weight:800}
+.rhf-imp .hint{margin:0 0 10px}.rhf-chk{display:flex;gap:8px;align-items:center;margin:10px 0;font-size:13.5px;cursor:pointer}.rhf-res{margin:10px 0}
+.rhf-aviso{background:#FFF4E5;border:1px solid #F0C48A;border-left:4px solid var(--orange,#CF5E21);padding:10px 14px;margin:0 0 16px;font-size:13.5px;border-radius:var(--geo-r,2px)}
+.rhf-tab{max-height:38vh;overflow:auto}.rhf-tab table td,.rhf-tab table th{font-size:12.5px;white-space:nowrap}.rhf-tab table td .sup{white-space:normal;max-width:260px}.rhf-tab tr.rhf-ex td{color:var(--ink-2)}
 </style>
 </head>
 <body>
@@ -2832,7 +2839,7 @@ main:has(.tiles)::after{content:"";position:absolute;inset:0;pointer-events:none
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.41<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.42<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -2869,7 +2876,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.41",
+  version: "v0.12.42",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -4723,8 +4730,8 @@ window.erpChartButtons=(rootSel)=>{
 /* ---- v0.11.3 · bibliotecas pesadas carregadas só quando usadas ---- */
 const ERP_LIBS={ xlsx:{url:"https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",global:"XLSX"}, exceljs:{url:"https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js",global:"ExcelJS"} };
 const ERP_LIB_P={};
-window.erpLib=(name)=>{ const L=ERP_LIBS[name]; if(!L) return Promise.reject(new Error("lib desconhecida: "+name)); if(window[L.global]) return Promise.resolve(window[L.global]);
-  if(!ERP_LIB_P[name]){ toast("Carregando exportação…",1500); ERP_LIB_P[name]=new Promise((res,rej)=>{ const sc=document.createElement("script"); sc.src=L.url; sc.onload=()=>res(window[L.global]); sc.onerror=()=>{ delete ERP_LIB_P[name]; rej(new Error("Não foi possível carregar "+name)); }; document.head.appendChild(sc); }); }
+window.erpLib=(name,msg)=>{ const L=ERP_LIBS[name]; if(!L) return Promise.reject(new Error("lib desconhecida: "+name)); if(window[L.global]) return Promise.resolve(window[L.global]);
+  if(!ERP_LIB_P[name]){ toast(msg||"Carregando exportação…",1500); ERP_LIB_P[name]=new Promise((res,rej)=>{ const sc=document.createElement("script"); sc.src=L.url; sc.onload=()=>res(window[L.global]); sc.onerror=()=>{ delete ERP_LIB_P[name]; rej(new Error("Não foi possível carregar "+name)); }; document.head.appendChild(sc); }); }
   return ERP_LIB_P[name]; };
 
 
@@ -18104,6 +18111,12 @@ function lancPaint(k) {
 window.lancFiltro = (k, s) => { LANC[k].state.filtroStatus = LANC[k].state.filtroStatus === s ? "" : s; lancPaint(k); };
 window.lancRascDescartar = async (k, id) => { if (!(await erpConfirmar({ titulo: "Descartar rascunho", texto: "O rascunho guardado neste navegador será apagado. Continuar?", sim: "Descartar", perigo: true }))) return; lancRascGravar(k, id === "novo" ? null : id, null); lancPaint(k); };
 
+/* v0.12.42: rascunho guardado antes de uma coluna nova (ex.: Município) não pode acusar "o registro mudou" só por causa dela */
+function lancRascMesmaBase(baseStr, base) {
+  try { const b = JSON.parse(baseStr); if (!b || !b.cab || !base || !base.cab) return false;
+    const cab = Object.assign({}, base.cab); Object.keys(cab).forEach(k => { if (!(k in b.cab) && (cab[k] === "" || cab[k] == null)) delete cab[k]; });
+    return JSON.stringify(Object.assign({}, b, { cab: b.cab })) === JSON.stringify(Object.assign({}, base, { cab })); } catch (e) { return false; }
+}
 /* ---- editor de página inteira ---- */
 window.lancAbrir = async (k, id) => {
   const d = LANC[k], st = d.state;
@@ -18112,7 +18125,7 @@ window.lancAbrir = async (k, id) => {
   if (!x && !podeEditar(d.mod)) { toast("Seu acesso a este módulo é só de leitura."); return; }
   let rasc = lancRascTodos(k)[x ? String(x._id) : "novo"];
   const base = x ? d.ler(x) : d.novo();
-  if (rasc && x && lancPodeEditarReg(d, x) && rasc.base && rasc.base !== JSON.stringify(base)) {
+  if (rasc && x && lancPodeEditarReg(d, x) && rasc.base && rasc.base !== JSON.stringify(base) && !lancRascMesmaBase(rasc.base, base)) {
     const usar = await erpConfirmar({ titulo: "O registro mudou depois do seu rascunho", html: `<p>Alguém salvou este ${esc(d.unidade)} depois que você guardou o rascunho (${esc(rasc.em || "")}). Usar o rascunho <b>substitui</b> o que foi salvo; descartar abre a versão atual.</p>`, sim: "Usar meu rascunho", nao: "Descartar e abrir a versão atual", perigo: true });
     if (usar === null) return;   /* fechou a janela sem escolher: não abre e o rascunho continua guardado */
     if (!usar) { lancRascGravar(k, String(x._id), null); rasc = null; }
@@ -19185,6 +19198,363 @@ if (CAL_MODERNO) {
   }, true);
   window.addEventListener("hashchange", calFecha);
   window.addEventListener("resize", () => { if (calAberto()) { CAL.chave = ""; calPosiciona(); } });
+}
+
+/* =====================================================================
+   v0.12.42 · (1) Município no Movimento de Caixa e nas Vendas da Agência: escolhido em cada lançamento, com filtro
+   e totais por município na lista; a lista de municípios fica nas Opções (ERP — Parâmetros, chave "agencia").
+   (2) RH › Funcionários: todas as colunas da planilha do RH (CPF, nascimento, departamento, setor, função, admissão,
+   demissão, PIS, telefone, celular, CNPJ) e o botão "Importar planilha" (.xlsx/.csv), com prévia e sem duplicar.
+   ===================================================================== */
+/* ---------- (1) Município ---------- */
+const LANC_MUN_PADRAO = ["Macaé", "Conceição de Macabu"];
+/* valor gravado → nome limpo ("—", "-" e espaços contam como vazio) */
+const lancMunVal = v => { const s = String(v == null ? "" : v).replace(/\s+/g, " ").trim(); return /^[-—–]*$/.test(s) ? "" : s; };
+function lancMunicipios() {
+  const p = LANC_AUX.params && Array.isArray(LANC_AUX.params.municipios) ? LANC_AUX.params.municipios.map(lancMunVal).filter(Boolean) : [];
+  const hist = []; Object.values(LANC).forEach(dd => { if (dd.municipio) (dd.state.itens || []).forEach(x => { const m = lancMunVal(x.Municipio); if (m) hist.push(m); }); });
+  return [...new Set((p.length ? p : LANC_MUN_PADRAO).concat(hist))];
+}
+LISTS.ag_mov.columns.push({ name: "Municipio", displayName: "Município", text: { allowMultipleLines: false, maxLength: 60 } });
+LISTS.ag_vendas.columns.push({ name: "Municipio", displayName: "Município", text: { allowMultipleLines: false, maxLength: 60 } });
+/* campo no editor (depois da agência / sub-agência), leitura e gravação */
+["agmov", "agven"].forEach(k => {
+  const d = LANC[k]; d.municipio = true;
+  const pos = d.cab.findIndex(f => f.k === "SubAgencia" || f.k === "Agencia") + 1;
+  d.cab.splice(pos, 0, { k: "Municipio", lbl: "Município", tipo: "select", opts: () => lancMunicipios(), req: true, dica: () => lancMunDica(k) });
+  const novo0 = d.novo.bind(d), ler0 = d.ler.bind(d), gravar0 = d.gravar.bind(d), validar0 = d.validar.bind(d), resumo0 = d.resumo;
+  d.novo = function () { const n = novo0(); n.cab.Municipio = ""; return n; };
+  d.ler = function (x) { const n = ler0(x); n.cab.Municipio = lancMunVal(x.Municipio); return n; };
+  d.gravar = function (cab, linhas, obs) { const f = gravar0(cab, linhas, obs); f.Municipio = lancMunVal(cab.Municipio) || null; return f; };
+  d.validar = function (cab, linhas, ctx) { const e = validar0(cab, linhas, ctx); if (e) return e;
+    /* obrigatório no lançamento novo e em quem já tinha município; registros antigos sem município continuam editáveis */
+    if (!lancMunVal(cab.Municipio) && (!ctx || ctx.novo || (ctx.base && ctx.base.cab && lancMunVal(ctx.base.cab.Municipio)))) return "Escolha o município."; return ""; };
+  d.resumo = cab => resumo0(cab) + (lancMunVal(cab.Municipio) ? " · " + lancMunVal(cab.Municipio) : "");
+  const col = { th: "Município", td: x => esc(lancMunVal(x.Municipio) || "—") };
+  const ci = d.colunas.findIndex(c => c.th === "Sub-agência" || c.th === "Agência") + 1;
+  d.colunas.splice(ci, 0, col);
+});
+function lancMunDica(k) {
+  const st = LANC[k].state;
+  return st._cols && !st._cols.has("Municipio") ? "A coluna Município ainda não existe na lista: peça a um administrador para rodar Sistema › Configuração › \"Executar tudo na ordem\". Até lá o município não é gravado." : "";
+}
+/* a dica depende das colunas da lista, que chegam depois do editor pintado */
+{ const a0 = window.lancAbrir;
+  window.lancAbrir = async (k, id) => { await a0(k, id); const d = LANC[k]; if (!d.municipio || !LANC_ED || LANC_ED.k !== k) return; await lancCols(d);
+    const el = $("lc_Municipio"); if (!el || !LANC_ED || LANC_ED.k !== k) return; const t = lancMunDica(k), h = el.closest(".lanc-f").querySelector(".hint"); if (!t) return; if (h) h.textContent = t; else el.insertAdjacentHTML("afterend", `<div class="hint">${esc(t)}</div>`); }; }
+/* lista sem a coluna (Configuração ainda não rodou): o campo não vai no POST */
+{ const f0 = lancFiltrarCampos; lancFiltrarCampos = function (d, f) { if (!d.state._cols) delete f.Municipio; return f0(d, f); }; }
+/* Opções: lista de municípios */
+{ const o0 = window.lancOpcoesForm;
+  window.lancOpcoesForm = () => {
+    o0();
+    const tur = $("lancOpTur"); if (!tur) return;
+    tur.closest(".field").insertAdjacentHTML("afterend", `<div class="field full"><label>Municípios (um por linha)</label><textarea id="lancOpMun" rows="3">${esc(lancMunicipios().join("\n"))}</textarea><div class="hint">Escolhido em cada movimento de caixa e fechamento de vendas. Padrão: ${esc(LANC_MUN_PADRAO.join(" e "))}.</div></div>`);
+    /* a gravação original lê só subs/turnos: acrescenta os municípios antes de salvar */
+    const btn = $("mSave"), on0 = btn.onclick;
+    btn.onclick = async () => { const lim = t => [...new Set(String(t || "").split(/\n+/).map(x => lancMunVal(x).slice(0, 60)).filter(Boolean))].slice(0, 20);
+      const mun = lim($("lancOpMun").value); if (!mun.length) { toast("Informe pelo menos um município."); return; }
+      LANC_AUX._munPend = mun; LANC_AUX._munOk = false; try { await on0(); if (LANC_AUX._munOk && LANC_AUX.params && Array.isArray(LANC_AUX.params.subs)) LANC_AUX.params.municipios = mun; } finally { LANC_AUX._munPend = null; LANC_AUX._munOk = false; } };
+  };
+  /* SP.create/update da chave "agencia" leva os municípios junto */
+  const c0 = SP.create, u0 = SP.update;
+  const inj = (fields) => { if (LANC_AUX._munPend && fields && typeof fields.Valor === "string" && fields.Title === "agencia") { try { const v = JSON.parse(fields.Valor); v.municipios = LANC_AUX._munPend; fields.Valor = JSON.stringify(v); } catch (e) {} }
+    else if (LANC_AUX._munPend && fields && typeof fields.Valor === "string" && !fields.Title) { try { const v = JSON.parse(fields.Valor); if (v && Array.isArray(v.subs)) { v.municipios = LANC_AUX._munPend; fields.Valor = JSON.stringify(v); } } catch (e) {} } return fields; };
+  const okMun = p => { if (!LANC_AUX._munPend) return p; return p.then(r => { LANC_AUX._munOk = true; return r; }); };   /* só vale depois que o SharePoint confirmou */
+  SP.create = (siteId, listId, fields) => okMun(c0(siteId, listId, inj(fields)));
+  SP.update = (siteId, listId, itemId, fields) => okMun(u0(siteId, listId, itemId, inj(fields)));
+}
+/* filtro e totais por município na lista */
+{ const p0 = lancPaint;
+  lancPaint = function (k) {
+    p0(k);
+    const d = LANC[k], st = d.state, body = $(d.bodyId);
+    if (!d.municipio || !body || (LANC_ED && LANC_ED.k === k) || !st.ready) return;
+    const kp = body.querySelector(".cap-kpis"); if (!kp) return;
+    /* mesma ordem da tabela pintada por lancPaint (data desc, id desc), para casar linha ↔ registro */
+    const its = st.itens.slice().sort((a, b) => String(b.Data || "").localeCompare(String(a.Data || "")) || Number(b._id) - Number(a._id)).filter(x => !st.filtroStatus || x.Status === st.filtroStatus);
+    const mv = x => lancMunVal(x.Municipio);
+    const muns = [...new Set(lancMunicipios().concat(its.map(mv).filter(Boolean)))];
+    const semMun = its.filter(x => !mv(x)).length;
+    const fm = st.filtroMun || "";
+    const chip = (v, rot, n) => `<button type="button" class="chip ${fm === v ? "on" : ""}" onclick="lancFiltroMun('${k}', ${jsArg(v)})">${esc(rot)}${n != null ? ` <span class="n">${n}</span>` : ""}</button>`;
+    const chips = `<div class="chips lanc-mun-chips" aria-label="Município"><span class="lbl">Município</span>${chip("", "Todos", its.length)}${muns.map(m => chip(m, m, its.filter(x => mv(x) === m).length)).join("")}${semMun ? chip("—", "Sem município", semMun) : ""}</div>`;
+    const soma = arr => d.k === "agmov"
+      ? { a: arr.reduce((s, x) => s + Number(x.TotalEntradas || 0), 0), b: arr.reduce((s, x) => s + Number(x.TotalSaidas || 0), 0) }
+      : { a: arr.reduce((s, x) => s + Number(x.TotalPassagens || 0), 0), b: arr.reduce((s, x) => s + Number(x.TotalValor || 0), 0) };
+    const cab = d.k === "agmov" ? ["Entradas", "Saídas", "Saldo (E − S)"] : ["Passagens", "Total vendido", "Média por passagem"];
+    const linha = (rot, arr, on) => { const t = soma(arr); const c = d.k === "agmov" ? [fmtBRL(t.a), fmtBRL(t.b), fmtBRL(t.a - t.b)] : [t.a.toLocaleString("pt-BR"), fmtBRL(t.b), fmtBRL(t.a ? t.b / t.a : 0)];
+      return `<tr class="${on ? "on" : ""}"><td>${esc(rot)}</td><td class="right">${arr.length}</td>${c.map(v => `<td class="right">${esc(v)}</td>`).join("")}</tr>`; };
+    const tot = `<details class="lanc-mun-tot" ${fm ? "open" : ""}><summary>Totais por município${st.filtroStatus ? ` · ${esc(st.filtroStatus.toLowerCase() + "s")}` : ""}</summary><div class="table-wrap"><table class="cap-table lanc-mun-tab"><thead><tr><th>Município</th><th class="right">${esc(d.unidadePl[0].toUpperCase() + d.unidadePl.slice(1))}</th>${cab.map(c => `<th class="right">${esc(c)}</th>`).join("")}</tr></thead><tbody>${muns.map(m => linha(m, its.filter(x => mv(x) === m), fm === m)).join("")}${semMun ? linha("Sem município", its.filter(x => !mv(x)), fm === "—") : ""}${linha("Total", its, false)}</tbody></table></div></details>`;
+    kp.insertAdjacentHTML("afterend", chips + tot);
+    if (fm) {
+      const tab = body.querySelector("table.lanc-lista"); const bate = x => fm === "—" ? !mv(x) : mv(x) === fm; const vis = its.filter(bate);
+      if (tab) { const rows = [...tab.querySelectorAll("tbody tr")];
+        if (rows.length === its.length) rows.forEach((tr, i) => { tr.style.display = bate(its[i]) ? "" : "none"; });
+        tab.closest(".table-wrap").insertAdjacentHTML("afterend", `<p class="cap-dica lanc-mun-info">Mostrando ${vis.length} de ${its.length} ${esc(d.unidadePl)} · <button type="button" class="btn mini ghost" onclick="lancFiltroMun('${k}', '')">Mostrar todos</button></p>`);
+        if (!vis.length) tab.closest(".table-wrap").insertAdjacentHTML("afterend", `<div class="cap-empty"><h3>Nenhum ${esc(d.unidade)} ${fm === "—" ? "sem município" : "em " + esc(fm)}${st.filtroStatus ? " com este status" : ""}</h3></div>`); }
+    }
+  };
+  window.lancFiltroMun = (k, v) => { const st = LANC[k].state; st.filtroMun = st.filtroMun === v ? "" : v; lancPaint(k); };
+  const r0 = MOD_RESET.ag_mov, r1 = MOD_RESET.ag_ven;
+  MOD_RESET.ag_mov = () => { if (r0) r0(); AG_MOV_STATE.filtroMun = ""; };
+  MOD_RESET.ag_ven = () => { if (r1) r1(); if (typeof AG_VEN_STATE !== "undefined") AG_VEN_STATE.filtroMun = ""; };
+}
+
+/* ---------- (2) RH › Funcionários: colunas da planilha e importação ---------- */
+LISTS.rh_func.columns.push(
+  { name: "CPF",            displayName: "CPF",                text: { allowMultipleLines: false, maxLength: 14 } },
+  { name: "DataNascimento", displayName: "Data de nascimento", dateTime: dateOnly },
+  { name: "Departamento",   displayName: "Departamento",       text: { allowMultipleLines: false, maxLength: 60 } },
+  { name: "DataDemissao",   displayName: "Data de demissão",   dateTime: dateOnly },
+  { name: "PIS",            displayName: "PIS",                text: { allowMultipleLines: false, maxLength: 20 } },
+  { name: "Telefone",       displayName: "Telefone",           text: { allowMultipleLines: false, maxLength: 20 } },
+  { name: "CNPJ",           displayName: "CNPJ (empresa)",     text: { allowMultipleLines: false, maxLength: 20 } }
+);
+{ const c = LISTS.rh_func.columns.find(x => x.name === "Setor"); if (c && c.choice) { c.choice = choice(c.choice.choices.concat(["Oficina", "Guichê", "Garagem", "Tráfego", "Escritório", "Almoxarifado"].filter(x => !c.choice.choices.includes(x))), true); c.update = true; } }
+const RHF_DEPTOS = ["Operacional", "Administrativo", "Diretoria"];
+const RHF_SETORES = ["Oficina", "Guichê", "Garagem", "Tráfego", "Escritório", "Almoxarifado", "Administrativo", "Financeiro", "Operacional", "Manutenção", "Recursos Humanos", "Comercial / Agência", "Diretoria", "Jurídico", "TI"];
+const RHF_SIT = ["Ativo", "Férias", "Afastado", "Desligado"];
+const RHF_STATE = { q: "", sit: "ativos", dep: "", fun: "", cnpjs: null, deptos: null };
+const rhfDig = v => String(v == null ? "" : v).replace(/\D+/g, "");
+/* célula numérica do Excel perde o zero à esquerda: 9 ou 10 dígitos viram 11 */
+function rhfCpfDig(v) { let d = rhfDig(v); if ((typeof v === "number" || /^\d+$/.test(String(v || "").trim())) && d.length >= 9 && d.length < 11) d = d.padStart(11, "0"); return d; }
+function rhfCpfFmt(v) { const d = rhfCpfDig(v); if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`; return String(v || "").trim(); }
+function rhfCpfOk(v) { const d = rhfCpfDig(v); if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false; const calc = n => { let s = 0; for (let i = 0; i < n; i++) s += Number(d[i]) * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; }; return calc(9) === Number(d[9]) && calc(10) === Number(d[10]); }
+function rhfCnpjFmt(v) { const d = rhfDig(v); if (d.length === 14) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`; return String(v || "").trim(); }
+function rhfFone(v) { const d = rhfDig(v); if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`; if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`; return String(v || "").trim(); }
+/* "DD/MM/AAAA", "AAAA-MM-DD", número de série do Excel ou Date → AAAA-MM-DD */
+function rhfData(v) {
+  if (v == null || v === "") return "";
+  if (v instanceof Date) { if (isNaN(v)) return ""; const p = n => String(n).padStart(2, "0"); return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}`; }
+  const ok = (y, mo, d) => { const t = new Date(Date.UTC(y, mo - 1, d)); return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d && y >= 1900 && y <= 2100 ? `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}` : ""; };
+  if (typeof v === "number" && v >= 367 && v < 80000) { const d = new Date(Math.round((v - 25569) * 86400 * 1000)); return ok(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); }   /* número de série do Excel */
+  const s = String(v).trim().replace(/[ T]\d{1,2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/, "");   /* "15/03/2020 00:00:00" → só a data */
+  if (/^\d+(\.0+)?$/.test(s)) return rhfData(Number(s));   /* número de série que veio como texto (CSV) */
+  let m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+  if (m) { const aa = new Date().getFullYear() % 100; const y = m[3].length === 2 ? (Number(m[3]) > aa ? "19" : "20") + m[3] : m[3]; return ok(Number(y), Number(m[2]), Number(m[1])); }   /* "30" → 1930 enquanto o ano atual for 2026 */
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return ok(Number(m[1]), Number(m[2]), Number(m[3]));
+  return "";
+}
+/* "ASSISTENTE ADMINISTRATIVO" → "Assistente Administrativo" (siglas e preposições preservadas) */
+function rhfNomeCaso(s) {
+  s = String(s || "").trim().replace(/\s+/g, " "); if (!s || s !== s.toUpperCase() || !/[A-ZÀ-Ú]{3}/.test(s)) return s;
+  const peq = ["de", "da", "do", "das", "dos", "e", "em", "a", "o"], sig = ["TI", "RH", "DP", "SAC", "CLT", "II", "III", "IV"];
+  return s.toLowerCase().split(" ").map((w, i) => { const W = w.toUpperCase(); if (sig.includes(W)) return W; if (i && peq.includes(w)) return w; return w.replace(/(^|['\u2019-])(\p{L})/gu, (m, a, l) => a + l.toUpperCase()); }).join(" ");   /* D'ÁVILA → D'Ávila, SILVA-NETO → Silva-Neto */
+}
+const rhfNorm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+/* cabeçalhos da planilha → campos da lista */
+const RHF_MAPA = [
+  [/^(nome|nome completo|funcionario|colaborador)$/, "Title"], [/^cpf$/, "CPF"], [/^(data( de)? nascimento|nascimento|dt nascimento)$/, "DataNascimento"],
+  [/^(matricula|mat|registro)$/, "Matricula"], [/^(departamento|depto|dpto)$/, "Departamento"], [/^(setor|area)$/, "Setor"], [/^(funcao|cargo|funcao cargo|cargo funcao)$/, "Cargo"],
+  [/^(admissao|data( de)? admissao|dt admissao)$/, "Admissao"], [/^(demissao|data( de)? demissao|dt demissao|desligamento|data( de)? desligamento)$/, "DataDemissao"],
+  [/^(pis|pis pasep|nit)$/, "PIS"], [/^(tel|telefone|fone|tel fixo)$/, "Telefone"], [/^(cel|celular|whatsapp|contato|contato celular)$/, "Contato"],
+  [/^(cnpj|cnpj associado|cnpj da empresa|cnpj empresa|empresa cnpj)$/, "CNPJ"], [/^(e ?mail|email)$/, "Email"], [/^(situacao|status)$/, "Situacao"], [/^(obs|observacoes|observacao)$/, "Observacoes"]
+];
+const RHF_ROTULO = { Title: "Nome", CPF: "CPF", DataNascimento: "Nascimento", Matricula: "Matrícula", Departamento: "Departamento", Setor: "Setor", Cargo: "Função", Admissao: "Admissão", DataDemissao: "Demissão", PIS: "PIS", Telefone: "Telefone", Contato: "Celular", CNPJ: "CNPJ", Email: "E-mail", Situacao: "Situação", Observacoes: "Observações" };
+function rhfMapear(cabs) { return cabs.map(h => { const n = rhfNorm(h); const m = RHF_MAPA.find(([re]) => re.test(n)); return m ? m[1] : null; }); }
+/* uma linha da planilha → campos normalizados */
+function rhfLinha(cabs, mapa, row) {
+  const f = {};
+  mapa.forEach((k, i) => { if (!k) return; let v = row[i]; if (v == null) return; if (typeof v === "string") v = v.trim(); if (v === "") return; f[k] = v; });
+  if (f.Title) f.Title = rhfNomeCaso(f.Title);
+  if (f.CPF) f.CPF = rhfCpfFmt(f.CPF);
+  ["DataNascimento", "Admissao", "DataDemissao"].forEach(k => { if (f[k] != null) { const d = rhfData(f[k]); if (d) f[k] = d; else { f._avisos = (f._avisos || []).concat(`${RHF_ROTULO[k]} "${f[k]}" não entendida`); delete f[k]; } } });
+  if (f.Matricula != null) f.Matricula = String(f.Matricula).replace(/\.0$/, "");
+  if (f.PIS != null) { const d = rhfDig(f.PIS); f.PIS = (typeof f.PIS === "number" || /^\d+$/.test(String(f.PIS).trim())) && d.length >= 9 && d.length < 11 ? d.padStart(11, "0") : String(f.PIS).replace(/\.0$/, ""); }
+  if (f.Cargo) f.Cargo = rhfNomeCaso(f.Cargo);
+  if (f.Departamento) f.Departamento = rhfNomeCaso(f.Departamento);
+  if (f.Setor) { f.Setor = rhfNomeCaso(f.Setor); if (/^guiche$/i.test(rhfNorm(f.Setor))) f.Setor = "Guichê"; }
+  if (f.Telefone) f.Telefone = rhfFone(f.Telefone);
+  if (f.Contato) f.Contato = rhfFone(f.Contato);
+  if (f.CNPJ) { const d = rhfDig(f.CNPJ); if (d.length === 14) f.CNPJ = rhfCnpjFmt(d); else { f._avisos = (f._avisos || []).concat(`CNPJ "${f.CNPJ}" sem 14 dígitos: ignorado`); delete f.CNPJ; } }
+  if (f.Situacao) { const s = RHF_SIT.find(x => rhfNorm(x) === rhfNorm(f.Situacao)); if (s) f.Situacao = s; else delete f.Situacao; }
+  if (f.DataDemissao && !f.Situacao) f.Situacao = "Desligado";
+  if (f.CPF && !rhfCpfOk(f.CPF)) f._avisos = (f._avisos || []).concat("CPF com dígito inválido");
+  return f;
+}
+/* casa a linha com um registro já cadastrado: CPF, depois matrícula, depois nome */
+function rhfCasar(f, itens) {
+  const cpf = rhfCpfDig(f.CPF); if (cpf.length === 11) { const x = itens.find(i => rhfCpfDig(i.CPF) === cpf); if (x) return x; }
+  /* sem CPF igual: matrícula ou nome só valem quando os dois CPFs não discordam (homônimo com outro CPF é outra pessoa) */
+  const semConflito = i => { const c2 = rhfCpfDig(i.CPF); return !(cpf.length === 11 && c2.length === 11 && c2 !== cpf); };
+  if (f.Matricula) { const x = itens.find(i => i.Matricula && String(i.Matricula).trim() === String(f.Matricula).trim() && semConflito(i)); if (x) return x; }
+  if (f.Title) { const n = rhfNorm(f.Title); const x = itens.find(i => rhfNorm(i.Title) === n && semConflito(i)); if (x) return x; }
+  return null;
+}
+async function rhfLerArquivo(file) {
+  const XLSX = await erpLib("xlsx", "Carregando o leitor de planilhas…");
+  const buf = await file.arrayBuffer();
+  let wb;
+  if (/\.(csv|txt)$/i.test(file.name || "") || /csv|text\/plain/i.test(file.type || "")) {
+    /* CSV: UTF-8 (com ou sem BOM; Google Sheets, LibreOffice) e, se não for UTF-8 válido, Windows-1252 (Excel antigo) */
+    let txt; try { txt = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (e) { txt = new TextDecoder("windows-1252").decode(buf); }
+    wb = XLSX.read(txt.replace(/^\uFEFF/, ""), { type: "string", cellDates: true, raw: false });
+  } else wb = XLSX.read(buf, { type: "array", cellDates: true, raw: false });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: false });
+  const hi = aoa.findIndex(r => { if (!r) return false; const m = rhfMapear(r.map(v => v == null ? "" : String(v))); return m.includes("Title") && m.filter(Boolean).length >= 2; });
+  if (hi < 0) throw new Error("Não achei a linha de cabeçalho (precisa de pelo menos Nome e mais uma coluna conhecida: CPF, Matrícula, Função, Admissão…).");
+  const cabs = aoa[hi].map(v => v == null ? "" : String(v).trim()), mapa = rhfMapear(cabs);
+  const linhas = aoa.slice(hi + 1).filter(r => r && r.some(v => v != null && String(v).trim())).map(r => rhfLinha(cabs, mapa, r))
+    .filter(f => f.Title && !(Object.keys(f).filter(k => !k.startsWith("_")).length === 1 && /^(total|totais|subtotal|fim|observa)/i.test(f.Title)));   /* linha "TOTAL" no fim da planilha não é funcionário */
+  return { aba: wb.SheetNames[0], cabs, mapa, linhas, ignoradas: cabs.filter((c, i) => c && !mapa[i]) };
+}
+window.rhfImportar = () => {
+  if (typeof vcAtivo === "function" && vcAtivo()) { toast("Você está vendo o ERP como outra pessoa: nada é gravado. Saia da visualização para importar."); return; }
+  if (!podeEditar("rh_db")) { toast("Seu acesso ao Banco de Dados do RH é só de leitura."); return; }
+  if (!RHDB_STATE.ready) { toast("A lista \"RH — Funcionários\" ainda não existe. Rode a Configuração."); return; }
+  $("modal").className = "modal wide";
+  openModal("Importar planilha de funcionários", `<div class="rhf-imp">
+    <p class="hint">Aceita .xlsx, .xls ou .csv com uma linha de cabeçalho. Colunas reconhecidas: <b>Nome</b>, CPF, Data Nascimento, Matrícula, Departamento, Setor, Função (ou Cargo), Admissão, Data Demissão, PIS, Tel, Cel, CNPJ Associado, E-mail, Situação. Outras colunas são ignoradas. Quem tem data de demissão entra como <b>Desligado</b>.</p>
+    <div class="field"><label for="rhfArq">Arquivo</label><input type="file" id="rhfArq" accept=".xlsx,.xls,.csv"></div>
+    <label class="rhf-chk"><input type="checkbox" id="rhfAtualizar" checked> Atualizar quem já está cadastrado (mesmo CPF, matrícula ou nome) com os dados da planilha</label>
+    <div id="rhfPrev"><p class="sup">Escolha o arquivo para ver a prévia. Nada é gravado antes de você confirmar.</p></div>
+    <div class="err-msg" id="rhfErr" style="display:none"></div></div>`, async () => {
+    /* openModal volta o botão para "Salvar" quando a gravação devolve false: o rótulo certo entra logo depois */
+    const rot = t => setTimeout(() => { const b = $("mSave"); if (b) b.textContent = t; }, 0);
+    const P = RHF_STATE.prev; if (!P) { toast("Escolha o arquivo primeiro."); rot("Importar"); return false; }
+    if (RHF_STATE.importando) return false;   /* clique duplo */
+    const atualizar = $("rhfAtualizar").checked;
+    /* quem já foi gravado numa tentativa anterior (falha no meio) não entra de novo */
+    const novos = P.linhas.filter(l => !l._ex && !l._feito && !l._pular), upd = atualizar ? P.linhas.filter(l => l._ex && !l._feito && !l._pular) : [];
+    if (!novos.length && !upd.length) { toast("Nada para importar."); rot("Importar"); return false; }
+    const prog = $("rhfPrev"), btn = $("mSave"); let n = 0, erros = [];
+    const total = novos.length + upd.length;
+    const limpa = f => { const o = {}; Object.keys(f).forEach(k => { if (!k.startsWith("_")) o[k] = f[k]; }); return o; };
+    RHF_STATE.importando = true; btn.disabled = true; $("rhfArq").disabled = true; $("rhfErr").style.display = "none";
+    /* enquanto grava, a janela não fecha por Escape, clique fora ou X (como na Configuração) */
+    const back = $("modalBack"), xBtn = $("modal") && $("modal").querySelector(".modal-head .x"); back.onclick = null; document.removeEventListener("keydown", escClose); if (xBtn) xBtn.disabled = true;
+    try {
+      for (const l of novos.concat(upd)) {
+        prog.innerHTML = `<p><b>Importando ${n + 1} de ${total}…</b> ${esc(l.Title)}</p>`;
+        try {
+          if (l._ex) { const f = limpa(l); delete f.Title; /* o nome vale o do ERP; a planilha completa o resto */
+            if (!f.Situacao && l._ex.Situacao) delete f.Situacao;
+            await SP.update(RHDB_STATE.site.id, RHDB_STATE.list.id, l._ex._id, f); }
+          else { const f = limpa(l); if (!f.Situacao) f.Situacao = "Ativo"; await SP.create(RHDB_STATE.site.id, RHDB_STATE.list.id, f); }
+          l._feito = true;
+        } catch (e) { erros.push(`${l.Title}: ${e.message}`); }
+        n++;
+      }
+    } finally { RHF_STATE.importando = false; back.onclick = ev => { if (ev.target === back) closeModal(); }; document.addEventListener("keydown", escClose); if (xBtn) xBtn.disabled = false; }
+    LANC_AUX.funcs = null;
+    if (RHDB_STATE.subId === "funcs") await renderRhDbSub("funcs");
+    if (!$("rhfErr")) { toast(erros.length ? `${erros.length} funcionário(s) não importado(s): ${erros[0]}` : `${novos.length} cadastrado(s)${upd.length ? ` e ${upd.length} atualizado(s)` : ""}.`, 8000); return !erros.length; }   /* a janela foi fechada no meio */
+    if (erros.length) { btn.disabled = false; $("rhfArq").disabled = false; rot("Tentar de novo"); $("rhfErr").style.display = "block"; $("rhfErr").innerHTML = `<b>${erros.length} não importado(s):</b><br>${erros.map(esc).join("<br>")}`; prog.innerHTML = `<p>${total - erros.length} de ${total} gravado(s). "Tentar de novo" grava só quem faltou.</p>`; return false; }
+    toast(`${novos.length} cadastrado(s)${upd.length ? ` e ${upd.length} atualizado(s)` : ""}.`); return true;
+  });
+  $("mSave").textContent = "Importar"; $("mSave").disabled = true; RHF_STATE.prev = null;
+  $("rhfArq").addEventListener("change", async ev => {
+    const file = ev.target.files && ev.target.files[0]; if (!file) return;
+    const prev = $("rhfPrev"); prev.innerHTML = `<p class="sup">Lendo ${esc(file.name)}…</p>`; $("rhfErr").style.display = "none"; $("mSave").disabled = true; RHF_STATE.prev = null;
+    try {
+      const P = await rhfLerArquivo(file);
+      P.linhas.forEach(l => { l._ex = rhfCasar(l, RHDB_STATE.itens); });
+      /* CPF repetido dentro da própria planilha */
+      const vistos = new Map(), nomes = new Map(); P.linhas.forEach(l => { const c = rhfCpfDig(l.CPF); if (c.length === 11) { if (vistos.has(c)) { l._pular = true; l._avisos = (l._avisos || []).concat(`CPF repetido na planilha (mesmo de ${vistos.get(c)}): esta linha não será importada`); return; } vistos.set(c, l.Title); }
+        const n = rhfNorm(l.Title); if (nomes.has(n) && !(c.length === 11 && rhfCpfDig(nomes.get(n).CPF).length === 11 && rhfCpfDig(nomes.get(n).CPF) !== c)) l._avisos = (l._avisos || []).concat("nome repetido na planilha: os dois serão cadastrados"); else if (!nomes.has(n)) nomes.set(n, l); });
+      RHF_STATE.prev = P;
+      const novos = P.linhas.filter(l => !l._ex && !l._pular).length, pul = P.linhas.filter(l => l._pular).length, ex = P.linhas.length - novos - pul, avisos = P.linhas.filter(l => l._avisos && l._avisos.length).length;
+      const cols = ["Title", "CPF", "Matricula", "Departamento", "Setor", "Cargo", "Admissao", "DataDemissao", "CNPJ"].filter(k => P.mapa.includes(k));
+      prev.innerHTML = `<div class="rhf-res"><b>${P.linhas.length}</b> linha(s) na aba "${esc(P.aba)}": <b>${novos}</b> nova(s) e <b>${ex}</b> já cadastrada(s)${pul ? ` · <b>${pul}</b> ignorada(s)` : ""}${avisos ? ` · <span class="venc-txt">${avisos} com aviso</span>` : ""}.
+        ${P.ignoradas.length ? `<div class="sup">Colunas ignoradas: ${esc(P.ignoradas.join(", "))}</div>` : ""}
+        <div class="sup">Colunas lidas: ${P.mapa.filter(Boolean).map(k => esc(RHF_ROTULO[k] || k)).join(", ")}</div></div>
+        <div class="table-wrap rhf-tab"><table class="cap-table"><thead><tr><th></th>${cols.map(k => `<th>${esc(RHF_ROTULO[k])}</th>`).join("")}<th>Situação</th></tr></thead><tbody>
+        ${P.linhas.map(l => `<tr class="${l._ex || l._pular ? "rhf-ex" : ""}"><td class="nw">${l._pular ? `<span class="pill st-vencido"><i></i>ignorada</span>` : l._ex ? `<span class="pill st-aguardando"><i></i>atualiza</span>` : `<span class="pill st-pago"><i></i>novo</span>`}</td>${cols.map(k => `<td>${esc(/^(Admissao|DataDemissao|DataNascimento)$/.test(k) && l[k] ? fmtDate(l[k]) : (l[k] == null ? "" : String(l[k])))}</td>`).join("")}<td>${esc(l.Situacao || (l._ex ? l._ex.Situacao || "Ativo" : "Ativo"))}${l._avisos && l._avisos.length ? `<div class="venc-txt sup">${esc(l._avisos.join(" · "))}</div>` : ""}</td></tr>`).join("")}</tbody></table></div>`;
+      $("mSave").disabled = false;
+    } catch (e) { prev.innerHTML = ""; $("rhfErr").style.display = "block"; $("rhfErr").textContent = e.message; }
+  });
+};
+/* lista de Funcionários: busca, filtros, cartões e colunas novas */
+RHDB_COLS.funcs = [["Title", "Nome"], ["Matricula", "Matrícula"], ["Cargo", "Função"], ["Departamento", "Departamento"], ["Setor", "Setor"], ["Admissao", "Admissão", v => v ? fmtDate(v) : "—"],
+  ["Situacao", "Situação", (v, x) => `<span class="pill st-${v === "Desligado" ? "vencido" : v === "Ativo" || !v ? "pago" : "pendente"}"><i></i>${esc(v || "Ativo")}</span>${x.DataDemissao ? `<div class="sup">${esc(fmtDate(x.DataDemissao))}</div>` : ""}`]];
+{ const p0 = paintRhDbSub;
+  paintRhDbSub = function (sub) {
+    p0(sub);
+    if (sub !== "funcs" || !RHDB_STATE.ready) return;
+    const body = $("rhdbBody"), acts = $("rhdbActions"); if (!body) return;
+    const edita = !!podeEditar("rh_db");
+    if (acts && edita && !(typeof vcAtivo === "function" && vcAtivo()) && !acts.querySelector(".rhf-imp-btn")) acts.insertAdjacentHTML("afterbegin", `<button class="btn ghost rhf-imp-btn" onclick="rhfImportar()" title="Cadastrar ou atualizar a partir de uma planilha (.xlsx/.csv)">Importar planilha</button>`);
+    const S = RHF_STATE, all = RHDB_STATE.itens;
+    const sit = x => x.Situacao || "Ativo";
+    const deps = [...new Set(all.map(x => x.Departamento).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const funs = [...new Set(all.map(x => x.Cargo).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const q = rhfNorm(S.q);
+    const vis = all.filter(x => (S.sit === "todos" || (S.sit === "ativos" ? sit(x) !== "Desligado" : sit(x) === "Desligado")) && (!S.dep || x.Departamento === S.dep) && (!S.fun || x.Cargo === S.fun)
+      && (!q || rhfNorm([x.Title, x.Matricula, x.CPF, x.Cargo, x.Departamento, x.Setor, x.Email].join(" ")).includes(q)))
+      .sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR"));
+    const nAt = all.filter(x => sit(x) !== "Desligado").length, nDes = all.length - nAt, nMot = all.filter(x => sit(x) !== "Desligado" && /motorista/i.test(x.Cargo || "")).length;
+    const kpi = (v, cls, lbl, val, sub) => `<button class="kpi ${cls} ${S.sit === v ? "on" : ""}" onclick="rhfSit('${v}')"><div class="lbl">${esc(lbl)}</div><div class="val">${val}</div><div class="sub">${esc(sub)}</div></button>`;
+    const kpis = `<div class="cap-kpis">${kpi("ativos", "pago", "Ativos", nAt, "em atividade, férias ou afastados")}${kpi("desligados", "venc", "Desligados", nDes, "situação Desligado")}${kpi("todos", "", "Todos", all.length, "cadastrados")}<div class="kpi"><div class="lbl">Motoristas</div><div class="val">${nMot}</div><div class="sub">ativos com "Motorista" na função</div></div></div>`;
+    const filtros = `<div class="cap-filtros"><input class="busca" id="rhfQ" placeholder="Buscar por nome, matrícula, CPF, função…" value="${esc(S.q)}" autocomplete="off">
+      <select id="rhfDep" aria-label="Departamento"><option value="">Todos os departamentos</option>${deps.map(d => `<option ${S.dep === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select>
+      <select id="rhfFun" aria-label="Função"><option value="">Todas as funções</option>${funs.map(d => `<option ${S.fun === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select></div>`;
+    const cols = RHDB_COLS.funcs;
+    const linha = x => `<tr onclick="rhDbForm('funcs', '${esc(x._id)}')">${cols.map(([k, , r]) => `<td>${r ? r(x[k], x) : esc(x[k] == null ? "" : String(x[k]))}</td>`).join("")}</tr>`;
+    const faltam = typeof rhfColsFaltam === "function" ? rhfColsFaltam() : [];
+    const aviso = faltam.length ? `<div class="rhf-aviso">A lista "RH — Funcionários" ainda não tem a(s) coluna(s) <b>${faltam.map(k => esc(RHF_ROTULO[k] || k)).join(", ")}</b>. ${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › "Executar tudo na ordem"</a>` : "Peça a um administrador para rodar Sistema › Configuração › \"Executar tudo na ordem\""}; até lá esses campos não são gravados.</div>` : "";
+    body.innerHTML = aviso + kpis + filtros + (vis.length
+      ? `<div class="table-wrap"><table class="cap-table"><thead><tr>${cols.map(([, lbl]) => `<th>${esc(lbl)}</th>`).join("")}</tr></thead><tbody>${vis.map(linha).join("")}</tbody></table></div><p class="cap-dica">${vis.length} de ${all.length} funcionário(s)${S.sit === "ativos" ? " · desligados ocultos" : ""}. Quem tem "Motorista" na função aparece primeiro nas listas de motoristas (Roletas e Recebimento).</p>`
+      : `<div class="cap-empty"><h3>${all.length ? "Nenhum funcionário com este filtro" : "Nenhum funcionário cadastrado"}</h3>${edita && !all.length ? `<p>Use <b>Importar planilha</b> para cadastrar todos de uma vez, ou "+ Novo".</p>` : ""}</div>`);
+    const qEl = $("rhfQ"); if (qEl) { qEl.addEventListener("input", () => { S.q = qEl.value; const pos = qEl.selectionStart; paintRhDbSub("funcs"); const e2 = $("rhfQ"); if (e2) { e2.focus(); try { e2.setSelectionRange(pos, pos); } catch (e) {} } }); }
+    const dEl = $("rhfDep"); if (dEl) dEl.addEventListener("change", () => { S.dep = dEl.value; paintRhDbSub("funcs"); });
+    const fEl = $("rhfFun"); if (fEl) fEl.addEventListener("change", () => { S.fun = fEl.value; paintRhDbSub("funcs"); });
+  };
+  window.rhfSit = v => { RHF_STATE.sit = v; paintRhDbSub("funcs"); };
+}
+/* formulário com todos os campos */
+RHDB_FORMS.funcs = v => {
+  const cargos = (RHDB_AUX.cargos || []).map(c => c.Title).filter(Boolean), padrao = (RHDB_SEEDS.cargos || []).map(c => c.Title);
+  const usados = k => RHDB_STATE.itens.map(x => x[k]).filter(Boolean);
+  const dl = (id, arr) => `<datalist id="${id}">${[...new Set(arr)].sort((a, b) => a.localeCompare(b, "pt-BR")).map(c => `<option value="${esc(c)}">`).join("")}</datalist>`;
+  const cnpjs = (RHF_STATE.cnpjs || []).map(c => ({ n: rhfCnpjFmt(c.CNPJ || ""), r: c.NomeFantasia || c.Title || "" })).filter(c => c.n);
+  const cnpjCampo = cnpjs.length
+    ? `<select id="rdFuCNPJ"><option value="">—</option>${(v.CNPJ && !cnpjs.some(c => c.n === v.CNPJ) ? [{ n: v.CNPJ, r: "" }] : []).concat(cnpjs).map(c => `<option value="${esc(c.n)}" ${v.CNPJ === c.n ? "selected" : ""}>${esc(c.n)}${c.r ? " · " + esc(c.r) : ""}</option>`).join("")}</select><div class="hint">Da lista CNPJ Ativos</div>`
+    : `<input id="rdFuCNPJ" list="rdFuCNPJList" value="${esc(v.CNPJ || "")}" placeholder="00.000.000/0000-00" autocomplete="off">${dl("rdFuCNPJList", usados("CNPJ"))}`;
+  return `<div class="form-grid">
+    <div class="field full"><label>Nome<span class="req">*</span></label><input id="rdFuN" value="${esc(v.Title || "")}" autocomplete="off"></div>
+    <div class="field"><label>CPF</label><input id="rdFuCPF" value="${esc(v.CPF || "")}" placeholder="000.000.000-00" inputmode="numeric" autocomplete="off"></div>
+    <div class="field"><label>Data de nascimento</label><input type="date" id="rdFuNasc" value="${esc(v.DataNascimento ? ymd(v.DataNascimento) : "")}"></div>
+    <div class="field"><label>Matrícula</label><input id="rdFuM" value="${esc(v.Matricula || "")}" autocomplete="off"></div>
+    <div class="field"><label>PIS</label><input id="rdFuPIS" value="${esc(v.PIS || "")}" inputmode="numeric" autocomplete="off"></div>
+    <div class="field"><label>Departamento</label><input id="rdFuDep" list="rdFuDepList" value="${esc(v.Departamento || "")}" autocomplete="off" placeholder="Ex.: Operacional">${dl("rdFuDepList", RHF_DEPTOS.concat((RHF_STATE.deptos || []).map(d => d.Title).filter(Boolean), usados("Departamento")))}</div>
+    <div class="field"><label>Setor</label><input id="rdFuS" list="rdFuSList" value="${esc(v.Setor || "")}" autocomplete="off" placeholder="Ex.: Oficina, Guichê">${dl("rdFuSList", RHF_SETORES.concat(usados("Setor")))}</div>
+    <div class="field"><label>Função (cargo)</label><input id="rdFuC" list="rdFuCList" value="${esc(v.Cargo || "")}" autocomplete="off" placeholder="Ex.: Motorista">${dl("rdFuCList", cargos.concat(padrao, usados("Cargo")))}<div class="hint">Quem tem "Motorista" na função aparece primeiro nas listas de motoristas</div></div>
+    <div class="field"><label>CNPJ (empresa)</label>${cnpjCampo}</div>
+    <div class="field"><label>Admissão</label><input type="date" id="rdFuA" value="${esc(v.Admissao ? ymd(v.Admissao) : "")}"></div>
+    <div class="field"><label>Data de demissão</label><input type="date" id="rdFuDem" value="${esc(v.DataDemissao ? ymd(v.DataDemissao) : "")}"><div class="hint">Com data de demissão, a situação vira "Desligado"</div></div>
+    <div class="field"><label>Telefone</label><input id="rdFuTel" value="${esc(v.Telefone || "")}" inputmode="tel" autocomplete="off"></div>
+    <div class="field"><label>Celular</label><input id="rdFuT" value="${esc(v.Contato || "")}" inputmode="tel" autocomplete="off"></div>
+    <div class="field"><label>E-mail</label><input id="rdFuE" value="${esc(v.Email || "")}" autocomplete="off"></div>
+    <div class="field"><label>Situação</label><select id="rdFuSit">${RHF_SIT.map(s => `<option ${(v.Situacao || "Ativo") === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+    <div class="field full"><label>Observações</label><textarea id="rdFuO" rows="2">${esc(v.Observacoes || "")}</textarea></div>
+  </div>`;
+};
+RHDB_READ.funcs = () => {
+  const g = id => ($(id) ? $(id).value : "").trim();
+  const dem = g("rdFuDem"); let sit = g("rdFuSit") || "Ativo"; if (dem && sit !== "Desligado") sit = "Desligado";
+  const cpfD = rhfDig(g("rdFuCPF")); if (cpfD && (cpfD.length !== 11 || !rhfCpfOk(cpfD))) {   /* digitado: 11 dígitos de verdade, sem completar com zeros */ const e = $("rdErr"); if (e) { e.style.display = "block"; e.textContent = "CPF inválido: confira os 11 dígitos."; } throw new Error("CPF inválido: confira os 11 dígitos."); }
+  return { Title: g("rdFuN"), CPF: cpfD ? rhfCpfFmt(cpfD) : null, DataNascimento: g("rdFuNasc") || null, Matricula: g("rdFuM") || null, PIS: g("rdFuPIS") || null, Departamento: g("rdFuDep") || null, Setor: g("rdFuS") || null, Cargo: g("rdFuC") || null,
+    CNPJ: rhfCnpjFmt(g("rdFuCNPJ")) || null, Admissao: g("rdFuA") || null, DataDemissao: dem || null, Telefone: rhfFone(g("rdFuTel")) || null, Contato: rhfFone(g("rdFuT")) || null, Email: g("rdFuE") || null, Situacao: sit, Observacoes: g("rdFuO") || null };
+};
+/* CNPJs e departamentos da lista para o formulário; colunas que a Configuração ainda não criou saem da gravação */
+{ const r0 = renderRhDbSub;
+  renderRhDbSub = async function (sub) {
+    await r0(sub);
+    if (sub !== "funcs") return;
+    RHF_STATE.cnpjs = null; RHF_STATE.deptos = null;   /* relidos a cada visita: um CNPJ cadastrado agora já aparece no formulário */
+    if (!RHF_STATE.cnpjs) { try { const site = await SP.site(CONFIG.sites[LISTS.rh_cnpjs.siteKey]); const ls = await SP.lists(site.id), l = ls.find(x => x.displayName === LISTS.rh_cnpjs.displayName); RHF_STATE.cnpjs = l ? (await SP.items(site.id, l.id)).map(it => it.fields || {}).filter(c => c.Ativo !== false) : []; } catch (e) { RHF_STATE.cnpjs = []; } }
+    if (!RHF_STATE.deptos) { try { const site = await SP.site(CONFIG.sites[LISTS.rh_depts.siteKey]); const ls = await SP.lists(site.id), l = ls.find(x => x.displayName === LISTS.rh_depts.displayName); RHF_STATE.deptos = l ? (await SP.items(site.id, l.id)).map(it => it.fields || {}) : []; } catch (e) { RHF_STATE.deptos = []; } }
+    if (RHDB_STATE.list && RHF_STATE.colsDe !== RHDB_STATE.list.id) { try { const cs = await graphAll(`/sites/${RHDB_STATE.site.id}/lists/${RHDB_STATE.list.id}/columns?$select=name`); RHF_STATE.cols = new Set(cs.map(c => c.name)); RHF_STATE.colsDe = RHDB_STATE.list.id; } catch (e) { RHF_STATE.cols = null; RHF_STATE.colsDe = null; }
+      if (RHDB_STATE.subId === "funcs" && rhfColsFaltam().length) paintRhDbSub("funcs");   /* o aviso das colunas que faltam já na 1ª visita */ }
+  };
+  const RHF_NOVAS = ["CPF", "DataNascimento", "Departamento", "DataDemissao", "PIS", "Telefone", "CNPJ"];
+  const c0 = SP.create, u0 = SP.update;
+  const filtra = (listId, fields) => { if (RHF_STATE.colsDe && listId === RHF_STATE.colsDe && RHF_STATE.cols && fields) {   /* só a lista "RH — Funcionários" de onde as colunas foram lidas */ const f = Object.assign({}, fields); let tirou = []; RHF_NOVAS.forEach(k => { if (k in f && !RHF_STATE.cols.has(k)) { if (f[k] != null) tirou.push(k); delete f[k]; } }); if (tirou.length && !RHF_STATE.avisou) { RHF_STATE.avisou = true; setTimeout(() => toast(`A lista "RH — Funcionários" ainda não tem a(s) coluna(s) ${tirou.map(k => RHF_ROTULO[k] || k).join(", ")}: ${session.n1 ? "rode" : "peça a um administrador para rodar"} Sistema › Configuração › "Executar tudo na ordem" e grave de novo.`, 9000), 1500); } return f; } return fields; };
+  window.rhfColsFaltam = () => RHF_STATE.cols ? RHF_NOVAS.filter(k => !RHF_STATE.cols.has(k)) : [];
+  SP.create = (siteId, listId, fields) => c0(siteId, listId, filtra(listId, fields));
+  SP.update = (siteId, listId, itemId, fields) => u0(siteId, listId, itemId, filtra(listId, fields));
 }
 
 /* v0.12.21: aliases para inspeção pelo console (DevTools) e testes — não altera comportamento */

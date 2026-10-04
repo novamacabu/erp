@@ -1443,6 +1443,9 @@ body.wide .page{max-width:none}
 .cap-kpis .kpi:hover{background:#FAFBFC}
 .cap-kpis .kpi.static:hover{background:var(--surface)}
 .cap-kpis .kpi.on{background:#F6F8FB;box-shadow:inset 0 -3px 0 var(--orange)}
+/* v0.12.34: a divisória entre os cartões era o fundo aparecendo num vão de 1px — com zoom de 125%/150% no Windows o vão caía entre dois pixels e sumia (ex.: entre "Pendentes" e "Aprovados"). Agora cada cartão tem a própria borda, encostada no vizinho. */
+.cap-kpis{gap:0!important;background:var(--surface)!important}
+.cap-kpis>.kpi{border:0!important;border-left:1px solid var(--line)!important;border-top:1px solid var(--line)!important;margin:-1px 0 0 -1px!important}
 .kpi .lbl{font-size:11px;letter-spacing:.06em}
 .kpi .val{font-size:28px;margin-top:8px}
 .kpi .val.money{font-size:22px}
@@ -2614,6 +2617,62 @@ select.sel-medir { appearance: none !important; width: max-content !important; m
 #erpSug .erp-sug-it.on::after{content:"";flex:0 0 14px;width:14px;height:14px;margin-left:auto;background:var(--sel-check) center/14px no-repeat}
 #erpSug .erp-sug-mais{padding:6px 12px 4px;font-size:11.5px;color:#8A9099;white-space:nowrap}
 @media print{#erpSug{display:none!important}}
+/* ---- v0.12.34 · Calendário e relógio no cartão das listas (Chrome/Edge com mouse; html.erp-cal) ---- */
+html.erp-cal input:is([type=date],[type=month],[type=time],[type=datetime-local]):not(:disabled):not([readonly]):not([data-cal-nativo] *):not([data-cal-nativo])::-webkit-calendar-picker-indicator{display:none}
+html.erp-cal input:is([type=date],[type=month],[type=datetime-local]):not(:disabled):not([readonly]):not([data-cal-nativo] *):not([data-cal-nativo]){
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2355616E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='5' width='17' height='15.5' rx='3'/%3E%3Cpath d='M3.5 10h17M8 3v4M16 3v4'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-position:right 10px center!important;background-size:16px 16px!important;padding-right:32px!important;cursor:pointer}
+html.erp-cal input[type=time]:not(:disabled):not([readonly]):not([data-cal-nativo] *):not([data-cal-nativo]){
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2355616E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 7.5V12l3 2'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-position:right 9px center!important;background-size:16px 16px!important;padding-right:30px!important;cursor:pointer}
+html.erp-cal input:is([type=date],[type=month],[type=time],[type=datetime-local])[aria-expanded=true]{border-color:var(--navy,#1E2153)!important;box-shadow:0 0 0 3px rgba(30,33,83,.10)!important}
+/* Escala Agência no tema escuro: ícone claro */
+html.erp-cal #esc-root:not(.light) input:is([type=date],[type=month],[type=datetime-local]):not(:disabled):not([readonly]):not([data-cal-nativo] *):not([data-cal-nativo]){background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23C9CFD8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='5' width='17' height='15.5' rx='3'/%3E%3Cpath d='M3.5 10h17M8 3v4M16 3v4'/%3E%3C/svg%3E")!important}
+html.erp-cal #esc-root:not(.light) input[type=time]:not(:disabled):not([readonly]):not([data-cal-nativo] *):not([data-cal-nativo]){background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23C9CFD8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 7.5V12l3 2'/%3E%3C/svg%3E")!important}
+#erpCal{position:fixed;inset:auto;margin:0;z-index:2147483000;display:none;box-sizing:border-box;width:max-content;height:auto;padding:10px;border:1px solid #DCE1E8;border-radius:14px;background:#fff;color:#1E2A32;
+  box-shadow:0 18px 44px rgba(16,24,40,.16),0 3px 8px rgba(16,24,40,.08);font:500 13px/1.2 "Manrope","Segoe UI",Arial,sans-serif;letter-spacing:normal;text-align:left;text-transform:none;outline:none;font-variant-numeric:tabular-nums;user-select:none}
+#erpCal.on,#erpCal:popover-open{display:block}
+#erpCal{transition:opacity .12s ease,translate .12s ease}
+@starting-style{#erpCal.on{opacity:0;translate:0 -4px}}
+@media (prefers-reduced-motion:reduce){#erpCal{transition:none}}
+@media print{#erpCal{display:none!important}}
+#erpCal button{font:inherit;color:inherit;background:none;border:0;margin:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#erpCal button:disabled{cursor:default;opacity:.32}
+#erpCal .erp-cal-h{display:flex;align-items:center;gap:4px;margin:0 0 6px}
+#erpCal .erp-cal-h .nav{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;color:#55616E}
+#erpCal .erp-cal-h .nav:hover{background:#EEF2F8;color:var(--navy,#1E2153)}
+#erpCal .erp-cal-h .tit{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;border-radius:9px;font-weight:800;font-size:14px;color:var(--navy,#1E2153)}
+#erpCal .erp-cal-h .tit:not(:disabled):hover{background:#EEF2F8}
+#erpCal .erp-cal-h .tit:disabled{opacity:1}
+#erpCal .erp-cal-h span.tit{cursor:default}#erpCal .erp-cal-h span.tit:hover{background:none}
+#erpCal .erp-cal-h .tit i{width:7px;height:7px;border:solid currentColor;border-width:0 2px 2px 0;transform:translateY(-2px) rotate(45deg);opacity:.6}
+#erpCal .erp-cal-g{display:grid;grid-template-columns:repeat(7,36px);gap:2px}
+#erpCal .erp-cal-g>span{display:grid;place-items:center;height:26px;font-size:11px;font-weight:800;color:#8A9099;letter-spacing:.04em}
+#erpCal .erp-cal-g .d{height:34px;border-radius:9px;font-weight:600;position:relative}
+#erpCal .erp-cal-g .d:hover:not(:disabled){background:#EEF2F8;color:var(--navy,#1E2153)}
+#erpCal .erp-cal-g .d.out{color:#AAB1BB;font-weight:500}
+#erpCal .erp-cal-g .d.hoje{box-shadow:inset 0 0 0 1.5px var(--orange,#F0541B);color:var(--orange,#F0541B);font-weight:800}
+#erpCal .erp-cal-g .d.on,#erpCal .erp-cal-g .d.on:hover{background:var(--navy,#1E2153);color:#fff;font-weight:800;box-shadow:none}
+#erpCal .erp-cal-m{display:grid;grid-template-columns:repeat(3,82px);gap:6px;padding:4px 2px}
+#erpCal .erp-cal-m .mm{height:44px;border-radius:10px;font-weight:700;text-transform:capitalize}
+#erpCal .erp-cal-m .mm:hover:not(:disabled){background:#EEF2F8;color:var(--navy,#1E2153)}
+#erpCal .erp-cal-m .mm.hoje{box-shadow:inset 0 0 0 1.5px var(--orange,#F0541B);color:var(--orange,#F0541B)}
+#erpCal .erp-cal-m .mm.on,#erpCal .erp-cal-m .mm.on:hover{background:var(--navy,#1E2153);color:#fff;box-shadow:none}
+#erpCal .erp-cal-hr .cab{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 4px}
+#erpCal .erp-cal-hr .cab span{text-align:center;font-size:11px;font-weight:800;color:#8A9099;letter-spacing:.06em;text-transform:uppercase;height:22px;line-height:22px}
+#erpCal .erp-cal-hr .cols{display:grid;grid-template-columns:64px 64px;gap:6px}
+#erpCal .erp-cal-hr .col{height:236px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;display:flex;flex-direction:column;gap:2px;padding:2px;border-radius:10px;background:#F6F8FB;scroll-behavior:auto}
+#erpCal .erp-cal-hr .col button{flex:0 0 32px;border-radius:8px;font-weight:700;font-size:14px}
+#erpCal .erp-cal-hr .col button:hover:not(:disabled){background:#fff;color:var(--navy,#1E2153);box-shadow:0 1px 2px rgba(16,24,40,.08)}
+#erpCal .erp-cal-hr .col button.on,#erpCal .erp-cal-hr .col button.on:hover{background:var(--navy,#1E2153);color:#fff;box-shadow:none}
+#erpCal.m-dh .erp-cal-dh{display:flex;gap:12px;align-items:flex-start}
+#erpCal.m-dh .erp-cal-hr{padding-left:12px;border-left:1px solid #E6EAF0}
+#erpCal.m-dh .erp-cal-hr .cab{margin-top:5px;margin-bottom:11px}
+#erpCal .erp-cal-f{display:flex;justify-content:space-between;align-items:center;margin:8px 0 0;padding:8px 2px 0;border-top:1px solid #EEF1F5}
+#erpCal .erp-cal-f .lk{padding:6px 10px;border-radius:8px;font-weight:700;font-size:12.5px;color:#55616E}
+#erpCal .erp-cal-f .lk:hover{background:#EEF2F8;color:var(--navy,#1E2153)}
+#erpCal .erp-cal-f .lk[data-a=agora]{color:var(--orange,#F0541B)}
+
 
 </style>
 </head>
@@ -2673,7 +2732,7 @@ select.sel-medir { appearance: none !important; width: max-content !important; m
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><img class="logo-nmb" src="data:image/png;base64,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" alt=""><span>ERP NMB v0.12.33<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><img class="logo-nmb" src="data:image/png;base64,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" alt=""><span>ERP NMB v0.12.34<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -2709,7 +2768,7 @@ const CONFIG = {
     almoxarifado: "/sites/almoxarifado", ti: "/sites/ti", sac: "/sites/SAC"
   },
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.33",
+  version: "v0.12.34",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: Administradores Nível 1 — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não. */
   n1: ["34c45b39927a82a91d7827a84db92ff5f3fcd624a29cd4761d6849842f3f0032", "fdd176ba175159520b499051ffe7c4f5d6d783b2804256a3c829df634f9c814a", "b0be5d0012690c941a2825c28c4d16935978bebde65a1fbfff9c9cd24f2eda98"],
@@ -18583,6 +18642,211 @@ window.addEventListener("keydown", e => {
   let aberta = false; try { const s = t.tagName === "SELECT" ? t : t.closest("select"); aberta = !!(s && s.matches(":open")); } catch (x) { /* navegador sem :open: lista do sistema */ }
   if (aberta) e.stopPropagation();
 }, true);
+
+
+/* ===================== v0.12.34 · Calendário e relógio no modelo das listas =====================
+   Os campos de data, mês, hora e data/hora abriam o calendário do próprio Chrome (cinza, quadrado, com cara de Windows) —
+   e nenhum CSS alcança esse calendário. No Chrome/Edge com mouse, o ERP passa a abrir o mesmo cartão das listas suspensas:
+   · data: mês com setas, semana começando no domingo, hoje com anel laranja e o dia escolhido em azul-marinho; clicar no
+     título troca para a grade de meses/anos; "Limpar" e "Hoje" no rodapé;
+   · mês: grade dos 12 meses com o ano nas setas;
+   · hora: duas colunas (horas e minutos) com o valor atual no centro; "Agora" no rodapé;
+   · data e hora: o calendário e as duas colunas lado a lado.
+   O campo continua o mesmo (digitar e as setas ↑/↓ seguem funcionando, e o cartão acompanha o que se digita); escolher
+   avisa a tela como o navegador avisaria (input e change). Esc fecha só o cartão. Pelo teclado, Alt+↓ ou F4 abrem o seletor do sistema (que se usa sem mouse).
+   Datas fora do mínimo/máximo do campo ficam apagadas. No celular, no tablet, no Firefox e no Safari fica o seletor do
+   sistema. Um campo (ou um bloco) com data-cal-nativo continua com o seletor do sistema. */
+const CAL_MODERNO = (() => { try { return SUG_MODERNO && !!(navigator.userAgentData && navigator.userAgentData.brands.some(b => /Chromium/i.test(b.brand))); } catch (e) { return false; } })();
+const CAL = { el: null, inp: null, modo: "", ver: null, vista: "dias", chave: "", raf: 0 };
+const CAL_TIPOS = { date: "data", month: "mes", time: "hora", "datetime-local": "dh" };
+const CAL_MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const CAL_SETA = d => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d === "e" ? "M15 5l-7 7 7 7" : "M9 5l7 7-7 7"}"/></svg>`;
+function calTipo(t) { return t && t.tagName === "INPUT" ? (CAL_TIPOS[String(t.getAttribute("type") || "").toLowerCase()] || "") : ""; }
+function calCampoOk(t) { return !!(calTipo(t) && !t.disabled && !t.readOnly && !t.closest("[data-cal-nativo]")); }
+function calP2(n) { return String(n).padStart(2, "0"); }
+function calIsoD(y, m, d) { return `${y}-${calP2(m + 1)}-${calP2(d)}`; }
+function calAgora() { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth(), d: d.getDate(), h: d.getHours(), mi: d.getMinutes() }; }
+/* lê o valor do campo em partes: data (AAAA-MM-DD), mês (AAAA-MM) e hora (HH:MM) */
+function calLe(inp) {
+  const v = String(inp.value || ""), md = CAL_TIPOS[String(inp.getAttribute("type") || "").toLowerCase()];
+  const o = { data: "", mes: "", hora: "" };
+  if (md === "data" && /^\d{4}-\d{2}-\d{2}$/.test(v)) o.data = v;
+  else if (md === "mes" && /^\d{4}-\d{2}$/.test(v)) o.mes = v;
+  else if (md === "hora" && /^\d{2}:\d{2}/.test(v)) o.hora = v.slice(0, 5);
+  else if (md === "dh") { const m = v.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/); if (m) { o.data = m[1]; o.hora = m[2]; } }
+  return o;
+}
+function calLimites(inp) { return { min: String(inp.getAttribute("min") || ""), max: String(inp.getAttribute("max") || "") }; }
+function calFora(v, L, n) { const x = v.slice(0, n); return (L.min && x < L.min.slice(0, n)) || (L.max && x > L.max.slice(0, n)); }
+function calCaixa() {
+  if (CAL.el) return CAL.el;
+  const el = document.createElement("div");
+  el.id = "erpCal"; el.setAttribute("role", "dialog"); el.setAttribute("aria-label", "Calendário");
+  if (typeof el.showPopover === "function") el.popover = "manual";
+  /* o campo não perde o foco; e o clique no cartão não chega às telas (que fechariam folhas e menus por "clique fora") */
+  ["pointerdown", "mousedown"].forEach(t => el.addEventListener(t, e => { e.preventDefault(); e.stopPropagation(); }));
+  el.addEventListener("click", e => { e.stopPropagation(); calClique(e.target.closest("button")); });
+  el.addEventListener("wheel", e => e.stopPropagation(), { passive: true });
+  document.body.appendChild(el); CAL.el = el; return el;
+}
+function calAberto() { return !!(CAL.inp && CAL.el && CAL.el.classList.contains("on")); }
+function calAbre(inp) {
+  if (!calCampoOk(inp) || !inp.isConnected) return;
+  if (typeof sugFecha === "function" && sugAberta()) sugFecha();
+  const el = calCaixa(), md = calTipo(inp), v = calLe(inp), a = calAgora();
+  CAL.inp = inp; CAL.modo = md; CAL.vista = md === "mes" ? "meses" : "dias"; CAL.chave = "";
+  /* abre no mês do valor; vazio, no mês de hoje (ou no do mínimo/máximo do campo, se hoje estiver fora) */
+  const L = calLimites(inp), hoje = calIsoD(a.y, a.m, a.d);
+  let base = v.data || (v.mes ? v.mes + "-01" : "");
+  const ok = x => /^\d{4}-(0[1-9]|1[0-2])/.test(x);
+  if (!ok(base) || +base.slice(0, 4) < 1900) base = "";
+  if (!base) base = L.min && ok(L.min) && hoje.slice(0, 7) < L.min.slice(0, 7) ? L.min : L.max && ok(L.max) && hoje.slice(0, 7) > L.max.slice(0, 7) ? L.max : hoje;
+  CAL.ver = { y: +base.slice(0, 4), m: +base.slice(5, 7) - 1 };
+  calRender();
+  if (!el.classList.contains("on")) { el.classList.add("on"); if (el.popover) { try { el.showPopover(); } catch (e) { /* já aberto */ } } }
+  inp.setAttribute("aria-expanded", "true"); inp.setAttribute("aria-controls", "erpCal");
+  calPosiciona(); calCentraHora();
+  if (!CAL.raf) { const laco = () => { if (!calAberto()) { CAL.raf = 0; return; } calPosiciona(); CAL.raf = requestAnimationFrame(laco); }; CAL.raf = requestAnimationFrame(laco); }
+}
+function calFecha() {
+  const el = CAL.el, inp = CAL.inp;
+  if (inp) inp.setAttribute("aria-expanded", "false");
+  CAL.inp = null;
+  if (el && el.classList.contains("on")) { el.classList.remove("on"); if (el.popover) { try { el.hidePopover(); } catch (e) { /* já fechado */ } } el.innerHTML = ""; }
+}
+function calPosiciona() {
+  const el = CAL.el, inp = CAL.inp; if (!el || !inp) return;
+  if (!inp.isConnected || document.activeElement !== inp) { calFecha(); return; }
+  const r = inp.getBoundingClientRect(); if (!r.width && !r.height) { calFecha(); return; }
+  const vw = document.documentElement.clientWidth || innerWidth, vh = innerHeight, gap = 6, borda = 8;
+  const chave = [r.left, r.top, r.width, r.height, vw, vh, el.offsetHeight, el.offsetWidth].map(Math.round).join(",");
+  if (chave === CAL.chave) return; CAL.chave = chave;
+  const h = el.offsetHeight, w = el.offsetWidth, abaixo = vh - r.bottom - gap - borda, acima = r.top - gap - borda;
+  const emCima = abaixo < h && acima > abaixo;   /* abaixo do campo; acima só se lá couber mais */
+  el.style.left = Math.max(borda, Math.min(r.left, vw - w - borda)) + "px";
+  const topo = emCima ? r.top - gap - h : r.bottom + gap;
+  el.style.bottom = "auto"; el.style.top = Math.round(Math.max(borda, Math.min(topo, vh - h - borda))) + "px";   /* tela baixa: o cartão inteiro continua visível */
+}
+/* ---- desenho ---- */
+function calDiasHtml(v, L) {
+  const { y, m } = CAL.ver, a = calAgora(), hoje = calIsoD(a.y, a.m, a.d), sel = v.data;
+  const ini = new Date(y, m, 1).getDay(), cel = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(y, m, 1 - ini + i), iso = calIsoD(d.getFullYear(), d.getMonth(), d.getDate());
+    const cls = ["d", d.getMonth() !== m ? "out" : "", iso === hoje ? "hoje" : "", iso === sel ? "on" : ""].filter(Boolean).join(" "), dis = calFora(iso, L, 10);
+    cel.push(`<button type="button" tabindex="-1" class="${cls}" data-d="${iso}"${dis ? " disabled" : ""} aria-label="${d.getDate()} de ${CAL_MESES[d.getMonth()]} de ${d.getFullYear()}"${iso === sel ? ' aria-pressed="true"' : ""}>${d.getDate()}</button>`);
+  }
+  if (cel.slice(35).every(c => c.includes('class="d out'))) cel.length = 35;   /* mês que cabe em 5 semanas: sem a 6ª linha só de "fora" */
+  return `<div class="erp-cal-h"><button type="button" tabindex="-1" class="nav" data-a="ant" aria-label="Mês anterior">${CAL_SETA("e")}</button>
+    <button type="button" tabindex="-1" class="tit" data-a="vista" title="Escolher mês e ano">${CAL_MESES[m].charAt(0).toUpperCase() + CAL_MESES[m].slice(1)} de ${y}<i></i></button>
+    <button type="button" tabindex="-1" class="nav" data-a="prox" aria-label="Próximo mês">${CAL_SETA("d")}</button></div>
+    <div class="erp-cal-g"><span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span>${cel.join("")}</div>`;
+}
+function calMesesHtml(v, L) {
+  const { y } = CAL.ver, a = calAgora(), atual = `${a.y}-${calP2(a.m + 1)}`, sel = CAL.modo === "mes" ? v.mes : (v.data || "").slice(0, 7);
+  const its = CAL_MESES.map((n, i) => { const k = `${y}-${calP2(i + 1)}`; const cls = ["mm", k === atual ? "hoje" : "", k === sel ? "on" : ""].filter(Boolean).join(" ");
+    return `<button type="button" tabindex="-1" class="${cls}" data-mes="${k}"${calFora(k, L, 7) ? " disabled" : ""}>${n.slice(0, 3)}</button>`; }).join("");
+  return `<div class="erp-cal-h"><button type="button" tabindex="-1" class="nav" data-a="antA" aria-label="Ano anterior">${CAL_SETA("e")}</button>
+    <button type="button" tabindex="-1" class="tit ano" data-a="anos" title="Escolher o ano">${y}<i></i></button>
+    <button type="button" tabindex="-1" class="nav" data-a="proxA" aria-label="Próximo ano">${CAL_SETA("d")}</button></div><div class="erp-cal-m">${its}</div>`;
+}
+function calAnosHtml() {
+  const y = CAL.ver.y, ini = y - ((y % 12) + 12) % 12, a = calAgora().y, its = [];
+  for (let i = 0; i < 12; i++) { const k = ini + i; its.push(`<button type="button" tabindex="-1" class="mm${k === a ? " hoje" : ""}${k === y ? " on" : ""}" data-ano="${k}">${k}</button>`); }
+  return `<div class="erp-cal-h"><button type="button" tabindex="-1" class="nav" data-a="antD" aria-label="Anos anteriores">${CAL_SETA("e")}</button>
+    <span class="tit ano">${ini} – ${ini + 11}</span>
+    <button type="button" tabindex="-1" class="nav" data-a="proxD" aria-label="Próximos anos">${CAL_SETA("d")}</button></div><div class="erp-cal-m">${its.join("")}</div>`;
+}
+function calPasso(inp) { const s = Number(inp.getAttribute("step") || 60); return s >= 60 && s % 60 === 0 && 60 % (s / 60) === 0 ? s / 60 : 1; }
+function calHoraHtml(v, inp) {
+  const [h, mi] = v.hora ? v.hora.split(":") : ["", ""], p = calPasso(inp), L = calLimites(inp), soH = CAL.modo === "hora";
+  const fora = t => soH && ((L.min && t < L.min.slice(0, 5)) || (L.max && t > L.max.slice(0, 5)));
+  const hs = Array.from({ length: 24 }, (_, i) => calP2(i)).map(x => `<button type="button" tabindex="-1" class="hh${x === h ? " on" : ""}" data-h="${x}"${fora(x + ":59") && fora(x + ":00") ? " disabled" : ""}>${x}</button>`).join("");
+  const mins = []; for (let i = 0; i < 60; i += p) mins.push(calP2(i)); if (mi && !mins.includes(mi)) { mins.push(mi); mins.sort(); }
+  const ms = mins.map(x => `<button type="button" tabindex="-1" class="mi${x === mi ? " on" : ""}" data-m="${x}"${h && fora(h + ":" + x) ? " disabled" : ""}>${x}</button>`).join("");
+  return `<div class="erp-cal-hr"><div class="cab"><span>Hora</span><span>Min</span></div><div class="cols"><div class="col" data-c="h">${hs}</div><div class="col" data-c="m">${ms}</div></div></div>`;
+}
+function calRender() {
+  const el = CAL.el, inp = CAL.inp; if (!el || !inp) return;
+  const v = calLe(inp), L = calLimites(inp), md = CAL.modo;
+  const esq = md === "hora" ? "" : (CAL.vista === "anos" ? calAnosHtml() : CAL.vista === "meses" ? calMesesHtml(v, L) : calDiasHtml(v, L));
+  const corpo = md === "hora" ? calHoraHtml(v, inp) : md === "dh" ? `<div class="erp-cal-dh"><div>${esq}</div>${calHoraHtml(v, inp)}</div>` : esq;
+  const agora = md === "hora" || md === "dh" ? "Agora" : md === "mes" ? "Este mês" : "Hoje";
+  el.className = (el.classList.contains("on") ? "on " : "") + "m-" + md;
+  el.innerHTML = corpo + `<div class="erp-cal-f"><button type="button" tabindex="-1" class="lk" data-a="limpar">Limpar</button><button type="button" tabindex="-1" class="lk" data-a="agora">${agora}</button></div>`;
+}
+/* deixa a hora e o minuto escolhidos no meio das colunas */
+function calCentraHora() {
+  const el = CAL.el; if (!el) return;
+  el.querySelectorAll(".erp-cal-hr .col").forEach(c => { const on = c.querySelector(".on") || (c.dataset.c === "h" ? c.querySelector('[data-h="' + calP2(calAgora().h) + '"]') : null); if (on) c.scrollTop = Math.max(0, on.offsetTop - (c.clientHeight - on.offsetHeight) / 2); });
+}
+/* grava no campo e avisa a tela (como o navegador faria) */
+function calGrava(val, fecha) {
+  const inp = CAL.inp; if (!inp) return;
+  const tops = [...(CAL.el ? CAL.el.querySelectorAll(".erp-cal-hr .col") : [])].map(c => c.scrollTop);
+  if (inp.value !== val) {
+    inp.value = val;
+    inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  if (fecha || !CAL.inp || !inp.isConnected || document.activeElement !== inp) { calFecha(); return; }
+  calRender(); CAL.el.querySelectorAll(".erp-cal-hr .col").forEach((c, i) => { c.scrollTop = tops[i] || 0; });
+}
+function calClique(b) {
+  if (!b || b.disabled || !CAL.inp) return;
+  const inp = CAL.inp, md = CAL.modo, v = calLe(inp), a = calAgora(), dsa = b.dataset;
+  const mudaVer = n => { const d = new Date(CAL.ver.y, CAL.ver.m + n, 1); CAL.ver = { y: d.getFullYear(), m: d.getMonth() }; calRender(); };
+  const horaAgora = `${calP2(a.h)}:${calP2(a.mi)}`;
+  if (dsa.a === "ant") return mudaVer(-1);
+  if (dsa.a === "prox") return mudaVer(1);
+  if (dsa.a === "antA") return mudaVer(-12);
+  if (dsa.a === "proxA") return mudaVer(12);
+  if (dsa.a === "vista") { CAL.vista = CAL.vista === "meses" ? "dias" : "meses"; return calRender(); }
+  if (dsa.a === "anos") { CAL.vista = "anos"; return calRender(); }
+  if (dsa.a === "antD") return mudaVer(-144);
+  if (dsa.a === "proxD") return mudaVer(144);
+  if (dsa.ano) { CAL.ver = { y: +dsa.ano, m: CAL.ver.m }; CAL.vista = "meses"; return calRender(); }
+  if (dsa.a === "limpar") return calGrava("", true);
+  if (dsa.a === "agora") {
+    const hoje = calIsoD(a.y, a.m, a.d);
+    return calGrava(md === "data" ? hoje : md === "mes" ? hoje.slice(0, 7) : md === "hora" ? horaAgora : `${hoje}T${horaAgora}`, true);
+  }
+  if (dsa.d) { if (md === "dh") return calGrava(`${dsa.d}T${v.hora || horaAgora}`, false); return calGrava(dsa.d, true); }
+  if (dsa.mes) {
+    if (md === "mes") return calGrava(dsa.mes, true);
+    CAL.ver = { y: +dsa.mes.slice(0, 4), m: +dsa.mes.slice(5, 7) - 1 }; CAL.vista = "dias"; return calRender();
+  }
+  if (dsa.h || dsa.m) {
+    const [h0, m0] = v.hora ? v.hora.split(":") : ["", ""];
+    const h = dsa.h || h0 || calP2(a.h), m = dsa.m || m0 || "00", t = `${h}:${m}`;
+    const dia = v.data || calIsoD(a.y, a.m, a.d);
+    return calGrava(md === "dh" ? `${dia}T${t}` : t, !!dsa.m);   /* escolher o minuto fecha; a hora deixa aberto para o minuto */
+  }
+}
+if (CAL_MODERNO) {
+  document.documentElement.classList.add("erp-cal");
+  /* abre ao clicar no campo; o ícone (lado direito) abre e fecha */
+  document.addEventListener("click", e => {
+    const t = e.target;
+    if (calCampoOk(t)) {
+      const r = t.getBoundingClientRect(), noIcone = e.clientX >= r.right - 36;
+      if (calAberto() && CAL.inp === t) { if (noIcone) calFecha(); return; }
+      calAbre(t); return;
+    }
+    if (calAberto() && !(CAL.el && CAL.el.contains(t))) calFecha();
+  }, true);
+  document.addEventListener("focusout", e => { if (e.target === CAL.inp) calFecha(); }, true);
+  /* o que se digita no campo move o cartão para a data/hora digitada */
+  document.addEventListener("input", e => { if (calAberto() && e.target === CAL.inp && e.isTrusted) { const v = calLe(CAL.inp), base = v.data || (v.mes ? v.mes + "-01" : ""); if (base && +base.slice(0, 4) >= 1900) CAL.ver = { y: +base.slice(0, 4), m: +base.slice(5, 7) - 1 }; calRender(); calCentraHora(); } }, true);
+  window.addEventListener("keydown", e => {
+    const t = e.target;
+    if ((e.key === "ArrowDown" && e.altKey) || e.key === "F4") { if (calAberto()) calFecha(); return; }   /* pelo teclado fica o seletor do sistema, que se usa sem mouse */
+    if (!calAberto() || t !== CAL.inp) return;
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); calFecha(); }   /* o primeiro Esc fecha só o cartão */
+    else if (e.key === "Tab" || e.key === "Enter" || (e.key === "ArrowUp" && e.altKey)) calFecha();
+  }, true);
+  window.addEventListener("hashchange", calFecha);
+  window.addEventListener("resize", () => { if (calAberto()) { CAL.chave = ""; calPosiciona(); } });
+}
 
 /* v0.12.21: aliases para inspeção pelo console (DevTools) e testes — não altera comportamento */
 try { window.session = session; window.MODULES = MODULES; window.canSee = canSee; } catch (e) {}

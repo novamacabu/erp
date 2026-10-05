@@ -3012,7 +3012,7 @@ body.vendo-como::after{border-color:var(--orange)}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.49<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.50<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3049,7 +3049,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.49",
+  version: "v0.12.50",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -20600,6 +20600,247 @@ window.agcxExcel = async () => {
   const a2 = [["Data", "Sub-agência", "Município", "Lançamento", "Categoria", "Descrição", "Entrada", "Saída", "Saldo do controle", "Por"]].concat(R.D.doMes.map(l => [fmtDate(l.d), l.sub, l.mun, l.t === "mov" ? "Movimento " + (l.x.Title || "") : "Administrador", l.cat || "", l.t === "mov" ? (l.x.Caixa || "") : (l.x.Descricao || ""), l.ent || null, l.sai || null, l.saldo, l.t === "mov" ? (l.x.Aprovador || "") : l.por]));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a1), "Movimentos aprovados"); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a2), "Controle de caixa");
   XLSX.writeFile(wb, `Movimento de Caixa ${R.mes}${R.sub ? " - " + R.sub : ""}.xlsx`);
+};
+
+/* =====================================================================
+   v0.12.50 · RH: dados pessoais (CPF, data de nascimento, PIS, telefone) numa lista restrita
+   "RH — Funcionários · Dados pessoais" (site RH, permissões do site RH). A lista principal
+   "RH — Funcionários" fica só com nome, matrícula, função, setor etc. e pode ser lida pelos
+   módulos que montam listas de motoristas e responsáveis sem expor o CPF.
+   No ERP as duas aparecem juntas para quem tem acesso às duas (ligadas pelo id do funcionário,
+   coluna FuncId). A migração (só administrador) copia os dados e apaga as 4 colunas da lista
+   principal, o que também tira os valores do histórico de versões dela.
+   ===================================================================== */
+const RH_PES_CAMPOS = ["CPF", "DataNascimento", "PIS", "Telefone"];
+LISTS.rh_func_pes = {
+  key: "rh_func_pes", displayName: "RH — Funcionários · Dados pessoais", siteKey: "rh", titleAs: "Funcionário",
+  description: "Recursos Humanos NMB · dados pessoais dos colaboradores (CPF, nascimento, PIS, telefone), separados de \"RH — Funcionários\". Acesso restrito ao RH.",
+  columns: [
+    { name: "FuncId",         displayName: "Id em RH — Funcionários", required: true, text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "CPF",            displayName: "CPF",                text: { allowMultipleLines: false, maxLength: 14 } },
+    { name: "DataNascimento", displayName: "Data de nascimento", dateTime: dateOnly },
+    { name: "PIS",            displayName: "PIS",                text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Telefone",       displayName: "Telefone",           text: { allowMultipleLines: false, maxLength: 20 } }
+  ]
+};
+/* a lista principal deixa de declarar as 4 colunas: a Configuração não as recria depois da migração */
+LISTS.rh_func.columns = LISTS.rh_func.columns.filter(c => !RH_PES_CAMPOS.includes(c.name));
+SETUP_TEXT.rh_func_pes = `Cria no site RH a lista "RH — Funcionários · Dados pessoais": CPF, data de nascimento, PIS e telefone de cada colaborador, separados de "RH — Funcionários". Ela herda as permissões do site RH (só o RH vê). Depois de criar, abra RH › Banco de Dados › Funcionários e use "Mover dados pessoais" para tirar esses dados da lista principal; aí a lista principal pode ser liberada para leitura de todos. Cada registro aponta para o funcionário pelo id dele em "RH — Funcionários" (coluna FuncId): não apague nem recrie a lista principal.`;
+SETUP_ORDER.push("rh_func_pes");
+
+const RH_PES = { site: null, list: undefined, funcListId: null, map: new Map(), todos: new Map(), ok: false, erro: "", avisou: false, semPes: new Map(), migrando: false };
+/* relê só os registros da lista restrita (map: o mais recente de cada funcionário; todos: todos os ids, para excluir repetidos) */
+async function rhPesLerItens() {
+  const its = (await SP.items(RH_PES.site.id, RH_PES.list.id)).slice().sort((a, b) => Number(a.id) - Number(b.id));
+  const map = new Map(), todos = new Map();
+  its.forEach(it => { const f = it.fields || {}, k = String(f.FuncId == null ? "" : f.FuncId).trim(); if (!k) return; map.set(k, Object.assign({}, f, { _pid: String(it.id) })); if (!todos.has(k)) todos.set(k, []); todos.get(k).push(String(it.id)); });
+  RH_PES.map = map; RH_PES.todos = todos;
+}
+async function rhPesCarregar(force) {
+  if (!force && RH_PES.list !== undefined && !RH_PES.erro && (RH_PES.ok || RH_PES.list === null)) return;
+  RH_PES.ok = false; RH_PES.erro = "";
+  try {
+    RH_PES.site = await SP.site(CONFIG.sites[LISTS.rh_func_pes.siteKey]);
+    const ls = await SP.lists(RH_PES.site.id);
+    const lf = ls.find(l => l.displayName === LISTS.rh_func.displayName); RH_PES.funcListId = lf ? lf.id : null;
+    RH_PES.list = ls.find(l => l.displayName === LISTS.rh_func_pes.displayName) || null;   /* sem permissão, a lista nem aparece: dá no mesmo que não existir */
+    if (RH_PES.list) { await rhPesLerItens(); RH_PES.ok = true; } else { RH_PES.map = new Map(); RH_PES.todos = new Map(); }
+  } catch (e) { RH_PES.erro = e.message || String(e); RH_PES.ok = false; }
+}
+const rhPesAtivo = () => !!(RH_PES.list && RH_PES.ok);
+const rhPesVazio = v => v == null || String(v).trim() === "";
+const rhPesNormV = (k, v) => k === "DataNascimento" ? String(v || "").slice(0, 10) : String(v == null ? "" : v).trim();
+const RH_PES_ROT = { CPF: "CPF", DataNascimento: "nascimento", PIS: "PIS", Telefone: "telefone" };
+/* onde gravar CPF etc.: na lista restrita; sem ela, na principal só enquanto as colunas antigas existirem */
+const rhPesSemLugar = () => !rhPesAtivo() && !(RHF_STATE.cols && RHF_STATE.cols.has("CPF"));
+/* junta os dados pessoais aos funcionários (a lista restrita vale sobre o que sobrou na principal) */
+function rhPesMesclar(itens) {
+  (itens || []).forEach(x => {
+    x._leg = RH_PES_CAMPOS.filter(k => !rhPesVazio(x[k]));   /* ainda na lista principal */
+    const r = RH_PES.map.get(String(x._id));
+    if (r) { x._pes = r._pid; RH_PES_CAMPOS.forEach(k => { if (!rhPesVazio(r[k])) x[k] = r[k]; }); }
+  });
+  return itens;
+}
+async function rhPesGravar(funcId, nome, pes, fresco) {   /* fresco: a lista acabou de ser lida ou o funcionário acabou de ser criado */
+  const id = String(funcId);
+  let r = RH_PES.map.get(id);
+  if (!r && !fresco) { await rhPesLerItens(); r = RH_PES.map.get(id); }   /* outra pessoa pode ter criado o registro depois que a página abriu */
+  const f = Object.assign({ FuncId: id, Title: String(nome || (r && r.Title) || id).slice(0, 255) }, pes);
+  if (r) { await SP.update(RH_PES.site.id, RH_PES.list.id, r._pid, f); Object.assign(r, f); return; }
+  if (!RH_PES_CAMPOS.some(k => !rhPesVazio(pes[k]))) return;   /* nada a guardar: não cria registro vazio */
+  const it = await SP.create(RH_PES.site.id, RH_PES.list.id, f);
+  const pid = String(it && it.id);
+  RH_PES.map.set(id, Object.assign({}, f, { _pid: pid })); RH_PES.todos.set(id, [pid]);
+}
+/* camada sobre SP.create/SP.update: só age na lista "RH — Funcionários" do site RH */
+{ const c1 = SP.create, u1 = SP.update;
+  const ehFunc = listId => { const L = String(listId);
+    if (RH_PES.funcListId && L === String(RH_PES.funcListId)) return true;
+    return !!(RHDB_STATE.list && RHDB_STATE.list.displayName === LISTS.rh_func.displayName && L === String(RHDB_STATE.list.id)); };
+  const separar = fields => { const main = {}, pes = {}; Object.keys(fields || {}).forEach(k => { if (RH_PES_CAMPOS.includes(k)) pes[k] = fields[k]; else main[k] = fields[k]; }); return { main, pes, temPes: Object.keys(pes).length > 0 }; };
+  const preparar = fields => {
+    const s = separar(fields);
+    if (!s.temPes) return s;
+    if (RH_PES.erro || RH_PES.list === undefined || (RH_PES.list && !RH_PES.ok)) throw new Error(`Não foi possível conferir a lista "${LISTS.rh_func_pes.displayName}"${RH_PES.erro ? ` (${RH_PES.erro})` : ""}. Nada foi gravado: atualize a página e grave de novo.`);
+    if (!rhPesAtivo()) {
+      if (rhPesSemLugar()) {   /* sem acesso à lista restrita e sem as colunas antigas: os dados pessoais não são gravados */
+        if (RH_PES_CAMPOS.some(k => !rhPesVazio(s.pes[k])) && !RH_PES.avisou) { RH_PES.avisou = true; setTimeout(() => toast(`CPF, nascimento, PIS e telefone não foram gravados: você não tem acesso à lista "${LISTS.rh_func_pes.displayName}" (ou ela ainda não foi criada na Configuração).`, 9000), 1200); }
+        s.pes = {}; s.temPes = false; return s;
+      }
+      s.main = Object.assign({}, fields); s.pes = {}; s.temPes = false; return s;   /* antes da Configuração: como era */
+    }
+    return s;
+  };
+  SP.create = async (siteId, listId, fields) => {
+    if (!ehFunc(listId) || !fields) return c1(siteId, listId, fields);
+    const s = preparar(fields);
+    /* nova tentativa depois de uma falha nos dados pessoais: o funcionário já existe, então atualiza em vez de criar outro */
+    /* a pendência é da mesma pessoa: nome + CPF + matrícula (homônimo com outro CPF ou matrícula é outra pessoa) */
+    const nm = rhfNorm(s.main.Title || ""), chave = nm ? [nm, rhfDig(s.pes.CPF), String(s.main.Matricula || "").trim()].join("|") : "", pend = chave ? RH_PES.semPes.get(chave) : null;
+    let r;
+    if (pend) { await u1(siteId, listId, pend, s.main); r = { id: pend }; }
+    else r = await c1(siteId, listId, s.main);
+    if (s.temPes) {
+      try { await rhPesGravar(r && r.id, s.main.Title, s.pes, !pend); }
+      catch (e) { if (chave) RH_PES.semPes.set(chave, String(r.id)); throw new Error(`O funcionário foi cadastrado, mas CPF, nascimento, PIS e telefone não (${e.message}). Grave de novo para completar só esses dados.`); }
+    }
+    if (chave) RH_PES.semPes.delete(chave);
+    return r;
+  };
+  SP.update = async (siteId, listId, itemId, fields) => {
+    if (!ehFunc(listId) || !fields) return u1(siteId, listId, itemId, fields);
+    const s = preparar(fields);
+    if (s.temPes) {   /* primeiro a lista restrita; o valor antigo da principal só é limpo depois que ela confirmar */
+      const x = (RHDB_STATE.itens || []).find(i => String(i._id) === String(itemId));
+      try { await rhPesGravar(itemId, s.main.Title || (x && x.Title), s.pes); }
+      catch (e) { throw new Error(`Nada foi gravado: os dados pessoais não puderam ser salvos (${e.message}).`); }
+      if (RHF_STATE.cols) RH_PES_CAMPOS.forEach(k => { if (k in s.pes && RHF_STATE.cols.has(k)) s.main[k] = null; });
+    }
+    if (!Object.keys(s.main).length) return null;
+    try { return await u1(siteId, listId, itemId, s.main); }
+    catch (e) { if (s.temPes) throw new Error(`Os dados pessoais foram gravados, mas os demais campos não: ${e.message}`); throw e; }
+  };
+}
+/* a pendência só vale enquanto a janela da tentativa está aberta */
+{ const cm0 = closeModal; closeModal = function () { RH_PES.semPes.clear(); return cm0.apply(this, arguments); }; window.closeModal = closeModal; }
+/* formulário sem os 4 campos (sem acesso): não manda as chaves, para não esbarrar na trava dos dados pessoais */
+{ const rd0 = RHDB_READ.funcs;
+  RHDB_READ.funcs = () => { const f = rd0(); [["CPF", "rdFuCPF"], ["DataNascimento", "rdFuNasc"], ["PIS", "rdFuPIS"], ["Telefone", "rdFuTel"]].forEach(([k, id]) => { if (!$(id)) delete f[k]; }); return f; };
+}
+/* Banco de Dados › Funcionários: carrega e junta a lista restrita */
+{ const r0 = renderRhDbSub;
+  renderRhDbSub = async function (sub) {
+    await r0(sub);
+    if (sub !== "funcs" || !RHDB_STATE.ready) return;
+    await rhPesCarregar(true);
+    rhPesMesclar(RHDB_STATE.itens);
+    if (RHDB_STATE.subId === "funcs") paintRhDbSub("funcs");
+  };
+  const fc0 = window.rhfColsFaltam;   /* as 4 colunas não são mais esperadas na lista principal */
+  window.rhfColsFaltam = () => (fc0 ? fc0() : []).filter(k => !RH_PES_CAMPOS.includes(k));
+  const p0 = paintRhDbSub;
+  paintRhDbSub = function (sub) {
+    p0(sub);
+    if (sub !== "funcs" || !RHDB_STATE.ready) return;
+    const adm = !!session.n1 && !(typeof vcAtivo === "function" && vcAtivo());
+    const body = $("rhdbBody"); if (!body) return;
+    const nLeg = RHDB_STATE.itens.filter(x => x._leg && x._leg.length).length;
+    const colsMain = RH_PES_CAMPOS.filter(k => RHF_STATE.cols && RHF_STATE.cols.has(k));
+    let html = "";
+    const ilegivel = (RH_PES.list && !RH_PES.ok) || (RH_PES.erro && RH_PES.list === undefined);
+    if (!adm) { if (ilegivel) html = `<div class="rhf-aviso">Não foi possível ler os dados pessoais (lista restrita)${RH_PES.erro ? ` (${esc(RH_PES.erro)})` : ""}. <button class="btn" onclick="renderRhDbSub('funcs')">Tentar de novo</button></div>`; }
+    else if (RH_PES.list === null && (nLeg || colsMain.length)) html = `<div class="rhf-aviso"><b>Dados pessoais na lista principal.</b> CPF, nascimento, PIS e telefone ainda estão em "RH — Funcionários", que outros módulos leem. Rode <a href="#/configuracao">Sistema › Configuração › "Executar tudo na ordem"</a> para criar a lista restrita "${esc(LISTS.rh_func_pes.displayName)}" e depois volte aqui.</div>`;
+    else if (rhPesAtivo() && (nLeg || colsMain.length)) html = `<div class="rhf-aviso rhpes-aviso"><b>Dados pessoais na lista principal.</b> ${nLeg ? `CPF, nascimento, PIS ou telefone de <b>${nLeg}</b> funcionário(s) ainda estão` : "As colunas CPF, nascimento, PIS e telefone ainda existem"} em "RH — Funcionários", que outros módulos leem. <button class="btn primary" onclick="rhPesMigrar()">Mover dados pessoais</button></div>`;
+    else if (ilegivel) html = `<div class="rhf-aviso">Não foi possível ler a lista "${esc(LISTS.rh_func_pes.displayName)}"${RH_PES.erro ? ` (${esc(RH_PES.erro)})` : ""}. Os dados pessoais não aparecem e não podem ser gravados agora. <button class="btn" onclick="renderRhDbSub('funcs')">Tentar de novo</button></div>`;
+    if (html) body.insertAdjacentHTML("afterbegin", html);
+  };
+}
+/* formulário: sem acesso à lista restrita, os 4 campos saem e uma nota explica */
+{ const f0 = RHDB_FORMS.funcs;
+  RHDB_FORMS.funcs = v => {
+    let h = f0(v);
+    if (!rhPesSemLugar() && !(RH_PES.list && !RH_PES.ok)) return h;
+    ["rdFuCPF", "rdFuNasc", "rdFuPIS", "rdFuTel"].forEach(id => { h = h.replace(new RegExp(`<div class="field"><label>[^<]*</label><input[^>]*id="${id}"[^>]*></div>`), ""); });
+    return h.replace('<div class="form-grid">', `<div class="form-grid"><div class="field full"><div class="hint">CPF, data de nascimento, PIS e telefone ficam na lista restrita "${esc(LISTS.rh_func_pes.displayName)}"${RH_PES.list && !RH_PES.ok ? ", que não pôde ser lida agora" : ", à qual você não tem acesso (ou que ainda não foi criada)"}.</div></div>`);
+  };
+}
+/* excluir um funcionário também exclui os dados pessoais dele (todos os registros, se houver repetidos) */
+{ const ex0 = window.rhDbExcluir;
+  window.rhDbExcluir = async (sub, id) => {
+    if (sub !== "funcs" || !rhPesAtivo()) return ex0(sub, id);
+    if (!confirm("Excluir este registro?")) return;
+    try { await graph(`/sites/${RHDB_STATE.site.id}/lists/${RHDB_STATE.list.id}/items/${id}`, { method: "DELETE" }); }
+    catch (e) { toast("Erro: " + e.message, 6000); return; }
+    let aviso = "";
+    try { await rhPesLerItens();
+      for (const pid of (RH_PES.todos.get(String(id)) || [])) await graph(`/sites/${RH_PES.site.id}/lists/${RH_PES.list.id}/items/${pid}`, { method: "DELETE" });
+      RH_PES.map.delete(String(id)); RH_PES.todos.delete(String(id));
+    } catch (e) { aviso = ` Os dados pessoais ficaram na lista restrita (${e.message}).`; }
+    closeModal(); toast("Registro excluído." + aviso, aviso ? 8000 : 3000); await renderRhDbSub(sub);
+  };
+}
+/* Controle de Ponto: CPF para casar o relatório com o cadastro vem da lista restrita */
+pontoFuncsCarregar = async function () {
+  if (RH_PONTO_STATE.funcs) return;
+  try {
+    const site = await SP.site(CONFIG.sites[LISTS.rh_func.siteKey]); const ls = await SP.lists(site.id), l = ls.find(x => x.displayName === LISTS.rh_func.displayName);
+    const fs = l ? (await SP.items(site.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+    try { await rhPesCarregar(true); if (rhPesAtivo()) rhPesMesclar(fs); } catch (e) { /* sem a lista restrita: casa pelo nome */ }
+    const map = { cpf: {}, nome: {} }; fs.forEach(f => { const c = pontoDig(f.CPF); if (c.length === 11) map.cpf[c] = f; const nn = pontoNorm(f.Title); if (nn && !map.nome[nn]) map.nome[nn] = f; });
+    RH_PONTO_STATE.funcs = fs; RH_PONTO_STATE.funcsMap = map;
+  } catch (e) { RH_PONTO_STATE.funcs = []; RH_PONTO_STATE.funcsMap = { cpf: {}, nome: {} }; }
+};
+/* migração: copia para a lista restrita, confere e só então apaga as 4 colunas da lista principal */
+window.rhPesMigrar = () => {
+  if (typeof vcAtivo === "function" && vcAtivo()) { toast("Você está vendo o ERP como outra pessoa: nada é gravado."); return; }
+  if (!session.n1) { toast("Só o administrador move os dados pessoais."); return; }
+  if (!rhPesAtivo()) { toast(`A lista "${LISTS.rh_func_pes.displayName}" ainda não existe ou não pôde ser lida. Rode a Configuração.`); return; }
+  const n = RHDB_STATE.itens.filter(x => x._leg && x._leg.length).length;
+  $("modal").className = "modal";
+  openModal("Mover dados pessoais", `<div id="rhPesMig"><p>Isto faz três coisas, nesta ordem:</p>
+    <ol class="rhpes-passos" style="padding-left:22px;margin:6px 0 10px"><li>copia CPF, data de nascimento, PIS e telefone de <b>${n}</b> funcionário(s) para a lista restrita "${esc(LISTS.rh_func_pes.displayName)}" (o que já estiver lá é mantido);</li>
+    <li>confere que tudo chegou;</li><li>apaga as colunas CPF, Data de nascimento, PIS e Telefone da lista "RH — Funcionários" (isso também tira esses valores do histórico de versões dela).</li></ol>
+    <p class="hint">Se algo falhar nos passos 1 ou 2, nada é apagado e você pode tentar de novo. Depois disso, a lista "RH — Funcionários" pode ser liberada para leitura de todos no SharePoint.</p></div>
+    <div class="err-msg" id="rhPesErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const rot = t => setTimeout(() => { const b = $("mSave"); if (b) b.textContent = t; }, 0);
+    if (RH_PES.migrando) return false;
+    const box = $("rhPesMig"), err = $("rhPesErr"), btn = $("mSave");
+    const back = $("modalBack"), xBtn = $("modal") && $("modal").querySelector(".modal-head .x");
+    RH_PES.migrando = true; btn.disabled = true; err.style.display = "none"; back.onclick = null; document.removeEventListener("keydown", escClose); if (xBtn) xBtn.disabled = true;
+    const falhas = [];
+    const lerPrinc = async () => (await SP.items(RHDB_STATE.site.id, RHDB_STATE.list.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {}));
+    const comLeg = arr => arr.filter(x => RH_PES_CAMPOS.some(k => !rhPesVazio(x[k])));
+    try {
+      box.innerHTML = `<p><b>Lendo as duas listas…</b></p>`;
+      const lista = comLeg(await lerPrinc()); await rhPesLerItens(); let i = 0;   /* 1. copiar o que está na principal agora (não o que estava na tela) */
+      for (const x of lista) {
+        box.innerHTML = `<p><b>Copiando ${++i} de ${lista.length}…</b> ${esc(x.Title || "")}</p>`;
+        const r = RH_PES.map.get(x._id), pes = {}, dif = [];
+        RH_PES_CAMPOS.forEach(k => { if (rhPesVazio(x[k])) return; if (r && !rhPesVazio(r[k])) { if (rhPesNormV(k, r[k]) !== rhPesNormV(k, x[k])) dif.push(`${RH_PES_ROT[k]} (restrita: ${rhPesNormV(k, r[k])} · principal: ${rhPesNormV(k, x[k])})`); } else pes[k] = x[k]; });
+        if (dif.length) { falhas.push(`${x.Title || x._id}: ${dif.join(", ")} diferente nas duas listas. O formulário mostra o da restrita; se o certo for o da principal, digite-o e salve; depois tente de novo`); continue; }
+        if (Object.keys(pes).length) { try { await rhPesGravar(x._id, x.Title, pes, true); } catch (e) { falhas.push(`${x.Title || x._id}: ${e.message}`); } }
+      }
+      if (!falhas.length) {   /* 2. conferir: relê as duas listas logo antes de apagar e exige o mesmo valor dos dois lados */
+        box.innerHTML = `<p><b>Conferindo…</b></p>`;
+        const agora = comLeg(await lerPrinc()); await rhPesLerItens();
+        agora.forEach(x => { const r = RH_PES.map.get(x._id); const faltou = RH_PES_CAMPOS.filter(k => !rhPesVazio(x[k]) && (!r || rhPesNormV(k, r[k]) !== rhPesNormV(k, x[k]))); if (faltou.length) falhas.push(`${x.Title || x._id}: ${faltou.map(k => RH_PES_ROT[k]).join(", ")} não confere (mudou durante a cópia?)`); });
+      }
+      if (!falhas.length) {   /* 3. apagar as colunas da lista principal */
+        box.innerHTML = `<p><b>Apagando as colunas da lista principal…</b></p>`;
+        const cs = await graphAll(`/sites/${RHDB_STATE.site.id}/lists/${RHDB_STATE.list.id}/columns?$select=id,name`);
+        for (const k of RH_PES_CAMPOS) { const c = cs.find(y => y.name === k); if (!c) continue;
+          try { await graph(`/sites/${RHDB_STATE.site.id}/lists/${RHDB_STATE.list.id}/columns/${c.id}`, { method: "DELETE" }); } catch (e) { falhas.push(`coluna ${k}: ${e.message}`); } }
+        RHF_STATE.colsDe = null;
+      }
+    } catch (e) { falhas.push(e.message || String(e)); }
+    finally { RH_PES.migrando = false; back.onclick = ev => { if (ev.target === back) closeModal(); }; document.addEventListener("keydown", escClose); if (xBtn) xBtn.disabled = false; }
+    LANC_AUX.funcs = null;
+    await renderRhDbSub("funcs");
+    if (falhas.length) { if (!$("rhPesErr")) { toast(`Migração incompleta: ${falhas[0]}`, 9000); return false; } btn.disabled = false; rot("Tentar de novo"); $("rhPesErr").style.display = "block"; $("rhPesErr").innerHTML = `<b>Não concluído:</b><br>${falhas.slice(0, 12).map(esc).join("<br>")}`; box.innerHTML = `<p>Nada foi apagado da lista principal. "Tentar de novo" relê as duas listas e refaz só o que falta.</p>`; return false; }
+    toast("Dados pessoais movidos para a lista restrita. Agora a lista \"RH — Funcionários\" pode ser liberada para leitura.", 9000); return true;
+  });
+  $("mSave").textContent = "Mover agora";
 };
 
 /* v0.12.21: aliases para inspeção pelo console (DevTools) e testes — não altera comportamento */

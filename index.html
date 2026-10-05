@@ -2926,6 +2926,8 @@ body.vendo-como::after{border-color:var(--orange)}
 .ponto-prev{border:1px solid var(--line);padding:12px 14px;margin:10px 0}.ponto-prev h4{margin:0 0 8px}.ponto-prev details{margin-top:8px}.ponto-avisos ul{margin:6px 0 0 18px;font-size:12.5px}
 .cap-table th.sortable.asc::after{content:" ↑"}.cap-table th.sortable.desc::after{content:" ↓"}
 .cap-table tbody tr.on td{background:var(--azul-claro,#EEF2F8)}
+/* v0.12.46 · controle de caixa da agência */
+.agcx-tab tr.agcx-cx td{background:#FBFCFE}.agcx-tab td .sup{font-size:11.5px}#agMovTabs .cap-views{margin-bottom:14px}
 </style>
 </head>
 <body>
@@ -2986,7 +2988,7 @@ body.vendo-como::after{border-color:var(--orange)}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.45<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.46<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3023,7 +3025,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.45",
+  version: "v0.12.46",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -17835,7 +17837,7 @@ window.capCtbImprimir = () => {
    emitido por); seções numeradas; tabelas com filete fino e números alinhados; rodapé com origem e paginação.
    ===================================================================== */
 function printDoc(o) {
-  const tit = String(o.titulo || "Documento").replace(/["\\]/g, " ");
+  const tit = String(o.titulo || "Documento").replace(/[^\p{L}\p{N} .,:;·/()_+\-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "Documento";   /* v0.12.46: só letras, números e pontuação simples — o título vai dentro de <style> e <title> */
   const css = `
     @page { size: A4 ${o.paisagem ? "landscape" : "portrait"}; margin: 13mm 12mm 15mm;
       @bottom-left { content: "Transportadora Nova Macabu · ${tit}"; font: 7.5pt "Manrope", Arial, sans-serif; color: #6B7280; }
@@ -20335,6 +20337,244 @@ window.pontoImprimir = () => {
     ${recs.map(r => `<tr><td><b>${esc(r.nome)}</b><br><span style="color:#6B7280">${esc(r.cargo)}</span></td><td>${esc(r.dep)}</td><td>${esc(r.escala || "—")}</td><td class="r">${r.diasTrab}</td><td class="r">${pontoFmt(r.prev)}</td><td class="r">${pontoFmt(r.trab)}</td><td class="r">${r.prev ? Math.round(r.cumpr) + "%" : "—"}</td><td class="r">${r.he ? pontoFmt(r.he) : "—"}</td><td class="r">${r.not ? pontoFmt(r.not) : "—"}</td><td class="r">${r.faltas || "—"}</td><td class="r">${(r.afast + r.ferias + r.atest + r.abonos) || "—"}</td><td class="r">${r.atrasos ? pontoFmt(r.atrasos) : "—"}</td><td class="r">${pontoFmt(r.bancoFinal, true)}</td><td>${esc(r.alertas.map(a => a.nome).join("; "))}</td></tr>`).join("")}</tbody></table>
     ${printRodape("RH › Relatórios › Controle de Ponto")}</div>`;
   printDoc({ titulo: `Controle de Ponto ${pontoMesLabel(mes)}`, paisagem: true, fonte: 9.5, css: "table.t td,table.t th{padding:3px 5px;font-size:9px}td.r,th.r{text-align:right;white-space:nowrap}", html });
+};
+
+
+/* =====================================================================
+   v0.12.46 (05/10/2026) · Operações da Agência › Movimento de Caixa — pedido do Rafael
+   1. Depois de aprovado, o movimento some para quem lança: só o administrador vê o histórico completo.
+      A aprovação do Movimento de Caixa passa a ser só do administrador (o proprietário continua aprovando as Vendas).
+   2. Só o administrador tem o Extrato por movimento (A4) e o Relatório geral do mês (A4 e Excel).
+   3. Aba "Controle de caixa" (só o administrador vê): o fluxo do dinheiro da agência, separado do caixa oficial —
+      entradas e saídas dos movimentos aprovados + lançamentos do próprio administrador (saldo inicial, reforço de troco,
+      retiradas para depósito ou para a sede, despesas pagas pelo caixa, ajustes), com saldo acumulado por sub-agência,
+      e o aviso quando o saldo anterior informado pelo caixa não bate com o saldo do controle.
+   ===================================================================== */
+const AGCX = { aba: "mov", mes: "", sub: "", itens: [], site: null, list: undefined, ready: false, carregando: null, _cols: null };
+const AGCX_CATS = ["Saldo inicial", "Reforço de troco", "Retirada para depósito", "Retirada para a sede", "Despesa paga pelo caixa", "Ajuste / diferença", "Outro"];
+const AGCX_CAT_TIPO = { "Saldo inicial": "Entrada", "Reforço de troco": "Entrada", "Retirada para depósito": "Saída", "Retirada para a sede": "Saída", "Despesa paga pelo caixa": "Saída" };
+LISTS.ag_caixa = {
+  key: "ag_caixa", displayName: "Agência — Caixa", siteKey: "financeiro", titleAs: "Protocolo",
+  description: "Agência NMB · controle de caixa da área de movimento (dinheiro): lançamentos do administrador — saldo inicial, reforços, retiradas, despesas pagas pelo caixa e ajustes. Só o administrador usa.",
+  columns: [
+    { name: "Data",       displayName: "Data",                 required: true, dateTime: dateOnly },
+    { name: "SubAgencia", displayName: "Agência / sub-agência", text: { allowMultipleLines: false, maxLength: 80 } },
+    { name: "Municipio",  displayName: "Município",            text: { allowMultipleLines: false, maxLength: 60 } },
+    { name: "Tipo",       displayName: "Tipo",                 required: true, choice: choice(["Entrada", "Saída"]) },
+    { name: "Categoria",  displayName: "Categoria",            choice: choice(AGCX_CATS, true) },
+    { name: "Valor",      displayName: "Valor (R$)",           required: true, number: money },
+    { name: "Descricao",  displayName: "Descrição",            text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Por",        displayName: "Lançado por",          text: { allowMultipleLines: false, maxLength: 100 } }
+  ]
+};
+SETUP_ORDER.push("ag_caixa");
+const agcxAdmin = () => !!session.n1;
+const agcxMesDe = d => String(d || "").slice(0, 7);
+const agcxMesLabel = c => { const [y, m] = String(c).split("-").map(Number); return m ? `${["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][m - 1]}/${y}` : c; };
+const agcxSubDe = x => lancMovTurnoSub(x).sub || "";
+const agcxNum = v => Math.round(Number(v || 0) * 100) / 100;
+
+/* ---------- 1. aprovação e histórico só do administrador ---------- */
+{ const la0 = lancAprovador;
+  lancAprovador = function (mod) { if (mod === "ag_conc" && !session.n1 && ((LANC_ED && LANC_ED.k === "agmov") || AGCX._pintando)) return false; return la0(mod); }; }
+{ const a0 = window.lancAbrir;
+  window.lancAbrir = async (k, id) => {
+    if (k === "agmov") { AGCX.aba = "mov"; if (id && !agcxAdmin()) { const x = LANC.agmov.state.itens.find(y => String(y._id) === String(id)); if (x && x.Status === "Aprovado") { toast("Movimento aprovado: fica disponível só para o administrador."); return; } } }
+    return a0(k, id); }; }
+{ const p0 = lancPaint;
+  lancPaint = function (k) {
+    if (k !== "agmov") return p0(k);
+    const st = LANC.agmov.state;
+    if (agcxAdmin() && AGCX.aba === "caixa" && !(LANC_ED && LANC_ED.k === "agmov")) { agcxTabs(); agcxPaint(); return; }
+    const all = st.itens; AGCX._pintando = true;
+    if (!agcxAdmin()) st.itens = all.filter(x => x.Status !== "Aprovado");   /* quem lança não vê o que já foi aprovado */
+    try { p0(k); } finally { st.itens = all; AGCX._pintando = false; }
+    if (!(LANC_ED && LANC_ED.k === "agmov") && AGCX.voltar) { AGCX.voltar = false; if (agcxAdmin()) { AGCX.aba = "caixa"; agcxTabs(); agcxPaint(); return; } }   /* veio do controle: volta para lá */
+    agcxTabs();
+    const body = $("agMovBody"); if (!body || (LANC_ED && LANC_ED.k === "agmov")) return;
+    agcxTextos(body);
+    /* rascunho de um movimento que já foi aprovado: quem lança não abre mais; só descarta */
+    if (!agcxAdmin()) body.querySelectorAll(".lanc-rasc-it").forEach(it => { const bt = [...it.querySelectorAll("button")].find(b => /Continuar/.test(b.textContent)); const m = bt && String(bt.getAttribute("onclick") || "").match(/decodeURIComponent\('([^']+)'\)/); if (!m) return; const x = all.find(y => String(y._id) === decodeURIComponent(m[1])); if (x && x.Status === "Aprovado") { bt.replaceWith(Object.assign(document.createElement("span"), { className: "sup", textContent: "já aprovado pelo administrador" })); } });
+    if (!agcxAdmin()) {
+      const kp = body.querySelector(".cap-kpis .kpi.pago"); if (kp) kp.remove();
+      const dica = body.querySelector(".cap-dica"); if (dica) dica.insertAdjacentHTML("afterend", `<p class="cap-dica">Depois de aprovado, o movimento sai desta lista e fica com o administrador.</p>`);
+    } else {
+      const acts = $("agMovActions"); if (acts && !acts.querySelector(".agcx-rel")) acts.insertAdjacentHTML("afterbegin", `<button class="btn ghost agcx-rel" onclick="agcxRelatorio()" title="Movimentos aprovados e caixa do mês (A4)">Relatório do mês</button>`);
+      /* extrato em cada linha */
+      body.querySelectorAll("table.lanc-lista tbody tr").forEach(tr => { const m = String(tr.getAttribute("onclick") || "").match(/lancAbrir\('agmov',\s*decodeURIComponent\('([^']+)'\)\)/); const td = tr.querySelector("td.act"); if (m && td && !td.querySelector(".agcx-ext")) td.insertAdjacentHTML("afterbegin", `<button class="btn mini ghost agcx-ext" onclick="event.stopPropagation(); agmovExtrato(${jsArg(decodeURIComponent(m[1]))})" title="Extrato do movimento (A4)">Extrato</button> `); });
+    }
+  }; }
+{ const e0 = lancPintarEditor;
+  lancPintarEditor = function (soCampos) {
+    e0(soCampos);
+    if (LANC_ED && LANC_ED.k === "agmov") { agcxTabs(); agcxTextos($("agMovBody")); }   /* no editor as abas somem; textos só do administrador */
+    if (!LANC_ED || LANC_ED.k !== "agmov" || !LANC_ED.id || !agcxAdmin()) return;
+    const acts = document.querySelector(".lanc-acts"); if (acts && !acts.querySelector(".agcx-ext")) acts.insertAdjacentHTML("afterbegin", `<button class="btn ghost agcx-ext" onclick="agmovExtrato(${jsArg(LANC_ED.id)})">Extrato (A4)</button>`);
+  }; }
+{ const pg0 = pageAgMov;
+  pageAgMov = function () { return pg0().replace("aprovação por administrador ou proprietário do módulo", "aprovação pelo administrador").replace('<div id="agMovBody">', '<div id="agMovTabs"></div><div id="agMovBody">'); }; }
+const r0AgMov = MOD_RESET.ag_mov; MOD_RESET.ag_mov = () => { if (r0AgMov) r0AgMov(); AGCX.aba = "mov"; AGCX.sub = ""; AGCX.itens = []; AGCX.ready = false; AGCX.list = undefined; AGCX.voltar = false; AGCX.erro = ""; };
+/* excluir e aprovar/rejeitar um movimento: só o administrador, também por chamada direta */
+{ const pe0 = lancPodeExcluirReg; lancPodeExcluirReg = function (d, x) { if (d && d.k === "agmov" && x && x.Status === "Aprovado" && !session.n1) return false; return pe0(d, x); }; }
+{ const ex0 = window.lancExcluir; window.lancExcluir = async (k, id) => { if (k === "agmov" && !session.n1) { const x = (LANC.agmov.state.itens || []).find(y => String(y._id) === String(id)); if (x && x.Status === "Aprovado") { toast("Movimento aprovado: só o administrador exclui."); return; } } return ex0(k, id); }; }
+{ const ap0 = window.lancAprovar, rj0 = window.lancRejeitar;
+  window.lancAprovar = async () => { if (LANC_ED && LANC_ED.k === "agmov" && !session.n1) { toast("Só o administrador aprova o Movimento de Caixa."); return; } return ap0(); };
+  window.lancRejeitar = async () => { if (LANC_ED && LANC_ED.k === "agmov" && !session.n1) { toast("Só o administrador aprova ou rejeita o Movimento de Caixa."); return; } return rj0(); }; }
+/* textos do editor e da lista falam só do administrador */
+function agcxTextos(raiz) {
+  if (!raiz) return;
+  const w = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT); const ns = []; while (w.nextNode()) ns.push(w.currentNode);
+  ns.forEach(n => { const t = n.nodeValue; if (!t || !/proprietário do módulo/.test(t)) return;
+    n.nodeValue = t.replace(/Aprovação por administradores ou pelo proprietário do módulo\./, "Aprovação pelo administrador.").replace(/de um administrador ou do proprietário do módulo/g, "do administrador").replace(/um administrador ou o proprietário do módulo/g, "o administrador").replace(/administradores e proprietários/g, "o administrador").replace(/administradores e o proprietário do módulo/g, "o administrador"); });
+}
+function agcxTabs() {
+  const t = $("agMovTabs"); if (!t) return;
+  if (!agcxAdmin() || (LANC_ED && LANC_ED.k === "agmov")) { t.innerHTML = ""; return; }
+  t.innerHTML = `<div class="cap-views"><button class="tab ${AGCX.aba === "mov" ? "on" : ""}" onclick="agcxAba('mov')">Movimentos</button><button class="tab ${AGCX.aba === "caixa" ? "on" : ""}" onclick="agcxAba('caixa')">Controle de caixa</button></div>`;
+}
+window.agcxAba = a => { if (!agcxAdmin()) return; AGCX.aba = a; lancPaint("agmov"); };
+
+/* ---------- 3. controle de caixa ---------- */
+async function agcxLoad(force) {
+  if (!agcxAdmin()) return;
+  if (AGCX.carregando) { await AGCX.carregando; if (!force) return; }
+  AGCX.carregando = (async () => {
+    try {
+      if (!AGCX.site) AGCX.site = await SP.site(CONFIG.sites[LISTS.ag_caixa.siteKey]);
+      if (force || AGCX.list === undefined) { const ls = await SP.lists(AGCX.site.id); AGCX.list = ls.find(l => l.displayName === LISTS.ag_caixa.displayName) || null; }
+      AGCX.ready = !!AGCX.list;
+      AGCX.itens = AGCX.list ? (await SP.items(AGCX.site.id, AGCX.list.id)).map(it => Object.assign({ _id: it.id }, it.fields || {})) : [];
+    } finally { AGCX.carregando = null; }
+  })();
+  return AGCX.carregando;
+}
+function agcxMovAprov() { return (LANC.agmov.state.itens || []).filter(x => x.Status === "Aprovado"); }
+function agcxMeses() { const s = new Set(); agcxMovAprov().forEach(x => s.add(agcxMesDe(lancDataIso(x.Data)))); AGCX.itens.forEach(x => s.add(agcxMesDe(lancDataIso(x.Data)))); s.add(todayISO().slice(0, 7)); return [...s].filter(Boolean).sort().reverse(); }
+/* lançamentos do controle em ordem de data: movimentos aprovados + lançamentos do administrador */
+function agcxLancs(sub) {
+  const L = [];
+  agcxMovAprov().forEach(x => { const s = agcxSubDe(x); if (sub && s !== sub) return; L.push({ t: "mov", id: String(x._id), d: lancDataIso(x.Data), sub: s, mun: lancMunVal(x.Municipio), desc: `Movimento ${x.Title || ""} · ${x.Caixa || ""}${x.Turno && x.SubAgencia ? " · " + x.Turno : ""}`, ent: agcxNum(x.TotalEntradas), sai: agcxNum(x.TotalSaidas), x }); });
+  AGCX.itens.forEach(x => { const s = x.SubAgencia || ""; if (sub && s !== sub) return; const v = agcxNum(x.Valor); L.push({ t: "cx", id: String(x._id), d: lancDataIso(x.Data), sub: s, mun: lancMunVal(x.Municipio), cat: x.Categoria || "", desc: [x.Categoria, x.Descricao].filter(Boolean).join(" · "), ent: x.Tipo === "Entrada" ? v : 0, sai: x.Tipo === "Saída" ? v : 0, por: x.Por || "", x }); });
+  /* no mesmo dia: entradas do administrador (saldo inicial, reforço) antes dos movimentos; saídas (retiradas, despesas) depois */
+  const ordem = l => l.t === "cx" ? (l.ent > 0 ? 0 : 2) : 1;
+  L.sort((a, b) => a.d.localeCompare(b.d) || ordem(a) - ordem(b) || Number(a.id) - Number(b.id));
+  let acc = 0; L.forEach(l => { acc = agcxNum(acc + l.ent - l.sai); l.saldo = acc; });
+  return L;
+}
+function agcxSubs() { const s = new Set(lancSubs()); agcxMovAprov().forEach(x => { const v = agcxSubDe(x); if (v) s.add(v); }); AGCX.itens.forEach(x => { if (x.SubAgencia) s.add(x.SubAgencia); }); return [...s]; }
+function agcxMesAtual() { const ms = agcxMeses(); if (!AGCX.mes || !ms.includes(AGCX.mes)) AGCX.mes = ms[0] || todayISO().slice(0, 7); return AGCX.mes; }
+function agcxDados(mes, sub) {
+  const L = agcxLancs(sub), doMes = L.filter(l => agcxMesDe(l.d) === mes), antes = L.filter(l => l.d < mes + "-01");
+  const saldoAnt = antes.length ? antes[antes.length - 1].saldo : 0;
+  const t = { entMov: 0, saiMov: 0, entCx: 0, saiCx: 0, nMov: 0, nCx: 0 };
+  doMes.forEach(l => { if (l.t === "mov") { t.entMov += l.ent; t.saiMov += l.sai; t.nMov++; } else { t.entCx += l.ent; t.saiCx += l.sai; t.nCx++; } });
+  Object.keys(t).forEach(k => t[k] = agcxNum(t[k]));
+  const saldoFim = doMes.length ? doMes[doMes.length - 1].saldo : saldoAnt;
+  /* saldo anterior informado pelo caixa × saldo do controle logo antes do movimento (só com sub-agência escolhida a conta fecha por caixa) */
+  if (sub) { let acc = 0; L.forEach(l => { if (l.t === "mov") { const inf = Number(l.x.SaldoAnterior || 0); l.difere = Math.abs(agcxNum(inf - acc)) >= 0.01 ? agcxNum(inf - acc) : 0; } acc = l.saldo; }); }
+  return { L, doMes, saldoAnt, saldoFim, t };
+}
+function agcxPaint() {
+  const body = $("agMovBody"), acts = $("agMovActions"); if (!body) return;
+  if (!agcxAdmin()) { body.innerHTML = ""; return; }
+  if (acts) acts.innerHTML = `<button class="btn" onclick="agcxAtualizar()">Atualizar</button>`;
+  if (AGCX.erro) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar o controle de caixa</h3><p>${esc(AGCX.erro)}</p></div>`; return; }
+  if (!AGCX.ready && AGCX.list === undefined) { body.innerHTML = `<div class="cap-empty"><h3>Carregando o controle de caixa…</h3></div>`; agcxLoad().then(() => { if (AGCX.aba === "caixa") agcxPaint(); }).catch(e => { AGCX.erro = e.message || String(e); if (AGCX.aba === "caixa") agcxPaint(); }); return; }
+  const mes = agcxMesAtual(), sub = AGCX.sub, D = agcxDados(mes, sub), subs = agcxSubs();
+  if (acts) acts.innerHTML = `<button class="btn ghost" onclick="agcxRelatorio()" title="Movimentos aprovados e caixa do mês (A4)">Relatório do mês</button><button class="btn ghost" onclick="agcxExcel()">Excel</button><button class="btn" onclick="agcxAtualizar()">Atualizar</button>${AGCX.ready ? `<button class="btn primary" onclick="agcxForm()">+ Lançamento no caixa</button>` : ""}`;
+  const chip = (v, rot, n) => `<button type="button" class="chip ${sub === v ? "on" : ""}" onclick="agcxSet('sub', ${jsArg(v)})">${esc(rot)}${n != null ? ` <span class="n">${n}</span>` : ""}</button>`;
+  const kpi = (lbl, val, s, cls) => `<div class="kpi ${cls || ""}"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(val)}</div><div class="sub">${esc(s || "")}</div></div>`;
+  const liq = agcxNum(D.t.entCx - D.t.saiCx);
+  const aviso = !AGCX.ready ? `<div class="rhf-aviso">A lista "Agência — Caixa" ainda não existe: rode <a href="#/configuracao">Sistema › Configuração › "Executar tudo na ordem"</a>. Até lá o controle mostra só os movimentos aprovados.</div>` : "";
+  const difs = sub ? D.doMes.filter(l => l.t === "mov" && l.difere).length : 0;
+  body.innerHTML = aviso + `<div class="ponto-filtros"><label class="ponto-mes">Mês <select onchange="agcxSet('mes', this.value)">${agcxMeses().map(m => `<option value="${esc(m)}" ${m === mes ? "selected" : ""}>${esc(agcxMesLabel(m))}</option>`).join("")}</select></label></div>
+    <div class="chips lanc-mun-chips" aria-label="Sub-agência"><span class="lbl">Caixa</span>${chip("", "Todas as sub-agências")}${subs.map(s => chip(s, s)).join("")}</div>
+    <div class="cap-kpis">${kpi("Saldo anterior", fmtBRL(D.saldoAnt), "antes de " + (mes ? agcxMesLabel(mes) : ""))}${kpi("Entradas", fmtBRL(D.t.entMov), `${D.t.nMov} movimento(s) aprovado(s)`, "pago")}${kpi("Saídas dos movimentos", fmtBRL(D.t.saiMov), "pagas no caixa", "venc")}${kpi("Lançamentos do administrador", (liq >= 0 ? "+" : "−") + fmtBRL(Math.abs(liq)), `${D.t.nCx} lançamento(s) · ${fmtBRL(D.t.entCx)} entradas · ${fmtBRL(D.t.saiCx)} saídas`)}${kpi("Saldo do caixa", fmtBRL(D.saldoFim), sub ? sub : "todas as sub-agências", D.saldoFim < 0 ? "venc" : "")}</div>
+    ${sub && difs ? `<div class="rhf-aviso"><b>${difs} movimento(s)</b> com saldo anterior informado diferente do saldo do controle. Confira o extrato de cada um.</div>` : ""}
+    ${D.doMes.length ? `<div class="table-wrap"><table class="cap-table agcx-tab"><thead><tr><th>Data</th><th>Sub-agência</th><th>Lançamento</th><th class="right">Entrada</th><th class="right">Saída</th><th class="right">Saldo</th><th></th></tr></thead><tbody>
+      ${D.doMes.map(l => `<tr class="${l.t === "cx" ? "agcx-cx" : ""}" ${l.t === "mov" ? `onclick="agcxAbrirMov(${jsArg(l.id)})" title="Abrir o movimento"` : ""}><td class="nw">${esc(fmtDate(l.d))}</td><td>${esc(l.sub || "—")}${l.mun ? `<div class="sup">${esc(l.mun)}</div>` : ""}</td><td>${l.t === "mov" ? `<b>${esc(l.desc)}</b>${l.difere ? `<div class="venc-txt sup">saldo anterior informado ${l.difere > 0 ? "maior" : "menor"} que o do controle em ${esc(fmtBRL(Math.abs(l.difere)))}</div>` : ""}` : `<span class="pill st-aguardando"><i></i>${esc(l.cat || "Lançamento")}</span> ${esc(l.x.Descricao || "")}<div class="sup">por ${esc(l.por || "—")}</div>`}</td><td class="right">${l.ent ? esc(fmtBRL(l.ent)) : "—"}</td><td class="right">${l.sai ? esc(fmtBRL(l.sai)) : "—"}</td><td class="right"><b class="${l.saldo < 0 ? "venc-txt" : ""}">${esc(fmtBRL(l.saldo))}</b></td><td class="act nw">${l.t === "mov" ? `<button class="btn mini ghost" onclick="event.stopPropagation(); agmovExtrato(${jsArg(l.id)})">Extrato</button>` : `<button class="btn mini ghost danger" onclick="agcxExcluir(${jsArg(l.id)})">Excluir</button>`}</td></tr>`).join("")}
+      </tbody></table></div>` : `<div class="cap-empty"><h3>Nenhum lançamento em ${esc(agcxMesLabel(mes))}${sub ? " · " + esc(sub) : ""}</h3><p>Movimentos aprovados entram aqui sozinhos; use "+ Lançamento no caixa" para saldo inicial, reforços, retiradas e despesas pagas pelo caixa.</p></div>`}
+    <p class="cap-dica">Controle interno do dinheiro da agência, separado do Fluxo de Caixa oficial. Só administradores veem esta aba. O saldo acumula desde o primeiro lançamento; o saldo anterior informado em cada movimento é comparado com o do controle quando uma sub-agência está escolhida.</p>`;
+}
+window.agcxSet = (k, v) => { if (k === "sub") AGCX.sub = AGCX.sub === v ? "" : v; else AGCX[k] = v; agcxPaint(); };
+window.agcxAtualizar = async () => { AGCX.erro = ""; try { await loadAgMov(true); await agcxLoad(true); } catch (e) { AGCX.erro = e.message || String(e); } agcxPaint(); };
+window.agcxAbrirMov = id => { AGCX.voltar = true; lancAbrir("agmov", id); };
+window.agcxForm = () => {
+  if (!agcxAdmin() || !AGCX.ready) return;
+  const subs = agcxSubs(), muns = lancMunicipios();
+  openModal("Lançamento no caixa", `<div class="form-grid">
+    <div class="field"><label>Data<span class="req">*</span></label><input type="date" id="cxF_Data" value="${esc(todayISO())}"></div>
+    <div class="field"><label>Categoria<span class="req">*</span></label><select id="cxF_Cat">${AGCX_CATS.map(c => `<option>${esc(c)}</option>`).join("")}</select></div>
+    <div class="field"><label>Tipo<span class="req">*</span></label><select id="cxF_Tipo"><option>Entrada</option><option>Saída</option></select><div class="hint">Entrada = dinheiro que entra no caixa (saldo inicial, reforço); Saída = dinheiro que sai (depósito, sede, despesa)</div></div>
+    <div class="field"><label>Valor (R$)<span class="req">*</span></label><input id="cxF_Valor" inputmode="decimal" placeholder="0,00" autocomplete="off"></div>
+    <div class="field"><label>Agência / sub-agência</label><select id="cxF_Sub"><option value="">—</option>${subs.map(s => `<option ${AGCX.sub === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>
+    <div class="field"><label>Município</label><select id="cxF_Mun"><option value="">—</option>${muns.map(m => `<option>${esc(m)}</option>`).join("")}</select></div>
+    <div class="field full"><label>Descrição</label><input id="cxF_Desc" placeholder="Ex.: depósito no Banco do Brasil, envelope nº…" autocomplete="off"></div>
+    <div class="err-msg" id="cxF_Err" style="display:none"></div></div>`, async () => {
+    const err = m => { const e = $("cxF_Err"); e.style.display = "block"; e.textContent = m; return false; };
+    const v = lancNum($("cxF_Valor").value); if (!$("cxF_Data").value) return err("Informe a data."); if (!(v > 0)) return err("Informe um valor maior que zero.");
+    const f = { Title: "CX-" + Date.now().toString(36).toUpperCase(), Data: $("cxF_Data").value, SubAgencia: $("cxF_Sub").value || null, Municipio: $("cxF_Mun").value || null, Tipo: $("cxF_Tipo").value, Categoria: $("cxF_Cat").value, Valor: agcxNum(v), Descricao: $("cxF_Desc").value.trim() || null, Por: lancQuem() };
+    try { await SP.create(AGCX.site.id, AGCX.list.id, f); } catch (e) { return err("Erro: " + e.message); }
+    toast("Lançamento gravado."); await agcxLoad(true); agcxPaint(); return true;
+  });
+  $("mSave").textContent = "Gravar";
+  const cat = $("cxF_Cat"), tipo = $("cxF_Tipo"); cat.addEventListener("change", () => { const t = AGCX_CAT_TIPO[cat.value]; if (t) tipo.value = t; });
+};
+window.agcxExcluir = async id => {
+  if (!agcxAdmin()) return; const x = AGCX.itens.find(i => String(i._id) === String(id)); if (!x) return;
+  if (!(await erpConfirmar({ titulo: "Excluir lançamento do caixa", texto: `${fmtDate(lancDataIso(x.Data))} · ${x.Categoria || x.Tipo} · ${fmtBRL(x.Valor)}. A exclusão não pode ser desfeita.`, sim: "Excluir", perigo: true }))) return;
+  try { await graph(`/sites/${AGCX.site.id}/lists/${AGCX.list.id}/items/${x._id}`, { method: "DELETE" }); toast("Excluído."); await agcxLoad(true); agcxPaint(); } catch (e) { toast("Erro: " + e.message, 6000); }
+};
+
+/* ---------- 2. extrato por movimento e relatório do mês (A4 / Excel) ---------- */
+window.agmovExtrato = id => {
+  if (!agcxAdmin()) { toast("O extrato é só do administrador."); return; }
+  const x = LANC.agmov.state.itens.find(y => String(y._id) === String(id)); if (!x) { toast("Movimento não encontrado."); return; }
+  const ts = lancMovTurnoSub(x), linhas = lancLinhasJson(x.Linhas), e = agcxNum(x.TotalEntradas), s = agcxNum(x.TotalSaidas), ant = agcxNum(x.SaldoAnterior), at = x.SaldoAtual != null ? agcxNum(x.SaldoAtual) : agcxNum(ant + e - s);
+  const stamp = x.Status === "Aprovado" ? "aprovado" : x.Status === "Rejeitado" ? "rejeitado" : "pendente";
+  const html = `<div class="pg">${printCab("Extrato do movimento de caixa", `${fmtDate(lancDataIso(x.Data))} · ${ts.sub || "sem sub-agência"}${lancMunVal(x.Municipio) ? " · " + lancMunVal(x.Municipio) : ""}`, { doc: x.Title || "—", stamp: x.Status || "", stampCls: stamp === "aprovado" ? "ok" : stamp === "rejeitado" ? "warn" : "neutro", meta: [["Caixa", x.Caixa || "—"], ["Turno", ts.turno || "—"], ["Aprovado por", x.Aprovador ? `${x.Aprovador} · ${fmtDate(lancDataIso(x.DataAprovacao || ""))}` : "—"]] })}
+    ${printKpis([["Saldo anterior", fmtBRL(ant)], ["Entradas", fmtBRL(e), "", "pos"], ["Saídas", fmtBRL(s), "", "neg"], ["Saldo atual", fmtBRL(at), "", at < 0 ? "neg" : ""]])}
+    ${printSec("Lançamentos", linhas.length + " linha(s)", 1)}
+    <table class="t"><thead><tr><th style="width:40px">#</th><th>Histórico</th><th class="r" style="width:120px">Entrada</th><th class="r" style="width:120px">Saída</th></tr></thead><tbody>
+    ${linhas.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.h || "")}</td><td class="r">${lancNum(l.e) ? esc(fmtBRL(lancNum(l.e))) : ""}</td><td class="r">${lancNum(l.s) ? esc(fmtBRL(lancNum(l.s))) : ""}</td></tr>`).join("")}
+    <tr><td></td><td><b>Totais</b></td><td class="r"><b>${esc(fmtBRL(e))}</b></td><td class="r"><b>${esc(fmtBRL(s))}</b></td></tr></tbody></table>
+    ${x.Observacoes ? printSec("Observações", "", 2) + `<p>${esc(x.Observacoes)}</p>` : ""}${x.MotivoRejeicao ? printSec("Motivo da rejeição", "", 3) + `<p>${esc(x.MotivoRejeicao)}</p>` : ""}
+    ${x.Historico ? printSec("Histórico do registro", "", x.Observacoes ? 3 : 2) + `<pre style="white-space:pre-wrap;font:inherit;font-size:9.5px;color:#4B5563">${esc(x.Historico)}</pre>` : ""}
+    <div style="margin-top:28px;display:flex;gap:40px"><div style="flex:1;border-top:1px solid #9CA3AF;padding-top:4px;font-size:9.5px">Caixa: ${esc(x.Caixa || "")}</div><div style="flex:1;border-top:1px solid #9CA3AF;padding-top:4px;font-size:9.5px">Conferido por: ${esc(x.Aprovador || "")}</div></div>
+    ${printRodape("Financeiro › Operações da Agência › Movimento de Caixa")}</div>`;
+  printDoc({ titulo: `Extrato ${x.Title || ""}`, html, css: "table.t td,table.t th{padding:4px 6px}td.r,th.r{text-align:right;white-space:nowrap}" });
+};
+function agcxRelDados() {
+  const mes = agcxMesAtual(), sub = AGCX.sub, D = agcxDados(mes, sub);
+  const movs = D.doMes.filter(l => l.t === "mov"), cxs = D.doMes.filter(l => l.t === "cx");
+  const porSub = {}; movs.forEach(l => { const k = l.sub || "Sem sub-agência"; (porSub[k] = porSub[k] || []).push(l); });
+  const pend = (LANC.agmov.state.itens || []).filter(x => x.Status !== "Aprovado" && agcxMesDe(lancDataIso(x.Data)) === mes && (!sub || agcxSubDe(x) === sub));
+  return { mes, sub, D, movs, cxs, porSub, pend };
+}
+window.agcxRelatorio = async () => {
+  if (!agcxAdmin()) { toast("O relatório do mês é só do administrador."); return; }
+  if (AGCX.list === undefined) { try { await agcxLoad(); } catch (e) {} }
+  const R = agcxRelDados(), { mes, sub, D } = R;
+  const lin = l => `<tr><td class="nw">${esc(fmtDate(l.d))}</td><td>${esc(l.x.Title || "")}</td><td>${esc(l.x.Caixa || "")}</td><td>${esc(lancMovTurnoSub(l.x).turno || "")}</td><td class="r">${esc(fmtBRL(l.x.SaldoAnterior || 0))}</td><td class="r">${esc(fmtBRL(l.ent))}</td><td class="r">${esc(fmtBRL(l.sai))}</td><td class="r">${esc(fmtBRL(l.x.SaldoAtual != null ? l.x.SaldoAtual : agcxNum(Number(l.x.SaldoAnterior || 0) + l.ent - l.sai)))}</td><td>${esc(l.x.Aprovador || "")}</td></tr>`;
+  const grupos = Object.keys(R.porSub).sort().map(k => { const g = R.porSub[k], e = agcxNum(g.reduce((s, l) => s + l.ent, 0)), s = agcxNum(g.reduce((a, l) => a + l.sai, 0)); return `<tr class="grp"><td colspan="9"><b>${esc(k)}</b> · ${g.length} movimento(s)</td></tr>${g.map(lin).join("")}<tr class="sub"><td colspan="5"><b>Subtotal ${esc(k)}</b></td><td class="r"><b>${esc(fmtBRL(e))}</b></td><td class="r"><b>${esc(fmtBRL(s))}</b></td><td class="r"><b>${esc(fmtBRL(agcxNum(e - s)))}</b></td><td></td></tr>`; }).join("");
+  const html = `<div class="pg">${printCab("Movimento de Caixa · Relatório geral do mês", `${agcxMesLabel(mes)}${sub ? " · " + sub : " · todas as sub-agências"}`, { doc: `AGMOV-${mes.replace("-", "")}`, meta: [["Movimentos", `${R.movs.length} aprovado(s) · ${R.pend.length} pendente(s)/rejeitado(s)`]] })}
+    ${printKpis([["Saldo anterior", fmtBRL(D.saldoAnt)], ["Entradas", fmtBRL(D.t.entMov), `${D.t.nMov} movimento(s)`, "pos"], ["Saídas dos movimentos", fmtBRL(D.t.saiMov), "", "neg"], ["Lançamentos do administrador", (D.t.entCx - D.t.saiCx >= 0 ? "+" : "−") + fmtBRL(Math.abs(agcxNum(D.t.entCx - D.t.saiCx))), `${D.t.nCx} lançamento(s)`], ["Saldo do caixa", fmtBRL(D.saldoFim), "fim do mês", D.saldoFim < 0 ? "neg" : ""]])}
+    ${printSec("Movimentos aprovados por sub-agência", R.movs.length + " movimento(s)", 1)}
+    ${R.movs.length ? `<table class="t"><thead><tr><th>Data</th><th>Protocolo</th><th>Caixa</th><th>Turno</th><th class="r">Saldo ant.</th><th class="r">Entradas</th><th class="r">Saídas</th><th class="r">Saldo</th><th>Aprovado por</th></tr></thead><tbody>${grupos}<tr class="tot"><td colspan="5"><b>Total do mês</b></td><td class="r"><b>${esc(fmtBRL(D.t.entMov))}</b></td><td class="r"><b>${esc(fmtBRL(D.t.saiMov))}</b></td><td class="r"><b>${esc(fmtBRL(agcxNum(D.t.entMov - D.t.saiMov)))}</b></td><td></td></tr></tbody></table>` : `<p>Nenhum movimento aprovado no mês.</p>`}
+    ${printSec("Lançamentos do administrador no caixa", R.cxs.length + " lançamento(s)", 2)}
+    ${R.cxs.length ? `<table class="t"><thead><tr><th>Data</th><th>Sub-agência</th><th>Categoria</th><th>Descrição</th><th class="r">Entrada</th><th class="r">Saída</th><th>Por</th></tr></thead><tbody>${R.cxs.map(l => `<tr><td class="nw">${esc(fmtDate(l.d))}</td><td>${esc(l.sub || "—")}</td><td>${esc(l.cat)}</td><td>${esc(l.x.Descricao || "")}</td><td class="r">${l.ent ? esc(fmtBRL(l.ent)) : ""}</td><td class="r">${l.sai ? esc(fmtBRL(l.sai)) : ""}</td><td>${esc(l.por)}</td></tr>`).join("")}</tbody></table>` : `<p>Nenhum lançamento do administrador no mês.</p>`}
+    ${R.pend.length ? printSec("Ainda não aprovados no mês", R.pend.length + " movimento(s)", 3) + `<table class="t"><thead><tr><th>Data</th><th>Protocolo</th><th>Caixa</th><th>Sub-agência</th><th class="r">Entradas</th><th class="r">Saídas</th><th>Status</th></tr></thead><tbody>${R.pend.map(x => `<tr><td class="nw">${esc(fmtDate(lancDataIso(x.Data)))}</td><td>${esc(x.Title || "")}</td><td>${esc(x.Caixa || "")}</td><td>${esc(agcxSubDe(x) || "—")}</td><td class="r">${esc(fmtBRL(x.TotalEntradas || 0))}</td><td class="r">${esc(fmtBRL(x.TotalSaidas || 0))}</td><td>${esc(x.Status || "")}</td></tr>`).join("")}</tbody></table>` : ""}
+    ${printRodape("Financeiro › Operações da Agência › Movimento de Caixa")}</div>`;
+  printDoc({ titulo: `Movimento de Caixa ${agcxMesLabel(mes)}`, paisagem: true, fonte: 10, html, css: "table.t td,table.t th{padding:3px 5px;font-size:9px}td.r,th.r{text-align:right;white-space:nowrap}tr.grp td{background:#EEF2F7}tr.sub td,tr.tot td{border-top:1.5px solid #9CA3AF}" });
+};
+window.agcxExcel = async () => {
+  if (!agcxAdmin()) return;
+  if (AGCX.list === undefined) { try { await agcxLoad(); } catch (e) {} }
+  const R = agcxRelDados(), XLSX = await erpLib("xlsx");
+  const a1 = [["Data", "Protocolo", "Sub-agência", "Município", "Caixa", "Turno", "Saldo anterior", "Entradas", "Saídas", "Saldo atual", "Status", "Aprovado por"]].concat(R.movs.map(l => [fmtDate(l.d), l.x.Title || "", l.sub, l.mun, l.x.Caixa || "", lancMovTurnoSub(l.x).turno || "", agcxNum(l.x.SaldoAnterior), l.ent, l.sai, l.x.SaldoAtual != null ? agcxNum(l.x.SaldoAtual) : agcxNum(Number(l.x.SaldoAnterior || 0) + l.ent - l.sai), l.x.Status, l.x.Aprovador || ""]));
+  const a2 = [["Data", "Sub-agência", "Município", "Lançamento", "Categoria", "Descrição", "Entrada", "Saída", "Saldo do controle", "Por"]].concat(R.D.doMes.map(l => [fmtDate(l.d), l.sub, l.mun, l.t === "mov" ? "Movimento " + (l.x.Title || "") : "Administrador", l.cat || "", l.t === "mov" ? (l.x.Caixa || "") : (l.x.Descricao || ""), l.ent || null, l.sai || null, l.saldo, l.t === "mov" ? (l.x.Aprovador || "") : l.por]));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a1), "Movimentos aprovados"); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a2), "Controle de caixa");
+  XLSX.writeFile(wb, `Movimento de Caixa ${R.mes}${R.sub ? " - " + R.sub : ""}.xlsx`);
 };
 
 /* v0.12.21: aliases para inspeção pelo console (DevTools) e testes — não altera comportamento */

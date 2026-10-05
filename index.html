@@ -2909,6 +2909,23 @@ body.vendo-como::after{border-color:var(--orange)}
   #login .lg-kpis{margin-bottom:0}
   #login h1{font-size:clamp(26px,3vw,36px) !important}
 }
+
+/* v0.12.45 · Controle de Ponto */
+.ponto-filtros{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:end;margin:0 0 10px}.ponto-filtros .busca{flex:1 1 280px;min-width:200px;min-height:38px;padding:8px 12px;border:1px solid #D3D8DE;border-radius:var(--geo-r,2px);background:var(--surface);font:inherit;font-size:13.5px;color:var(--ink)}.ponto-filtros .busca:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(15,30,58,.10);outline:none}
+#rhPontoBody .table-wrap{max-height:none}   /* a página rola; a tabela não esconde o mês escolhido numa caixa interna */.ponto-filtros label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:700;color:var(--ink-2)}.ponto-filtros select{min-height:38px;padding:6px 10px;border:1px solid #D3D8DE;border-radius:var(--geo-r);background:var(--surface);font:inherit;font-size:13.5px}.ponto-filtros .ponto-func select{max-width:320px}.ponto-filtros .busca{flex:1;min-width:220px}
+.ponto-chips{margin:0 0 12px}.ponto-chips .lbl{font-size:12.5px;font-weight:700;color:var(--ink-2);margin-right:4px}
+.ponto-kpis .kpi{text-align:left}.ponto-kpis.mini .kpi{padding:10px 14px}.ponto-kpis.mini .kpi .val{font-size:20px}
+.ponto-grid{grid-template-columns:1fr 1fr}@media (max-width:980px){.ponto-grid{grid-template-columns:1fr}}
+.ponto-allist{display:flex;flex-direction:column}.ponto-alrow{display:grid;grid-template-columns:minmax(120px,1fr) auto auto;gap:4px 12px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line-2);cursor:pointer;font-size:13.5px}.ponto-alrow:last-child{border-bottom:0}.ponto-alrow:hover{background:var(--soft)}.ponto-alrow .v{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}.ponto-alrow .sup{white-space:nowrap}
+@media (max-width:640px){.ponto-alrow{grid-template-columns:1fr auto}.ponto-alrow .sup{display:none}}
+.ponto-al{margin:1px 2px 1px 0}
+.ponto-pessoa{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;justify-content:space-between;margin:0 0 14px}.ponto-pessoa h2{margin:0;font-size:22px}
+.ponto-lista tbody tr{cursor:pointer}.ponto-lista tr.ponto-alto td:first-child{box-shadow:inset 3px 0 0 var(--err)}.ponto-lista tr.ponto-medio td:first-child{box-shadow:inset 3px 0 0 var(--warn)}.ponto-lista tfoot td{font-weight:700;background:var(--soft);border-top:2px solid var(--line)}
+.ponto-dias tr.fds td{background:#FAFAF8}.ponto-dias tr.ponto-at td{background:#FFF8F0}
+.ponto-regra.alto{border-left:4px solid var(--err)}.ponto-regra.medio{border-left:4px solid var(--warn)}.ponto-regra.info{border-left:4px solid var(--line)}
+.ponto-prev{border:1px solid var(--line);padding:12px 14px;margin:10px 0}.ponto-prev h4{margin:0 0 8px}.ponto-prev details{margin-top:8px}.ponto-avisos ul{margin:6px 0 0 18px;font-size:12.5px}
+.cap-table th.sortable.asc::after{content:" ↑"}.cap-table th.sortable.desc::after{content:" ↓"}
+.cap-table tbody tr.on td{background:var(--azul-claro,#EEF2F8)}
 </style>
 </head>
 <body>
@@ -2969,7 +2986,7 @@ body.vendo-como::after{border-color:var(--orange)}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.44<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.45<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3006,7 +3023,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.44",
+  version: "v0.12.45",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -15699,7 +15716,7 @@ MOD_RESET.rol = () => { if (typeof ROL_STATE !== "undefined") { ROL_STATE.filtro
 MOD_RESET.rec = () => { if (typeof REC_STATE !== "undefined") { REC_STATE.filtroStatus = ""; } };   /* v0.12.27 */
 MOD_RESET.rh_clt = () => { if (typeof RH_CLT_STATE !== "undefined") { RH_CLT_STATE.tab = "resumo"; RH_CLT_STATE.filtroCat = ""; } };   /* v0.12.27 fix: tirado do top-level de v0.12.26 (TDZ) */
 MOD_RESET.alm_oc = () => { if (typeof ALM_OC_STATE !== "undefined") { ALM_OC_STATE.filtroStatus = ""; } };   /* v0.12.27 #11 */
-MOD_RESET.rh_ponto = () => { if (typeof RH_PONTO_STATE !== "undefined") { RH_PONTO_STATE.tab = "painel"; RH_PONTO_STATE.filtroFunc = ""; RH_PONTO_STATE.mes = ""; } };   /* v0.12.27 #26 */
+MOD_RESET.rh_ponto = () => { if (typeof RH_PONTO_STATE !== "undefined") { RH_PONTO_STATE.tab = "painel"; RH_PONTO_STATE.filtroFunc = ""; RH_PONTO_STATE.mes = ""; RH_PONTO_STATE.dep = ""; RH_PONTO_STATE.func = ""; RH_PONTO_STATE.sit = ""; RH_PONTO_STATE.busca = ""; RH_PONTO_STATE.imp = null; RH_PONTO_STATE.ord = ""; RH_PONTO_STATE.ordDesc = false; RH_PONTO_STATE.cols = null; RH_PONTO_STATE.funcs = null; RH_PONTO_STATE.funcsMap = null; } };   /* v0.12.27 #26 · v0.12.45: ordem e caches zerados */
 MOD_RESET.forn = () => { FORN_STATE.pageN = 45; };   /* v0.12.22b: Fornecedores paginação */
 window.capMore = () => { CAP_STATE.pageN = (CAP_STATE.pageN || 45) + 45; paintCAP(); };
 window.capMoreAll = () => { CAP_STATE.pageN = 999999; paintCAP(); };
@@ -19686,6 +19703,639 @@ RHDB_READ.funcs = () => {
   SP.create = (siteId, listId, fields) => c0(siteId, listId, filtra(listId, fields));
   SP.update = (siteId, listId, itemId, fields) => u0(siteId, listId, itemId, filtra(listId, fields));
 }
+
+/* =====================================================================
+   v0.12.45 (04/10/2026) · RH › Relatórios › Controle de Ponto, completo
+   - Importação direta dos PDFs "Relatório de Horas" do Flit (um colaborador por página), lidos no navegador (pdf.js);
+   - uma linha por colaborador × competência em "RH — Ponto · Marcações", com o detalhe diário em JSON;
+   - abas Painel (indicadores, gráficos, visão geral e individual), Lista (horas do mês), Alertas, Relatórios e Importação;
+   - alertas por regra (limites em Sistema › Parâmetros, chave "ponto"), nas linhas e nos indicadores.
+   ===================================================================== */
+ERP_LIBS.pdfjs = { url: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js", global: "pdfjsLib" };
+const PONTO_PDF_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+/* colunas novas das listas (a Configuração cria nas listas que já existem) */
+LISTS.rh_ponto_marc.columns.push(
+  { name: "CPF",             displayName: "CPF",                      text: { allowMultipleLines: false, maxLength: 14 } },
+  { name: "Admissao",        displayName: "Admissão",                 dateTime: dateOnly },
+  { name: "Escala",          displayName: "Escala (previsto)",        text: { allowMultipleLines: false, maxLength: 80 } },
+  { name: "HorasTotais",     displayName: "Horas normais (h)",        number: {} },
+  { name: "HEDiurnas",       displayName: "HE diurnas (h)",           number: {} },
+  { name: "HENoturnas",      displayName: "HE noturnas (h)",          number: {} },
+  { name: "HETotais",        displayName: "HE totais (h)",            number: {} },
+  { name: "HEInterjornada",  displayName: "HE interjornada (h)",      number: {} },
+  { name: "Intrajornada",    displayName: "Intrajornada (h)",         number: {} },
+  { name: "DiasTrabalhados", displayName: "Dias trabalhados",         number: integer(0, null) },
+  { name: "Folgas",          displayName: "Folgas (dias)",            number: integer(0, null) },
+  { name: "Feriados",        displayName: "Feriados (dias)",          number: integer(0, null) },
+  { name: "Ferias",          displayName: "Férias (dias)",            number: integer(0, null) },
+  { name: "Atestados",       displayName: "Atestados (dias)",         number: integer(0, null) },
+  { name: "Abonos",          displayName: "Abonos (dias)",            number: integer(0, null) },
+  { name: "FaltasBH",        displayName: "Faltas BH (dias)",         number: integer(0, null) },
+  { name: "BancoInicial",    displayName: "Banco de horas inicial (h)", number: {} },
+  { name: "BancoSaldo",      displayName: "Banco de horas do mês (h)",  number: {} },
+  { name: "BancoFinal",      displayName: "Banco de horas final (h)",   number: {} },
+  { name: "HEAcumFinal",     displayName: "HE acumuladas final (h)",    number: {} },
+  { name: "Ajustes",         displayName: "Ajustes manuais",         number: integer(0, null) },
+  { name: "DiasIncompletos", displayName: "Dias com marcação incompleta", number: integer(0, null) },
+  { name: "DiasInterjornada", displayName: "Dias com interjornada curta", number: integer(0, null) }
+);
+LISTS.rh_ponto_rel.columns.push(
+  { name: "Arquivo", displayName: "Arquivo (PDF)", text: { allowMultipleLines: false, maxLength: 160 } },
+  { name: "Paginas", displayName: "Páginas", number: integer(0, null) },
+  { name: "Avisos",  displayName: "Avisos da leitura", text: { allowMultipleLines: true, textType: "plain" } }
+);
+
+/* ---------- leitor do PDF (itens de texto do pdf.js) ---------- */
+/* v0.12.45 · Controle de Ponto: leitor do "Relatório de Horas" do Flit (PDF), a partir dos itens de texto do pdf.js.
+   Entrada: pages = [{ items: [{ str, x, y }] }]  (y crescente para baixo, já normalizado pelo chamador)
+   Saída:   { comp, periodo, funcs: [...], avisos: [...] }  — um registro por colaborador × competência. */
+const PONTO_ROTULOS = ["Folga", "Feriado", "Férias", "Afastado", "Abono", "Atestado", "Falta BH", "Falta", "DSR", "Licença", "Suspensão", "Compensado"];
+const PONTO_OCORR = ["Dia trabalhado", "Folga", "Feriado", "Falta BH", "Falta", "Afastado", "Férias", "Abono", "Atestado"];
+function pontoMin(s) {   /* "-006:44" → -404 (minutos); "24h+" → null */
+  const m = String(s || "").trim().match(/^(-?)(\d{1,4}):(\d{2})$/); if (!m) return null;
+  const v = Number(m[2]) * 60 + Number(m[3]); return m[1] ? -v : v;
+}
+function pontoHoras(min) { return min == null ? null : Math.round(min / 60 * 100) / 100; }
+function pontoFmt(min, sinal) {   /* minutos → "HH:MM" ("-HH:MM") */
+  if (min == null || isNaN(min)) return "—";
+  const neg = min < 0, v = Math.abs(Math.round(min)), h = Math.floor(v / 60), m = v % 60;
+  return (neg ? "-" : (sinal && v ? "+" : "")) + String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+}
+/* um item do pdf.js pode trazer várias células juntas ("07:00 11:00 24h+"); cada palavra vira um token com x estimado pela posição no item */
+function pontoTokens(items) {
+  const out = [];
+  items.forEach(i => { const s = String(i.str || ""); if (!s.trim()) return; const w = Number(i.w || i.width || 0), n = s.length;
+    const re = /\S+/g; let m; while ((m = re.exec(s))) out.push({ str: m[0], x: i.x + (n && w ? w * m.index / n : 0), y: i.y, w: n && w ? w * m[0].length / n : 0 }); });
+  return out;
+}
+function pontoLinhas(items, tol) {   /* agrupa itens por linha (y) e ordena por x */
+  const its = items.filter(i => i.str && i.str.trim()).map(i => ({ s: i.str.trim(), x: i.x, y: i.y }));
+  its.sort((a, b) => a.y - b.y || a.x - b.x);
+  const rows = []; let cur = null;
+  for (const it of its) { if (!cur || Math.abs(it.y - cur.y) > (tol || 3)) { cur = { y: it.y, it: [] }; rows.push(cur); } cur.it.push(it); }
+  rows.forEach(r => r.it.sort((a, b) => a.x - b.x));
+  return rows;
+}
+function pontoTxt(row) { return row.it.map(i => i.s).join(" ").replace(/\s+/g, " ").trim(); }
+/* uma página = um colaborador */
+function pontoLerPagina(items0, avisos, nPag) {
+  const items = pontoTokens(items0);
+  const rows = pontoLinhas(items);
+  const texto = rows.map(pontoTxt).join("\n");
+  const g = re => { const m = texto.match(re); return m ? m[1].trim() : ""; };
+  const f = { nome: g(/Colaborador:\s*(.+?)(?:\s{2,}|\s+Período:|\s+Cargo:|\s+Admiss|\s+Total de registros|\n|$)/), cpf: g(/Colaborador CPF:\s*([\d.\-]+)/), cargo: g(/Cargo:\s*(.+?)(?:\s+Admiss|\s+Gerado|\s+Período|\n|$)/), admissao: g(/Admiss[ãa]o:\s*(\d{2}\/\d{2}\/\d{4})/), periodo: g(/Per[íi]odo:\s*(\d{2}\/\d{2}\/\d{4}\s*-\s*\d{2}\/\d{2}\/\d{4})/), registros: Number(g(/Total de registros:\s*(\d+)/) || 0) };
+  if (!f.nome || !f.periodo) {   /* página de continuação (sem cabeçalho): devolve só os dias e os resumos para juntar ao colaborador anterior */
+    const cont = pontoLerPagina.__cont ? pontoLerPagina.__cont(items, rows, texto) : null; if (cont) return Object.assign({ _continuacao: true }, cont);
+    if (texto.replace(/\s+/g, " ").length > 160) avisos.push(`Página ${nPag}: cabeçalho não reconhecido (sem Colaborador/Período)`);   /* página quase vazia (sobra de impressão) passa em silêncio */
+    return null; }
+  const pm = f.periodo.match(/(\d{2})\/(\d{2})\/(\d{4})\s*-\s*(\d{2})\/(\d{2})\/(\d{4})/);
+  f.comp = pm[3] + pm[2]; f.ini = `${pm[3]}-${pm[2]}-${pm[1]}`; f.fim = `${pm[6]}-${pm[5]}-${pm[4]}`;
+  const corpo = pontoLerCorpo(items, rows, texto, f, avisos, nPag); if (!corpo) return null; return Object.assign(f, corpo);
+}
+pontoLerPagina.__cont = (items, rows, texto) => { const c = pontoLerCorpo(items, rows, texto, { registros: 0 }, [], 0); return c && c.dias.length ? c : null; };
+function pontoLerCorpo(items, rows, texto, f, avisos, nPag) {
+  /* colunas pelo cabeçalho da tabela: "Previsto", "Realizado", "Atraso" */
+  const hdr = rows.find(r => r.it.some(i => i.s === "Previsto") && r.it.some(i => /^Realizado/.test(i.s)));
+  const xPrev = hdr ? hdr.it.find(i => i.s === "Previsto").x : 90, xReal = hdr ? hdr.it.find(i => /^Realizado/.test(i.s)).x : 250;
+  const xInter = hdr && hdr.it.find(i => /^Inter-?$/.test(i.s)) ? hdr.it.find(i => /^Inter-?$/.test(i.s)).x : xReal - 40;
+  const dias = []; let totais = null, ultimaData = -1;
+  rows.forEach((r, idx) => {
+    const t = r.it; const m = t[0] && t[0].s.match(/^(\d{2})\/(\d{2})\/(\d{2})$/);
+    if (m && t[1] && /^-$/.test(t[1].s) || (t[0] && /^\d{2}\/\d{2}\/\d{2} - \S+$/.test(t[0].s))) {
+      /* "01/09/26 - Ter" pode vir num item só ou em três */
+      let k = 0, data, dow;
+      if (/ - /.test(t[0].s)) { const mm = t[0].s.match(/^(\d{2})\/(\d{2})\/(\d{2}) - (\S+)$/); data = mm.slice(1, 4); dow = mm[4]; k = 1; }
+      else { data = m.slice(1, 4); dow = t[2] ? t[2].s : ""; k = 3; }
+      const rest = t.slice(k);
+      const nums = []; while (rest.length && pontoMin(rest[rest.length - 1].s) != null && nums.length < 11) nums.unshift(pontoMin(rest.pop().s));
+      const prev = [], inter = [], real = [];
+      rest.forEach(i => { if (i.x < xInter - 6) prev.push(i.s); else if (i.x < xReal - 6) inter.push(i.s); else real.push(i.s); });
+      /* previsto: horários ou rótulo; realizado: horários com marcas ou rótulo */
+      const pTxt = prev.join(" "), rTxt = real.join(" ");
+      const pHor = (pTxt.match(/\d{2}:\d{2}/g) || []).map(pontoMin), rHor = (rTxt.match(/\d{2}:\d{2}/g) || []).map(pontoMin);
+      const marcas = (rTxt.match(/\(([A-Z]{1,3})\)/g) || []).map(x => x.slice(1, -1));
+      let prevMin = 0; for (let i = 0; i + 1 < pHor.length; i += 2) { let d = pHor[i + 1] - pHor[i]; if (d < 0) d += 1440; prevMin += d; }
+      const d = { d: `20${data[2]}-${data[1]}-${data[0]}`, w: dow, p: pTxt, r: rTxt, ij: inter.join(" "), v: nums, pm: prevMin, np: pHor.length, nr: rHor.length, mk: marcas };
+      d.rot = PONTO_ROTULOS.find(x => pTxt.startsWith(x)) || ""; d.rrot = PONTO_ROTULOS.find(x => rTxt.startsWith(x)) || "";
+      dias.push(d); ultimaData = idx;
+    } else if (ultimaData >= 0 && idx === ultimaData + 1 && !totais) {
+      const nums = t.map(i => pontoMin(i.s)); if (nums.length >= 10 && nums.every(x => x != null)) totais = nums;
+    }
+  });
+  if (!dias.length) { if (nPag) avisos.push(`Página ${nPag} (${f.nome}): nenhuma linha de dia encontrada`); return null; }
+  const vv = k => dias.reduce((s, d) => s + (d.v[k] || 0), 0);
+  /* 11 colunas: 0 HE interjornada · 1 intrajornada · 2 h. diurnas · 3 h. noturnas · 4 h. totais · 5 h. noturnas totais · 6 HE diurnas · 7 HE noturnas · 8 HE totais · 9 h. trab. · 10 atraso */
+  const T = totais && totais.length === 11 ? totais : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(vv);
+  const bloco = (re) => { const m = texto.match(re); return m ? m.slice(1).map(pontoMin) : null; };
+  /* resumos (texto da página): escala Normal/Extra, HE e banco acumulados, atrasos */
+  const esc = (tipo) => { const m = texto.match(new RegExp(tipo + "\\s+((?:-?\\d{3,4}:\\d{2}|-{3,})(?:\\s+(?:-?\\d{3,4}:\\d{2}|-{3,})){6})")); if (!m) return null; const v = m[1].trim().split(/\s+/).map(x => /^-+$/.test(x) ? 0 : pontoMin(x)); return v.length === 7 ? v : null; };
+  /* "Normal" aparece duas vezes (escala e dia da semana): a primeira é a da escala */
+  const escN = esc("Normal"), escE = esc("Extra");
+  const acum = (() => { const ini = texto.match(/Acumulado inicial\s+(-?\d{3,4}:\d{2})(?:\s+Acumulado inicial\s+(-?\d{3,4}:\d{2}))?/), sal = texto.match(/\bSaldo\s+(-?\d{3,4}:\d{2})\s+Saldo\s+(-?\d{3,4}:\d{2})/), fin = texto.match(/Acumulado final\s+(-?\d{3,4}:\d{2})(?:\s+Acumulado final\s+(-?\d{3,4}:\d{2}))?/);
+    return { heIni: ini ? pontoMin(ini[1]) : null, bhIni: ini && ini[2] ? pontoMin(ini[2]) : null, heSal: sal ? pontoMin(sal[1]) : null, bhSal: sal ? pontoMin(sal[2]) : null, heFin: fin ? pontoMin(fin[1]) : null, bhFin: fin && fin[2] ? pontoMin(fin[2]) : null }; })();
+  const atr = (() => { const he = texto.match(/\bHE\s+(-?\d{3,4}:\d{2})/), bh = texto.match(/\bBH\s+(-?\d{3,4}:\d{2})/), tot = texto.match(/\bTotal\s+(-?\d{3,4}:\d{2})\s*$/m); return { he: he ? pontoMin(he[1]) : 0, bh: bh ? pontoMin(bh[1]) : 0, tot: tot ? pontoMin(tot[1]) : null }; })();
+  const notSaldo = (() => { const m = texto.match(/Saldo\s+(-?\d{3,4}:\d{2})/); return m ? pontoMin(m[1]) : null; })();
+  /* ocorrências: coluna à direita do título "Ocorrências"; rótulos podem quebrar em duas linhas ("Dia" / "trabalhado") e o número fica ao lado */
+  const oc = {}; const hOcIt = items.find(i => i.str && i.str.trim() === "Ocorrências");
+  if (hOcIt) {
+    const col = items.filter(i => i.str && i.str.trim() && i.y >= hOcIt.y - 2 && i.x >= hOcIt.x - 30 && i.x <= hOcIt.x + 170 && i.str.trim() !== "Ocorrências").map(i => ({ s: i.str.trim(), x: i.x, y: i.y })).sort((a, b) => a.y - b.y || a.x - b.x);
+    const nums = col.filter(i => /^\d{1,3}$/.test(i.s)), words = col.filter(i => !/^\d{1,3}$/.test(i.s) && !/^[A-ZÀ-Ú][A-ZÀ-Ú ]{6,}$/.test(i.s));
+    /* junta palavras em rótulos conhecidos (sequência por y) */
+    const labs = []; let i = 0;
+    while (i < words.length) { let hit = null; for (const k of PONTO_OCORR.slice().sort((a, b) => b.length - a.length)) { const n = k.split(" ").length; let j = i, cand = ""; while (j < words.length && cand.split(" ").filter(Boolean).length < n) { cand = (cand + " " + words[j].s).trim(); j++; } if (cand === k) { hit = { k, y: words[i].y, x: words[i].x, n: j - i }; break; } } if (!hit && words[i].s === "Dia") hit = { k: "Dia trabalhado", y: words[i].y, x: words[i].x, n: 1 };   /* "trabalhado" quebra para a linha de baixo e some do quadro */
+      if (hit) { labs.push(hit); i += hit.n; } else i++; }
+    /* o número fica à direita do rótulo, na mesma linha: o rótulo certo é o mais próximo à esquerda */
+    nums.forEach(nm => { let best = null; labs.forEach(l => { const dy = Math.abs(l.y - nm.y), dx = nm.x - l.x; if (dy < 6 && dx > 0 && dx < 130 && (!best || dx < best.dx)) best = { l, dx }; }); if (best && oc[best.l.k] == null) oc[best.l.k] = Number(nm.s); });
+  }
+  /* derivados */
+  const diasTrab = oc["Dia trabalhado"] != null ? oc["Dia trabalhado"] : dias.filter(d => d.v[9] > 0).length;
+  const prevMin = dias.reduce((s, d) => s + d.pm, 0);
+  const escala = (() => { const c = {}; dias.forEach(d => { if (d.np >= 2) { const k = d.p.replace(/\s+/g, " "); c[k] = (c[k] || 0) + 1; } }); const k = Object.keys(c).sort((a, b) => c[b] - c[a])[0]; return k ? k.replace(/(\d{2}:\d{2}) (\d{2}:\d{2})/g, "$1–$2") : ""; })();
+  const incompletos = dias.filter(d => d.np >= 2 && !d.rrot && d.nr > 0 && (d.nr % 2 === 1 || d.nr < d.np)).length;
+  const semMarca = dias.filter(d => d.np >= 2 && !d.rrot && d.nr === 0).length;
+  const ajustes = dias.reduce((s, d) => s + d.mk.filter(m => m === "A").length, 0);
+  const interj = dias.filter(d => d.v[0] > 0).length;
+  const atrasoMin = dias.reduce((s, d) => s + (d.nr > 0 && d.v[10] < 0 ? -d.v[10] : 0), 0);   /* só dias com marcação: falta inteira já conta em Faltas */
+  return {
+    dias, totais: T, totaisRow: totais ? T : null, escala, prevMin, oc, acum, atr, notSaldo, escN, escE, temResumo: !!(escE || acum.bhFin != null || Object.keys(oc).length),
+    diasTrab, incompletos, semMarca, ajustes, interj, atrasoMin,
+    trabMin: T[9], horasMin: T[4], heMin: T[8], heDia: T[6], heNot: T[7], notMin: T[5], heInterMin: T[0], intraMin: T[1],
+    he50: escE ? escE[0] + escE[1] : T[8], he100: escE ? escE[2] + escE[3] + escE[4] + escE[5] : 0
+  };
+}
+/* junta uma página de continuação ao colaborador anterior e recalcula os derivados */
+function pontoJuntar(a, b) {
+  const dias = a.dias.concat(b.dias.filter(d => !a.dias.some(x => x.d === d.d)));
+  const base = { registros: a.registros }; const f = Object.assign({}, a, { dias });
+  const vv = k => dias.reduce((s, d) => s + (d.v[k] || 0), 0); const T = b.totaisRow || a.totaisRow || [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(vv);
+  const r = b.temResumo ? b : a;
+  Object.assign(f, { totais: T, totaisRow: b.totaisRow || a.totaisRow || null, oc: r.oc, acum: r.acum, atr: r.atr, notSaldo: r.notSaldo, escN: r.escN, escE: r.escE, temResumo: a.temResumo || b.temResumo,
+    prevMin: dias.reduce((s, d) => s + d.pm, 0), incompletos: dias.filter(d => d.np >= 2 && !d.rrot && d.nr > 0 && (d.nr % 2 === 1 || d.nr < d.np)).length, semMarca: dias.filter(d => d.np >= 2 && !d.rrot && d.nr === 0).length,
+    ajustes: dias.reduce((s, d) => s + d.mk.filter(m => m === "A").length, 0), interj: dias.filter(d => d.v[0] > 0).length, atrasoMin: dias.reduce((s, d) => s + (d.nr > 0 && d.v[10] < 0 ? -d.v[10] : 0), 0),
+    trabMin: T[9], horasMin: T[4], heMin: T[8], heDia: T[6], heNot: T[7], notMin: T[5], heInterMin: T[0], intraMin: T[1], he50: r.escE ? r.escE[0] + r.escE[1] : T[8], he100: r.escE ? r.escE[2] + r.escE[3] + r.escE[4] + r.escE[5] : 0 });
+  f.diasTrab = r.oc["Dia trabalhado"] != null ? r.oc["Dia trabalhado"] : dias.filter(d => d.v[9] > 0).length;
+  if (!f.escala) f.escala = (() => { const c = {}; dias.forEach(d => { if (d.np >= 2) { const k = d.p.replace(/\s+/g, " "); c[k] = (c[k] || 0) + 1; } }); const k = Object.keys(c).sort((a2, b2) => c[b2] - c[a2])[0]; return k ? k.replace(/(\d{2}:\d{2}) (\d{2}:\d{2})/g, "$1–$2") : ""; })();
+  return f;
+}
+function pontoLerPaginas(pages) {
+  const avisos = [], funcs = [], comps = {};
+  pages.forEach((p, i) => { const f = pontoLerPagina(p.items, avisos, i + 1); if (!f) return;
+    if (f._continuacao) { if (funcs.length) funcs[funcs.length - 1] = pontoJuntar(funcs[funcs.length - 1], f); else avisos.push(`Página ${i + 1}: continuação sem colaborador antes dela`); return; }
+    funcs.push(f); comps[f.comp] = (comps[f.comp] || 0) + 1; });
+  funcs.forEach(f => { if (f.registros && f.dias.length !== f.registros) avisos.push(`${f.nome}: ${f.dias.length} dias lidos, o relatório diz ${f.registros}`); if (!f.temResumo) avisos.push(`${f.nome}: resumos do mês (escala, banco de horas, ocorrências) não encontrados`); });
+  const comp = Object.keys(comps).sort((a, b) => comps[b] - comps[a])[0] || "";
+  /* um colaborador só pode aparecer uma vez por competência */
+  const vistos = {}, unicos = []; funcs.forEach(f => { const k = pontoDig(f.cpf) || pontoNorm(f.nome); const kk = k + "|" + f.comp; if (vistos[kk]) { avisos.push(`${f.nome}: aparece mais de uma vez em ${f.comp}; só a primeira página foi considerada`); return; } vistos[kk] = 1; unicos.push(f); });
+  return { comp, funcs: unicos, avisos, comps };
+}
+
+
+/* ---------- estado, parâmetros e regras ---------- */
+Object.assign(RH_PONTO_STATE, { dep: "", func: "", sit: "", busca: "", ord: "", ordDesc: false, funcs: null, funcsMap: null, params: null, paramId: null, cols: null, imp: null, importando: false });
+const PONTO_PARAM_PADRAO = { heMes: 40, faltas: 2, bancoNeg: 8, incompletos: 2, ajustes: 3, cumprMin: 85, atrasos: 2 };
+function pontoParams() { return Object.assign({}, PONTO_PARAM_PADRAO, RH_PONTO_STATE.params || {}); }
+async function pontoParamsCarregar() {
+  try { await navParamLista(); if (!NAV_PARAM.list) return; const its = await SP.items(NAV_PARAM.site.id, NAV_PARAM.list.id); const it = its.find(x => (x.fields || {}).Title === "ponto");
+    RH_PONTO_STATE.paramId = it ? String(it.id) : null; RH_PONTO_STATE.params = it ? JSON.parse(it.fields.Valor || "{}") : null; } catch (e) { RH_PONTO_STATE.params = null; }
+}
+const PONTO_REGRAS = [
+  { k: "he",       nivel: "alto",  nome: "Horas extras acima do limite",     lim: "heMes",       un: "h/mês",  teste: (r, P) => r.he >= P.heMes * 60,                       val: r => pontoFmt(r.he) + " de HE" },
+  { k: "faltas",   nivel: "alto",  nome: "Faltas no mês",                     lim: "faltas",      un: "dias",   teste: (r, P) => r.faltas >= P.faltas,                        val: r => r.faltas + " falta(s)" },
+  { k: "interj",   nivel: "alto",  nome: "Interjornada menor que 11 h",       lim: null,          un: "",       teste: r => r.interj >= 1,                                     val: r => r.interj + " dia(s)" },
+  { k: "banco",    nivel: "medio", nome: "Banco de horas negativo",           lim: "bancoNeg",    un: "h",      teste: (r, P) => r.bancoFinal != null && r.bancoFinal <= -P.bancoNeg * 60, val: r => pontoFmt(r.bancoFinal) + " no banco" },
+  { k: "cumpr",    nivel: "medio", nome: "Horas abaixo do previsto",          lim: "cumprMin",    un: "%",      teste: (r, P) => r.prev > 0 && r.cumpr < P.cumprMin,           val: r => Math.round(r.cumpr) + "% do previsto" },
+  { k: "atrasos",  nivel: "medio", nome: "Atrasos e saídas antecipadas",      lim: "atrasos",     un: "h/mês",  teste: (r, P) => r.atrasos >= P.atrasos * 60,                  val: r => pontoFmt(r.atrasos) + " de atraso" },
+  { k: "incompl",  nivel: "medio", nome: "Marcações incompletas",             lim: "incompletos", un: "dias",   teste: (r, P) => r.incompl >= P.incompletos,                   val: r => r.incompl + " dia(s)" },
+  { k: "ajustes",  nivel: "info",  nome: "Ajustes manuais de marcação",       lim: "ajustes",     un: "no mês", teste: (r, P) => r.ajustes >= P.ajustes,                       val: r => r.ajustes + " ajuste(s)" },
+  { k: "semEscala", nivel: "info", nome: "Sem escala no mês (só folgas)",     lim: null,          un: "",       teste: r => r.prev === 0 && r.trab === 0 && r.diasTrab === 0 && !r.afast && !r.ferias, val: () => "nenhum dia escalado" }
+];
+const PONTO_NIVEL = { alto: ["Atenção", "vencido"], medio: ["Verificar", "pendente"], info: ["Informação", "aguardando"] };
+const pontoH2M = h => (h == null || h === "" ? null : Math.round(Number(h) * 60));
+const pontoDig = v => String(v || "").replace(/\D+/g, "");
+const pontoNorm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+/* registro normalizado (minutos) + alertas */
+function pontoRec(m) {
+  const n = k => Number(m[k] || 0), h = k => pontoH2M(m[k]) || 0;
+  const fm = RH_PONTO_STATE.funcsMap, fx = fm ? (fm.cpf[pontoDig(m.CPF)] || fm.nome[pontoNorm(m.Funcionario)]) : null;
+  const r = { id: String(m._id), comp: String(m.Competencia || ""), nome: m.Funcionario || "", cargo: m.Cargo || (fx && fx.Cargo) || "", dep: m.Setor || (fx && (fx.Departamento || fx.Setor)) || "Sem departamento", mat: m.Matricula || (fx && fx.Matricula) || "", cpf: m.CPF || "", escala: m.Escala || "", adm: m.Admissao || "",
+    prev: h("HorasPrevistas"), trab: h("HorasApontadas"), normais: h("HorasTotais"), he: h("HETotais") || h("HorasExtras50") + h("HorasExtras100"), he50: h("HorasExtras50"), he100: h("HorasExtras100"), heDia: h("HEDiurnas"), heNot: h("HENoturnas"), heInter: h("HEInterjornada"), intra: h("Intrajornada"), not: h("HorasNoturnas"), atrasos: h("Atrasos"),
+    faltas: n("Faltas"), faltasBH: n("FaltasBH"), afast: n("Afastamento"), ferias: n("Ferias"), atest: n("Atestados"), abonos: n("Abonos"), diasTrab: n("DiasTrabalhados"), folgas: n("Folgas"), feriados: n("Feriados"),
+    bancoIni: pontoH2M(m.BancoInicial), bancoMes: pontoH2M(m.BancoSaldo), bancoFinal: pontoH2M(m.BancoFinal), heAcum: pontoH2M(m.HEAcumFinal), ajustes: n("Ajustes"), incompl: n("DiasIncompletos"), interj: n("DiasInterjornada"), _m: m };
+  r.cumpr = r.prev > 0 ? r.trab / r.prev * 100 : 0;
+  const P = pontoParams(); r.alertas = PONTO_REGRAS.filter(g => { try { return g.teste(r, P); } catch (e) { return false; } }).map(g => ({ k: g.k, nivel: g.nivel, nome: g.nome, val: g.val(r) }));
+  r.nivel = r.alertas.some(a => a.nivel === "alto") ? "alto" : r.alertas.some(a => a.nivel === "medio") ? "medio" : r.alertas.length ? "info" : "";
+  return r;
+}
+function pontoRecs(mes) { return RH_PONTO_STATE.marcs.filter(m => !mes || m.Competencia === mes).map(pontoRec); }
+function pontoMesLabel(c) { const M = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]; const s = String(c || ""); return /^\d{6}$/.test(s) ? `${M[Number(s.slice(4)) - 1]}/${s.slice(0, 4)}` : s; }
+function pontoMesCurto(c) { const M = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]; const s = String(c || ""); return /^\d{6}$/.test(s) ? `${M[Number(s.slice(4)) - 1]}/${s.slice(2, 4)}` : s; }
+const pontoSum = (arr, k) => arr.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+/* Funcionários (RH) para departamento e matrícula */
+async function pontoFuncsCarregar() {
+  if (RH_PONTO_STATE.funcs) return;
+  try { const site = await SP.site(CONFIG.sites[LISTS.rh_func.siteKey]); const ls = await SP.lists(site.id), l = ls.find(x => x.displayName === LISTS.rh_func.displayName);
+    const fs = l ? (await SP.items(site.id, l.id)).map(it => it.fields || {}) : [];
+    const map = { cpf: {}, nome: {} }; fs.forEach(f => { const c = pontoDig(f.CPF); if (c.length === 11) map.cpf[c] = f; const nn = pontoNorm(f.Title); if (nn && !map.nome[nn]) map.nome[nn] = f; });
+    RH_PONTO_STATE.funcs = fs; RH_PONTO_STATE.funcsMap = map; } catch (e) { RH_PONTO_STATE.funcs = []; RH_PONTO_STATE.funcsMap = { cpf: {}, nome: {} }; }
+}
+/* colunas que a Configuração ainda não criou: o campo sai da gravação, com aviso */
+async function pontoColsCarregar() {
+  if (RH_PONTO_STATE.cols || !RH_PONTO_STATE.listMarc) return;
+  try { const cs = await graphAll(`/sites/${RH_PONTO_STATE.siteRh.id}/lists/${RH_PONTO_STATE.listMarc.id}/columns?$select=name`); RH_PONTO_STATE.cols = new Set(cs.map(c => c.name)); } catch (e) { RH_PONTO_STATE.cols = null; }
+  RH_PONTO_STATE.colsRel = null;
+  if (RH_PONTO_STATE.listRel) { try { const cs = await graphAll(`/sites/${RH_PONTO_STATE.siteRh.id}/lists/${RH_PONTO_STATE.listRel.id}/columns?$select=name`); RH_PONTO_STATE.colsRel = new Set(cs.map(c => c.name)); } catch (e) { RH_PONTO_STATE.colsRel = null; } }
+}
+function pontoColsFaltam() { const c = RH_PONTO_STATE.cols; return c ? LISTS.rh_ponto_marc.columns.map(x => x.name).filter(n => !c.has(n)) : []; }
+
+/* ---------- página e abas ---------- */
+pageRhPonto = function () {
+  return `<div class="page" id="rhPontoRoot">
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Recursos Humanos">Recursos Humanos</a><span>›</span><a href="#/rh/relatorios">Relatórios</a><span>›</span><b>Controle de Ponto</b></nav>
+    <div class="cap-topo"><div><h1 style="margin:0">Controle de Ponto</h1><p class="sup" style="margin:2px 0 0">Horas executadas, horas extras, faltas, afastamentos e banco de horas · fonte: relatórios mensais do Flit (PDF)</p></div><span class="grow"></span><div id="rhPontoActions" class="page-actions"></div></div>
+    <div class="cap-views" id="rhPontoTabs"><button class="tab" data-k="painel">Painel</button><button class="tab" data-k="lista">Lista</button><button class="tab" data-k="alertas">Alertas <span class="cap-views-n" id="rhPontoAlertN" style="display:none"></span></button><button class="tab" data-k="rels">Relatórios</button><button class="tab" data-k="imp">Importação</button></div>
+    <div id="rhPontoBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
+  </div>`;
+};
+renderRhPonto = async function () {
+  const body = $("rhPontoBody"); if (!body) return;
+  RH_PONTO_STATE.cols = null; RH_PONTO_STATE.funcs = null; RH_PONTO_STATE.funcsMap = null;   /* relidos a cada render/Atualizar: a Configuração pode ter criado colunas e o RH cadastrado gente */
+  try { await loadRhPonto(true); await pontoFuncsCarregar(); await pontoParamsCarregar(); await pontoColsCarregar(); } catch (e) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(e.message)}</p></div>`; return; }
+  if (RH_PONTO_STATE.tab === "indiv") RH_PONTO_STATE.tab = "painel";
+  document.querySelectorAll("#rhPontoTabs .tab").forEach(b => { b.onclick = () => { RH_PONTO_STATE.tab = b.dataset.k; paintRhPonto(); }; });
+  paintRhPonto();
+};
+paintRhPonto = function () {
+  const body = $("rhPontoBody"); if (!body) return;
+  document.querySelectorAll("#rhPontoTabs .tab").forEach(b => b.classList.toggle("on", b.dataset.k === RH_PONTO_STATE.tab));
+  { const c = $("rhPontoTabs"), on = c && c.querySelector(".tab.on");   /* celular: a aba ativa sempre à vista na barra que rola de lado */
+    if (on && c.scrollWidth > c.clientWidth) { if (on.offsetLeft < c.scrollLeft) c.scrollLeft = Math.max(0, on.offsetLeft - 8); else if (on.offsetLeft + on.offsetWidth > c.scrollLeft + c.clientWidth) c.scrollLeft = on.offsetLeft + on.offsetWidth - c.clientWidth + 8; } }
+  const ed = rhPontoEhEditor();
+  const acts = $("rhPontoActions"); if (acts) acts.innerHTML = `${session.n1 ? `<button class="btn ghost" onclick="pontoRegrasForm()" title="Limites dos alertas">Regras</button>` : ""}${RH_PONTO_STATE.ready && RH_PONTO_STATE.marcs.length ? `<button class="btn ghost" onclick="pontoExcel()">Exportar Excel</button><button class="btn ghost" onclick="pontoImprimir()">Imprimir (A4)</button>` : ""}<button class="btn" onclick="renderRhPonto()">Atualizar</button>${ed ? `<button class="btn primary" onclick="RH_PONTO_STATE.tab='imp'; paintRhPonto()">Importar PDF</button>` : ""}`;
+  if (!RH_PONTO_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>As listas do Controle de Ponto ainda não existem</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › "Executar tudo na ordem"</a>.` : "Peça a um administrador para rodar Sistema › Configuração › \"Executar tudo na ordem\"."}</p></div>`; return; }
+  const nA = pontoRecs(pontoMesAtual()).filter(r => r.alertas.length).length; const bd = $("rhPontoAlertN"); if (bd) { bd.textContent = nA; bd.style.display = nA ? "" : "none"; }
+  const faltam = pontoColsFaltam();
+  const aviso = faltam.length && ed ? `<div class="rhf-aviso">A lista "RH — Ponto · Marcações" ainda não tem ${faltam.length} coluna(s) desta versão (${esc(faltam.slice(0, 4).join(", "))}${faltam.length > 4 ? "…" : ""}). ${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › "Executar tudo na ordem"</a>` : "Peça a um administrador para rodar Sistema › Configuração › \"Executar tudo na ordem\""} antes de importar; até lá a importação grava só as colunas que existem.</div>` : "";
+  if (RH_PONTO_STATE.tab === "imp") return paintRhPontoImp(aviso);
+  if (RH_PONTO_STATE.tab === "rels") return paintRhPontoRels();
+  if (RH_PONTO_STATE.tab === "alertas") return paintRhPontoAlertas();
+  if (RH_PONTO_STATE.tab === "lista") return paintRhPontoLista(aviso);
+  return paintRhPontoPainel(aviso);
+};
+function pontoMesAtual() { const ms = rhPontoMeses(); if (!ms.length) return ""; if (!RH_PONTO_STATE.mes || !ms.includes(RH_PONTO_STATE.mes)) RH_PONTO_STATE.mes = ms[ms.length - 1]; return RH_PONTO_STATE.mes; }
+rhPontoMeses = function () { return [...new Set(RH_PONTO_STATE.marcs.map(x => x.Competencia).concat(RH_PONTO_STATE.rels.map(x => x.Competencia)).filter(Boolean))].sort(); };
+/* barra de filtros comum: mês, departamento (chips), funcionário */
+function pontoFiltros(recsMes, opt) {
+  const S = RH_PONTO_STATE, ms = rhPontoMeses(), mes = pontoMesAtual();
+  const deps = [...new Set(recsMes.map(r => r.dep))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  /* pessoa = CPF (quando há) ou nome: homônimos ficam separados na lista */
+  const pessoas = {}; RH_PONTO_STATE.marcs.forEach(m => { if (!m.Funcionario) return; const k = pontoChave(m); if (!pessoas[k]) pessoas[k] = { k, nome: m.Funcionario, n: 0 }; pessoas[k].n++; });
+  const nomesRep = {}; Object.values(pessoas).forEach(x => { nomesRep[x.nome] = (nomesRep[x.nome] || 0) + 1; });
+  const funcs = Object.values(pessoas).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const chip = (v, rot, n, cls) => `<button type="button" class="chip ${cls || ""} ${S.dep === v ? "on" : ""}" onclick="pontoSet('dep', ${jsArg(v)})">${esc(rot)}${n != null ? ` <span class="n">${n}</span>` : ""}</button>`;
+  return `<div class="ponto-filtros">
+    <label class="ponto-mes">Mês <select onchange="pontoSet('mes', this.value)">${ms.map(m => `<option value="${esc(m)}" ${m === mes ? "selected" : ""}>${esc(pontoMesLabel(m))}</option>`).join("")}</select></label>
+    <label class="ponto-func">Funcionário <select onchange="pontoSet('func', this.value)"><option value="">Todos (visão geral)</option>${funcs.map(f => `<option value="${esc(f.k)}" ${S.func === f.k ? "selected" : ""}>${esc(f.nome)}${nomesRep[f.nome] > 1 ? (f.k.startsWith("cpf:") ? " · CPF final " + esc(f.k.slice(4, 8)) : " · sem CPF") : ""}</option>`).join("")}</select></label>
+    ${opt && opt.busca ? `<input class="busca" id="pontoBusca" placeholder="Buscar nome, cargo, matrícula…" value="${esc(S.busca)}" autocomplete="off">` : ""}
+  </div>
+  ${S.func ? "" : `<div class="chips ponto-chips" aria-label="Departamento"><span class="lbl">Departamento</span>${chip("", "Todos", recsMes.length)}${deps.map(d => chip(d, d, recsMes.filter(r => r.dep === d).length)).join("")}</div>`}`;   /* na visão individual os chips não têm efeito: ficam de fora */
+}
+window.pontoSet = (k, v) => { const S = RH_PONTO_STATE; if (k === "dep") S.dep = S.dep === v ? "" : v; else if (k === "sit") S.sit = S.sit === v ? "" : v; else S[k] = v; if (k === "mes") { S.dep = ""; } paintRhPonto(); };
+function pontoChave(m) { const c = pontoDig(m.CPF || m.cpf); if (c.length !== 11) return "nome:" + pontoNorm(m.Funcionario || m.nome); let h = 5381; for (const ch of c) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0; return "cpf:" + c.slice(-4) + "-" + h.toString(36); }   /* chave sem expor o CPF inteiro no HTML: final + resumo */
+function pontoFiltrar(recs) { const S = RH_PONTO_STATE; return recs.filter(r => (!S.dep || r.dep === S.dep) && (!S.func || pontoChave(r._m) === S.func)); }
+const pontoPct = (a, b) => b > 0 ? Math.round(a / b * 100) : 0;
+function pontoBadges(r) { return r.alertas.map(a => `<span class="pill st-${PONTO_NIVEL[a.nivel][1]} ponto-al" title="${esc(a.nome + ": " + a.val)}"><i></i>${esc(a.nome.split(" ")[0] === "Horas" ? a.nome.replace(/^Horas /, "H. ") : a.nome)}</span>`).join(" "); }
+
+/* ---------- Painel ---------- */
+paintRhPontoPainel = function (aviso) {
+  const body = $("rhPontoBody"); if (!body) return;
+  const mes = pontoMesAtual(); if (!mes) { body.innerHTML = (aviso || "") + `<div class="cap-empty"><h3>Sem relatórios importados</h3><p>${rhPontoEhEditor() ? `Vá para a aba <b>Importação</b> e importe os PDFs "Relatório de Horas" do Flit.` : "Peça a um administrador ou ao proprietário do módulo para importar os relatórios."}</p></div>`; return; }
+  const todos = pontoRecs(mes), recs = pontoFiltrar(todos), S = RH_PONTO_STATE;
+  if (S.func) return pontoPainelIndividual(body, aviso, todos);
+  const t = { n: recs.length, prev: pontoSum(recs, "prev"), trab: pontoSum(recs, "trab"), he: pontoSum(recs, "he"), he50: pontoSum(recs, "he50"), he100: pontoSum(recs, "he100"), not: pontoSum(recs, "not"), faltas: pontoSum(recs, "faltas"), afast: pontoSum(recs, "afast"), ferias: pontoSum(recs, "ferias"), atest: pontoSum(recs, "atest"), abonos: pontoSum(recs, "abonos"), atrasos: pontoSum(recs, "atrasos"), diasTrab: pontoSum(recs, "diasTrab"), interj: pontoSum(recs, "interj") };
+  const banco = recs.filter(r => r.bancoFinal != null); t.banco = pontoSum(banco, "bancoFinal"); t.bancoNeg = banco.filter(r => r.bancoFinal < 0).length; t.bancoPos = banco.filter(r => r.bancoFinal > 0).length;
+  const comAl = recs.filter(r => r.alertas.length), alto = recs.filter(r => r.nivel === "alto").length;
+  const kpi = (lbl, val, sub, cls, onclick) => `<${onclick ? "button" : "div"} class="kpi ${cls || ""} ${onclick ? "" : "static"}" ${onclick ? `onclick="${onclick}"` : ""}><div class="lbl">${esc(lbl)}</div><div class="val">${val}</div><div class="sub">${esc(sub)}</div></${onclick ? "button" : "div"}>`;
+  const kpis = `<div class="cap-kpis ponto-kpis">
+    ${kpi("Funcionários", t.n, `${t.diasTrab} dias trabalhados`, "", "pontoIr('lista','')")}
+    ${kpi("Horas trabalhadas", pontoFmt(t.trab), `${pontoPct(t.trab, t.prev)}% das ${pontoFmt(t.prev)} previstas`, t.prev > 0 && pontoPct(t.trab, t.prev) < pontoParams().cumprMin ? "venc" : t.prev > 0 ? "pago" : "")}
+    ${kpi("Horas extras", pontoFmt(t.he), `${pontoFmt(t.he50)} em dias escalados · ${pontoFmt(t.he100)} em folgas e feriados`, "hoje", "pontoIr('lista','he')")}
+    ${kpi("Horas noturnas", pontoFmt(t.not), "adicional noturno", "")}
+    ${kpi("Faltas", t.faltas, `dias · ${pontoFmt(t.atrasos)} de atrasos`, t.faltas ? "venc" : "pago", "pontoIr('lista','faltas')")}
+    ${kpi("Afastamentos", t.afast + t.ferias + t.atest + t.abonos, `${t.afast} afastado · ${t.ferias} férias · ${t.atest} atestado · ${t.abonos} abono`, "", "pontoIr('lista','afast')")}
+    ${kpi("Banco de horas", pontoFmt(t.banco, true), `${t.bancoPos} positivos · ${t.bancoNeg} negativos`, t.bancoNeg ? "venc" : "", "pontoIr('lista','banco')")}
+    ${kpi("Alertas", comAl.length, `${alto} com atenção · ${t.interj} dia(s) de interjornada curta`, comAl.length ? "venc" : "pago", "RH_PONTO_STATE.tab='alertas'; paintRhPonto()")}
+  </div>`;
+  /* gráficos: evolução (todos os meses, mesmo filtro de departamento), HE por departamento, ocorrências, top HE e top faltas */
+  const meses = rhPontoMeses().filter(m => RH_PONTO_STATE.marcs.some(x => x.Competencia === m));
+  const evo = meses.map(m => { const rr = pontoFiltrar(pontoRecs(m)); return { m, trab: pontoSum(rr, "trab") / 60, he: pontoSum(rr, "he") / 60, faltas: pontoSum(rr, "faltas"), n: rr.length }; });
+  const deps = [...new Set(todos.map(r => r.dep))].sort((a, b) => a.localeCompare(b, "pt-BR")).map(d => { const rr = todos.filter(r => r.dep === d); return { d, he: pontoSum(rr, "he") / 60, trab: pontoSum(rr, "trab") / 60, prev: pontoSum(rr, "prev") / 60, faltas: pontoSum(rr, "faltas"), n: rr.length }; });
+  const topHE = recs.filter(r => r.he > 0).sort((a, b) => b.he - a.he).slice(0, 10), topF = recs.filter(r => r.faltas > 0).sort((a, b) => b.faltas - a.faltas || b.atrasos - a.atrasos).slice(0, 10);
+  const barra = (arr, k, fmt, cls) => arr.length ? arr.map(r => `<div class="cap-bar" onclick="pontoDetalhe(${jsArg(r.id)})"><span class="l" title="${esc(r.nome)}">${esc(r.nome)}</span><span class="t"><i style="width:${Math.round(100 * r[k] / arr[0][k])}%"></i></span><span class="n">${esc(r.dep.slice(0, 10))}</span><span class="v ${cls || ""}">${esc(fmt(r[k]))}</span></div>`).join("") : `<p class="cap-muted">Nada no mês.</p>`;
+  body.innerHTML = (aviso || "") + pontoFiltros(todos) + kpis + `
+    <div class="cap-grid ponto-grid">
+      <div><div class="cap-card"><div class="cap-card-h"><h3>Evolução mensal</h3><span class="cap-card-s">horas trabalhadas (colunas) e horas extras (linha)${S.dep ? " · " + esc(S.dep) : ""}</span></div><div class="cap-chart" style="height:240px"><canvas id="pontoChEvo"></canvas></div></div></div>
+      <div><div class="cap-card"><div class="cap-card-h"><h3>Por departamento</h3><span class="cap-card-s">${esc(pontoMesLabel(mes))} · horas extras e faltas</span></div><div class="cap-chart" style="height:${Math.max(200, 34 * deps.length + 60)}px"><canvas id="pontoChDep"></canvas></div></div></div>
+      <div><div class="cap-card"><div class="cap-card-h"><h3>Ocorrências do mês</h3><span class="cap-card-s">dias por situação</span></div><div class="cap-chart" style="height:240px"><canvas id="pontoChOc"></canvas></div></div></div>
+      <div><div class="cap-card"><div class="cap-card-h"><h3>Maiores horas extras</h3><span class="cap-card-s">clique para ver o mês da pessoa</span></div>${barra(topHE, "he", pontoFmt)}</div></div>
+      <div><div class="cap-card"><div class="cap-card-h"><h3>Mais faltas</h3><span class="cap-card-s">dias de falta no mês</span></div>${barra(topF, "faltas", v => v + " d", "neg")}</div></div>
+      <div><div class="cap-card"><div class="cap-card-h"><h3>Alertas do mês</h3><span class="cap-card-s">quem merece atenção · <a href="#" onclick="RH_PONTO_STATE.tab='alertas'; paintRhPonto(); return false">ver todos</a></span></div>${comAl.length ? `<div class="ponto-allist">${comAl.sort((a, b) => (a.nivel === "alto" ? 0 : a.nivel === "medio" ? 1 : 2) - (b.nivel === "alto" ? 0 : b.nivel === "medio" ? 1 : 2) || b.alertas.length - a.alertas.length).slice(0, 12).map(r => `<div class="ponto-alrow" onclick="pontoDetalhe(${jsArg(r.id)})"><b>${esc(r.nome)}</b><span class="sup">${esc(r.dep)}</span><span>${pontoBadges(r)}</span></div>`).join("")}${comAl.length > 12 ? `<p class="sup">+ ${comAl.length - 12} na aba Alertas</p>` : ""}</div>` : `<p class="cap-muted">Nenhum alerta com os limites atuais.</p>`}</div></div>
+    </div>`;
+  pontoGraficos(evo, deps, t);
+};
+function pontoGraficos(evo, deps, t) {
+  if (!window.Chart) return;
+  const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+  const C = { navy: css("--navy") || "#0F1E3A", orange: css("--orange") || "#D6421F", ok: css("--ok") || "#197A46", warn: css("--warn") || "#9A6A00", err: css("--err") || "#B3271E", soft: "#C9CFD8" };
+  const mk = (id, cfg) => { const el = $(id); if (!el) return; const old = Chart.getChart(el); if (old) old.destroy(); try { new Chart(el, cfg); } catch (e) { console.warn("chart", id, e); } };
+  const eixo = { ticks: { color: ERP_EIXO_COR }, grid: { color: "#EEF0ED" } };
+  const base = { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 12 }, color: ERP_EIXO_COR } } } };
+  mk("pontoChEvo", { type: "bar", data: { labels: evo.map(e => pontoMesCurto(e.m)), datasets: [
+    { type: "line", label: "Horas extras", data: evo.map(e => Math.round(e.he)), borderColor: C.orange, backgroundColor: C.orange, yAxisID: "y2", order: 0, tension: .25 },
+    { type: "bar", label: "Horas trabalhadas", data: evo.map(e => Math.round(e.trab)), backgroundColor: C.navy, order: 1 } ] },
+    options: Object.assign({}, base, { scales: { x: eixo, y: Object.assign({ beginAtZero: true, title: { display: true, text: "horas", color: ERP_EIXO_COR } }, eixo), y2: { position: "right", beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { color: ERP_EIXO_COR }, title: { display: true, text: "HE", color: ERP_EIXO_COR } } } }) });
+  mk("pontoChDep", { type: "bar", data: { labels: deps.map(d => d.d), datasets: [
+    { label: "Horas extras (h)", data: deps.map(d => Math.round(d.he)), backgroundColor: C.orange },
+    { label: "Faltas (dias)", data: deps.map(d => d.faltas), backgroundColor: C.err } ] },
+    options: Object.assign({}, base, { indexAxis: "y", scales: { x: Object.assign({ beginAtZero: true }, eixo), y: eixo } }) });
+  mk("pontoChOc", { type: "doughnut", data: { labels: ["Dias trabalhados", "Faltas", "Afastado", "Férias", "Atestado / abono"], datasets: [{ data: [t.diasTrab, t.faltas, t.afast, t.ferias, t.atest + t.abonos], backgroundColor: [C.navy, C.err, C.warn, "#3B5780", C.soft] }] },
+    options: Object.assign({}, base, { cutout: "58%" }) });
+}
+window.pontoIr = (tab, sit) => { RH_PONTO_STATE.tab = tab; RH_PONTO_STATE.sit = sit || ""; paintRhPonto(); };
+/* visão individual: a pessoa nos meses importados + o mês escolhido dia a dia */
+function pontoPainelIndividual(body, aviso, todos) {
+  const S = RH_PONTO_STATE, mes = pontoMesAtual();
+  const meses = rhPontoMeses().filter(m => RH_PONTO_STATE.marcs.some(x => x.Competencia === m));
+  const serie = meses.map(m => pontoRecs(m).find(r => pontoChave(r._m) === S.func)).filter(Boolean);
+  const r = serie.find(x => x.comp === mes);
+  const kpi = (lbl, val, sub, cls) => `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(lbl)}</div><div class="val">${val}</div><div class="sub">${esc(sub)}</div></div>`;
+  const cab = r ? `<div class="ponto-pessoa"><div><h2>${esc(r.nome)}</h2><p class="sup">${esc([r.cargo, r.dep, r.mat ? "matrícula " + r.mat : "", r.adm ? "admissão " + fmtDate(r.adm) : "", r.escala ? "escala " + r.escala : ""].filter(Boolean).join(" · "))}</p></div><div>${pontoBadges(r) || `<span class="pill st-pago"><i></i>Sem alertas</span>`}</div></div>` : `<div class="cap-empty"><h3>${esc(S.func)} não está no relatório de ${esc(pontoMesLabel(mes))}</h3></div>`;
+  const kpis = r ? `<div class="cap-kpis ponto-kpis">
+    ${kpi("Horas trabalhadas", pontoFmt(r.trab), `${Math.round(r.cumpr)}% das ${pontoFmt(r.prev)} previstas`, r.prev > 0 && r.cumpr < pontoParams().cumprMin ? "venc" : "pago")}
+    ${kpi("Horas extras", pontoFmt(r.he), `${pontoFmt(r.heDia)} diurnas · ${pontoFmt(r.heNot)} noturnas`, r.alertas.some(a => a.k === "he") ? "venc" : "hoje")}
+    ${kpi("Horas noturnas", pontoFmt(r.not), "adicional noturno", "")}
+    ${kpi("Faltas", r.faltas, `${r.diasTrab} dias trabalhados · ${r.folgas} folgas · ${r.feriados} feriados`, r.faltas ? "venc" : "pago")}
+    ${kpi("Afastamentos", r.afast + r.ferias + r.atest + r.abonos, `${r.afast} afastado · ${r.ferias} férias · ${r.atest} atestado · ${r.abonos} abono`, "")}
+    ${kpi("Banco de horas", pontoFmt(r.bancoFinal, true), `${pontoFmt(r.bancoIni, true)} inicial · ${pontoFmt(r.bancoMes, true)} no mês`, r.bancoFinal != null && r.bancoFinal < 0 ? "venc" : "")}
+    ${kpi("Atrasos", pontoFmt(r.atrasos), `${r.incompl} dia(s) com marcação incompleta · ${r.ajustes} ajuste(s)`, r.atrasos ? "venc" : "")}
+    ${kpi("Interjornada curta", r.interj, "dia(s) com menos de 11 h de descanso", r.interj ? "venc" : "pago")}
+  </div>` : "";
+  body.innerHTML = (aviso || "") + pontoFiltros(todos) + cab + kpis + (r ? `
+    <div class="cap-grid ponto-grid">
+      <div><div class="cap-card"><div class="cap-card-h"><h3>Meses importados</h3><span class="cap-card-s">horas trabalhadas, extras e faltas</span></div><div class="cap-chart" style="height:220px"><canvas id="pontoChPessoa"></canvas></div></div></div>
+      <div><div class="cap-card"><div class="cap-card-h"><h3>Resumo por mês</h3></div><div class="table-wrap"><table class="cap-table"><thead><tr><th>Mês</th><th class="right">Previstas</th><th class="right">Trabalhadas</th><th class="right">HE</th><th class="right">Faltas</th><th class="right">Banco final</th><th>Alertas</th></tr></thead><tbody>${serie.map(x => `<tr class="${x.comp === mes ? "on" : ""}" onclick="pontoSet('mes', ${jsArg(x.comp)})"><td>${esc(pontoMesLabel(x.comp))}</td><td class="right">${pontoFmt(x.prev)}</td><td class="right">${pontoFmt(x.trab)}</td><td class="right">${pontoFmt(x.he)}</td><td class="right">${x.faltas}</td><td class="right">${pontoFmt(x.bancoFinal, true)}</td><td>${pontoBadges(x) || "—"}</td></tr>`).join("")}</tbody></table></div></div></div>
+    </div>
+    <div class="cap-card"><div class="cap-card-h"><h3>Dia a dia · ${esc(pontoMesLabel(mes))}</h3><span class="cap-card-s">previsto × realizado · (M) marcação · (A) ajuste manual · (AB) abono parcial · (AT) atestado parcial</span></div>${pontoDiasTabela(r)}</div>` : "");
+  if (r && window.Chart) {
+    const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim(); const el = $("pontoChPessoa"); const old = el && Chart.getChart(el); if (old) old.destroy();
+    if (el) new Chart(el, { type: "bar", data: { labels: serie.map(x => pontoMesCurto(x.comp)), datasets: [
+      { type: "line", label: "Horas extras", data: serie.map(x => Math.round(x.he / 60 * 10) / 10), borderColor: css("--orange"), backgroundColor: css("--orange"), order: 0, tension: .25, yAxisID: "y2" },
+      { type: "bar", label: "Horas trabalhadas", data: serie.map(x => Math.round(x.trab / 60)), backgroundColor: css("--navy"), order: 1 },
+      { type: "bar", label: "Previstas", data: serie.map(x => Math.round(x.prev / 60)), backgroundColor: "#C9CFD8", order: 2 } ] },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, color: ERP_EIXO_COR } } }, scales: { x: { ticks: { color: ERP_EIXO_COR } }, y: { beginAtZero: true, ticks: { color: ERP_EIXO_COR } }, y2: { position: "right", beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { color: ERP_EIXO_COR } } } } });
+  }
+}
+function pontoDetalheJson(r) { try { const d = JSON.parse(r._m.DetalheJson || "null"); return d && Array.isArray(d.dias) ? d : null; } catch (e) { return null; } }
+function pontoDiasTabela(r) {
+  const D = pontoDetalheJson(r); if (!D) return `<p class="cap-muted">Este registro não tem o detalhe diário (importado antes desta versão). Importe o PDF do mês de novo para ver o dia a dia.</p>`;
+  const st = d => { const rot = (d.r || "").match(/^(Folga|Feriado|Férias|Afastado|Abono|Atestado|Falta BH|Falta)/); const v = d.v || [];
+    if (rot) return { cls: /Falta/.test(rot[1]) ? "st-vencido" : /Folga|Feriado/.test(rot[1]) ? "st-neutro" : "st-aguardando", t: rot[1] };
+    const nr = (d.r.match(/\d{2}:\d{2}/g) || []).length, np = (d.p.match(/\d{2}:\d{2}/g) || []).length;
+    if (np >= 2 && nr === 0) return { cls: "st-vencido", t: "Sem marcação" };
+    if (np >= 2 && (nr % 2 || nr < np)) return { cls: "st-pendente", t: "Incompleta" };
+    if (v[0] > 0) return { cls: "st-vencido", t: "Interjornada < 11h" };
+    if (v[10] < 0) return { cls: "st-pendente", t: "Atraso " + pontoFmt(-v[10]) };
+    if (v[8] > 0) return { cls: "st-aprovado", t: "HE " + pontoFmt(v[8]) };
+    return { cls: "st-pago", t: "Ok" }; };
+  return `<div class="table-wrap"><table class="cap-table ponto-dias"><thead><tr><th>Dia</th><th>Previsto</th><th>Realizado</th><th class="right">Trab.</th><th class="right">HE</th><th class="right">Noturnas</th><th class="right">Atraso</th><th>Situação</th></tr></thead><tbody>${D.dias.map(d => { const s = st(d), v = d.v || []; const fds = /S[áa]b|Dom/.test(d.w); return `<tr class="${fds ? "fds" : ""} ${/vencido|pendente/.test(s.cls) ? "ponto-at" : ""}"><td class="nw">${esc(fmtDate(d.d))} <span class="sup">${esc(d.w)}</span></td><td class="nw">${esc(d.p || "—")}</td><td>${esc(d.r || "—")}${d.ij && d.ij !== "24h+" ? ` <span class="sup" title="interjornada">↔ ${esc(d.ij)}</span>` : ""}</td><td class="right">${pontoFmt(v[9] || 0)}</td><td class="right">${v[8] ? pontoFmt(v[8]) : "—"}</td><td class="right">${v[5] ? pontoFmt(v[5]) : "—"}</td><td class="right">${v[10] < 0 ? pontoFmt(v[10]) : "—"}</td><td><span class="pill ${s.cls}"><i></i>${esc(s.t)}</span></td></tr>`; }).join("")}</tbody></table></div>`;
+}
+window.pontoDetalhe = id => {
+  const m = RH_PONTO_STATE.marcs.find(x => String(x._id) === String(id)); if (!m) return; const r = pontoRec(m);
+  $("modal").className = "modal wide";
+  modal(`<div class="modal-head"><h2>${esc(r.nome)} · ${esc(pontoMesLabel(r.comp))}</h2><button class="x" onclick="closeModal()">×</button></div><div class="modal-body">
+    <p class="sup">${esc([r.cargo, r.dep, r.mat ? "matrícula " + r.mat : "", r.escala ? "escala " + r.escala : ""].filter(Boolean).join(" · "))}</p>
+    <div class="cap-kpis ponto-kpis mini">
+      <div class="kpi static"><div class="lbl">Trabalhadas</div><div class="val">${pontoFmt(r.trab)}</div><div class="sub">${Math.round(r.cumpr)}% de ${pontoFmt(r.prev)}</div></div>
+      <div class="kpi static"><div class="lbl">Horas extras</div><div class="val">${pontoFmt(r.he)}</div><div class="sub">${pontoFmt(r.heDia)} d · ${pontoFmt(r.heNot)} n</div></div>
+      <div class="kpi static"><div class="lbl">Faltas</div><div class="val">${r.faltas}</div><div class="sub">${r.afast + r.ferias} afast./férias · ${r.atest + r.abonos} atest./abono</div></div>
+      <div class="kpi static"><div class="lbl">Banco final</div><div class="val">${pontoFmt(r.bancoFinal, true)}</div><div class="sub">${pontoFmt(r.bancoMes, true)} no mês</div></div>
+    </div>
+    <p>${pontoBadges(r) || `<span class="pill st-pago"><i></i>Sem alertas</span>`}</p>
+    ${pontoDiasTabela(r)}
+  </div><div class="modal-foot"><button class="btn" onclick="closeModal()">Fechar</button><button class="btn primary" onclick="closeModal(); RH_PONTO_STATE.func = ${jsArg(pontoChave(r._m))}; RH_PONTO_STATE.mes = ${jsArg(r.comp)}; RH_PONTO_STATE.tab = 'painel'; paintRhPonto()">Abrir a visão individual</button></div>`);
+  document.addEventListener("keydown", escClose);
+};
+
+/* ---------- Lista ---------- */
+const PONTO_SITS = [["", "Todos"], ["alerta", "Com alerta"], ["he", "Com horas extras"], ["faltas", "Com faltas"], ["banco", "Banco negativo"], ["afast", "Afastado / férias / atestado"], ["semEscala", "Sem escala"]];
+function pontoSitTeste(r, s) { return !s || (s === "alerta" ? r.alertas.length > 0 : s === "he" ? r.he > 0 : s === "faltas" ? r.faltas > 0 : s === "banco" ? r.bancoFinal != null && r.bancoFinal < 0 : s === "afast" ? (r.afast + r.ferias + r.atest + r.abonos) > 0 : s === "semEscala" ? r.alertas.some(a => a.k === "semEscala") : true); }
+const PONTO_COLS = [
+  { k: "nome", th: "Funcionário", td: r => `<b>${esc(r.nome)}</b><div class="sup">${esc([r.cargo, r.dep].filter(Boolean).join(" · "))}</div>`, sort: (a, b) => a.nome.localeCompare(b.nome, "pt-BR") },
+  { k: "escala", th: "Escala", td: r => `<span class="sup nw">${esc(r.escala || "—")}</span>`, sort: (a, b) => a.escala.localeCompare(b.escala) },
+  { k: "diasTrab", th: "Dias", td: r => r.diasTrab, cls: "right", sort: (a, b) => a.diasTrab - b.diasTrab },
+  { k: "prev", th: "Previstas", td: r => pontoFmt(r.prev), cls: "right", sort: (a, b) => a.prev - b.prev },
+  { k: "trab", th: "Trabalhadas", td: r => `<b>${pontoFmt(r.trab)}</b><div class="sup">${r.prev ? Math.round(r.cumpr) + "%" : "—"}</div>`, cls: "right", sort: (a, b) => a.trab - b.trab },
+  { k: "he", th: "H. extras", td: r => r.he ? `${pontoFmt(r.he)}<div class="sup">${pontoFmt(r.he50)} · ${pontoFmt(r.he100)}</div>` : "—", cls: "right", sort: (a, b) => a.he - b.he },
+  { k: "not", th: "Noturnas", td: r => r.not ? pontoFmt(r.not) : "—", cls: "right", sort: (a, b) => a.not - b.not },
+  { k: "faltas", th: "Faltas", td: r => r.faltas ? `<span class="venc-txt"><b>${r.faltas}</b></span>` : "—", cls: "right", sort: (a, b) => a.faltas - b.faltas },
+  { k: "afast", th: "Afast. · férias · atest.", td: r => (r.afast + r.ferias + r.atest + r.abonos) ? `${r.afast} · ${r.ferias} · ${r.atest + r.abonos}` : "—", cls: "right", sort: (a, b) => (a.afast + a.ferias + a.atest + a.abonos) - (b.afast + b.ferias + b.atest + b.abonos) },
+  { k: "atrasos", th: "Atrasos", td: r => r.atrasos ? pontoFmt(r.atrasos) : "—", cls: "right", sort: (a, b) => a.atrasos - b.atrasos },
+  { k: "bancoFinal", th: "Banco", td: r => r.bancoFinal == null ? "—" : `<span class="${r.bancoFinal < 0 ? "venc-txt" : ""}">${pontoFmt(r.bancoFinal, true)}</span>`, cls: "right", sort: (a, b) => (a.bancoFinal || 0) - (b.bancoFinal || 0) },
+  { k: "alertas", th: "Alertas", td: r => pontoBadges(r) || "", sort: (a, b) => a.alertas.length - b.alertas.length }
+];
+window.pontoOrd = k => { const S = RH_PONTO_STATE; if (S.ord === k) { if (S.ordDesc) { S.ord = ""; S.ordDesc = false; } else S.ordDesc = true; } else { S.ord = k; S.ordDesc = false; } paintRhPonto(); };
+paintRhPontoLista = function (aviso) {
+  const body = $("rhPontoBody"); if (!body) return;
+  const mes = pontoMesAtual(); if (!mes) { body.innerHTML = (aviso || "") + `<div class="cap-empty"><h3>Sem relatórios importados</h3></div>`; return; }
+  const S = RH_PONTO_STATE, todos = pontoRecs(mes); let recs = pontoFiltrar(todos).filter(r => pontoSitTeste(r, S.sit));
+  const q = pontoNorm(S.busca); if (q) recs = recs.filter(r => pontoNorm([r.nome, r.cargo, r.mat, r.dep, r.escala].join(" ")).includes(q));
+  const col = PONTO_COLS.find(c => c.k === S.ord); recs.sort(col ? (a, b) => (S.ordDesc ? -1 : 1) * col.sort(a, b) : (a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const sit = `<div class="chips ponto-chips" aria-label="Situação"><span class="lbl">Situação</span>${PONTO_SITS.map(([v, rot]) => `<button type="button" class="chip ${S.sit === v ? "on" : ""}" onclick="pontoSet('sit', ${jsArg(v)})">${esc(rot)} <span class="n">${pontoFiltrar(todos).filter(r => pontoSitTeste(r, v)).length}</span></button>`).join("")}</div>`;
+  const t = { prev: pontoSum(recs, "prev"), trab: pontoSum(recs, "trab"), he: pontoSum(recs, "he"), not: pontoSum(recs, "not"), faltas: pontoSum(recs, "faltas"), atrasos: pontoSum(recs, "atrasos"), banco: pontoSum(recs.filter(r => r.bancoFinal != null), "bancoFinal"), dias: pontoSum(recs, "diasTrab"), af: pontoSum(recs, "afast") + pontoSum(recs, "ferias") + pontoSum(recs, "atest") + pontoSum(recs, "abonos") };
+  body.innerHTML = (aviso || "") + pontoFiltros(todos, { busca: true }) + sit + (recs.length ? `<div class="table-wrap"><table class="cap-table ponto-lista"><thead><tr>${PONTO_COLS.map(c => `<th class="${c.cls || ""} sortable ${S.ord === c.k ? (S.ordDesc ? "desc" : "asc") : ""}" onclick="pontoOrd(${jsArg(c.k)})">${esc(c.th)}</th>`).join("")}</tr></thead><tbody>${recs.map(r => `<tr class="ponto-${r.nivel || "ok"}" onclick="pontoDetalhe(${jsArg(r.id)})">${PONTO_COLS.map(c => `<td class="${c.cls || ""}">${c.td(r)}</td>`).join("")}</tr>`).join("")}</tbody>
+    <tfoot><tr><td><b>Total</b> <span class="sup">${recs.length} funcionário(s)</span></td><td></td><td class="right">${t.dias}</td><td class="right">${pontoFmt(t.prev)}</td><td class="right"><b>${pontoFmt(t.trab)}</b><div class="sup">${pontoPct(t.trab, t.prev)}%</div></td><td class="right">${pontoFmt(t.he)}</td><td class="right">${pontoFmt(t.not)}</td><td class="right">${t.faltas}</td><td class="right">${t.af}</td><td class="right">${pontoFmt(t.atrasos)}</td><td class="right">${pontoFmt(t.banco, true)}</td><td>${recs.filter(r => r.alertas.length).length} com alerta</td></tr></tfoot></table></div>
+    <p class="cap-dica">Clique na linha para ver o dia a dia. Horas no formato horas:minutos; "H. extras" mostra o total e, embaixo, dias escalados · folgas e feriados. Banco = acumulado final do mês.</p>` : `<div class="cap-empty"><h3>Nenhum funcionário com este filtro</h3></div>`);
+  const b = $("pontoBusca"); if (b) b.addEventListener("input", () => { S.busca = b.value; const pos = b.selectionStart; paintRhPonto(); const e2 = $("pontoBusca"); if (e2) { e2.focus(); try { e2.setSelectionRange(pos, pos); } catch (e) {} } });
+};
+
+/* ---------- Alertas ---------- */
+paintRhPontoAlertas = function () {
+  const body = $("rhPontoBody"); if (!body) return;
+  const mes = pontoMesAtual(); if (!mes) { body.innerHTML = `<div class="cap-empty"><h3>Sem relatórios importados</h3></div>`; return; }
+  const todos = pontoRecs(mes), recs = pontoFiltrar(todos), P = pontoParams();
+  const grupos = PONTO_REGRAS.map(g => ({ g, hits: recs.filter(r => r.alertas.some(a => a.k === g.k)) })).filter(x => x.hits.length);
+  body.innerHTML = pontoFiltros(todos) + `<p class="cap-dica">Limites atuais: HE ≥ ${P.heMes} h/mês · faltas ≥ ${P.faltas} · banco ≤ −${P.bancoNeg} h · cumprimento &lt; ${P.cumprMin}% · atrasos ≥ ${P.atrasos} h · marcações incompletas ≥ ${P.incompletos} dias · ajustes ≥ ${P.ajustes}. ${session.n1 ? `<a href="#" onclick="pontoRegrasForm(); return false">Alterar</a>.` : ""}</p>` +
+    (grupos.length ? grupos.map(({ g, hits }) => `<div class="cap-card ponto-regra ${g.nivel}"><div class="cap-card-h"><h3><span class="pill st-${PONTO_NIVEL[g.nivel][1]}"><i></i>${PONTO_NIVEL[g.nivel][0]}</span> ${esc(g.nome)} <span class="sup">· ${hits.length}</span></h3></div>
+      <div class="ponto-allist">${hits.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map(r => { const a = r.alertas.find(x => x.k === g.k); return `<div class="ponto-alrow" onclick="pontoDetalhe(${jsArg(r.id)})"><b>${esc(r.nome)}</b><span class="sup">${esc(r.dep)}${r.cargo ? " · " + esc(r.cargo) : ""}</span><span class="v">${esc(a.val)}</span></div>`; }).join("")}</div></div>`).join("") : `<div class="cap-empty"><h3>Nenhum alerta em ${esc(pontoMesLabel(mes))}</h3><p>Com os limites atuais${RH_PONTO_STATE.dep ? " e o departamento escolhido" : ""}.</p></div>`);
+};
+window.pontoRegrasForm = () => {
+  if (!session.n1) return; const P = pontoParams();
+  const campo = (k, lbl, un) => `<div class="field"><label>${esc(lbl)}</label><input type="number" min="0" step="1" id="pontoP_${k}" value="${esc(P[k])}"><div class="hint">${esc(un)}</div></div>`;
+  openModal("Regras dos alertas do ponto", `<div class="form-grid">${campo("heMes", "Horas extras no mês a partir de", "horas")}${campo("faltas", "Faltas no mês a partir de", "dias")}${campo("bancoNeg", "Banco de horas negativo a partir de", "horas (negativas)")}${campo("cumprMin", "Horas abaixo do previsto quando menor que", "% do previsto")}${campo("atrasos", "Atrasos no mês a partir de", "horas")}${campo("incompletos", "Marcações incompletas a partir de", "dias")}${campo("ajustes", "Ajustes manuais a partir de", "no mês")}</div><p class="hint">Interjornada menor que 11 h e "sem escala" não têm limite: valem sempre. Os limites ficam em ERP — Parâmetros (chave "ponto") e valem para todos.</p>`, async () => {
+    const v = {}, ruins = []; Object.keys(PONTO_PARAM_PADRAO).forEach(k => { const raw = $("pontoP_" + k).value.trim(), n = Number(raw); if (raw === "" || isNaN(n) || n <= 0) { v[k] = PONTO_PARAM_PADRAO[k]; ruins.push(k); } else v[k] = n; });
+    if (ruins.length) toast(`Limite vazio, zero ou inválido volta ao padrão (${ruins.length} campo(s)).`, 6000);
+    await navParamLista(true); if (!NAV_PARAM.list) { toast('A lista "ERP — Parâmetros" ainda não existe. Rode a Configuração.'); return false; }
+    const f = { Valor: JSON.stringify(v), AlteradoPor: (session.me && session.me.displayName) || "" };
+    if (RH_PONTO_STATE.paramId) await SP.update(NAV_PARAM.site.id, NAV_PARAM.list.id, RH_PONTO_STATE.paramId, f); else { const it = await SP.create(NAV_PARAM.site.id, NAV_PARAM.list.id, Object.assign({ Title: "ponto" }, f)); RH_PONTO_STATE.paramId = String(it.id); }
+    RH_PONTO_STATE.params = v; toast("Regras gravadas."); paintRhPonto(); return true; });
+};
+
+/* ---------- Relatórios (importações) ---------- */
+paintRhPontoRels = function () {
+  const body = $("rhPontoBody"); if (!body) return;
+  const rels = RH_PONTO_STATE.rels.slice().sort((a, b) => String(b.Competencia).localeCompare(String(a.Competencia)));
+  if (!rels.length) { body.innerHTML = `<div class="cap-empty"><h3>Nenhum relatório importado</h3></div>`; return; }
+  const rows = rels.map(r => { const n = RH_PONTO_STATE.marcs.filter(m => m.Competencia === r.Competencia).length; return `<tr><td class="nw"><b>${esc(pontoMesLabel(r.Competencia))}</b><div class="sup">${esc(r.Competencia)}</div></td><td>${esc(r.Origem || "—")}<div class="sup">${esc(r.Arquivo || "")}</div></td><td>${esc(r.ImportadoPor || "—")}<div class="sup">${r.Importado ? esc(new Date(r.Importado).toLocaleString("pt-BR")) : ""}</div></td><td class="right">${n}${rhPontoNum(r.TotalFunc) !== n ? ` <span class="sup">(${rhPontoNum(r.TotalFunc)} no PDF)</span>` : ""}</td><td class="right">${pontoFmt(pontoH2M(r.TotalHoras))}</td><td class="right">${pontoFmt(pontoH2M(r.TotalExtras))}</td><td class="right">${rhPontoNum(r.TotalFaltas)}</td><td>${r.Avisos ? `<span class="venc-txt" title="${esc(r.Avisos)}">${esc(String(r.Avisos).split("\n").length)} aviso(s)</span>` : "—"}</td>${rhPontoEhEditor() ? `<td class="act nw"><button class="btn mini ghost danger" onclick="rhPontoExcluirRel(${jsArg(r._id)}, ${jsArg(r.Competencia)})">Excluir</button></td>` : ""}</tr>`; }).join("");
+  body.innerHTML = `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Competência</th><th>Origem</th><th>Importado por</th><th class="right">Funcionários</th><th class="right">Horas trab.</th><th class="right">Extras</th><th class="right">Faltas</th><th>Leitura</th>${rhPontoEhEditor() ? "<th></th>" : ""}</tr></thead><tbody>${rows}</tbody></table></div><p class="cap-dica">Para atualizar um mês, importe o PDF de novo: as marcações do mês são substituídas.</p>`;
+};
+window.rhPontoExcluirRel = async (relId, comp) => {
+  if (!rhPontoEhEditor()) return;
+  if (!(await erpConfirmar({ titulo: "Excluir relatório", texto: `Excluir o relatório de ${pontoMesLabel(comp)} e todas as marcações desse mês? A exclusão não pode ser desfeita.`, sim: "Excluir", perigo: true }))) return;
+  try { await pontoApagarMes(comp, relId); toast(`Relatório de ${pontoMesLabel(comp)} excluído.`); await renderRhPonto(); } catch (e) { toast("Erro: " + e.message, 6000); }
+};
+async function pontoApagarMes(comp, relId) {
+  const S = RH_PONTO_STATE;
+  const rels = S.rels.filter(r => r.Competencia === comp && (!relId || String(r._id) === String(relId)));
+  for (const r of rels) await graph(`/sites/${S.siteRh.id}/lists/${S.listRel.id}/items/${r._id}`, { method: "DELETE" });
+  const alvo = S.marcs.filter(m => m.Competencia === comp);
+  for (const m of alvo) await graph(`/sites/${S.siteRh.id}/lists/${S.listMarc.id}/items/${m._id}`, { method: "DELETE" });
+}
+
+/* ---------- Importação por PDF ---------- */
+paintRhPontoImp = function (aviso) {
+  const body = $("rhPontoBody"); if (!body) return;
+  if (!rhPontoEhEditor()) { body.innerHTML = `<div class="cap-empty"><h3>Sem permissão</h3><p>Peça a um administrador ou ao proprietário do módulo para importar o relatório.</p></div>`; return; }
+  body.innerHTML = (aviso || "") + `<div class="cap-card ponto-imp" style="max-width:860px">
+    <h3 style="margin:0 0 6px">Importar "Relatório de Horas" do Flit (PDF)</h3>
+    <p class="sup">No Flit, gere o relatório de horas do mês com todos os colaboradores (um por página) e escolha o arquivo aqui. Pode escolher vários meses de uma vez. A leitura é feita neste navegador: nada sai do computador antes de você confirmar. Se o mês já foi importado, as marcações dele são substituídas.</p>
+    <div class="field"><label for="pontoArq">Arquivos PDF</label><input type="file" id="pontoArq" accept="application/pdf,.pdf" multiple></div>
+    <div id="pontoPrev"><p class="sup">Escolha os arquivos para ver a prévia. Nada é gravado antes de você confirmar.</p></div>
+    <div class="err-msg" id="pontoErr" style="display:none"></div>
+    <p id="pontoImpBtns" style="display:none"><button class="btn primary" id="pontoImpOk" onclick="pontoImportar()">Importar</button> <button class="btn" onclick="RH_PONTO_STATE.imp=null; paintRhPonto()">Cancelar</button></p>
+  </div>`;
+  $("pontoArq").addEventListener("change", async ev => { const files = [...(ev.target.files || [])]; if (!files.length) return; await pontoPrevia(files); });
+};
+async function pontoPdfLib() {
+  const lib = await erpLib("pdfjs", "Carregando o leitor de PDF…");
+  if (!lib.GlobalWorkerOptions.workerSrc) {
+    try { const r = await fetch(PONTO_PDF_WORKER); const t = await r.text(); lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([t], { type: "application/javascript" })); }
+    catch (e) { lib.GlobalWorkerOptions.workerSrc = PONTO_PDF_WORKER; }   /* sem o worker, o pdf.js lê na própria página (mais lento) */
+  }
+  return lib;
+}
+async function pontoLerPdf(file, aoPasso) {
+  const lib = await pontoPdfLib(); const buf = await file.arrayBuffer();
+  const doc = await lib.getDocument({ data: new Uint8Array(buf) }).promise; const pages = [];
+  for (let n = 1; n <= doc.numPages; n++) { const pg = await doc.getPage(n); const vp = pg.getViewport({ scale: 1 }); const tc = await pg.getTextContent(); pages.push({ items: tc.items.map(it => ({ str: it.str, x: it.transform[4], y: vp.height - it.transform[5], w: it.width })) }); if (aoPasso && n % 10 === 0) aoPasso(n, doc.numPages); }
+  try { doc.destroy(); } catch (e) {}
+  return pages;
+}
+async function pontoPrevia(files) {
+  const prev = $("pontoPrev"), err = $("pontoErr"); err.style.display = "none"; $("pontoImpBtns").style.display = "none"; RH_PONTO_STATE.imp = null;
+  const lidos = [];
+  for (const f of files) {
+    prev.innerHTML = `<p><b>Lendo ${esc(f.name)}…</b></p>`;
+    try { const pages = await pontoLerPdf(f, (n, t) => { prev.innerHTML = `<p><b>Lendo ${esc(f.name)}…</b> página ${n} de ${t}</p>`; }); const r = pontoLerPaginas(pages); r.arquivo = f.name; r.paginas = pages.length; lidos.push(r); }
+    catch (e) { lidos.push({ arquivo: f.name, erro: e.message, funcs: [], avisos: [] }); }
+  }
+  /* dois arquivos do mesmo mês na mesma leva: só o primeiro entra */
+  const compsLeva = {}; lidos.forEach(r => { if (r.erro || !r.funcs.length) return; if (compsLeva[r.comp]) { r.descartado = compsLeva[r.comp]; r.funcs = []; } else compsLeva[r.comp] = r.arquivo; });
+  RH_PONTO_STATE.imp = lidos;
+  const fm = RH_PONTO_STATE.funcsMap || { cpf: {}, nome: {} };
+  prev.innerHTML = lidos.map(r => {
+    if (r.erro) return `<div class="rhf-aviso"><b>${esc(r.arquivo)}</b>: não foi possível ler (${esc(r.erro)}).</div>`;
+    if (r.descartado) return `<div class="rhf-aviso"><b>${esc(r.arquivo)}</b>: mesmo mês de ${esc(r.descartado)}; só o primeiro arquivo será importado.</div>`;
+    if (!r.funcs.length) return `<div class="rhf-aviso"><b>${esc(r.arquivo)}</b>: nenhuma página com o formato "Relatório de Horas" do Flit.</div>`;
+    const outros = Object.keys(r.comps).filter(c => c !== r.comp); const ja = RH_PONTO_STATE.rels.find(x => x.Competencia === r.comp);
+    const semCad = r.funcs.filter(f => !(fm.cpf[pontoDig(f.cpf)] || fm.nome[pontoNorm(f.nome)])).length;
+    const tot = { trab: r.funcs.reduce((s, f) => s + f.trabMin, 0), he: r.funcs.reduce((s, f) => s + f.heMin, 0), faltas: r.funcs.reduce((s, f) => s + (f.oc["Falta BH"] || 0) + (f.oc["Falta"] || 0), 0), al: r.funcs.filter(f => f.interj || f.incompletos).length };
+    return `<div class="ponto-prev"><h4>${esc(r.arquivo)} <span class="sup">${r.paginas} página(s)</span></h4>
+      <div class="cap-kpis ponto-kpis mini"><div class="kpi static"><div class="lbl">Competência</div><div class="val">${esc(pontoMesLabel(r.comp))}</div><div class="sub">${ja ? "já importada: será substituída" : "nova"}</div></div><div class="kpi static"><div class="lbl">Funcionários</div><div class="val">${r.funcs.length}</div><div class="sub">${semCad ? semCad + " sem cadastro em RH › Funcionários" : "todos no cadastro"}</div></div><div class="kpi static"><div class="lbl">Horas trabalhadas</div><div class="val">${pontoFmt(tot.trab)}</div><div class="sub">${pontoFmt(tot.he)} de extras</div></div><div class="kpi static"><div class="lbl">Faltas</div><div class="val">${tot.faltas}</div><div class="sub">${tot.al} com interjornada curta ou marcação incompleta</div></div></div>
+      ${outros.length ? `<div class="rhf-aviso">O arquivo mistura competências (${esc(outros.join(", "))}): só ${esc(r.comp)} será importada.</div>` : ""}
+      ${r.avisos.length ? `<details class="ponto-avisos"><summary>${r.avisos.length} aviso(s) da leitura</summary><ul>${r.avisos.slice(0, 30).map(a => `<li>${esc(a)}</li>`).join("")}</ul></details>` : ""}
+      <details><summary>Ver os ${r.funcs.length} colaboradores</summary><div class="table-wrap rhf-tab"><table class="cap-table"><thead><tr><th>Nome</th><th>Cargo</th><th class="right">Dias</th><th class="right">Trab.</th><th class="right">HE</th><th class="right">Faltas</th><th class="right">Banco</th></tr></thead><tbody>${r.funcs.map(f => `<tr><td>${esc(rhfNomeCaso(f.nome))}</td><td>${esc(rhfNomeCaso(f.cargo))}</td><td class="right">${f.diasTrab}</td><td class="right">${pontoFmt(f.trabMin)}</td><td class="right">${pontoFmt(f.heMin)}</td><td class="right">${(f.oc["Falta BH"] || 0) + (f.oc["Falta"] || 0)}</td><td class="right">${pontoFmt(f.acum.bhFin, true)}</td></tr>`).join("")}</tbody></table></div></details></div>`;
+  }).join("");
+  if (lidos.some(r => r.funcs.length)) $("pontoImpBtns").style.display = "";
+}
+function pontoCampos(f, comp) {
+  const fm = RH_PONTO_STATE.funcsMap || { cpf: {}, nome: {} }, fx = fm.cpf[pontoDig(f.cpf)] || fm.nome[pontoNorm(f.nome)];
+  const H = m => m == null ? null : Math.round(m / 60 * 100) / 100, oc = f.oc || {};
+  const det = { dias: f.dias.map(d => ({ d: d.d, w: d.w, p: d.p, r: d.r, ij: d.ij, v: d.v })), tot: f.totais, oc, acum: f.acum, atr: f.atr, escN: f.escN, escE: f.escE };
+  const adm = f.admissao ? f.admissao.replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, "$3-$2-$1") : null;
+  return { Title: `${comp}·${pontoDig(f.cpf) || pontoNorm(f.nome).slice(0, 30)}`, Competencia: comp, Matricula: fx && fx.Matricula ? String(fx.Matricula) : null, Funcionario: rhfNomeCaso(f.nome), Cargo: rhfNomeCaso(f.cargo) || null, Setor: fx ? (fx.Departamento || fx.Setor || null) : null, CPF: f.cpf || null, Admissao: adm, Escala: f.escala || null,
+    HorasPrevistas: H(f.prevMin), HorasApontadas: H(f.trabMin), HorasTotais: H(f.horasMin), HorasExtras50: H(f.he50), HorasExtras100: H(f.he100), HEDiurnas: H(f.heDia), HENoturnas: H(f.heNot), HETotais: H(f.heMin), HEInterjornada: H(f.heInterMin), Intrajornada: H(f.intraMin), HorasNoturnas: H(f.notMin), DSR: 0, Atrasos: H(f.atrasoMin),
+    Faltas: (oc["Falta BH"] || 0) + (oc["Falta"] || 0), FaltasBH: oc["Falta BH"] || 0, Afastamento: oc["Afastado"] || 0, Ferias: oc["Férias"] || 0, Atestados: oc["Atestado"] || 0, Abonos: oc["Abono"] || 0, DiasTrabalhados: f.diasTrab, Folgas: oc["Folga"] || 0, Feriados: oc["Feriado"] || 0,
+    BancoInicial: H(f.acum.bhIni), BancoSaldo: H(f.acum.bhSal), BancoFinal: H(f.acum.bhFin), HEAcumFinal: H(f.acum.heFin), Ajustes: f.ajustes, DiasIncompletos: f.incompletos + f.semMarca, DiasInterjornada: f.interj, DetalheJson: JSON.stringify(det) };
+}
+window.pontoImportar = async () => {
+  const S = RH_PONTO_STATE; if (!rhPontoEhEditor() || !S.imp || S.importando) return;
+  if (typeof vcAtivo === "function" && vcAtivo()) { toast("Você está vendo o ERP como outra pessoa: nada é gravado."); return; }
+  const lidos = S.imp.filter(r => r.funcs.length); if (!lidos.length) return;
+  const subst = lidos.filter(r => S.rels.some(x => x.Competencia === r.comp)).map(r => pontoMesLabel(r.comp));
+  if (subst.length && !(await erpConfirmar({ titulo: "Substituir mês já importado", texto: `${subst.join(", ")}: as marcações atuais serão apagadas e substituídas pelas do PDF. Continuar?`, sim: "Substituir", perigo: true }))) return;
+  const prev = $("pontoPrev"), btn = $("pontoImpOk"), cols = S.cols; S.importando = true; btn.disabled = true; $("pontoArq").disabled = true;
+  const back = $("modalBack"); document.removeEventListener("keydown", escClose);
+  const erros = []; let gravados = 0;
+  try {
+    for (const r of lidos) {
+      const funcs = r.funcs.filter(f => f.comp === r.comp);
+      /* grava o mês novo primeiro; só depois de tudo gravado apaga o anterior (uma falha no meio não perde o que já existia) */
+      const antigosRel = S.rels.filter(x => x.Competencia === r.comp).map(x => x._id), antigosMarc = S.marcs.filter(x => x.Competencia === r.comp).map(x => x._id);
+      let n = 0; const tot = { TotalHoras: 0, TotalExtras: 0, TotalFaltas: 0 }, errosMes = [], novosIds = [];
+      for (const f of funcs) {
+        prev.innerHTML = `<p><b>${esc(pontoMesLabel(r.comp))}:</b> gravando ${n + 1} de ${funcs.length}… ${esc(rhfNomeCaso(f.nome))}</p>`;
+        try { const campos = pontoCampos(f, r.comp); if (cols) Object.keys(campos).forEach(k => { if (k !== "Title" && !cols.has(k)) delete campos[k]; });
+          const it = await SP.create(S.siteRh.id, S.listMarc.id, campos); if (it && it.id) novosIds.push(it.id); tot.TotalHoras += Number(campos.HorasApontadas || 0); tot.TotalExtras += Number(campos.HETotais || campos.HorasExtras50 + campos.HorasExtras100 || 0); tot.TotalFaltas += Number(campos.Faltas || 0);
+          n++; gravados++; }
+        catch (e) { errosMes.push(`${rhfNomeCaso(f.nome)}: ${e.message}`); }
+      }
+      if (!n) { erros.push(`${r.comp}: nenhum colaborador gravado; o mês anterior foi mantido (${errosMes[0] || "sem detalhe"})`); continue; }
+      if (errosMes.length && !(await erpConfirmar({ titulo: "Importação incompleta", html: `<p><b>${esc(pontoMesLabel(r.comp))}</b>: ${n} de ${funcs.length} colaborador(es) gravado(s); ${errosMes.length} falharam.</p><p>Manter o que foi gravado e apagar o mês anterior, ou desfazer e manter o mês anterior como estava?</p>`, sim: "Manter o novo", nao: "Desfazer" }))) {
+        prev.innerHTML = `<p><b>${esc(pontoMesLabel(r.comp))}:</b> desfazendo…</p>`;
+        for (const id of novosIds) { try { await graph(`/sites/${S.siteRh.id}/lists/${S.listMarc.id}/items/${id}`, { method: "DELETE" }); } catch (e) {} }
+        gravados -= n; erros.push(`${r.comp}: importação desfeita (${errosMes.length} falha(s)); o mês anterior foi mantido`); continue;
+      }
+      prev.innerHTML = `<p><b>${esc(pontoMesLabel(r.comp))}:</b> apagando o mês anterior…</p>`;
+      let naoApagou = 0;
+      for (const id of antigosRel) { try { await graph(`/sites/${S.siteRh.id}/lists/${S.listRel.id}/items/${id}`, { method: "DELETE" }); } catch (e) { naoApagou++; } }
+      for (const id of antigosMarc) { try { await graph(`/sites/${S.siteRh.id}/lists/${S.listMarc.id}/items/${id}`, { method: "DELETE" }); } catch (e) { naoApagou++; } }
+      if (naoApagou) erros.push(`${r.comp}: ${naoApagou} registro(s) do mês anterior não puderam ser apagados; clique em Atualizar e exclua pela aba Relatórios`);
+      errosMes.forEach(e => erros.push(`${r.comp} · ${e}`));
+      try { const rel = { Title: `REL-${r.comp}`, Competencia: r.comp, Origem: "Flit PDF", Importado: new Date().toISOString(), ImportadoPor: (session.me && session.me.displayName) || "—", TotalFunc: funcs.length, TotalHoras: Math.round(tot.TotalHoras * 100) / 100, TotalExtras: Math.round(tot.TotalExtras * 100) / 100, TotalFaltas: tot.TotalFaltas, Arquivo: r.arquivo.slice(0, 160), Paginas: r.paginas, Avisos: r.avisos.length ? r.avisos.slice(0, 50).join("\n") : null, Observacoes: null };
+        if (errosMes.length) rel.Avisos = `${errosMes.length} colaborador(es) não gravado(s): ` + errosMes.join("; ").slice(0, 1500);
+        const cr = S.colsRel; if (cr) Object.keys(rel).forEach(k => { if (k !== "Title" && !cr.has(k)) delete rel[k]; });   /* lista de relatórios sem as colunas novas: grava o que existe */
+        await SP.create(S.siteRh.id, S.listRel.id, rel); } catch (e) { erros.push(`${r.comp}: relatório não registrado (${e.message})`); }
+      /* o estado local acompanha, para o próximo arquivo da leva e para a prévia */
+      S.rels = S.rels.filter(x => x.Competencia !== r.comp); S.marcs = S.marcs.filter(x => x.Competencia !== r.comp);
+    }
+  } finally { S.importando = false; document.addEventListener("keydown", escClose); }
+  S.imp = null; S.mes = lidos[lidos.length - 1].comp; S.func = ""; S.dep = "";
+  if (erros.length) { toast(`${gravados} gravado(s); ${erros.length} com erro.`, 8000); const e = $("pontoErr"); if (e) { e.style.display = "block"; e.innerHTML = erros.slice(0, 20).map(esc).join("<br>"); } }
+  else toast(`${gravados} colaborador(es) importado(s) em ${lidos.map(r => pontoMesLabel(r.comp)).join(", ")}.`, 7000);
+  RH_PONTO_STATE.tab = erros.length ? "imp" : "painel"; await renderRhPonto();
+  if (erros.length) { const e = $("pontoErr"); if (e) { e.style.display = "block"; e.innerHTML = erros.slice(0, 20).map(esc).join("<br>"); } }
+};
+
+/* ---------- Excel e impressão da lista do mês ---------- */
+window.pontoExcel = async () => {
+  const mes = pontoMesAtual(); if (!mes) return; const S = RH_PONTO_STATE; const recs = pontoFiltrar(pontoRecs(mes)).filter(r => pontoSitTeste(r, S.tab === "lista" ? S.sit : "")).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const XLSX = await erpLib("xlsx");
+  const H = m => m == null ? null : Math.round(m / 60 * 100) / 100;
+  const aoa = [["Competência", "Funcionário", "Matrícula", "Cargo", "Departamento", "Escala", "Dias trabalhados", "Horas previstas", "Horas trabalhadas", "% do previsto", "HE totais", "HE dias escalados", "HE folgas/feriados", "HE diurnas", "HE noturnas", "Horas noturnas", "Faltas", "Faltas BH", "Afastado", "Férias", "Atestado", "Abono", "Folgas", "Feriados", "Atrasos (h)", "Banco inicial", "Banco do mês", "Banco final", "Ajustes manuais", "Dias incompletos", "Dias interjornada curta", "Alertas"]]
+    .concat(recs.map(r => [pontoMesLabel(r.comp), r.nome, r.mat, r.cargo, r.dep, r.escala, r.diasTrab, H(r.prev), H(r.trab), Math.round(r.cumpr), H(r.he), H(r.he50), H(r.he100), H(r.heDia), H(r.heNot), H(r.not), r.faltas, r.faltasBH, r.afast, r.ferias, r.atest, r.abonos, r.folgas, r.feriados, H(r.atrasos), H(r.bancoIni), H(r.bancoMes), H(r.bancoFinal), r.ajustes, r.incompl, r.interj, r.alertas.map(a => a.nome).join("; ")]));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "Horas do mês");
+  XLSX.writeFile(wb, `Controle de Ponto ${mes}.xlsx`);
+};
+window.pontoImprimir = () => {
+  const mes = pontoMesAtual(); if (!mes) return; const S = RH_PONTO_STATE; const recs = pontoFiltrar(pontoRecs(mes)).filter(r => pontoSitTeste(r, S.tab === "lista" ? S.sit : "")).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const t = { prev: pontoSum(recs, "prev"), trab: pontoSum(recs, "trab"), he: pontoSum(recs, "he"), faltas: pontoSum(recs, "faltas"), banco: pontoSum(recs.filter(r => r.bancoFinal != null), "bancoFinal") };
+  const html = `<div class="pg">${printCab("Controle de Ponto · Horas do mês", `${pontoMesLabel(mes)}${S.dep ? " · " + S.dep : ""}${S.func && recs[0] ? " · " + recs[0].nome : ""}`, { doc: `PONTO-${mes}`, meta: [["Fonte", "Relatório de Horas · Flit"]] })}
+    ${printKpis([["Funcionários", String(recs.length)], ["Horas previstas", pontoFmt(t.prev)], ["Horas trabalhadas", pontoFmt(t.trab), pontoPct(t.trab, t.prev) + "% do previsto"], ["Horas extras", pontoFmt(t.he)], ["Faltas", String(t.faltas), "dias"], ["Banco de horas", pontoFmt(t.banco, true), "acumulado final", t.banco < 0 ? "neg" : ""]])}
+    ${printSec("Horas por funcionário", recs.length + " funcionário(s)", 1)}
+    <table class="t"><thead><tr><th>Funcionário</th><th>Depto.</th><th>Escala</th><th class="r">Dias</th><th class="r">Prev.</th><th class="r">Trab.</th><th class="r">%</th><th class="r">HE</th><th class="r">Not.</th><th class="r">Faltas</th><th class="r">Afast.</th><th class="r">Atrasos</th><th class="r">Banco</th><th>Alertas</th></tr></thead><tbody>
+    ${recs.map(r => `<tr><td><b>${esc(r.nome)}</b><br><span style="color:#6B7280">${esc(r.cargo)}</span></td><td>${esc(r.dep)}</td><td>${esc(r.escala || "—")}</td><td class="r">${r.diasTrab}</td><td class="r">${pontoFmt(r.prev)}</td><td class="r">${pontoFmt(r.trab)}</td><td class="r">${r.prev ? Math.round(r.cumpr) + "%" : "—"}</td><td class="r">${r.he ? pontoFmt(r.he) : "—"}</td><td class="r">${r.not ? pontoFmt(r.not) : "—"}</td><td class="r">${r.faltas || "—"}</td><td class="r">${(r.afast + r.ferias + r.atest + r.abonos) || "—"}</td><td class="r">${r.atrasos ? pontoFmt(r.atrasos) : "—"}</td><td class="r">${pontoFmt(r.bancoFinal, true)}</td><td>${esc(r.alertas.map(a => a.nome).join("; "))}</td></tr>`).join("")}</tbody></table>
+    ${printRodape("RH › Relatórios › Controle de Ponto")}</div>`;
+  printDoc({ titulo: `Controle de Ponto ${pontoMesLabel(mes)}`, paisagem: true, fonte: 9.5, css: "table.t td,table.t th{padding:3px 5px;font-size:9px}td.r,th.r{text-align:right;white-space:nowrap}", html });
+};
 
 /* v0.12.21: aliases para inspeção pelo console (DevTools) e testes — não altera comportamento */
 try { window.session = session; window.MODULES = MODULES; window.canSee = canSee; } catch (e) {}

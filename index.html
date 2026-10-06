@@ -2383,6 +2383,7 @@ table.ctb-mini tr.tot td{font-weight:800;border-top:1px solid var(--navy);border
 .cx-var.bom{background:#E7F4EC;color:#197A46}.cx-var.ruim{background:#FDECEA;color:#B3271E}
 .cx-faixa{padding:10px 14px;margin:0 0 var(--gap);border:1px solid var(--line);border-left:3px solid var(--navy);border-radius:8px;background:var(--surface);font-size:13px;line-height:1.5}
 .cx-pgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap);margin-bottom:var(--gap)}
+.cx-resumo table.cx-res-tab{min-width:0!important;width:100%}.cx-resumo .money{white-space:nowrap}.cx-resumo tr.tot td{font-weight:800}
 .cx-pgrid .cap-card{margin:0}
 @media (max-width:1000px){.cx-pgrid{grid-template-columns:1fr}}
 table.cx-anual tbody tr{cursor:pointer}
@@ -2976,6 +2977,7 @@ body.vendo-como::after{border-color:var(--orange)}
   .field input[type="date"], .field input[type="month"], .field input[type="time"] { display: block; width: 100%; min-height: 44px }   /* sem appearance:none — o iPhone esconderia o "dd/mm/aaaa" */
   .grid2 { grid-template-columns: 1fr }
 }
+/* v0.12.58 · Fluxo de Caixa › aba Resumo (em avaliação): realizado do mês (caixa + CAP paga) e previsto (CAP em aberto por semana), só leitura */
 /* v0.12.57 · (1) Controle de Ponto › Painel: rótulos de dados e ⛶ nos gráficos; editar/excluir o lançamento do dia ou do mês de um funcionário
    (2) CAP: fornecedor Ativo com classificação Fixo ou Variável ganha a conta do mês novo automaticamente (3) Classificação de custo
    dos fornecedores: 6 opções com descrição embaixo do campo (4) Normas CLT: excluir ação; Responsável = funcionários do RH
@@ -3057,7 +3059,7 @@ body.vendo-como::after{border-color:var(--orange)}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.57<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.58<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3094,7 +3096,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.57",
+  version: "v0.12.58",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -15907,7 +15909,7 @@ const CX = { site: null, lists: {}, contas: [], mov: [], fech: [], meses: [], ta
 function cxHoje() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 function cxAgora() { const d = new Date(), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function cxQuem() { return (session.me && (session.me.displayName || session.me.userPrincipalName)) || "—"; }
-MOD_RESET.caixa = () => { CX.tab = "boletim"; CX.dia = cxHoje(); CX.comp = cxHoje().slice(0, 7); CX.imp = null; CX.filtroTipo = ""; };
+MOD_RESET.caixa = () => { CX.resCap = ""; CX.tab = "boletim"; CX.dia = cxHoje(); CX.comp = cxHoje().slice(0, 7); CX.imp = null; CX.filtroTipo = ""; };
 MOD_RESET.cap = () => { CAP_STATE.painelFoco = ""; CAP_STATE.pageN = 45; };   /* v0.12.20 + v0.12.22 */
 MOD_RESET.ag_mov = () => { if (typeof AG_MOV_STATE !== "undefined") { AG_MOV_STATE.filtroStatus = ""; AG_MOV_STATE.draft = null; } };   /* v0.12.24 */
 MOD_RESET.rc = () => { if (typeof RC_STATE !== "undefined") { RC_STATE.q = ""; RC_STATE.filtroStatus = ""; } };   /* v0.12.25 */
@@ -18314,10 +18316,10 @@ function paintCx() {
   const btnDemo = `<button class="btn ${CX.demo ? "primary" : ""}" onclick="cxDemoToggle()" title="Dados de demonstração — nada é gravado no SharePoint">${CX.demo ? "⚠ Demo ligado" : "Modo demo"}</button>`;
   if (acts) acts.innerHTML = (edita && !cxMesFechado(CX.comp) ? `<button class="btn" onclick="cxMovForm(null,'Entrada')">Lançar entrada</button><button class="btn" onclick="cxMovForm(null,'Saída')">Lançar saída</button>` : "") + `<button class="btn primary" onclick="cxTab('boletim')">Boletim do dia</button>` + btnDemo;
   const aviso = CX.erro ? `<div class="import-help">Não foi possível ler o caixa (${esc(CX.erro)}).</div>` : !CX.ready ? `<div class="import-help">As listas do Fluxo de Caixa ainda não existem no SharePoint. Rode Sistema › Configuração › "Executar tudo na ordem".</div>` : "";
-  const tabs = [["boletim", "Boletim do dia"], ["movimento", "Movimento"], ["mensal", "Fluxo do mês"], ["fechamento", "Fechamento do mês"], ["contas", "Contas e caixas"], ["painel", "Painel"]].concat(edita ? [["importar", "Importar planilha"]] : [])
+  const tabs = [["boletim", "Boletim do dia"], ["movimento", "Movimento"], ["mensal", "Fluxo do mês"], ["fechamento", "Fechamento do mês"], ["contas", "Contas e caixas"], ["painel", "Painel"], ["resumo", "Resumo"]].concat(edita ? [["importar", "Importar planilha"]] : [])
     .map(([k, l]) => `<button role="tab" class="${CX.tab === k ? "on" : ""}" onclick="cxTab('${k}')">${l}</button>`).join("");
   const topo = `<div class="op-topo"><div class="seg-tabs" role="tablist">${tabs}</div><span class="grow"></span>${CX.tab === "boletim" ? cxDiaPickerHtml(CX.dia) : cxYearMonthPicker()}${cxMesFechado(CX.comp) ? `<span class="pill fechado" title="Mês fechado — sem edição">mês fechado</span>` : ""}</div>${CX.demo ? `<div class="banner" style="margin:8px 0 4px"><div><b>Modo demonstração ligado.</b> Lançamentos fictícios de fev/2026 (3 dias com entradas, saídas e boletim fechado) carregados só neste navegador para você conferir o funcionamento. Nada vai para o SharePoint; clique de novo para desligar.</div></div>` : ""}`;
-  const conteudo = CX.tab === "boletim" ? cxBoletimHtml() : CX.tab === "movimento" ? cxMovHtml() : CX.tab === "mensal" ? cxMensalHtml() : CX.tab === "fechamento" ? cxFechMesHtml() : CX.tab === "contas" ? cxContasHtml() : CX.tab === "painel" ? cxPainelHtml() : cxImportHtml();
+  const conteudo = CX.tab === "boletim" ? cxBoletimHtml() : CX.tab === "movimento" ? cxMovHtml() : CX.tab === "mensal" ? cxMensalHtml() : CX.tab === "fechamento" ? cxFechMesHtml() : CX.tab === "contas" ? cxContasHtml() : CX.tab === "painel" ? cxPainelHtml() : CX.tab === "resumo" ? cxResumoHtml() : cxImportHtml();
   body.innerHTML = aviso + topo + conteudo;
   if (CX.tab === "painel") cxPainelCharts();
 }
@@ -21374,6 +21376,67 @@ async function rhDeptoNumerar() {
     const sel = `<select id="rdFuDep"><option value="">—</option>${fora}${deps.map(d => `<option value="${esc(d.Title)}" ${d.Title === atual ? "selected" : ""}>${esc(d.Title)}</option>`).join("")}</select><div class="hint">${deps.length ? "Da lista RH › Banco de Dados › Departamentos" : "Cadastre os departamentos em RH › Banco de Dados › Departamentos"}</div>`;
     return html.replace(/<input id="rdFuDep"[^>]*>\s*<datalist id="rdFuDepList">[\s\S]*?<\/datalist>/, sel);
   };
+}
+
+/* =====================================================================
+   v0.12.58 · Fluxo de Caixa › Resumo (EM AVALIAÇÃO — rever na rodada do Fluxo de Caixa, depois da CAP)
+   Junta, só para leitura, o realizado do mês (entradas e saídas do caixa + contas pagas pela CAP) e o previsto (contas da CAP
+   em aberto, vencidas e por semana nas próximas 5 semanas). Nada é gravado. LevBom, Recebimento, Vendas da Agência e Obrigações
+   ainda não entram (aparecem como "a ligar"). Uma saída lançada no caixa E paga pela CAP aparece duas vezes: a regra de "uma
+   origem só" é decisão da rodada do Fluxo de Caixa.
+   ===================================================================== */
+function cxResumoCapAcesso() { return permModulo("cap") !== "nenhum"; }
+function cxResumoCapCarregar() {
+  if (!cxResumoCapAcesso() || ["carregando", "ok", "erro"].includes(CX.resCap)) return;   /* erro não tenta de novo sozinho: "Tentar de novo" ou reentrar no módulo */
+  if (typeof CAP_STATE !== "undefined" && CAP_STATE.items && CAP_STATE.items.length) { CX.resCap = "ok"; return; }
+  CX.resCap = "carregando";
+  loadCAP({ soLeitura: true }).then(() => { CX.resCap = "ok"; }).catch(e => { CX.resCap = "erro"; CX.resCapErro = e.message; }).finally(() => { if (CX.tab === "resumo" && $("cxBody")) paintCx(); });
+}
+function cxResumoHtml() {
+  const c = CX.comp || cxHoje().slice(0, 7), M = cxMes(c);
+  cxResumoCapCarregar();
+  const capOk = cxResumoCapAcesso() && CX.resCap === "ok" && typeof CAP_STATE !== "undefined";
+  const naoTransf = it => !/^transfer/i.test(String(it.TipoLancamento || "")) && !isIsenta(it);
+  const capPagas = capOk ? CAP_STATE.items.filter(it => naoTransf(it) && it.Status === "Pago" && String(it.DataPagamento ? ymd(it.DataPagamento) : "").slice(0, 7) === c) : [];
+  const totCapPago = cxN(capPagas.reduce((s, it) => s + Number(it.Valor || 0), 0));
+  const resultado = cxN(M.ent - M.des - totCapPago);
+  /* previsto: em aberto (não pagas) */
+  const hoje = cxHoje(), abertas = capOk ? CAP_STATE.items.filter(it => naoTransf(it) && it.Status !== "Pago" && it.Vencimento) : [];
+  const venc = abertas.filter(it => ymd(it.Vencimento) < hoje), totVenc = cxN(venc.reduce((s, it) => s + Number(it.Valor || 0), 0));
+  const d0 = new Date(hoje + "T12:00:00"), semanas = [];
+  for (let i = 0; i < 5; i++) {
+    const ini = new Date(d0); ini.setDate(d0.getDate() + 7 * i); const fim = new Date(ini); fim.setDate(ini.getDate() + 6);
+    const a = ini.toISOString().slice(0, 10), b = fim.toISOString().slice(0, 10), its = abertas.filter(it => { const v = ymd(it.Vencimento); return v >= a && v <= b; });
+    semanas.push({ a, b, n: its.length, tot: cxN(its.reduce((s, it) => s + Number(it.Valor || 0), 0)), aguard: its.filter(it => it.Status === "Aguardando NF").length });
+  }
+  const totSem = cxN(semanas.reduce((s, w) => s + w.tot, 0));
+  const linha = (rot, val, sub, cls) => `<tr class="${cls || ""}"><td>${rot}${sub ? `<div class="sup">${sub}</div>` : ""}</td><td class="right money">${esc(fmtBRL(val))}</td></tr>`;
+  const capMsg = !cxResumoCapAcesso() ? "Sem acesso à CAP: as contas a pagar não entram neste resumo." : CX.resCap === "erro" ? `Não foi possível ler a CAP (${esc(CX.resCapErro || "")}). <a href="#" onclick="CX.resCap=''; paintCx(); return false">Tentar de novo</a>` : CX.resCap !== "ok" ? "Carregando a CAP…" : "";
+  const fontes = [["Caixa — Movimento (este módulo)", "ligado", "entradas e saídas lançadas no caixa ou importadas da planilha"], ["Contas a Pagar", capOk ? "ligado" : "sem leitura", "pagas no mês (realizado) e em aberto (previsto)"],
+    ["LevBom (bilhetagem)", "a ligar", "fechamento → entradas"], ["Recebimento Motorista", "a ligar", "aprovado → entrada"], ["Vendas da Agência", "a ligar", "aprovado → entrada"], ["Obrigações", "a ligar", "parcelas futuras ainda não lançadas na CAP"]];
+  return `<div class="cx-resumo">
+    <div class="import-help" style="margin-bottom:14px"><b>Em avaliação.</b> Prévia do resumo de entradas e saídas do Financeiro, só para leitura. Será revista na rodada do Fluxo de Caixa (depois da CAP), quando decidirmos de onde vem cada entrada e saída. <b>Atenção:</b> uma despesa lançada no caixa e também paga pela CAP aparece duas vezes.</div>
+    ${capMsg ? `<p class="sup">${capMsg}</p>` : ""}
+    <div class="cx-pgrid">
+      <div class="cap-card"><div class="cap-card-h"><h3>Realizado · ${esc(cxMesLabel(c))}</h3><span class="cap-card-s">o que entrou e saiu no mês</span></div>
+        <div class="table-wrap"><table class="cap-table cx-res-tab"><tbody>
+          ${linha("Entradas do caixa", M.ent, `${M.entL.length} lançamento(s)`)}
+          ${linha("(−) Saídas pagas no caixa", -M.des, "sem depósitos e transferências ao banco")}
+          ${capOk ? linha("(−) Contas pagas pela CAP", -totCapPago, `${capPagas.length} conta(s) com pagamento no mês`) : ""}
+          ${linha("Resultado do mês", resultado, capOk ? "entradas − saídas do caixa − CAP paga" : "entradas − saídas do caixa", "tot " + (resultado < 0 ? "venc-txt" : ""))}
+        </tbody></table></div></div>
+      <div class="cap-card"><div class="cap-card-h"><h3>Previsto · contas a pagar em aberto</h3><span class="cap-card-s">da CAP, pelo vencimento</span></div>
+        ${capOk ? `<div class="table-wrap"><table class="cap-table cx-res-tab"><thead><tr><th>Período</th><th class="right">Contas</th><th class="right">Valor</th></tr></thead><tbody>
+          <tr class="${venc.length ? "venc-txt" : ""}"><td>Vencidas (antes de hoje)</td><td class="right">${venc.length}</td><td class="right money">${esc(fmtBRL(totVenc))}</td></tr>
+          ${semanas.map((w, i) => `<tr><td>${i === 0 ? "Esta semana" : `Semana ${i + 1}`} <span class="sup">${esc(fmtDate(w.a))} a ${esc(fmtDate(w.b))}</span>${w.aguard ? `<div class="sup">${w.aguard} aguardando NF (valor estimado)</div>` : ""}</td><td class="right">${w.n}</td><td class="right money">${esc(fmtBRL(w.tot))}</td></tr>`).join("")}
+          <tr class="tot"><td>Próximas 5 semanas</td><td class="right">${semanas.reduce((s, w) => s + w.n, 0)}</td><td class="right money">${esc(fmtBRL(totSem))}</td></tr>
+        </tbody></table></div><p class="cap-dica">Saldo do caixa no fim de ${esc(cxMesLabel(c))}: <b>${esc(fmtBRL(cxSaldoFimMes(c)))}</b>. As entradas previstas (LevBom, Recebimento, Vendas) ainda não entram.</p>` : `<p class="cap-muted" style="padding:12px 16px">Sem dados da CAP${capMsg ? " (veja o aviso acima)" : ""}.</p>`}</div>
+    </div>
+    <div class="cap-card"><div class="cap-card-h"><h3>De onde vêm os números</h3><span class="cap-card-s">o que já está ligado e o que falta avaliar</span></div>
+      <div class="table-wrap"><table class="cap-table"><thead><tr><th>Fonte</th><th>Situação</th><th>Entra como</th></tr></thead><tbody>
+      ${fontes.map(([f, st, como]) => `<tr><td>${esc(f)}</td><td><span class="pill st-${st === "ligado" ? "pago" : st === "a ligar" ? "aguardando" : "venc"}"><i></i>${esc(st)}</span></td><td class="sup">${esc(como)}</td></tr>`).join("")}
+      </tbody></table></div></div>
+  </div>`;
 }
 
 /* v0.12.21: aliases para inspeção pelo console (DevTools) e testes — não altera comportamento */

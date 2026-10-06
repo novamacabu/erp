@@ -882,6 +882,9 @@
 #dsl-root .tag.ok{background:#DCEEDB;color:#2E6A36}
 #dsl-root .tag.plan{background:#FBF6DF;color:#8A6D00}
 #dsl-root td.ecell{cursor:pointer}
+#dsl-root.so-leitura td.ecell{cursor:default}
+#dsl-root.so-leitura td.ecell:hover{box-shadow:none}
+#dsl-root.so-leitura [data-del-receb],#dsl-root.so-leitura [data-del-abast],#dsl-root.so-leitura [data-conf-receb],#dsl-root.so-leitura [data-undo-receb]{display:none}
 #dsl-root td.ecell:hover{box-shadow:inset 0 0 0 1px var(--petrol-2);border-radius:2px}
 #dsl-root td.ecell input.cellin.inline{
   min-width:64px;max-width:140px;background:#fff;color:var(--ink);border-radius:3px;
@@ -1789,6 +1792,21 @@ tr.sem-ok:hover td{background:#D8ECDF!important}tr.sem-aviso:hover td{background
 .perm-area-in{display:flex;align-items:center;gap:12px}
 .perm-area-in .grow{flex:1}
 .perm-area-sel{font:inherit;font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-weight:600}
+/* v0.12.56 · matriz de permissões em árvore: Departamento › Módulo › Sub-páginas, fechada por padrão */
+.perm-table tr.perm-area{cursor:pointer}
+.perm-table tr.perm-area:hover td{filter:brightness(.98)}
+.perm-tg{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border:0;background:none;color:var(--navy);font-size:11px;transition:transform .15s;padding:0}
+.perm-area.aberto .perm-tg{transform:rotate(90deg)}
+.perm-resumo{font-weight:600;font-size:12px;color:var(--muted);white-space:nowrap}
+.perm-resumo b{color:var(--navy)}
+.perm-table tr.perm-mod.oculto{display:none}
+.perm-table tr.perm-mod td:first-child{padding-left:34px}
+.perm-subs{font-size:11.5px;color:var(--muted);font-weight:500;margin-top:2px}
+.perm-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:4px 0 8px}
+.perm-tools .grow{flex:1}
+.perm-tools a{font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.perm-tools select{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);max-width:100%}
+@media (max-width:640px){.perm-table tr.perm-mod td:first-child{padding-left:16px}.perm-resumo{white-space:normal}}
 .chks{display:flex;flex-wrap:wrap;gap:8px 18px;padding:6px 0 2px}
 .field .chks label.chk{display:inline-flex;align-items:center;gap:7px;text-transform:none;letter-spacing:0;font-size:13.5px;font-weight:600;color:var(--ink);margin:0;cursor:pointer}
 .field .chks label.chk input{width:16px;height:16px;margin:0}
@@ -2947,6 +2965,10 @@ body.vendo-como::after{border-color:var(--orange)}
   .field input[type="date"], .field input[type="month"], .field input[type="time"] { display: block; width: 100%; min-height: 44px }   /* sem appearance:none — o iPhone esconderia o "dd/mm/aaaa" */
   .grid2 { grid-template-columns: 1fr }
 }
+/* v0.12.56 · (1) nome de quem lança fixo para quem não é administrador (Caixa, Vendedor, Conferente, Requisitante: autorFixo/lancAutorFixar);
+   (2) motoristas sem matrícula na lista; (3) "ver" sem edição em Infrações, SAC, Diesel, LevBom, Talentos e Escala (os portões do Make
+   passam a conferir "ERP — Acessos"); (4) Usuários e permissões: matriz em árvore (Departamento › Módulo › páginas) e "Copiar de…";
+   (5) importador de funcionários guarda o id criado na própria linha (homônimos sem CPF/matrícula). */
 /* v0.12.55 · login: marca-d'água NM acima da linha do rodapé com o mesmo respiro que o "ERP interno" tem abaixo dela (~19 px): bottom 72 px no computador (também na tela baixa), 82 px no tablet; celular inalterado */
 /* v0.12.54 · ícone da aba: anel externo com traço fino (~1 px em 32 px, ~1,25 px em 48 px) */
 /* v0.12.53 · ícone da aba: só os círculos do fundo (anel laranja + disco), sem cor de fundo; marca-d'água NM das páginas de menu dentro da cantoneira de baixo/direita, que passou de 72 para 150 px (celular 116 px), como a logo do login */
@@ -3019,7 +3041,7 @@ body.vendo-como::after{border-color:var(--orange)}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.55<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.56<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3056,7 +3078,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.55",
+  version: "v0.12.56",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -4347,6 +4369,15 @@ function obrVisivel(o) { return veDividas() || (o && (o.ModuloDestino || "CAP") 
 /* atalhos "Abrir no SharePoint" dos registros: administradores e o proprietário do módulo aberto (v0.12.35: o Nível 2 saiu) */
 function ehAdmNivel() { return !!(session.n1 || permModulo(session.modAtual) === "proprietario"); }
 function linkSP(list, id, rotulo) { return ehAdmNivel() && list && list.webUrl ? `<a class="btn" href="${esc(list.webUrl)}/DispForm.aspx?ID=${encodeURIComponent(id)}" target="_blank" rel="noopener" title="Só administradores e o proprietário do módulo">${esc(rotulo || "Abrir no SharePoint")} ↗</a>` : ""; }
+/* v0.12.56 · nome de quem lança: quem não é administrador não troca. Lançamento novo = o nome de quem está logado; existente = o que já foi gravado */
+function autorFixo(orig) { const o = String(orig == null ? "" : orig).trim(); return o || (session.me && session.me.displayName) || "—"; }
+/* v0.12.56 · janela aberta por quem só vê: campos travados, sem o botão Salvar */
+function modalSoLeitura(msg) {
+  const m = $("modal"); if (!m) return;
+  m.querySelectorAll(".modal-body input, .modal-body select, .modal-body textarea").forEach(e => { e.disabled = true; });
+  const sv = $("mSave"); if (sv) sv.style.display = "none";
+  const bd = m.querySelector(".modal-body"); if (bd && !bd.querySelector(".ro-aviso")) bd.insertAdjacentHTML("afterbegin", `<div class="ro-aviso">${msg || "Seu acesso a este módulo é <b>só de leitura</b>."}</div>`);
+}
 function somenteLeituraAviso(id) { return podeEditar(id) ? "" : `<div class="ro-aviso">Seu acesso a este módulo é <b>só de leitura</b>. Para editar, peça a um administrador.</div>`; }
 /* argumento seguro para onclick="f(${jsArg(x)})" — qualquer texto, sem quebrar o HTML nem o JavaScript */
 function jsArg(s) { return `decodeURIComponent('${encodeURIComponent(String(s ?? "")).replace(/'/g, "%27")}')`; }
@@ -7621,7 +7652,7 @@ function almOcForm(x) {
   openModal(isNovo ? "Nova ordem de compra" : `OC ${fmtDate(x.Data)} · ${esc(x.Requisitante || "")}`, `
     <div class="form-grid">
       <div class="field"><label>Data<span class="req">*</span></label><input type="date" id="ocData" value="${esc(x && x.Data ? String(x.Data).slice(0, 10) : todayISO())}" ${pode ? "" : "disabled"}></div>
-      <div class="field"><label>Requisitante<span class="req">*</span></label><input id="ocReq" value="${esc(x ? x.Requisitante || "" : (session.me && session.me.displayName) || "")}" ${pode ? "" : "disabled"}></div>
+      <div class="field"><label>Requisitante<span class="req">*</span></label><input id="ocReq" value="${esc(x ? x.Requisitante || "" : autorFixo(""))}" ${pode && session.n1 ? "" : "disabled"}>${pode && !session.n1 ? `<div class="hint">${isNovo ? "Preenchido com o seu nome" : "Quem lançou não muda"}</div>` : ""}</div>
       <div class="field"><label>Área</label><select id="ocArea" ${pode ? "" : "disabled"}>${["Oficina","Tráfego","Administrativo","Agência","RH","TI","Diretoria","Outro"].map(a => `<option ${x && x.Area === a ? "selected" : ""}>${a}</option>`).join("")}</select></div>
       <div class="field"><label>Fornecedor sugerido</label><input id="ocForn" value="${esc(x ? x.FornecedorSugerido || "" : "")}" ${pode ? "" : "disabled"}></div>
       <div class="field"><label>Urgência</label><select id="ocUrg" ${pode ? "" : "disabled"}>${["Normal","Urgente","Parado por falta"].map(u => `<option ${(x ? x.Urgencia : "Normal") === u ? "selected" : ""}>${u}</option>`).join("")}</select></div>
@@ -7646,7 +7677,7 @@ function almOcForm(x) {
     if (!itens2.length) return err("Adicione pelo menos um item.");
     const prev = `Confirma o envio?\n\nData: ${fmtDate(g("ocData"))}\nRequisitante: ${g("ocReq")}\nTotal estimado: ${fmtBRL(total)}\n\nA OC ficará Pendente até a aprovação por um administrador.`;
     if (!confirm(prev)) return false;
-    const fields = { Data: g("ocData"), Requisitante: g("ocReq").trim(), Area: g("ocArea"), FornecedorSugerido: g("ocForn").trim() || null, Urgencia: g("ocUrg"), Itens: JSON.stringify(itens2), Total: total, Status: "Pendente", Observacoes: g("ocObs").trim() || null, Title: `OC-${g("ocData").slice(2).replace(/-/g, "")}-${Date.now().toString(36).slice(-4)}` };
+    const fields = { Data: g("ocData"), Requisitante: session.n1 ? g("ocReq").trim() : (x ? String(x.Requisitante || "").trim() : autorFixo("")), Area: g("ocArea"), FornecedorSugerido: g("ocForn").trim() || null, Urgencia: g("ocUrg"), Itens: JSON.stringify(itens2), Total: total, Status: "Pendente", Observacoes: g("ocObs").trim() || null, Title: `OC-${g("ocData").slice(2).replace(/-/g, "")}-${Date.now().toString(36).slice(-4)}` };
     try { if (isNovo) await SP.create(ALM_OC_STATE.site.id, ALM_OC_STATE.list.id, fields); else await SP.update(ALM_OC_STATE.site.id, ALM_OC_STATE.list.id, x._id, fields); toast(isNovo ? "OC enviada para aprovação" : "OC atualizada — segue pendente"); await loadAlmOc(true); paintAlmOc(); return true; }
     catch (e) { return err("Erro: " + e.message); }
   });
@@ -9257,7 +9288,7 @@ function gerarDemo(){
 let payload = gerarDemo();
 let modo = "demo";
 let webhookUrl = WEBHOOK_URL;
-let webhookEnvioUrl="https://hook.us2.make.com/we3hr9kaslsj2zra3zbeiknun9gxxxjq"; /* v0.12.13: portão de login no Make (cenário 6408679) — confere o login Microsoft (grupos Operacional ou Diretoria) antes de acionar o envio */
+let webhookEnvioUrl="https://hook.us2.make.com/we3hr9kaslsj2zra3zbeiknun9gxxxjq"; /* v0.12.13: portão de login no Make (cenário 6408679) — confere o login Microsoft e, desde a v0.12.56 (portão v4.0), a permissão Editar/Proprietário do Painel de Infrações na lista "ERP — Acessos" (ou administrador) antes de acionar o envio */
 let dados = [];
 let mapaMotoristas = new Map();
 let ordenacao = { col:"data", asc:false };
@@ -9692,7 +9723,7 @@ function renderTabela(atual){
       <td><span class="vel-celula"><span class="vel-num">${i.velocidade}</span><span style="color:var(--texto-2);font-size:11px">km/h</span><span class="placa-limite" title="Limite da via: ${i.limite} km/h">${i.limite}</span></span></td>
       <td><span class="excesso e-${cs}">+${i.excesso} km/h</span></td>
       <td><span class="badge b-${cs} clicavel" data-filtra="classificacao" data-v="${esc(i.classificacao)}" title="Filtrar por ${esc(i.classificacao)}">${esc(i.classificacao)}</span></td>
-      <td>${i.notificado?`<span class="notif sim">● Enviada</span><button class="btn-mini" data-envio="${vi}" title="Reenviar notificação deste caso" style="background:var(--asfalto)">📨</button>`:`<span class="notif nao">○ Pendente</span><button class="btn-mini" data-envio="${vi}" title="Enviar notificação deste caso">📨</button>`}</td>
+      <td>${i.notificado?`<span class="notif sim">● Enviada</span>${podeEditar("infracoes")?`<button class="btn-mini" data-envio="${vi}" title="Reenviar notificação deste caso" style="background:var(--asfalto)">📨</button>`:""}`:`<span class="notif nao">○ Pendente</span>${podeEditar("infracoes")?`<button class="btn-mini" data-envio="${vi}" title="Enviar notificação deste caso">📨</button>`:""}`}</td>
     </tr>`;}).join("");
   /* Clique-filtra (melhoria vinda do SAC) */
   corpo.querySelectorAll("[data-envio]").forEach(b=>b.addEventListener("click",(e)=>{
@@ -9790,6 +9821,7 @@ async function atualizar(url){
 let modalItem = null;
 function abrirModalEnvio(i){
   if(!i) return;
+  if(!podeEditar("infracoes")){bannerErro("Seu acesso ao Painel de Infrações é só de leitura: o envio é de quem edita.");return;}
   modalItem = i;
   $("m-motorista").textContent = (i.motorista||(i.matricula?"Motorista fora do Cadastro":"Motorista não identificado (sem matrícula)"))+" · Mat. "+(i.matricula||"—");
   $("m-resumo").textContent = i.data.split("-").reverse().join("/")+" "+(i.hora||"")+" · "+i.localizacao+" · "+i.velocidade+" km/h ("+i.classificacao+")";
@@ -9839,6 +9871,7 @@ async function enviarDirigido(){
 function bannerOk(h){$("aviso-ok-texto").innerHTML=h;$("aviso-ok").classList.remove("oculto");$("aviso-erro").classList.add("oculto");}
 function bannerErro(h){$("aviso-erro-texto").innerHTML=h;$("aviso-erro").classList.remove("oculto");$("aviso-ok").classList.add("oculto");}
 async function dispararEnvio(){
+  if(!podeEditar("infracoes")){bannerErro("Seu acesso ao Painel de Infrações é só de leitura: o envio é de quem edita.");return;}
   if(!webhookEnvioUrl){bannerErro("URL de disparo não disponível — faça login novamente.");return;}
   const pendTodas=dados.filter(i=>!i.notificado);
   const pend=pendTodas.filter(i=>i.classificacao==="Grave"||i.classificacao==="Gravíssima").length;
@@ -9862,7 +9895,7 @@ function motivoDisparo(e){
   if(e&&e.vendoComo) return "<b>Visualização ligada:</b> nada é enviado enquanto você vê o ERP como outra pessoa. Saia da visualização para disparar.";   /* v0.12.29 */
   if(e.naoConfirmado) return "<b>O Make recebeu o pedido, mas não confirmou o disparo.</b> O cenário 🔐 Portão de login (ID 6408679) pode estar desligado — avise o administrador antes de repetir.";
   if(e.status===401) return "<b>Sua sessão expirou.</b> Entre de novo no ERP e tente outra vez.";
-  if(e.status===403) return "<b>Sem permissão para disparar.</b> O portão do Make ainda confere os grupos <b>Operacional</b> e <b>Diretoria</b> do Microsoft 365 ou os <b>administradores fixos</b> do ERP para enviar notificações de infrações pelo WhatsApp.";
+  if(e.status===403) return "<b>Sem permissão para disparar.</b> O portão do Make confere a permissão <b>Editar</b> ou <b>Proprietário</b> do Painel de Infrações em Usuários e permissões (e a leitura da lista \"ERP — Acessos\") ou se você é administrador."+(e && e.message ? " <small>("+esc(e.message)+")</small>" : "");   /* v0.12.56: portão v4.0 */
   if(e.status===503) return "<b>Não foi possível validar o seu login agora.</b> Tente de novo em instantes.";
   if(e.status===400) return "<b>O Make recusou o pedido</b> ("+esc(e.message)+").";
   if(e.status===502) return "<b>O login foi aceito, mas o motor de envio não respondeu.</b> Verifique no Make o cenário 📊 motor v2 (ID 6408611).";
@@ -9963,6 +9996,7 @@ document.querySelectorAll("thead th").forEach(th=>th.addEventListener("click",()
 $("pag-ant").addEventListener("click",()=>{pagina--;renderTabela(window.__filtrado||[]);});
 $("pag-prox").addEventListener("click",()=>{pagina++;renderTabela(window.__filtrado||[]);});
 $("btn-disparar").addEventListener("click",dispararEnvio);
+if(!podeEditar("infracoes")) $("btn-disparar").style.display="none";   /* v0.12.56: quem só vê não dispara (a guarda de escrita já barrava; agora o botão some) */
 $("m-cancelar").addEventListener("click",fecharModalEnvio);
 $("m-enviar").addEventListener("click",enviarDirigido);
 $("modal-envio").addEventListener("click",e=>{ if(e.target.id==="modal-envio") fecharModalEnvio(); });
@@ -10105,7 +10139,7 @@ atualizar("graph");
 /* =====================================================================
    MÓDULO SAC — v0.10 (migrado do repo sac)
    ===================================================================== */
-const SAC_HTML = '<div class="wrap" id="sac-app">\n\n  <!-- Cabeçalho -->\n  <header class="topo">\n    <div class="marca">\n      <div class="placa-sac" aria-hidden="true"><svg viewBox="0 0 512 512" aria-hidden="true"><g transform="translate(256 256) scale(.86) translate(-256 -256)"><path d="M132 300V236a124 124 0 0 1 248 0v64" fill="none" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round"/><rect x="104" y="278" width="58" height="104" rx="26" fill="#FFFFFF"/><rect x="350" y="278" width="58" height="104" rx="26" fill="#FFFFFF"/><path d="M379 382c0 42-38 62-88 62" fill="none" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round"/><circle cx="288" cy="444" r="23" fill="#F2B705"/></g></svg></div>\n      <div class="titulo">\n        <h1>Central de Chamados SAC</h1>\n        <p>Transportadora Nova Macabu · WhatsApp, Site e E-mail</p>\n      </div>\n    </div>\n    <div class="topo-acoes">\n      <span id="quem" class="pill" style="background:rgba(255,255,255,.12);color:#fff"></span>\n      <span id="status-pill" class="pill demo"><span class="dot"></span><span id="status-texto">Dados de demonstração</span></span>\n      <button id="btn-atualizar" class="btn btn-amarelo">↻ Atualizar dados</button>\n      <button id="btn-config" class="btn btn-fantasma">Conexão</button>\n      <button id="btn-sair" class="btn btn-fantasma" title="Encerrar sessão">Sair</button>\n    </div>\n    <div class="atualizado-em" id="atualizado-em"></div>\n  </header>\n\n  <!-- Avisos -->\n  <div id="aviso-demo" class="aviso demo">\n    <span aria-hidden="true">⚠</span>\n    <div><b>Conectando ao SharePoint…</b> O painel busca os chamados reais automaticamente após o login. Se esta faixa não sumir em alguns segundos, clique em <b>Atualizar dados</b> ou veja o painel <b>Conectar dados reais</b> ao final da página.</div>\n    <button class="fechar" onclick="this.parentElement.classList.add(\'oculto\')" aria-label="Fechar aviso">✕</button>\n  </div>\n  <div id="aviso-erro" class="aviso erro oculto">\n    <span aria-hidden="true">✕</span>\n    <div id="aviso-erro-texto"></div>\n    <button class="fechar" onclick="this.parentElement.classList.add(\'oculto\')" aria-label="Fechar aviso">✕</button>\n  </div>\n\n  <!-- Filtros globais -->\n  <section class="filtros" aria-label="Filtros">\n    <div class="campo">\n      <label for="f-periodo">Período</label>\n      <select id="f-periodo">\n        <option value="7">Últimos 7 dias</option>\n        <option value="15">Últimos 15 dias</option>\n        <option value="30" selected>Últimos 30 dias</option>\n        <option value="60">Últimos 60 dias</option>\n        <option value="90">Últimos 90 dias</option>\n        <option value="0">Todo o histórico</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-status">Status</label>\n      <select id="f-status">\n        <option value="">Todos</option>\n        <option value="Aberto">Aberto</option>\n        <option value="Em atendimento">Em atendimento</option>\n        <option value="Resolvido">Resolvido</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-origem">Origem</label>\n      <select id="f-origem">\n        <option value="">Todas</option>\n        <option value="WhatsApp">WhatsApp</option>\n        <option value="Site">Site</option>\n        <option value="E-mail SAC">E-mail SAC</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-categoria">Categoria</label>\n      <select id="f-categoria"><option value="">Todas</option></select>\n    </div>\n    <div class="campo">\n      <label for="f-severidade">Severidade</label>\n      <select id="f-severidade">\n        <option value="">Todas</option>\n        <option value="Gravíssima">Gravíssima</option>\n        <option value="Grave">Grave</option>\n        <option value="Média">Média</option>\n        <option value="Baixa">Baixa</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-busca">Buscar</label>\n      <input type="search" id="f-busca" placeholder="Protocolo, nome, assunto…">\n    </div>\n        <div class="campo campo-mes" style="flex:1 1 100%">\n      <label>Mês</label>\n      <div class="seg" id="seg-mes"></div>\n    </div>\n  </section>\n\n  <!-- KPIs -->\n  <section class="kpis" aria-label="Indicadores">\n    <div class="kpi k-total">\n      <div class="rotulo">Chamados no período</div>\n      <div class="valor" id="kpi-total">–</div>\n      <div class="sub" id="kpi-total-var"></div>\n    </div>\n    <div class="kpi k-fila">\n      <div class="rotulo">Fila ativa agora</div>\n      <div class="valor" id="kpi-fila">–</div>\n      <div class="sub" id="kpi-fila-sub"></div>\n    </div>\n    <div class="kpi k-resolvidos">\n      <div class="rotulo">Resolvidos no período</div>\n      <div class="valor" id="kpi-resolvidos">–</div>\n      <div class="sub" id="kpi-resolvidos-sub"></div>\n    </div>\n    <div class="kpi k-tmr">\n      <div class="rotulo">Tempo médio de resolução</div>\n      <div class="valor" id="kpi-tmr">–</div>\n      <div class="sub" id="kpi-tmr-sub"></div>\n    </div>\n    <div class="kpi k-tpr">\n      <div class="rotulo">1ª resposta (média)</div>\n      <div class="valor" id="kpi-tpr">–</div>\n      <div class="sub" id="kpi-tpr-sub"></div>\n    </div>\n    <div class="kpi k-graves">\n      <div class="rotulo">Graves + Gravíssimas</div>\n      <div class="valor" id="kpi-graves">–</div>\n      <div class="sub" id="kpi-graves-sub"></div>\n    </div>\n  </section>\n\n  <!-- Gráficos linha 1 -->\n  <section class="linha-graficos g-1">\n    <div class="grafico">\n      <div class="grafico-topo"><h3>Evolução Diária por Severidade</h3><span class="ctx-label" id="ctx-tend"></span></div>\n      <div class="dica">Composição dos chamados dia a dia · clique em um dia para filtrar o Detalhamento</div>\n      <div class="grafico-controles">\n        <span class="rot-mini">Gravidade</span><div class="seg" id="seg-sev-tend"></div>\n        <span class="rot-mini">Gráfico</span>\n        <div class="seg" id="seg-tipo-tend">\n          <button data-v="bar" class="ativo">Barras</button>\n          <button data-v="line">Linhas</button>\n        </div>\n      </div>\n      <div class="wrap-canvas"><canvas id="ch-tendencia"></canvas></div>\n    </div>\n    <div class="grafico">\n      <h3>Distribuição por Categoria</h3>\n      <div class="dica">Clique em uma fatia para filtrar o painel</div>\n      <div class="wrap-canvas h-rosca"><canvas id="ch-categoria"></canvas></div>\n    </div>\n  </section>\n\n  <!-- Gráficos linha 2 -->\n  <section class="linha-graficos g-2">\n    <div class="grafico">\n      <h3>Chamados por Origem</h3>\n      <div class="dica">Clique em uma fatia para filtrar o painel</div>\n      <div class="wrap-canvas h-rosca"><canvas id="ch-origem"></canvas></div>\n    </div>\n    <div class="grafico">\n      <h3>Tempo Médio de Resolução por Categoria</h3>\n      <div class="dica">Em dias · considera apenas chamados resolvidos com data de resolução</div>\n      <div class="wrap-canvas h-rosca"><canvas id="ch-tmr"></canvas></div>\n    </div>\n  </section>\n\n  <!-- Top 10 passageiros -->\n  <section class="linha-graficos g-3">\n    <div class="grafico">\n      <h3>Top 10 Passageiros por Chamados</h3>\n      <div class="dica">CPF como chave primária (nome como reserva) · clique numa barra para filtrar o painel</div>\n      <div class="wrap-canvas h-rosca"><canvas id="ch-top10"></canvas></div>\n    </div>\n  </section>\n\n  <!-- Gráfico assinatura: fluxo de atendimento -->\n  <section class="linha-graficos g-3">\n    <div class="grafico">\n      <div class="grafico-topo"><h3>Fluxo de Atendimento — Abertos × Resolvidos</h3><span class="ctx-label" id="ctx-fluxo"></span></div>\n      <div class="dica">Entradas e saídas da fila dia a dia · a linha tracejada acumula a variação do backlog · clique em um dia para filtrar o Detalhamento</div>\n      <div class="grafico-controles">\n        <span class="rot-mini">Gravidade</span><div class="seg" id="seg-sev-fluxo"></div>\n      </div>\n      <div class="wrap-canvas h-fluxo"><canvas id="ch-fluxo"></canvas></div>\n      <div class="legenda-inline" id="fluxo-legenda"></div>\n    </div>\n  </section>\n\n  <!-- Tabela -->\n  <section class="secao-tabela">\n    <div class="tabela-topo">\n      <h3>Detalhamento dos Chamados</h3>\n      <span class="cont" id="tabela-cont"></span>\n      <div class="acoes">\n        <button id="btn-excel" class="btn btn-claro">⬇ Exportar Excel</button>\n        <button id="btn-imprimir" class="btn btn-claro">Imprimir</button>\n      </div>\n    </div>\n    <div class="filtros-tabela">\n      <div class="campo">\n        <label>Origem</label>\n        <div class="seg" id="seg-origem">\n          <button data-v="" class="ativo">Todas</button>\n          <button data-v="WhatsApp">WhatsApp</button>\n          <button data-v="Site">Site</button>\n          <button data-v="E-mail SAC">E-mail</button>\n        </div>\n      </div>\n      <div class="campo">\n        <label>Status</label>\n        <div class="seg" id="seg-status">\n          <button data-v="" class="ativo">Todos</button>\n          <button data-v="Aberto">Aberto</button>\n          <button data-v="Em atendimento">Em atendimento</button>\n          <button data-v="Resolvido">Resolvido</button>\n        </div>\n      </div>\n      <div class="campo">\n        <label>Gravidade</label>\n        <div class="seg" id="seg-sev-tb"></div>\n      </div>\n      <div class="campo">\n        <label for="tb-de">De</label>\n        <input type="date" id="tb-de">\n      </div>\n      <div class="campo">\n        <label for="tb-ate">Até</label>\n        <input type="date" id="tb-ate">\n      </div>\n    </div>\n    <div class="rolagem">\n      <table id="tabela">\n        <thead>\n          <tr>\n            <th title="Fixados aparecem no topo">📌</th>\n            <th data-col="data">Data <span class="seta"></span></th>\n            <th data-col="protocolo">Protocolo <span class="seta"></span></th>\n            <th data-col="origem">Origem <span class="seta"></span></th>\n            <th data-col="categoria">Categoria <span class="seta"></span></th>\n            <th data-col="severidade">Severidade <span class="seta"></span></th>\n            <th data-col="nome">Passageiro <span class="seta"></span></th>\n            <th>Assunto</th>\n            <th data-col="status">Status <span class="seta"></span></th>\n            <th data-col="notificado">Notificado <span class="seta"></span></th>\n            <th data-col="responsavel">Responsável <span class="seta"></span></th>\n            <th title="Excluir chamado"></th>\n          </tr>\n        </thead>\n        <tbody id="tabela-corpo"></tbody>\n      </table>\n    </div>\n    <div class="paginacao">\n      <span id="pag-info"></span>\n      <button id="pag-ant">‹ Anterior</button>\n      <button id="pag-prox">Próxima ›</button>\n    </div>\n  </section>\n\n  <!-- Painel de conexão -->\n  <details class="conexao" id="painel-conexao">\n    <summary><span class="indicador">›</span> Conectar dados reais (webhook Make)</summary>\n    <div class="conexao-corpo">\n      <p><b>Integração já configurada.</b> O cenário <code>📊 SAC Nova Macabu - Painel (API de Dados)</code> (ID 6145564)\n      está <b>ativo</b> na conta Make. Ele usa a conexão SharePoint do SAC, lê a lista <b>Chamados</b>\n      (site /sites/SAC) e responde a este painel — <b>somente leitura</b>, sem tocar nos cenários de captura.</p>\n      <p><b>Edições do painel</b> (fixar, notificação ao passageiro, comentários e 1ª resposta) gravam direto na lista\n      com o login Microsoft de cada pessoa. O cenário <code>✏️ SAC Nova Macabu - Painel (Escrita) v2 · login Diretoria</code> (ID 6408666)\n      só entra quando o SharePoint não responde e para enviar e-mail pelo sac@, e confere o login Microsoft (grupo Diretoria)\n      antes de gravar ou enviar. Para revogar só a escrita pelo Make, desative o webhook desse cenário (com o cenário só desligado, o Make\n      guarda os pedidos na fila e o painel avisa que não houve confirmação).</p>\n      <p>Cada clique em <b>Atualizar dados</b> consome <b>~4 operações Make</b> (webhook + leitura + JSON + resposta)\n      e traz o retrato atual de até 500 chamados.</p>\n      <div class="linha-url">\n        <input type="url" id="input-webhook" placeholder="(preenchida automaticamente após o login)" aria-label="URL do webhook Make">\n        <button id="btn-testar" class="btn btn-amarelo">Testar conexão</button>\n      </div>\n      <p><b>Se a atualização falhar</b>, verifique no Make se o cenário ID 6145564 está ligado (ON) e se a conexão\n      SharePoint do SAC está válida. Importante: este arquivo deve ser aberto <b>diretamente no navegador</b>\n      (Chrome/Edge) ou via GitHub Pages — dentro de visualizadores restritos a chamada externa é bloqueada.</p>\n      <p><b>Segurança e privacidade:</b> a lista Chamados contém dados pessoais (nome, CPF, contato). No ERP, a leitura e a edição usam o login Microsoft de cada pessoa e respeitam as permissões do SharePoint. O cenário de escrita do Make (ID 6408666) só entra quando o SharePoint não responde (nunca para dados pessoais) e para enviar e-mail pelo sac@; desde a v0.12.13 cada pedido leva o login Microsoft de quem usa o ERP e o Make só grava ou envia para o grupo Diretoria — ter o endereço do webhook não basta.</p>\n    </div>\n  </details>\n\n  <div id="modal-email" class="modal oculto" role="dialog" aria-modal="true">\n    <div class="modal-box">\n      <h3>Responder ao passageiro</h3>\n      <div class="sub">Remetente <b>SAC Nova Macabu &lt;sac@novamacabu.com.br&gt;</b> · ao enviar, a 1ª resposta é registrada automaticamente</div>\n      <label for="em-para">Para</label>\n      <input id="em-para" type="email" readonly>\n      <label for="em-assunto">Assunto</label>\n      <input id="em-assunto" type="text">\n      <label for="em-msg">Mensagem</label>\n      <textarea id="em-msg"></textarea>\n      <div class="modal-acoes">\n        <button id="em-cancelar" class="btn-mini claro">Cancelar</button>\n        <button id="em-registrar" class="btn-mini claro">Só registrar, sem e-mail</button>\n        <button id="em-enviar" class="btn-mini azul">✉ Enviar e registrar</button>\n      </div>\n    </div>\n  </div>\n\n  <div id="sac-toast" role="status"></div>\n\n  <button id="fab-limpar" class="fab-limpar" title="Limpar todos os filtros">🧹 Limpar filtros</button>\n\n  <footer class="rodape">\n    <span>Fonte: SharePoint · lista Chamados (site SAC) · origens WhatsApp, Site e E-mail</span>\n    <span>Central de Chamados SAC · Item 12</span>\n  </footer>\n</div>\n<div id="tela-login" class="tela-login oculto"><input id="login-user"><input id="login-senha"><button id="btn-entrar"></button><div id="login-msg"></div></div>';
+const SAC_HTML = '<div class="wrap" id="sac-app">\n\n  <!-- Cabeçalho -->\n  <header class="topo">\n    <div class="marca">\n      <div class="placa-sac" aria-hidden="true"><svg viewBox="0 0 512 512" aria-hidden="true"><g transform="translate(256 256) scale(.86) translate(-256 -256)"><path d="M132 300V236a124 124 0 0 1 248 0v64" fill="none" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round"/><rect x="104" y="278" width="58" height="104" rx="26" fill="#FFFFFF"/><rect x="350" y="278" width="58" height="104" rx="26" fill="#FFFFFF"/><path d="M379 382c0 42-38 62-88 62" fill="none" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round"/><circle cx="288" cy="444" r="23" fill="#F2B705"/></g></svg></div>\n      <div class="titulo">\n        <h1>Central de Chamados SAC</h1>\n        <p>Transportadora Nova Macabu · WhatsApp, Site e E-mail</p>\n      </div>\n    </div>\n    <div class="topo-acoes">\n      <span id="quem" class="pill" style="background:rgba(255,255,255,.12);color:#fff"></span>\n      <span id="status-pill" class="pill demo"><span class="dot"></span><span id="status-texto">Dados de demonstração</span></span>\n      <button id="btn-atualizar" class="btn btn-amarelo">↻ Atualizar dados</button>\n      <button id="btn-config" class="btn btn-fantasma">Conexão</button>\n      <button id="btn-sair" class="btn btn-fantasma" title="Encerrar sessão">Sair</button>\n    </div>\n    <div class="atualizado-em" id="atualizado-em"></div>\n  </header>\n\n  <!-- Avisos -->\n  <div id="aviso-demo" class="aviso demo">\n    <span aria-hidden="true">⚠</span>\n    <div><b>Conectando ao SharePoint…</b> O painel busca os chamados reais automaticamente após o login. Se esta faixa não sumir em alguns segundos, clique em <b>Atualizar dados</b> ou veja o painel <b>Conectar dados reais</b> ao final da página.</div>\n    <button class="fechar" onclick="this.parentElement.classList.add(\'oculto\')" aria-label="Fechar aviso">✕</button>\n  </div>\n  <div id="aviso-erro" class="aviso erro oculto">\n    <span aria-hidden="true">✕</span>\n    <div id="aviso-erro-texto"></div>\n    <button class="fechar" onclick="this.parentElement.classList.add(\'oculto\')" aria-label="Fechar aviso">✕</button>\n  </div>\n\n  <!-- Filtros globais -->\n  <section class="filtros" aria-label="Filtros">\n    <div class="campo">\n      <label for="f-periodo">Período</label>\n      <select id="f-periodo">\n        <option value="7">Últimos 7 dias</option>\n        <option value="15">Últimos 15 dias</option>\n        <option value="30" selected>Últimos 30 dias</option>\n        <option value="60">Últimos 60 dias</option>\n        <option value="90">Últimos 90 dias</option>\n        <option value="0">Todo o histórico</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-status">Status</label>\n      <select id="f-status">\n        <option value="">Todos</option>\n        <option value="Aberto">Aberto</option>\n        <option value="Em atendimento">Em atendimento</option>\n        <option value="Resolvido">Resolvido</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-origem">Origem</label>\n      <select id="f-origem">\n        <option value="">Todas</option>\n        <option value="WhatsApp">WhatsApp</option>\n        <option value="Site">Site</option>\n        <option value="E-mail SAC">E-mail SAC</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-categoria">Categoria</label>\n      <select id="f-categoria"><option value="">Todas</option></select>\n    </div>\n    <div class="campo">\n      <label for="f-severidade">Severidade</label>\n      <select id="f-severidade">\n        <option value="">Todas</option>\n        <option value="Gravíssima">Gravíssima</option>\n        <option value="Grave">Grave</option>\n        <option value="Média">Média</option>\n        <option value="Baixa">Baixa</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-busca">Buscar</label>\n      <input type="search" id="f-busca" placeholder="Protocolo, nome, assunto…">\n    </div>\n        <div class="campo campo-mes" style="flex:1 1 100%">\n      <label>Mês</label>\n      <div class="seg" id="seg-mes"></div>\n    </div>\n  </section>\n\n  <!-- KPIs -->\n  <section class="kpis" aria-label="Indicadores">\n    <div class="kpi k-total">\n      <div class="rotulo">Chamados no período</div>\n      <div class="valor" id="kpi-total">–</div>\n      <div class="sub" id="kpi-total-var"></div>\n    </div>\n    <div class="kpi k-fila">\n      <div class="rotulo">Fila ativa agora</div>\n      <div class="valor" id="kpi-fila">–</div>\n      <div class="sub" id="kpi-fila-sub"></div>\n    </div>\n    <div class="kpi k-resolvidos">\n      <div class="rotulo">Resolvidos no período</div>\n      <div class="valor" id="kpi-resolvidos">–</div>\n      <div class="sub" id="kpi-resolvidos-sub"></div>\n    </div>\n    <div class="kpi k-tmr">\n      <div class="rotulo">Tempo médio de resolução</div>\n      <div class="valor" id="kpi-tmr">–</div>\n      <div class="sub" id="kpi-tmr-sub"></div>\n    </div>\n    <div class="kpi k-tpr">\n      <div class="rotulo">1ª resposta (média)</div>\n      <div class="valor" id="kpi-tpr">–</div>\n      <div class="sub" id="kpi-tpr-sub"></div>\n    </div>\n    <div class="kpi k-graves">\n      <div class="rotulo">Graves + Gravíssimas</div>\n      <div class="valor" id="kpi-graves">–</div>\n      <div class="sub" id="kpi-graves-sub"></div>\n    </div>\n  </section>\n\n  <!-- Gráficos linha 1 -->\n  <section class="linha-graficos g-1">\n    <div class="grafico">\n      <div class="grafico-topo"><h3>Evolução Diária por Severidade</h3><span class="ctx-label" id="ctx-tend"></span></div>\n      <div class="dica">Composição dos chamados dia a dia · clique em um dia para filtrar o Detalhamento</div>\n      <div class="grafico-controles">\n        <span class="rot-mini">Gravidade</span><div class="seg" id="seg-sev-tend"></div>\n        <span class="rot-mini">Gráfico</span>\n        <div class="seg" id="seg-tipo-tend">\n          <button data-v="bar" class="ativo">Barras</button>\n          <button data-v="line">Linhas</button>\n        </div>\n      </div>\n      <div class="wrap-canvas"><canvas id="ch-tendencia"></canvas></div>\n    </div>\n    <div class="grafico">\n      <h3>Distribuição por Categoria</h3>\n      <div class="dica">Clique em uma fatia para filtrar o painel</div>\n      <div class="wrap-canvas h-rosca"><canvas id="ch-categoria"></canvas></div>\n    </div>\n  </section>\n\n  <!-- Gráficos linha 2 -->\n  <section class="linha-graficos g-2">\n    <div class="grafico">\n      <h3>Chamados por Origem</h3>\n      <div class="dica">Clique em uma fatia para filtrar o painel</div>\n      <div class="wrap-canvas h-rosca"><canvas id="ch-origem"></canvas></div>\n    </div>\n    <div class="grafico">\n      <h3>Tempo Médio de Resolução por Categoria</h3>\n      <div class="dica">Em dias · considera apenas chamados resolvidos com data de resolução</div>\n      <div class="wrap-canvas h-rosca"><canvas id="ch-tmr"></canvas></div>\n    </div>\n  </section>\n\n  <!-- Top 10 passageiros -->\n  <section class="linha-graficos g-3">\n    <div class="grafico">\n      <h3>Top 10 Passageiros por Chamados</h3>\n      <div class="dica">CPF como chave primária (nome como reserva) · clique numa barra para filtrar o painel</div>\n      <div class="wrap-canvas h-rosca"><canvas id="ch-top10"></canvas></div>\n    </div>\n  </section>\n\n  <!-- Gráfico assinatura: fluxo de atendimento -->\n  <section class="linha-graficos g-3">\n    <div class="grafico">\n      <div class="grafico-topo"><h3>Fluxo de Atendimento — Abertos × Resolvidos</h3><span class="ctx-label" id="ctx-fluxo"></span></div>\n      <div class="dica">Entradas e saídas da fila dia a dia · a linha tracejada acumula a variação do backlog · clique em um dia para filtrar o Detalhamento</div>\n      <div class="grafico-controles">\n        <span class="rot-mini">Gravidade</span><div class="seg" id="seg-sev-fluxo"></div>\n      </div>\n      <div class="wrap-canvas h-fluxo"><canvas id="ch-fluxo"></canvas></div>\n      <div class="legenda-inline" id="fluxo-legenda"></div>\n    </div>\n  </section>\n\n  <!-- Tabela -->\n  <section class="secao-tabela">\n    <div class="tabela-topo">\n      <h3>Detalhamento dos Chamados</h3>\n      <span class="cont" id="tabela-cont"></span>\n      <div class="acoes">\n        <button id="btn-excel" class="btn btn-claro">⬇ Exportar Excel</button>\n        <button id="btn-imprimir" class="btn btn-claro">Imprimir</button>\n      </div>\n    </div>\n    <div class="filtros-tabela">\n      <div class="campo">\n        <label>Origem</label>\n        <div class="seg" id="seg-origem">\n          <button data-v="" class="ativo">Todas</button>\n          <button data-v="WhatsApp">WhatsApp</button>\n          <button data-v="Site">Site</button>\n          <button data-v="E-mail SAC">E-mail</button>\n        </div>\n      </div>\n      <div class="campo">\n        <label>Status</label>\n        <div class="seg" id="seg-status">\n          <button data-v="" class="ativo">Todos</button>\n          <button data-v="Aberto">Aberto</button>\n          <button data-v="Em atendimento">Em atendimento</button>\n          <button data-v="Resolvido">Resolvido</button>\n        </div>\n      </div>\n      <div class="campo">\n        <label>Gravidade</label>\n        <div class="seg" id="seg-sev-tb"></div>\n      </div>\n      <div class="campo">\n        <label for="tb-de">De</label>\n        <input type="date" id="tb-de">\n      </div>\n      <div class="campo">\n        <label for="tb-ate">Até</label>\n        <input type="date" id="tb-ate">\n      </div>\n    </div>\n    <div class="rolagem">\n      <table id="tabela">\n        <thead>\n          <tr>\n            <th title="Fixados aparecem no topo">📌</th>\n            <th data-col="data">Data <span class="seta"></span></th>\n            <th data-col="protocolo">Protocolo <span class="seta"></span></th>\n            <th data-col="origem">Origem <span class="seta"></span></th>\n            <th data-col="categoria">Categoria <span class="seta"></span></th>\n            <th data-col="severidade">Severidade <span class="seta"></span></th>\n            <th data-col="nome">Passageiro <span class="seta"></span></th>\n            <th>Assunto</th>\n            <th data-col="status">Status <span class="seta"></span></th>\n            <th data-col="notificado">Notificado <span class="seta"></span></th>\n            <th data-col="responsavel">Responsável <span class="seta"></span></th>\n            <th title="Excluir chamado"></th>\n          </tr>\n        </thead>\n        <tbody id="tabela-corpo"></tbody>\n      </table>\n    </div>\n    <div class="paginacao">\n      <span id="pag-info"></span>\n      <button id="pag-ant">‹ Anterior</button>\n      <button id="pag-prox">Próxima ›</button>\n    </div>\n  </section>\n\n  <!-- Painel de conexão -->\n  <details class="conexao" id="painel-conexao">\n    <summary><span class="indicador">›</span> Conectar dados reais (webhook Make)</summary>\n    <div class="conexao-corpo">\n      <p><b>Integração já configurada.</b> O cenário <code>📊 SAC Nova Macabu - Painel (API de Dados)</code> (ID 6145564)\n      está <b>ativo</b> na conta Make. Ele usa a conexão SharePoint do SAC, lê a lista <b>Chamados</b>\n      (site /sites/SAC) e responde a este painel — <b>somente leitura</b>, sem tocar nos cenários de captura.</p>\n      <p><b>Edições do painel</b> (fixar, notificação ao passageiro, comentários e 1ª resposta) gravam direto na lista\n      com o login Microsoft de cada pessoa. O cenário <code>✏️ SAC Nova Macabu - Painel (Escrita) v2 · login Diretoria</code> (ID 6408666)\n      só entra quando o SharePoint não responde e para enviar e-mail pelo sac@, e confere o login Microsoft e a permissão do SAC em Usuários e permissões (Editar ou Proprietário; excluir só Proprietário)\n      antes de gravar ou enviar. Para revogar só a escrita pelo Make, desative o webhook desse cenário (com o cenário só desligado, o Make\n      guarda os pedidos na fila e o painel avisa que não houve confirmação).</p>\n      <p>Cada clique em <b>Atualizar dados</b> consome <b>~4 operações Make</b> (webhook + leitura + JSON + resposta)\n      e traz o retrato atual de até 500 chamados.</p>\n      <div class="linha-url">\n        <input type="url" id="input-webhook" placeholder="(preenchida automaticamente após o login)" aria-label="URL do webhook Make">\n        <button id="btn-testar" class="btn btn-amarelo">Testar conexão</button>\n      </div>\n      <p><b>Se a atualização falhar</b>, verifique no Make se o cenário ID 6145564 está ligado (ON) e se a conexão\n      SharePoint do SAC está válida. Importante: este arquivo deve ser aberto <b>diretamente no navegador</b>\n      (Chrome/Edge) ou via GitHub Pages — dentro de visualizadores restritos a chamada externa é bloqueada.</p>\n      <p><b>Segurança e privacidade:</b> a lista Chamados contém dados pessoais (nome, CPF, contato). No ERP, a leitura e a edição usam o login Microsoft de cada pessoa e respeitam as permissões do SharePoint. O cenário de escrita do Make (ID 6408666) só entra quando o SharePoint não responde (nunca para dados pessoais) e para enviar e-mail pelo sac@; desde a v0.12.13 cada pedido leva o login Microsoft de quem usa o ERP e o Make só grava ou envia para quem tem Editar ou Proprietário no SAC (lista \"ERP — Acessos\", desde a v0.12.56) — ter o endereço do webhook não basta.</p>\n    </div>\n  </details>\n\n  <div id="modal-email" class="modal oculto" role="dialog" aria-modal="true">\n    <div class="modal-box">\n      <h3>Responder ao passageiro</h3>\n      <div class="sub">Remetente <b>SAC Nova Macabu &lt;sac@novamacabu.com.br&gt;</b> · ao enviar, a 1ª resposta é registrada automaticamente</div>\n      <label for="em-para">Para</label>\n      <input id="em-para" type="email" readonly>\n      <label for="em-assunto">Assunto</label>\n      <input id="em-assunto" type="text">\n      <label for="em-msg">Mensagem</label>\n      <textarea id="em-msg"></textarea>\n      <div class="modal-acoes">\n        <button id="em-cancelar" class="btn-mini claro">Cancelar</button>\n        <button id="em-registrar" class="btn-mini claro">Só registrar, sem e-mail</button>\n        <button id="em-enviar" class="btn-mini azul">✉ Enviar e registrar</button>\n      </div>\n    </div>\n  </div>\n\n  <div id="sac-toast" role="status"></div>\n\n  <button id="fab-limpar" class="fab-limpar" title="Limpar todos os filtros">🧹 Limpar filtros</button>\n\n  <footer class="rodape">\n    <span>Fonte: SharePoint · lista Chamados (site SAC) · origens WhatsApp, Site e E-mail</span>\n    <span>Central de Chamados SAC · Item 12</span>\n  </footer>\n</div>\n<div id="tela-login" class="tela-login oculto"><input id="login-user"><input id="login-senha"><button id="btn-entrar"></button><div id="login-msg"></div></div>';
 function pageSAC() { return `<div id="sac-root">${SAC_HTML}</div>`; }
 function initSAC(){
 
@@ -10694,6 +10728,7 @@ function campoDet(campo, valor, vi, attrs){
   return `<label class="det-campo"><span class="rot">${SAC_ROT[campo]}</span><input data-det="${campo}" data-vi="${vi}" value="${esc(PH(valor))}" ${attrs||""}></label>`;
 }
 function editarCampo(c, campo, valor){
+  if(!podeEditar("sac")){ showToast("Seu acesso ao SAC é só de leitura.", 3500); return; }   /* v0.12.56 */
   valor = String(valor==null?"":valor).trim();
   if(valor === String(c[campo]||"").trim()) return;
   const campos = {}, local = {}, extra = [];
@@ -10708,6 +10743,7 @@ function editarCampo(c, campo, valor){
   salvarCampos(c, campos, local, `${SAC_ROT[campo]}: ${valor||"—"}${extra.length ? " · "+extra.join(" · ") : ""}`);
 }
 function salvarDetalhe(c, root){
+  if(!podeEditar("sac")){ showToast("Seu acesso ao SAC é só de leitura.", 3500); return; }   /* v0.12.56 */
   if(!root) return;
   const val = k => { const el = root.querySelector(`[data-det="${k}"]`); return el ? String(el.value||"").trim() : null; };
   const msgEl = root.querySelector(".det-msg");
@@ -10896,6 +10932,11 @@ function renderTabela(atual){
       </div></td></tr>`;
   }).join("");
 
+  if(!podeEditar("sac")){   /* v0.12.56: quem só vê consulta o chamado, sem campos editáveis nem botões de gravar */
+    corpo.querySelectorAll("[data-ed],[data-det],textarea").forEach(el=>{ el.disabled=true; el.title="Seu acesso ao SAC é só de leitura"; });
+    corpo.querySelectorAll("[data-acao]").forEach(b=>{ if(b.dataset.acao==="pin"||b.dataset.acao==="notif"){ b.disabled=true; b.removeAttribute("data-acao"); b.title="Seu acesso ao SAC é só de leitura"; b.style.cursor="default"; } else b.remove(); });   /* 📌 e Notificado continuam à vista, sem clique */
+    corpo.querySelectorAll(".dica-ed").forEach(el=>{ el.textContent="só leitura"; });
+  }
   corpo.querySelectorAll("tr.linha").forEach(tr=>tr.addEventListener("click",(e)=>{
     if(e.target.closest("button,textarea,a,select,input,label")) return;
     const id = tr.dataset.exp;
@@ -10973,6 +11014,7 @@ async function gravarChamadoSP(c, campos, opts){
   }
 }
 function salvarCampos(c, campos, localPatch, rotulo, opts){
+  if(!podeEditar("sac")){ showToast("Seu acesso ao SAC é só de leitura.", 3500); return; }   /* v0.12.56 */
   const prev = {}; Object.keys(localPatch).forEach(k=>prev[k]=c[k]);
   Object.assign(c, localPatch); derivar(c);           // otimista
   renderTabela(window.__filtrado||[]); renderizar();
@@ -11130,6 +11172,7 @@ ligarSeg("seg-status", v=>tbStatus=v);
 
 /* ─────────────── 1ª resposta, e-mail pelo sac@ e exclusão ─────────────── */
 function registrarPrimeiraResposta(c){
+  if(!podeEditar("sac")){ showToast("Seu acesso ao SAC é só de leitura.", 3500); return; }   /* v0.12.56 */
   const iso = new Date().toISOString(); const d = new Date(iso);
   return salvarCampos(c, {DataPrimeiraResposta: iso}, {dataPrimeiraResposta: iso, _pr: d, tprH: Math.max(0,(d-c._abre)/36e5)});
 }
@@ -11140,6 +11183,7 @@ function elegivelEmail(c){
 }
 let emailAlvo = null;
 function abrirModalEmail(c){
+  if(!podeEditar("sac")){ showToast("Seu acesso ao SAC é só de leitura.", 3500); return; }   /* v0.12.56 */
   emailAlvo = c;
   const nome = (c.nome && !c.nome.includes("@")) ? c.nome.split(" ")[0] : "";
   $("em-para").value = String(c.email).trim();
@@ -11202,6 +11246,7 @@ $("em-cancelar").addEventListener("click", fecharModalEmail);
 $("modal-email").addEventListener("click", e=>{ if(e.target.id==="modal-email") fecharModalEmail(); });
 
 async function excluirChamado(c){
+  if(!podeEditar("sac")){ showToast("Seu acesso ao SAC é só de leitura.", 3500); return; }   /* v0.12.56 */
   if(!confirm(`Excluir o chamado ${c.protocolo}${c.nome?" ("+c.nome+")":""}?\n\nO item será removido da lista do SharePoint. Esta ação não pode ser desfeita.`)) return;
   const remover = ()=>{
     dados = dados.filter(x=>x!==c);
@@ -11324,7 +11369,12 @@ function pageDiesel() { return `<div id="dsl-root">${DSL_HTML}</div>`; }
 function initDiesel(){
 
 "use strict";
-const __dslVc = vcAtivo(); const __dslLivre = () => !__dslVc && !vcAtivo();   /* v0.12.29: Visualizar como */
+const __dslVc = vcAtivo(); const __dslLivre = () => !__dslVc && !vcAtivo() && podeEditar("diesel");   /* v0.12.29: Visualizar como · v0.12.56: quem só vê também não grava */
+if(!podeEditar("diesel")){   /* v0.12.56: só leitura — formulários travados, botões de gravar e edição na tabela fora */
+  ["btnSalvarCfg","btnAddReceb","btnAddAbast"].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display="none";});
+  ["cfgCapacidade","cfgLimite","cfgMinimo","cfgConsumo","cfgEstoque","cfgData","cfgBomba","cfgHorizonte","rcData","rcVolume","rcRef","abData","abHora","abVeiculo","abLinha","abMotorista","abHodometro","abVolume","abFrentista"].forEach(id=>{const e=document.getElementById(id);if(e){e.disabled=true;e.title="Seu acesso ao Controle de Diesel é só de leitura";}});
+  const r=document.getElementById("dsl-root"); if(r) r.classList.add("so-leitura");
+}
 /* ============ Autenticação (somente administradores) ============ */
 /* v0.12.10: nenhuma conta embutida — o acesso vem do login Microsoft (Entra ID) */
 function showApp(){const chip=document.getElementById("userChip");chip.textContent="👤 "+(session.me?.displayName||"");chip.style.display="";}
@@ -11497,7 +11547,7 @@ async function pullLatest(first){
   }catch(e){ console.warn("diesel pull",e); setSync("err",(e&&e.message&&e.message.indexOf("não existe")>=0)?e.message:"Offline — usando dados locais"); }
 }
 async function save(){
-  if(!__dslLivre()){ setSync("err","Visualização: nada é gravado"); return; }   /* v0.12.29 */
+  if(!__dslLivre()){ setSync("err",vcAtivo()?"Visualização: nada é gravado":"Só leitura: nada é gravado"); return; }   /* v0.12.29 */
   state.savedAt=Date.now();
   memFallback=JSON.parse(JSON.stringify(state));
   await store.set(KEY,JSON.stringify(state));
@@ -11687,7 +11737,7 @@ function renderRibbon(days){
   const primeiro=days.length?days[0].iso:null;
   { const ini=isoAdd(hoje,-15), fim=isoAdd(hoje,15); const win=days.filter(d=>d.iso>=ini&&d.iso<=fim); if(win.length) days=win; }
   const tds=(cb)=>days.map(cb).join("");
-  const inp=(tipo,iso,val,extra="")=>`<input class="cellin" type="number" step="any" data-edit="${tipo}" data-date="${iso}" value="${val}" ${extra}>`;
+  const inp=(tipo,iso,val,extra="")=>`<input class="cellin" type="number" step="any" data-edit="${tipo}" data-date="${iso}" value="${val}" ${extra}${__dslLivre()?"":" disabled"}>`;   /* v0.12.56: só leitura */
   $("ribbon").innerHTML=`
     <tr class="dias"><th class="rowlab">Dia</th>${tds(d=>`<td class="${d.iso===hoje?"hoje":""}">${brDate(d.iso)}</td>`)}</tr>
     <tr class="semana"><th class="rowlab">Semana</th>${tds(d=>`<td>${DOW[parseDate(d.iso).getDay()]}</td>`)}</tr>
@@ -12038,11 +12088,12 @@ function iniciarEdicaoCelula(td){
 }
 document.addEventListener("click",e=>{
   const td=e.target.closest&&e.target.closest("td.ecell");
-  if(td)iniciarEdicaoCelula(td);
+  if(td&&__dslLivre())iniciarEdicaoCelula(td);
 });
 document.addEventListener("click",e=>{
   const t=e.target;
   if(!t.getAttribute) return;
+  if(!__dslLivre()&&(t.getAttribute("data-del-receb")||t.getAttribute("data-del-abast")||t.getAttribute("data-conf-receb")||t.getAttribute("data-undo-receb"))){alert("Seu acesso ao Controle de Diesel é só de leitura.");return;}
   const dr=t.getAttribute("data-del-receb");
   const da=t.getAttribute("data-del-abast");
   const cf=t.getAttribute("data-conf-receb");
@@ -12344,7 +12395,7 @@ async function sha256Hex(str){var buf=await crypto.subtle.digest('SHA-256',new T
 const SID=Math.random().toString(36).substring(2,10);
 var loggedUser=((session.me&&session.me.displayName)||'Coordenação').split(' ')[0];
 var loggedRole='admin';
-let READ_ONLY=loggedRole!=='admin';
+let READ_ONLY=loggedRole!=='admin'||!podeEditar('escala');   /* v0.12.56: quem só vê abre a escala em modo leitura */
 var _lockInterval=null,_inactivityTimer=null;
 function getEmployeePass(p){if(!p.cpf)return null;var clean=p.cpf.replace(/\D/g,'');if(clean.length<4)return null;var firstName=p.name.split(' ')[0];var formatted=firstName.charAt(0).toUpperCase()+firstName.slice(1).toLowerCase();return formatted+clean.slice(-4);}
 async function checkLogin(pwd){var h=await sha256Hex(pwd);var admMatch=ADMIN_ACCOUNTS.find(function(a){return h===a.hash;});if(admMatch)return{role:'admin',name:admMatch.name};for(var i=0;i<people.length;i++){var p=people[i];if(p.customPass){var ok=false;if(/^[0-9a-f]{64}$/.test(p.customPass)){ok=(h===p.customPass);}else{ok=(pwd===p.customPass);if(ok){p.customPass=h;}}if(ok)return{role:(p.isAdmin||p.setor==='Coordenação')?'admin':'employee',name:p.name};continue;}var ep=getEmployeePass(p);if(ep&&pwd===ep)return{role:(p.isAdmin||p.setor==='Coordenação')?'admin':'employee',name:p.name};}return null;}
@@ -12783,7 +12834,7 @@ __escOn(document,'click',function(e){if(!selectedEntries.size&&!selRangeKeys.siz
 (function(){
   try{if(localStorage.getItem('escala_theme')!=='dark')__escHost().classList.add('light');}catch(e){__escHost().classList.add('light');}
   var ls=document.getElementById('esc-login-screen');if(loggedUser&&loggedRole){if(ls)ls.style.display='none';}else{if(ls)ls.style.display='';}
-  if(READ_ONLY){var t=document.getElementById('top-bar-right');if(t){if(loggedUser&&loggedRole==='employee'){t.innerHTML='<div style="font-size:12px;color:var(--accent);padding:7px 14px;border:1px solid rgba(26,58,108,.25);border-radius:20px;">\ud83e\uddd1\ud83c\udffb '+loggedUser+'</div><button onclick="openSolicitacao()" style="font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;background:rgba(26,58,108,.08);border:1px solid rgba(26,58,108,.25);color:var(--accent);">\ud83d\udce7 Solicita\u00e7\u00f5es</button><button onclick="openMySolicitations()" style="font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;background:rgba(76,175,125,.08);border:1px solid rgba(76,175,125,.25);color:#4caf7d;">\ud83d\udccb Minhas</button><button onclick="logoutAdmin()" style="font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;background:rgba(229,114,114,.1);border:1px solid rgba(229,114,114,.3);color:#e57272;">\ud83d\udeaa</button>';}else{t.innerHTML='<div style="font-size:12px;color:var(--muted);padding:7px 14px;border:1px solid var(--border);border-radius:20px;">\ud83d\udc41 Escala</div><button onclick="toggleTheme()" style="font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--muted);">\ud83d\udcf4</button><button onclick="promptLogin()" style="font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;background:rgba(26,58,108,.1);border:1px solid rgba(26,58,108,.3);color:var(--accent);">\ud83d\udd10 Entrar</button>';}}}
+  if(READ_ONLY){var t=document.getElementById('top-bar-right');if(t){if(loggedUser&&loggedRole==='employee'){t.innerHTML='<div style="font-size:12px;color:var(--accent);padding:7px 14px;border:1px solid rgba(26,58,108,.25);border-radius:20px;">\ud83e\uddd1\ud83c\udffb '+loggedUser+'</div><button onclick="openSolicitacao()" style="font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;background:rgba(26,58,108,.08);border:1px solid rgba(26,58,108,.25);color:var(--accent);">\ud83d\udce7 Solicita\u00e7\u00f5es</button><button onclick="openMySolicitations()" style="font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;background:rgba(76,175,125,.08);border:1px solid rgba(76,175,125,.25);color:#4caf7d;">\ud83d\udccb Minhas</button><button onclick="logoutAdmin()" style="font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;background:rgba(229,114,114,.1);border:1px solid rgba(229,114,114,.3);color:#e57272;">\ud83d\udeaa</button>';}else{t.innerHTML='<div style="font-size:12px;color:var(--muted);padding:7px 14px;border:1px solid var(--border);border-radius:20px;">\ud83d\udc41 Escala \u00b7 s\u00f3 leitura</div><button onclick="toggleTheme()" style="font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--muted);">\ud83d\udcf4</button>';}}}
   renderAll();loadData().then(function(){writeLock();startLockHeartbeat();});
   if(!READ_ONLY)pruneAdminButtons();
   var loginUser=document.getElementById('login-main-user');var loginInp=document.getElementById('login-main-input');if(loginUser)loginUser.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();loginInp.focus();}});if(loginInp)loginInp.addEventListener('keydown',function(e){if(e.key==='Enter')handleMainLogin();});
@@ -13118,7 +13169,7 @@ function paintBil() {
   const totPass = lanc.reduce((s,x)=>s+Number(x.Passageiros||0),0), totRec = lanc.reduce((s,x)=>s+Number(x.Receita||0),0), totGrat = lanc.reduce((s,x)=>s+Number(x.Gratuidades||0),0);
   const kpi = (lbl,val,sub) => `<div class="kpi static"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(val)}</div><div class="sub">${esc(sub)}</div></div>`;
   let content = "";
-  if (f.tab === "lancar") content = bilFormLanc() + bilTableLanc(lanc);
+  if (f.tab === "lancar") content = (podeEditar("bilhet") ? bilFormLanc() : `<div class="ro-aviso">Seu acesso a este módulo é <b>só de leitura</b>: os lançamentos aparecem abaixo, sem o formulário.</div>`) + bilTableLanc(lanc);   /* v0.12.56 */
   else if (f.tab === "bom") content = bilBOM(lanc);
   else if (f.tab === "fech") content = bilFech(fech, lanc);
   else content = bilTarifasTable();
@@ -13127,7 +13178,7 @@ function paintBil() {
     <div class="cap-kpis">${kpi("Passageiros no mês", totPass, `${totGrat} gratuidades`)}${kpi("Receita do mês", fmtBRL(totRec), "passageiros × tarifa")}${kpi("Lançamentos", lanc.length, `${new Set(lanc.map(x=>x.Data)).size} dias lançados`)}${kpi("Dias fechados", fech.filter(x=>x.Status==="Fechado").length, `${fech.length} com fechamento`)}</div>
     ${content}`;
   $("bilMes").addEventListener("change", ev => { BIL_STATE.mes = ev.target.value; paintBil(); });
-  if (f.tab === "lancar") bilWireLanc();
+  if (f.tab === "lancar" && podeEditar("bilhet")) bilWireLanc();
 }
 window.bilTab = (t) => { BIL_STATE.tab = t; paintBil(); };
 function bilFormLanc() {
@@ -13501,7 +13552,7 @@ function paintTal() {
       <select id="talSit" title="Situação">${sitOpts}</select>
       <select id="talOrdem" title="Ordem da lista">${ordOpts.map(([v, l]) => `<option value="${v}" ${v === (s.ordem || "nota") ? "selected" : ""}>${l}</option>`).join("")}</select>
       <div class="grow"></div><button class="btn" onclick="renderTal()">Atualizar</button>
-      <button class="btn" onclick="talNovoCV()" ${s.ready ? "" : "disabled"}>+ Currículo</button><button class="btn" onclick="talEdit(null)" ${s.ready ? "" : "disabled"}>+ Candidato</button></div>${content}`;
+      ${podeEditar("talentos") ? `<button class="btn" onclick="talNovoCV()" ${s.ready ? "" : "disabled"}>+ Currículo</button><button class="btn" onclick="talEdit(null)" ${s.ready ? "" : "disabled"}>+ Candidato</button>` : ""}</div>${content}`;
   $("talQ").addEventListener("input", ev => { TAL_STATE.q = ev.target.value; paintTal(); const el = $("talQ"); el.focus(); el.setSelectionRange(el.value.length, el.value.length); });
   $("talCargo").onchange = ev => { TAL_STATE.cargo = ev.target.value; paintTal(); };
   $("talNota").onchange = ev => { TAL_STATE.nota = ev.target.value; paintTal(); };
@@ -13528,11 +13579,12 @@ window.talVerCV = (cvId) => {
       ${blk("Pré-análise automática", cv.PreAnalise)}
       ${blk("Texto do currículo", cv.TextoCV, 260)}
       <div class="field full" style="display:flex;gap:8px;flex-wrap:wrap">${talLink(cv.LinkAnexo, "Abrir arquivo")}
-        ${cand ? `<button class="btn sm" onclick="closeModal();talEdit('${cand._id}')">Abrir candidato: ${esc(cand.Title)}</button>` : `<button class="btn sm" onclick="closeModal();talProcessar('${cv._id}')">Cadastrar candidato</button>`}
-        <button class="btn sm" onclick="talSit('${cv._id}','Descartado')">Descartar</button>
-        ${cv.Situacao === "Processado" || cv.Situacao === "Descartado" ? `<button class="btn sm" onclick="talSit('${cv._id}','Novo')">Reabrir</button>` : ""}</div>
+        ${cand ? `<button class="btn sm" onclick="closeModal();talEdit('${cand._id}')">Abrir candidato: ${esc(cand.Title)}</button>` : podeEditar("talentos") ? `<button class="btn sm" onclick="closeModal();talProcessar('${cv._id}')">Cadastrar candidato</button>` : ""}
+        ${podeEditar("talentos") ? `<button class="btn sm" onclick="talSit('${cv._id}','Descartado')">Descartar</button>` : ""}
+        ${podeEditar("talentos") && (cv.Situacao === "Processado" || cv.Situacao === "Descartado") ? `<button class="btn sm" onclick="talSit('${cv._id}','Novo')">Reabrir</button>` : ""}</div>
     </div>`, async () => { await talSetSit(cv._id, "Processado"); return true; });
   const sv = $("mSave"); if (sv) sv.textContent = cv.Situacao === "Processado" ? "Manter processado" : "Marcar como processado";
+  if (!podeEditar("talentos") && sv) sv.style.display = "none";   /* v0.12.56 */
 };
 window.talNovoCV = () => {
   openModal("Novo currículo (fila)", `<div class="form-grid">
@@ -13598,7 +13650,7 @@ async function talSalvarCand(existing, fromCV) {
   if (fromCV) await SP.update(TAL_STATE.site.id, TAL_STATE.lists.tal_cv.id, fromCV._id, Object.assign({ Situacao: "Processado" }, id ? { CandidatoRefLookupId: id } : {}));
   toast(existing ? "Candidato atualizado" : "Candidato cadastrado"); await loadTal(); paintTal(); return true;
 }
-window.talEdit = (id) => { const c = id ? TAL_STATE.cand.find(x => x._id === String(id)) : null; openModal(c ? `Candidato · ${c.Title}` : "Novo candidato", talForm(c || {}), () => talSalvarCand(c, null)); talWireCPF(c); };
+window.talEdit = (id) => { const c = id ? TAL_STATE.cand.find(x => x._id === String(id)) : null; if (!c && !podeEditar("talentos")) { toast("Seu acesso a este módulo é só de leitura."); return; } openModal(c ? `Candidato · ${c.Title}` : "Novo candidato", talForm(c || {}), () => talSalvarCand(c, null)); talWireCPF(c); if (!podeEditar("talentos")) modalSoLeitura(); };
 window.talProcessar = (cvId) => {
   const cv = TAL_STATE.cv.find(x => x._id === cvId); if (!cv) return; const ex = talCandOf(cv); const p = talPreAnalise(cv.TextoCV);
   const base = ex ? Object.assign({}, ex) : Object.assign({ Status: "Disponível" }, p, { Title: cv.Title && cv.Title !== "(sem nome)" ? cv.Title : p.Title, CPF: cv.CPF, Email: cv.Email, Telefone: cv.Telefone, CargoPretendido: cv.CargoPretendido, Origem: cv.Origem, LinkCurriculo: cv.LinkAnexo });
@@ -13777,6 +13829,13 @@ function permAreas() {
   const areas = [...new Set(mods.map(m => m.area))].sort((a, b) => { const ia = PERM_AREA_ORDEM.indexOf(a), ib = PERM_AREA_ORDEM.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b, "pt-BR"); });
   return areas.map(area => ({ area, mods: mods.filter(m => m.area === area).map(m => [m.id, m.name, m.status || ""]) }));
 }
+/* v0.12.56 · sub-páginas de cada módulo (só informativo na matriz: a permissão do módulo vale para todas elas) */
+function permSubpaginas(id) {
+  const M = { ag_conc: ["Movimento de Caixa", "Vendas", "Controle de caixa (só administrador)"], almox: ["Ordens de Compra"], equip: ["Máquinas PagBank", "Rio Card"],
+    di_equip: ["Samsung Tablets"], rh_rel: ["Controle de Ponto"], cap: ["Contas", "Painel", "Pendências", "Contabilidade", "Fornecedores"], caixa: ["Boletim do dia", "Painel", "Contas e caixas"] };
+  if (id === "rh_db" && typeof RHDB_CARDS !== "undefined") return RHDB_CARDS.map(c => c.name);
+  return M[id] || [];
+}
 const MODS_LIVRES = new Set(["inicio", "diag"]);   /* v0.12.35: abertos a quem entra no ERP; o resto só pela matriz */
 /* v0.12.35 · conferência da lista "ERP — Acessos": um registro só vale se a última gravação foi feita por um administrador.
    Quem gravou vem do próprio SharePoint (lastModifiedBy), que o navegador não consegue escrever. Os administradores partem dos
@@ -13895,6 +13954,22 @@ function paintPerm() {
     ${C.total && C.semAutor === C.total ? `<div class="perm-aviso"><span>O SharePoint não informou quem gravou os registros desta lista. Membros e Visitantes continuam valendo, mas administradores concedidos aqui não podem ser confirmados.</span></div>` : ""}
     ${rows ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Usuário</th><th>Nível</th><th>Módulos</th><th>Situação</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhum usuário cadastrado</h3><p>Clique em "Novo usuário" para definir o primeiro acesso.</p></div>`}`;
 }
+/* v0.12.56 · árvore da matriz: abrir/fechar e resumo por departamento */
+function permMarcados(area) {
+  const vals = [...document.querySelectorAll(`#pMatriz tr.perm-mod[data-area="${CSS.escape(area)}"]`)].map(tr => { const i = tr.querySelector("input[type=radio]:checked"); return i ? i.value : "nenhum"; });
+  const on = vals.filter(v => v !== "nenhum"); return { n: on.length, total: vals.length, vals: on };
+}
+function permResumoArea(area) {
+  const el = document.querySelector(`#pMatriz [data-resumo="${CSS.escape(area)}"]`); if (!el) return;
+  const m = permMarcados(area), uni = [...new Set(m.vals)];
+  el.innerHTML = !m.n ? "nenhum módulo" : m.n === m.total && uni.length === 1 ? `<b>${esc(PERM_ROT[uni[0]])}</b> em todos` : `<b>${m.n}</b> de ${m.total}${uni.length === 1 ? " · " + esc(PERM_ROT[uni[0]]) : ""}`;
+}
+function permArvoreArea(area, abrir) {
+  const h = document.querySelector(`#pMatriz tr.perm-area[data-area="${CSS.escape(area)}"]`); if (!h) return;
+  h.classList.toggle("aberto", !!abrir); h.setAttribute("aria-expanded", abrir ? "true" : "false");
+  document.querySelectorAll(`#pMatriz tr.perm-mod[data-area="${CSS.escape(area)}"]`).forEach(tr => tr.classList.toggle("oculto", !abrir));
+}
+window.permArvore = abrir => document.querySelectorAll("#pMatriz tr.perm-area").forEach(tr => permArvoreArea(tr.dataset.area, abrir));
 window.permForm = (id) => {
   if (!session.n1) return;
   const r = id ? ACESSO.itens.find(x => x._id === String(id)) : null;
@@ -13903,8 +13978,11 @@ window.permForm = (id) => {
   const a = r ? acessoDe(r) : { gravado: "membro", pedido: "membro", perm: { ti_chamados: "editar" }, exN2: false, conf: { valido: true, motivo: "", fixo: false }, valido: true };
   const areas = permAreas(), efet = mid => PERM_OPC.includes(a.perm[mid]) ? a.perm[mid] : "nenhum";
   const nivelSel = `<select id="pNivel">${["n1", "membro", "visitante", "sem"].map(k => `<option value="${NIVEL_TEXTO[k]}" ${a.gravado === k ? "selected" : ""}>${NIVEL_TEXTO[k]}</option>`).join("")}</select>`;
-  const linhas = areas.map(({ area, mods }) => `<tr class="obr-sub perm-area" data-area="${esc(area)}"><td colspan="${PERM_OPC.length + 1}"><div class="perm-area-in"><span class="grow">${esc(area)}</span><select class="perm-area-sel" data-area="${esc(area)}" title="Definir todos os submódulos deste departamento"><option value="">definir todos…</option>${PERM_OPC.map(p => `<option value="${p}">${PERM_ROT[p]}</option>`).join("")}</select></div></td></tr>` +
-    mods.map(([mid, n, st]) => `<tr data-area="${esc(area)}"><td>${esc(n)}${st && st !== "ativo" ? ` <span class="tag-div" style="background:#EEF2F8;color:var(--navy)">${esc(st)}</span>` : ""}</td>${PERM_OPC.map(p => `<td class="perm-op"><label><input type="radio" name="perm-${mid}" value="${p}" ${efet(mid) === p ? "checked" : ""}> ${PERM_ROT[p]}</label></td>`).join("")}</tr>`).join("")).join("");
+  const linhas = areas.map(({ area, mods }) => `<tr class="obr-sub perm-area" data-area="${esc(area)}" aria-expanded="false" tabindex="0" title="Abrir ou fechar os módulos deste departamento"><td colspan="${PERM_OPC.length + 1}"><div class="perm-area-in"><span class="perm-tg" aria-hidden="true">▶</span><span class="grow">${esc(area)}</span><span class="perm-resumo" data-resumo="${esc(area)}"></span><select class="perm-area-sel" data-area="${esc(area)}" title="Definir todos os módulos deste departamento"><option value="">definir todos…</option>${PERM_OPC.map(p => `<option value="${p}">${PERM_ROT[p]}</option>`).join("")}</select></div></td></tr>` +
+    mods.map(([mid, n, st]) => { const subs = permSubpaginas(mid); return `<tr class="perm-mod oculto" data-area="${esc(area)}" data-mod="${esc(mid)}"><td>${esc(n)}${st && st !== "ativo" ? ` <span class="tag-div" style="background:#EEF2F8;color:var(--navy)">${esc(st)}</span>` : ""}${subs.length ? `<div class="perm-subs">› ${subs.map(esc).join(" · ")}</div>` : ""}</td>${PERM_OPC.map(p => `<td class="perm-op"><label><input type="radio" name="perm-${mid}" value="${p}" ${efet(mid) === p ? "checked" : ""}> ${PERM_ROT[p]}</label></td>`).join("")}</tr>`; }).join("")).join("");
+  /* v0.12.56 · "Copiar de…": pega o nível e os módulos de outra pessoa da lista (Membro ou Visitante) — útil na troca de usuários */
+  const fontes = ACESSO.itens.filter(x => !r || String(x._id) !== String(r._id)).map(x => ({ x, a: acessoDe(x) })).filter(o => (o.a.gravado === "membro" || o.a.gravado === "visitante") && o.a.valido).sort((p, q) => String(p.x.Nome || p.x.Title).localeCompare(String(q.x.Nome || q.x.Title), "pt-BR"));
+  const copiar = fontes.length ? `<select id="pCopiar" title="Copia o nível e as permissões de outra pessoa; depois é só ajustar e salvar"><option value="">Copiar de…</option>${fontes.map(o => `<option value="${esc(o.x._id)}">${esc(o.x.Nome || o.x.Title)} · ${esc(NIVEIS[o.a.gravado] || "")}${o.x.Ativo === false ? " (inativo)" : ""}</option>`).join("")}</select>` : "";
   const aviso = !r ? "" : proprio ? `<div class="perm-aviso"><span><b>Este é o seu registro.</b> Para mudar o seu nível, os seus módulos ou a sua situação, peça a outro administrador: se você mesmo gravar o seu registro, ele deixa de valer.</span></div>` : !a.valido ? `<div class="perm-aviso"><span><b>Este acesso não está valendo:</b> ${esc(permMotivoTxt(a, r))}. Confira e salve para confirmar.</span></div>`
     : a.exN2 ? `<div class="perm-aviso"><span><b>Este registro era Administrador Nível 2.</b> A matriz já vem com Proprietário nos departamentos que ele gerenciava. Confira e salve para gravar como Membro.</span></div>` : "";
   $("modal").className = "modal wide";
@@ -13916,7 +13994,8 @@ window.permForm = (id) => {
       <div class="field"><label>Nível<span class="req">*</span></label>${nivelSel}<div class="hint" id="pNivelHint"></div></div>
       <div class="field"><label>Situação</label><select id="pAtivo"><option value="1" ${!r || r.Ativo !== false ? "selected" : ""}>Ativo</option><option value="0" ${r && r.Ativo === false ? "selected" : ""}>Inativo (sem acesso)</option></select></div>
     </div>
-    <div class="obr-sec" id="pMatrizTit">Permissões por submódulo <span class="sup">cada linha é um módulo do menu · só o que estiver marcado aparece para a pessoa · use "definir todos…" no cabeçalho do departamento para marcar de uma vez</span></div>
+    <div class="obr-sec" id="pMatrizTit">Permissões por módulo <span class="sup">clique no departamento para abrir os módulos · a permissão do módulo vale para as páginas dele (›) · "definir todos…" marca o departamento de uma vez</span></div>
+    <div class="perm-tools" id="pTools">${copiar}<span class="grow"></span><a onclick="permArvore(true)">Abrir todos</a><a onclick="permArvore(false)">Fechar todos</a></div>
     <div class="table-wrap" id="pMatriz"><table class="cap-table perm-table"><thead><tr><th>Módulo</th>${PERM_OPC.map(p => `<th>${PERM_ROT[p]}</th>`).join("")}</tr></thead><tbody>${linhas}</tbody></table></div>
     <p class="hint" id="pRodape">Gestão de Dívidas, Usuários e permissões e Configuração são só dos administradores e não aparecem na matriz.${r ? "" : " Chamados (TI) já vem marcado com Editar para a pessoa poder abrir chamados; desmarque se não quiser."}</p>
     <div class="err-msg" id="pErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
@@ -13946,9 +14025,23 @@ window.permForm = (id) => {
     if (gravado && !acessoDe(gravado).valido && ativo) setTimeout(() => toast(`Atenção: o SharePoint registrou esta gravação como ${gravado._por || "(sem e-mail)"}, que o ERP não reconhece como administrador, e o acesso ficou "Não confirmado". Avise o suporte do ERP.`, 12000), 400);
     return true;
   });
-  const setArea = (area, p) => document.querySelectorAll(`#pMatriz tr[data-area="${CSS.escape(area)}"]:not(.perm-area) input[type=radio][value="${p}"]`).forEach(i => { i.checked = true; });
+  const setArea = (area, p) => { document.querySelectorAll(`#pMatriz tr[data-area="${CSS.escape(area)}"]:not(.perm-area) input[type=radio][value="${p}"]`).forEach(i => { i.checked = true; }); permResumoArea(area); };
+  document.querySelectorAll("#pMatriz tr.perm-area").forEach(tr => {
+    const tg = () => permArvoreArea(tr.dataset.area, !tr.classList.contains("aberto"));
+    tr.addEventListener("click", ev => { if (ev.target.closest("select")) return; tg(); });
+    tr.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && !ev.target.closest("select")) { ev.preventDefault(); tg(); } });
+    permResumoArea(tr.dataset.area);
+  });
+  document.querySelectorAll("#pMatriz input[type=radio]").forEach(i => i.addEventListener("change", () => { const tr = i.closest("tr"); if (tr) permResumoArea(tr.dataset.area); }));
+  const cp = $("pCopiar"); if (cp) cp.addEventListener("change", () => {
+    const o = fontes.find(f => String(f.x._id) === cp.value); cp.value = ""; if (!o) return;
+    $("pNivel").value = NIVEL_TEXTO[o.a.gravado]; $("pNivel").dispatchEvent(new Event("change"));
+    areas.forEach(({ area, mods }) => { mods.forEach(([mid]) => { const v = PERM_OPC.includes(o.a.perm[mid]) ? o.a.perm[mid] : "nenhum"; const i = document.querySelector(`input[name="perm-${mid}"][value="${v}"]`); if (i) i.checked = true; }); permResumoArea(area); });
+    permArvore(false); document.querySelectorAll("#pMatriz tr.perm-area").forEach(tr => { if (permMarcados(tr.dataset.area).n) permArvoreArea(tr.dataset.area, true); });
+    toast(`Permissões de ${o.x.Nome || o.x.Title} copiadas. Confira e salve.`, 4500);
+  });
   const HINT = { "Administrador": "Vê e faz tudo no ERP, inclusive esta página. Vale porque fica gravado por você, que é administrador.", "Membro": "Por submódulo: Nenhum, Ver, Editar ou Proprietário (responsável: exclui e aprova).", "Visitante": "Só vê os submódulos marcados.", "Sem acesso": "Entra no ERP, mas não vê nenhum módulo." };
-  const sync = () => { const n = $("pNivel").value; const mostra = n === "Membro" || n === "Visitante"; $("pMatriz").style.display = mostra ? "" : "none"; $("pMatrizTit").style.display = mostra ? "" : "none"; $("pNivelHint").textContent = HINT[n] || ""; };
+  const sync = () => { const n = $("pNivel").value; const mostra = n === "Membro" || n === "Visitante"; $("pMatriz").style.display = mostra ? "" : "none"; $("pMatrizTit").style.display = mostra ? "" : "none"; $("pTools").style.display = mostra ? "" : "none"; $("pNivelHint").textContent = HINT[n] || ""; };
   $("pNivel").addEventListener("change", sync); sync();
   document.querySelectorAll(".perm-area-sel").forEach(s => s.addEventListener("change", () => { if (s.value) setArea(s.dataset.area, s.value); s.value = ""; }));
   if (!r) { permBuscaLigar(); setTimeout(() => { const b = $("pBusca"); if (b) b.focus(); }, 60); }
@@ -18315,10 +18408,13 @@ window.lancAbrir = async (k, id) => {
   } else if (rasc && x && !lancPodeEditarReg(d, x)) rasc = null;
   const ed = rasc ? { cab: Object.assign({}, base.cab, rasc.cab || {}), linhas: Array.isArray(rasc.linhas) && rasc.linhas.length ? rasc.linhas : base.linhas, obs: rasc.obs != null ? rasc.obs : base.obs } : base;
   LANC_ED = { k, id: x ? String(x._id) : null, cab: ed.cab, linhas: ed.linhas.length ? ed.linhas : [d.linhaVazia()], obs: ed.obs || "", base: JSON.stringify(base), deRascunho: !!rasc, salvoEm: rasc ? rasc.em : "" };
+  lancAutorFixar(LANC_ED, x);
   lancPintarEditor(); window.scrollTo({ top: 0, behavior: "smooth" });
   lancAuxCarregar().then(() => { if (LANC_ED && LANC_ED.k === k) lancPintarEditor(true); });
   lancCols(d);
 };
+/* v0.12.56 · campos "autor" (Caixa, Vendedor, Conferente): para quem não é administrador, novo = nome de quem está logado; existente = o gravado */
+function lancAutorFixar(E, x) { if (!E || session.n1) return; const d = LANC[E.k]; d.cab.filter(f => f.autor).forEach(f => { E.cab[f.k] = x ? (x[f.k] || "") : autorFixo(""); }); }   /* existente: o gravado, mesmo vazio (só o administrador completa) */
 function lancMudou() { if (!LANC_ED) return false; const d = LANC[LANC_ED.k]; return JSON.stringify({ cab: LANC_ED.cab, linhas: LANC_ED.linhas.filter(l => !d.linhaVaziaQ(l)), obs: LANC_ED.obs }) !== JSON.stringify((() => { const b = JSON.parse(LANC_ED.base); return { cab: b.cab, linhas: b.linhas.filter(l => !d.linhaVaziaQ(l)), obs: b.obs }; })()); }
 function lancGuardarRascunho() {
   if (!LANC_ED) return; const d = LANC[LANC_ED.k], x = LANC_ED.id ? d.state.itens.find(y => String(y._id) === LANC_ED.id) : null;
@@ -18329,7 +18425,8 @@ function lancGuardarRascunho() {
   const el = $("lancSalvoEm"); if (el) el.textContent = `Rascunho guardado neste navegador às ${LANC_ED.salvoEm}`;
 }
 function lancCampoHtml(f, v, ro) {
-  const id = `lc_${f.k}`, dis = ro || f.ro ? "disabled" : "";
+  const trava = f.autor && !session.n1;   /* v0.12.56: nome de quem lança fica fixo para quem não é administrador */
+  const id = `lc_${f.k}`, dis = ro || f.ro || trava ? "disabled" : "";
   const req = f.req ? `<span class="req">*</span>` : "";
   let inp = "";
   if (f.tipo === "date") inp = `<input class="lanc-in" type="date" id="${id}" value="${esc(v || "")}" ${dis}>`;
@@ -18337,13 +18434,14 @@ function lancCampoHtml(f, v, ro) {
   else if (f.tipo === "select") { const ops = f.opts(); const temV = v && !ops.includes(v); inp = `<select class="lanc-in lanc-sel" id="${id}" ${dis}><option value="">${esc(f.ph || "Selecione…")}</option>${(temV ? [v] : []).concat(ops).map(o => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`; }
   else if (f.tipo === "func") inp = lancFuncSelect(id, v, dis, f.soMot);
   else inp = `<input class="lanc-in" id="${id}" value="${esc(v || "")}" placeholder="${esc(f.ph || "")}" autocomplete="off" ${dis}>`;
-  return `<div class="lanc-f ${f.larg ? "w" + f.larg : ""}"><label for="${id}">${esc(f.lbl)}${req}</label>${inp}${f.dica ? `<div class="hint">${esc(typeof f.dica === "function" ? f.dica() : f.dica)}</div>` : ""}</div>`;
+  const dica = f.dica ? (typeof f.dica === "function" ? f.dica() : f.dica) : (trava && !ro ? (LANC_ED && LANC_ED.id ? (String(v || "").trim() ? "Quem lançou não muda" : "Sem nome gravado: um administrador completa") : "Preenchido com o seu nome") : "");
+  return `<div class="lanc-f ${f.larg ? "w" + f.larg : ""}"><label for="${id}">${esc(f.lbl)}${req}</label>${inp}${dica ? `<div class="hint">${esc(dica)}</div>` : ""}</div>`;
 }
 function lancFuncSelect(id, v, dis, soMot, cls) {
   const { mot, out } = lancMotoristas(), todos = mot.concat(out);
   if (LANC_AUX.funcs && !todos.length) return `<input class="lanc-in ${cls || ""}" id="${id}" value="${esc(v || "")}" placeholder="Digite o nome" title="Cadastre os funcionários em RH › Banco de Dados › Funcionários para escolher da lista" ${dis}>`;
   const temV = v && !todos.some(f => f.Title === v);
-  const og = (rot, arr) => arr.length ? `<optgroup label="${esc(rot)}">${arr.map(f => `<option ${f.Title === v ? "selected" : ""} value="${esc(f.Title)}">${esc(f.Title)}${f.Matricula ? " · " + esc(f.Matricula) : ""}</option>`).join("")}</optgroup>` : "";
+  const og = (rot, arr) => arr.length ? `<optgroup label="${esc(rot)}">${arr.map(f => `<option ${f.Title === v ? "selected" : ""} value="${esc(f.Title)}">${esc(f.Title)}</option>`).join("")}</optgroup>` : "";
   return `<select class="lanc-in lanc-sel ${cls || ""}" id="${id}" ${dis} data-func="1"><option value="">${LANC_AUX.funcs ? "Selecione…" : "Carregando funcionários…"}</option>${temV ? `<option selected>${esc(v)}</option>` : ""}${soMot && mot.length ? og("Motoristas", mot) + og("Outros funcionários", out) : og("Funcionários", todos)}</select>`;
 }
 function lancCelHtml(c, v, i, ro) {
@@ -18432,6 +18530,7 @@ async function lancGravar(campos, msgOk) {
   const x = E.id ? st.itens.find(y => String(y._id) === E.id) : null;
   const hist = `${lancAgora()} · ${lancQuem()} · ${campos._acao || (x ? "editou" : "criou")}`;
   delete campos._acao;
+  if (!session.n1) d.cab.filter(f => f.autor && f.k in campos).forEach(f => { campos[f.k] = x ? String(x[f.k] || "").trim() : autorFixo(""); });   /* v0.12.56: o nome de quem lançou não muda */
   campos.Historico = ((x && x.Historico) ? x.Historico + "\n" : "") + hist;
   lancFiltrarCampos(d, campos);
   if (x) await SP.update(st.site.id, st.list.id, x._id, campos); else await SP.create(st.site.id, st.list.id, campos);
@@ -18505,7 +18604,7 @@ LANC.agmov = {
   ],
   cab: [
     { k: "Data", lbl: "Data", tipo: "date", req: true },
-    { k: "Caixa", lbl: "Caixa (responsável)", tipo: "text", req: true, larg: 2 },
+    { k: "Caixa", lbl: "Caixa (responsável)", tipo: "text", req: true, larg: 2, autor: true },
     { k: "Turno", lbl: "Turno", tipo: "select", opts: () => lancTurnos() },
     { k: "SubAgencia", lbl: "Agência / sub-agência", tipo: "select", opts: () => lancSubs(), req: true },
     { k: "SaldoAnterior", lbl: "Saldo anterior", tipo: "money", dica: () => lancMovSaldoDica() }
@@ -18568,7 +18667,7 @@ LANC.agven = {
     { k: "Data", lbl: "Data", tipo: "date", req: true },
     { k: "Agencia", lbl: "Agência / sub-agência", tipo: "select", opts: () => lancSubs(), req: true },
     { k: "Turno", lbl: "Turno", tipo: "select", opts: () => lancTurnos() },
-    { k: "Vendedor", lbl: "Vendedor(a)", tipo: "text", req: true, larg: 2 }
+    { k: "Vendedor", lbl: "Vendedor(a)", tipo: "text", req: true, larg: 2, autor: true }
   ],
   cols: [
     { k: "l", lbl: "Linha", tipo: "select", opts: () => ROL_LINHAS.concat(["Outra"]), w: "minmax(200px,2.4fr)" },
@@ -18602,7 +18701,7 @@ LANC.rol = {
   cab: [
     { k: "Data", lbl: "Data", tipo: "date", req: true },
     { k: "Agencia", lbl: "Agência", tipo: "select", opts: () => ["Macaé (matriz)", "Conceição de Macabu", "Sub-agência"], req: true },
-    { k: "Caixa", lbl: "Caixa (quem lança)", tipo: "text", req: true, larg: 2 }
+    { k: "Caixa", lbl: "Caixa (quem lança)", tipo: "text", req: true, larg: 2, autor: true }
   ],
   cols: [
     { k: "c", lbl: "Carro", tipo: "text", ph: "221003", w: "minmax(90px,.8fr)" },
@@ -18638,7 +18737,7 @@ LANC.rec = {
   ],
   cab: [
     { k: "Data", lbl: "Data", tipo: "date", req: true },
-    { k: "Caixa", lbl: "Conferente (quem recebeu)", tipo: "text", req: true, larg: 2 },
+    { k: "Caixa", lbl: "Conferente (quem recebeu)", tipo: "text", req: true, larg: 2, autor: true },
     { k: "Motorista", lbl: "Motorista", tipo: "func", soMot: true, req: true, larg: 2 },
     { k: "Carro", lbl: "Carro", tipo: "text", ph: "221003" }
   ],
@@ -19615,9 +19714,12 @@ window.rhfImportar = () => {
           if (l._ex) { const f = limpa(l); delete f.Title; /* o nome vale o do ERP; a planilha completa o resto */
             if (!f.Situacao && l._ex.Situacao) delete f.Situacao;
             await SP.update(RHDB_STATE.site.id, RHDB_STATE.list.id, l._ex._id, f); }
-          else { const f = limpa(l); if (!f.Situacao) f.Situacao = "Ativo"; await SP.create(RHDB_STATE.site.id, RHDB_STATE.list.id, f); }
+          else if (l._criado) { const f = limpa(l); if (!f.Situacao) f.Situacao = "Ativo"; await SP.update(RHDB_STATE.site.id, RHDB_STATE.list.id, l._criado, f); }   /* v0.12.56: já criado numa tentativa anterior — completa o próprio registro */
+          else { const f = limpa(l); if (!f.Situacao) f.Situacao = "Ativo";
+            if (typeof RH_PES !== "undefined" && RH_PES.semPes) RH_PES.semPes.clear();   /* cada linha cuida do próprio registro: um homônimo sem CPF/matrícula não reaproveita o de outra linha */
+            await SP.create(RHDB_STATE.site.id, RHDB_STATE.list.id, f); }
           l._feito = true;
-        } catch (e) { erros.push(`${l.Title}: ${e.message}`); }
+        } catch (e) { if (!l._ex && !l._criado && e && e.funcId) l._criado = e.funcId; erros.push(`${l.Title}: ${e.message}`); }
         n++;
       }
     } finally { RHF_STATE.importando = false; back.onclick = ev => { if (ev.target === back) closeModal(); }; document.addEventListener("keydown", escClose); if (xBtn) xBtn.disabled = false; }
@@ -20712,7 +20814,7 @@ async function rhPesGravar(funcId, nome, pes, fresco) {   /* fresco: a lista aca
     else r = await c1(siteId, listId, s.main);
     if (s.temPes) {
       try { await rhPesGravar(r && r.id, s.main.Title, s.pes, !pend); }
-      catch (e) { if (chave) RH_PES.semPes.set(chave, String(r.id)); throw new Error(`O funcionário foi cadastrado, mas CPF, nascimento, PIS e telefone não (${e.message}). Grave de novo para completar só esses dados.`); }
+      catch (e) { if (chave) RH_PES.semPes.set(chave, String(r.id)); const er = new Error(`O funcionário foi cadastrado, mas CPF, nascimento, PIS e telefone não (${e.message}). Grave de novo para completar só esses dados.`); er.funcId = String(r && r.id); throw er; }   /* v0.12.56: o importador guarda o id na própria linha */
     }
     if (chave) RH_PES.semPes.delete(chave);
     return r;

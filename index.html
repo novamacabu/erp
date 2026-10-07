@@ -3017,6 +3017,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   .field input[type="date"], .field input[type="month"], .field input[type="time"] { display: block; width: 100%; min-height: 44px }   /* sem appearance:none — o iPhone esconderia o "dd/mm/aaaa" */
   .grid2 { grid-template-columns: 1fr }
 }
+/* v0.12.63 · Infrações › Relatórios: Orientação da folha só com Paisagem e Retrato (sem "Padrão do relatório"); a lista já vem na orientação sugerida para o tipo */
 /* v0.12.62 · Infrações › Relatórios: orientação da folha à escolha (padrão do relatório, retrato ou paisagem) — o navegador não deixa trocar quando a página define a orientação; Gerencial também mensal e anual */
 /* v0.12.61 · Infrações › Relatórios novos: Gerencial (12 meses), Por veículo, Por horário e dia da semana, Pendências de notificação e Histórico do motorista (reincidência + termo de ciência) */
 /* v0.12.60 · Infrações › Relatórios › Painel principal: impressão do painel como está na tela (período, filtros, indicadores, 5 gráficos; detalhamento opcional) */
@@ -3109,7 +3110,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.62<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.63<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3146,7 +3147,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.62",
+  version: "v0.12.63",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -10504,7 +10505,7 @@ window.infRelatorios=()=>{
       <div class="field" id="relAnoWrap" style="display:none"><label>Ano</label><select id="relAno">${[...new Set(meses.map(k=>k.slice(0,4)))].map(a=>`<option>${a}</option>`).join("")}</select></div>
       <div class="field" id="relNWrap" style="display:none"><label>Período</label><select id="relN"><option value="3">3 meses</option><option value="6" selected>6 meses</option><option value="12">12 meses</option></select></div>
       <div class="field" id="relMotWrap" style="display:none"><label>Motorista</label><select id="relMot">${mots.map(m=>`<option value="${relEsc(m.k)}">${relEsc(m.nome)}</option>`).join("")}</select></div>
-      <div class="field" id="relOriWrap"><label>Orientação da folha</label><select id="relOri"><option value="auto" id="relOriAuto">Padrão do relatório</option><option value="retrato">Retrato (vertical)</option><option value="paisagem">Paisagem (horizontal)</option></select></div>
+      <div class="field" id="relOriWrap"><label>Orientação da folha</label><select id="relOri"><option value="paisagem">Paisagem (horizontal)</option><option value="retrato">Retrato (vertical)</option></select></div>
       <div class="field" id="relPainelWrap"><label>Painel</label><label style="font-weight:400"><input type="checkbox" id="relDet"> incluir o detalhamento das infrações (${nf.format((window.__filtrado||[]).length)} registro(s) no filtro)</label></div>
       <div class="field" id="relPendWrap" style="display:none"><label>Pendências</label><label style="font-weight:400"><input type="checkbox" id="relPendTodas"> todas as pendentes, de qualquer mês (${nf.format(nPend)})</label></div>
       <div class="field" id="relRankWrap"><label>Mural</label><label style="font-weight:400"><input type="checkbox" id="relRank"> mostrar ranking dos motoristas com mais infrações (nomes)</label></div>
@@ -10512,7 +10513,7 @@ window.infRelatorios=()=>{
     </div><div class="hint" id="relHint" style="margin-top:8px"></div>`,
     async()=>{
       const mes=$("relMes").value, tipo=$("relTipo").value, frase=$("relFrase").value.trim();
-      const ori=$("relOri").value, P=ori==="auto"?!!INF_ORI_PADRAO[tipo]:ori==="paisagem";   /* v0.12.62: retrato ou paisagem, à escolha */
+      const P=$("relOri").value==="paisagem";   /* v0.12.63: só retrato ou paisagem (a lista já vem na orientação sugerida para o tipo) */
       if(tipo==="painel"){ infPainelImprimir($("relDet").checked,P); return true; }
       if(tipo==="hist"){ if(!$("relMot").value){toast("Escolha o motorista.");return false;} infImprimir(`Histórico ${infNomeDe($("relMot").value)}`,relHist(mes,$("relMot").value,+$("relN").value,frase),P); return true; }
       if(tipo==="ger"){ const md=$("relGerModo").value;
@@ -10544,9 +10545,9 @@ window.infRelatorios=()=>{
     const gm=$("relGerModo").value; mostra("relGerWrap",t==="ger"); mostra("relAnoWrap",t==="ger"&&gm==="ano");
     mostra("relMesWrap",t!=="painel"&&!(t==="pend"&&$("relPendTodas").checked)&&!(t==="ger"&&gm==="ano")); $("relMesLbl").textContent=t==="hist"||(t==="ger"&&gm==="12m")?"Até o mês":"Mês";
     $("relFrase").closest(".field").style.display=["mural","todos","um","hist"].includes(t)?"":"none";
-    $("relOriAuto").textContent=`Padrão do relatório (${INF_ORI_PADRAO[t]?"paisagem":"retrato"})`;
     $("relHint").textContent=(DICA[t]||"").replace(/\s*A4 (deitado|em pé)\./,"").replace("em A4 deitado, colorido","colorido");};
-  $("relTipo").addEventListener("change",()=>{ $("relOri").value="auto"; sync(); }); $("relPendTodas").addEventListener("change",sync); $("relGerModo").addEventListener("change",sync);   /* cada tipo começa na orientação padrão dele */ sync(); $("mSave").textContent="Gerar";
+  const oriPadrao=()=>{ $("relOri").value=INF_ORI_PADRAO[$("relTipo").value]?"paisagem":"retrato"; };
+  $("relTipo").addEventListener("change",()=>{ oriPadrao(); sync(); }); oriPadrao(); $("relPendTodas").addEventListener("change",sync); $("relGerModo").addEventListener("change",sync);   /* cada tipo começa na orientação sugerida para ele */ sync(); $("mSave").textContent="Gerar";
 };
 $("btn-relatorios").addEventListener("click",()=>infRelatorios());
 

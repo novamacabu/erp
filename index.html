@@ -3017,6 +3017,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   .field input[type="date"], .field input[type="month"], .field input[type="time"] { display: block; width: 100%; min-height: 44px }   /* sem appearance:none — o iPhone esconderia o "dd/mm/aaaa" */
   .grid2 { grid-template-columns: 1fr }
 }
+/* v0.12.62 · Infrações › Relatórios: orientação da folha à escolha (padrão do relatório, retrato ou paisagem) — o navegador não deixa trocar quando a página define a orientação */
 /* v0.12.61 · Infrações › Relatórios novos: Gerencial (12 meses), Por veículo, Por horário e dia da semana, Pendências de notificação e Histórico do motorista (reincidência + termo de ciência) */
 /* v0.12.60 · Infrações › Relatórios › Painel principal: impressão do painel como está na tela (período, filtros, indicadores, 5 gráficos; detalhamento opcional) */
 /* v0.12.59 · (1) Frota › Registro de Multas (lista "Frota — Multas") (2) CAP: Lista → Faturas; Obrigações como aba da CAP (fora dos menus)
@@ -3108,7 +3109,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.61<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.62<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3145,7 +3146,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.61",
+  version: "v0.12.62",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -10202,9 +10203,9 @@ function relBarras(itens,largura=680,altura=150){
   return `<svg viewBox="0 0 ${largura} ${altura}" width="100%" style="max-width:${largura}px;display:block"><line x1="0" y1="${base}" x2="${largura}" y2="${base}" stroke="#000"/>${bars}</svg>`;
 }
 const REL_CSS=`@page{size:A4;margin:14mm}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;font-size:13px;line-height:1.45}.pg{page-break-after:always;padding:0 0 10mm}.pg:last-child{page-break-after:auto}h1{font-size:22px;margin:0 0 2px}h2{font-size:15px;margin:18px 0 6px;border-bottom:2px solid #000;padding-bottom:3px;text-transform:uppercase;letter-spacing:.5px}.sub{color:#444;margin:0 0 14px;font-size:13px}.kpis{display:flex;gap:12px;margin:12px 0}.kpi{flex:1;border:2px solid #000;padding:8px 10px}.kpi b{display:block;font-size:30px;line-height:1.1}.kpi span{font-size:11px;text-transform:uppercase;letter-spacing:.5px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid #999;padding:5px 6px;text-align:left;vertical-align:top}th{background:#e8e8e8;font-size:11px;text-transform:uppercase}td.n,th.n{text-align:right;white-space:nowrap}.tag{display:inline-block;border:1px solid #000;padding:0 5px;font-size:11px;font-weight:700}.tag.gg{background:#000;color:#fff}.ok{border:2px dashed #000;padding:10px 12px;margin-top:8px}.ok b{font-size:14px}.rod{margin-top:22px;border-top:1px solid #000;padding-top:8px;font-size:12px}.ass{margin-top:26px;display:flex;gap:40px}.ass div{flex:1;border-top:1px solid #000;padding-top:4px;font-size:11px;text-align:center}.msg{border:1px solid #000;padding:8px 10px;margin-top:10px;min-height:38px}.cmp{margin:10px 0}.cmp div{display:flex;align-items:center;gap:8px;margin:4px 0}.cmp i{display:block;height:14px;background:#333}.cmp small{width:120px;font-size:12px}.duo{display:flex;gap:16px}.duo>div{flex:1;min-width:0}.duo h2{margin-top:12px}@media screen{body{background:#777;padding:20px}.pg{background:#fff;width:210mm;min-height:270mm;margin:0 auto 20px;padding:14mm;box-sizing:border-box}}`;
-function relAbrir(titulo,paginas){
+function relAbrir(titulo,paginas,paisagem){
   const w=window.open("","_blank"); if(!w){toast("O navegador bloqueou a janela do relatório — permita pop-ups para este site.",6000);return;}
-  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${relEsc(titulo)}</title><style>${REL_CSS}</style></head><body>${paginas}</body></html>`);
+  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${relEsc(titulo)}</title><style>${REL_CSS}@page{size:A4 ${paisagem?"landscape":"portrait"}}</style></head><body>${paginas}</body></html>`);   /* v0.12.62: orientação escolhida no Relatórios */
   w.document.close(); w.focus(); setTimeout(()=>w.print(),400);
 }
 function relCabecalho(t,sub){return `<h1>${relEsc(t)}</h1><p class="sub">Transportadora Nova Macabu · ${relEsc(sub)}</p>`;}
@@ -10251,7 +10252,8 @@ function relIndividual(mes,mat,frase){
     <div class="rod">Este relatório é pessoal. Gerado em ${new Date().toLocaleDateString("pt-BR")} · Operacional NMB</div></div>`;
 }
 /* v0.12.60 · Relatórios › Painel principal: o painel como está na tela (período, filtros, indicadores e os 5 gráficos), no padrão de impressão A4 do ERP */
-function infPainelImprimir(comDet){
+function infPainelImprimir(comDet,paisagem){
+  if(paisagem===undefined) paisagem=true;
   const atual=window.__filtrado||[], f=lerFiltros();
   const txt=id=>{const e=$(id);return e?e.textContent.trim():"";};
   const MESES_N=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"], dBR=s=>s.split("-").reverse().join("/");
@@ -10263,15 +10265,15 @@ function infPainelImprimir(comDet){
   let html=printCab("Painel de Infrações",`Velocidade e área restrita · ${periodo}`,{doc:"INF-PAINEL",meta:[["Registros",nf.format(atual.length)]]});
   html+=`<div class="filt"><b>Período:</b> ${esc(periodo)}${filtros.length?` · <b>Filtros:</b> ${filtros.map(esc).join(" · ")}`:" · sem outros filtros"}</div>`;
   html+=printKpis([kpi("Infrações no período","kpi-total","kpi-total-var"),kpi("Graves + Gravíssimas","kpi-graves","kpi-graves-sub"),kpi("Motoristas envolvidos","kpi-motoristas","kpi-motoristas-sub"),["Excesso médio",txt("kpi-excesso"),"acima do limite da via"],kpi("Notificadas via WhatsApp","kpi-notif","kpi-notif-sub")]);
-  html+=printSec("Gráficos","",1)+`<div class="g1">${img("tendencia","Evolução diária por gravidade","")}${img("classificacao","Distribuição por classificação","")}</div>`;
-  html+=`<div class="g3">${img("motoristas","Top 10 motoristas","pelos mais graves")}${img("locais","Locais com mais ocorrências","")}${img("melhores","Motoristas com menos infrações graves",txt("melhores-nota"))}</div>`;
+  html+=printSec("Gráficos","",1)+`<div class="gall"><div class="g1">${img("tendencia","Evolução diária por gravidade","")}${img("classificacao","Distribuição por classificação","")}</div>`;
+  html+=`<div class="g3">${img("motoristas","Top 10 motoristas","pelos mais graves")}${img("locais","Locais com mais ocorrências","")}${img("melhores","Motoristas com menos infrações graves",txt("melhores-nota"))}</div></div>`;
   if(comDet){
     const {col,asc}=ordenacao; const chave=i=>col==="motorista"?normTxt(i.motorista||("zzz "+i.matricula)):col==="data"?+i._dia:col==="excesso"?i.excesso:col==="velocidade"?i.velocidade:normTxt(i[col]);
     const ls=[...aplicarFiltrosTabela(atual)].sort((a,b)=>{const x=chave(a),y=chave(b);return (x<y?-1:x>y?1:0)*(asc?1:-1);});
     html+=printSec("Detalhamento das infrações",`${nf.format(ls.length)} registro(s)`,2)+`<table class="t"><thead><tr><th>Data</th><th>Hora</th><th>Motorista</th><th>Mat.</th><th>Veículo</th><th>Local</th><th>Origem</th><th class="r">Velocidade</th><th class="r">Limite</th><th class="r">Excesso</th><th>Classificação</th><th>Notificação</th></tr></thead><tbody>${ls.map(i=>`<tr><td class="nw">${fmtDia(i._dia)}/${i._dia.getFullYear()}</td><td class="nw">${esc(i.hora||"—")}</td><td>${esc(i.motorista||(i.matricula?"fora do Cadastro":"não identificado"))}</td><td class="nw">${esc(i.matricula||"—")}</td><td>${esc(i.veiculo||"—")}</td><td>${esc(i.localizacao||"")}</td><td>${esc(i.lista||"")}</td><td class="r">${esc(i.velocidade)} km/h</td><td class="r">${esc(i.limite)}</td><td class="r">+${esc(i.excesso)} km/h</td><td class="cls-${claseCss(i.classificacao)}">${esc(i.classificacao)}</td><td>${i.notificado?"Enviada":"Pendente"}</td></tr>`).join("")||`<tr><td colspan="12">Nenhuma infração com os filtros atuais.</td></tr>`}</tbody></table>`;
   }
   html+=printRodape("Operacional · Infrações");
-  printDoc({titulo:"Painel de Infrações",html,paisagem:true,fonte:10,css:`
+  printDoc({titulo:"Painel de Infrações",html,paisagem:!!paisagem,fonte:paisagem?10:9.5,css:`
     .filt{font-size:10.5px;color:#3B4352;margin:0 0 8px}
     .gr{border:.6px solid #C9CFD8;border-radius:3px;padding:6px 8px 8px;break-inside:avoid;min-width:0}
     .gr h3{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1E2153;margin:0 0 5px}
@@ -10280,13 +10282,18 @@ function infPainelImprimir(comDet){
     .g1{display:grid;grid-template-columns:2.1fr 1fr;gap:10px;margin-bottom:10px}
     .g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;break-before:auto}
     .g3 .gr img{max-height:70mm}
-    td.cls-gravissima{color:#B3271E;font-weight:800} td.cls-grave{color:#C2410C;font-weight:700}`});
+    td.cls-gravissima{color:#B3271E;font-weight:800} td.cls-grave{color:#C2410C;font-weight:700}
+    ${paisagem?"":`/* retrato: Evolução na largura toda, os outros 4 em duas colunas */
+    .gall{display:grid;grid-template-columns:1fr 1fr;gap:10px}.gall .g1,.gall .g3{display:contents}
+    .gall .g1 .gr:first-child{grid-column:1/-1}.gall .gr img{max-height:46mm}.gall .g1 .gr:first-child img{max-height:56mm}
+    table.t th,table.t td{padding:3px 4px;font-size:8.5px}`}`});
 }
 /* =====================================================================
    v0.12.61 · Relatórios novos das Infrações (padrão de impressão A4 do ERP, coloridos):
    Histórico do motorista (3/6/12 meses, reincidência e termo de ciência), Gerencial (12 meses), Por veículo,
    Por horário e dia da semana, Pendências de notificação. Tudo a partir dos dados já carregados no painel.
    ===================================================================== */
+const INF_ORI_PADRAO={painel:1,ger:1,veic:1,hora:1,pend:1,hist:0,mural:0,todos:0,um:0};   /* v0.12.62: orientação padrão de cada relatório (1 = paisagem); o usuário pode trocar no Relatórios */
 const INF_DSEM=["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"], INF_DSEM_IDX=[1,2,3,4,5,6,0];
 const INF_FAIXAS=[["Madrugada","00h–05h",0,5],["Manhã","06h–11h",6,11],["Tarde","12h–17h",12,17],["Noite","18h–23h",18,23]];
 function infMesesAte(fim,n){const out=[fim];while(out.length<n)out.unshift(relMesAnterior(out[0]));return out;}
@@ -10312,7 +10319,7 @@ function infSvgPilha(cols,w,h){
   return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block;max-width:${w}px"><line x1="0" y1="${base}" x2="${w}" y2="${base}" stroke="#8D96A3" stroke-width=".8"/>${barras}${leg}</svg>`;
 }
 function infImprimir(titulo,html,paisagem){
-  printDoc({titulo,html,paisagem:!!paisagem,fonte:10,css:`
+  printDoc({titulo,html,paisagem:!!paisagem,fonte:paisagem?10:9.5,css:`
     .gr{border:.6px solid #C9CFD8;border-radius:3px;padding:6px 8px 8px;break-inside:avoid;margin-bottom:8px}
     .tag{display:inline-block;padding:0 6px;border-radius:8px;font-size:9px;font-weight:800;color:#fff}
     .tag.c-gravissima{background:#8E1616}.tag.c-grave{background:#D9480F}.tag.c-media{background:#E8A013}.tag.c-baixa{background:#2F7D4F}
@@ -10324,7 +10331,10 @@ function infImprimir(titulo,html,paisagem){
     table.hm th{background:#EEF1F5;color:#1E2153;font-weight:800}
     table.hm td.d{font-weight:800;text-align:left;padding-left:6px;background:#F6F7F9}
     td.chk{width:16mm;border-left:.5px solid #C9CFD8}
-    tr.mot td{background:#F6F7F9;font-weight:800;color:#1E2153;border-top:.9px solid #8D96A3}`});
+    tr.mot td{background:#F6F7F9;font-weight:800;color:#1E2153;border-top:.9px solid #8D96A3}`+(paisagem?"":`
+    table.t th,table.t td{padding:3px 4px} table.t th{font-size:8px}
+    table.hm td,table.hm th{font-size:7.5px;padding:2px 0}
+    .grid2{grid-template-columns:1fr}`)});   /* retrato depois do CSS base, para valer */
 }
 const infTag=c=>`<span class="tag c-${claseCss(c)}">${esc(c)}</span>`;
 const infLinhaTab=(i,extra)=>`<tr><td class="nw">${infDataBR(i)}</td><td class="nw">${esc(i.hora||"—")}</td><td class="nw">${esc(i.veiculo||"—")}</td><td>${esc(i.localizacao||"")}</td><td>${esc(i.lista||"")}</td><td class="r">${esc(i.velocidade)} / ${i.limite?esc(i.limite):"—"}</td><td class="r">+${esc(i.excesso)}</td><td>${infTag(i.classificacao)}</td>${extra||""}</tr>`;
@@ -10431,6 +10441,7 @@ window.infRelatorios=()=>{
       <div class="field" id="relMesWrap"><label id="relMesLbl">Mês</label><select id="relMes">${meses.map(k=>`<option value="${k}">${relEsc(relLabelMes(k))}</option>`).join("")}</select></div>
       <div class="field" id="relNWrap" style="display:none"><label>Período</label><select id="relN"><option value="3">3 meses</option><option value="6" selected>6 meses</option><option value="12">12 meses</option></select></div>
       <div class="field" id="relMotWrap" style="display:none"><label>Motorista</label><select id="relMot">${mots.map(m=>`<option value="${relEsc(m.k)}">${relEsc(m.nome)}</option>`).join("")}</select></div>
+      <div class="field" id="relOriWrap"><label>Orientação da folha</label><select id="relOri"><option value="auto" id="relOriAuto">Padrão do relatório</option><option value="retrato">Retrato (vertical)</option><option value="paisagem">Paisagem (horizontal)</option></select></div>
       <div class="field" id="relPainelWrap"><label>Painel</label><label style="font-weight:400"><input type="checkbox" id="relDet"> incluir o detalhamento das infrações (${nf.format((window.__filtrado||[]).length)} registro(s) no filtro)</label></div>
       <div class="field" id="relPendWrap" style="display:none"><label>Pendências</label><label style="font-weight:400"><input type="checkbox" id="relPendTodas"> todas as pendentes, de qualquer mês (${nf.format(nPend)})</label></div>
       <div class="field" id="relRankWrap"><label>Mural</label><label style="font-weight:400"><input type="checkbox" id="relRank"> mostrar ranking dos motoristas com mais infrações (nomes)</label></div>
@@ -10438,16 +10449,17 @@ window.infRelatorios=()=>{
     </div><div class="hint" id="relHint" style="margin-top:8px"></div>`,
     async()=>{
       const mes=$("relMes").value, tipo=$("relTipo").value, frase=$("relFrase").value.trim();
-      if(tipo==="painel"){ infPainelImprimir($("relDet").checked); return true; }
-      if(tipo==="hist"){ if(!$("relMot").value){toast("Escolha o motorista.");return false;} infImprimir(`Histórico ${infNomeDe($("relMot").value)}`,relHist(mes,$("relMot").value,+$("relN").value,frase),false); return true; }
-      if(tipo==="ger"){ infImprimir(`Gerencial de infrações ${relLabelMes(mes)}`,relGer(mes),true); return true; }
-      if(tipo==="veic"){ infImprimir(`Infrações por veículo ${relLabelMes(mes)}`,relVeic(mes),true); return true; }
-      if(tipo==="hora"){ infImprimir(`Infrações por horário ${relLabelMes(mes)}`,relHora(mes),true); return true; }
-      if(tipo==="pend"){ const td=$("relPendTodas").checked; infImprimir(`Pendências de notificação ${td?"todas":relLabelMes(mes)}`,relPend(mes,td),true); return true; }
-      if(tipo==="mural") relAbrir(`Mural ${relLabelMes(mes)}`,relMural(mes,$("relRank").checked,frase));
-      else if(tipo==="um") relAbrir(`Relatório ${relLabelMes(mes)}`,relIndividual(mes,$("relMot").value,frase));
+      const ori=$("relOri").value, P=ori==="auto"?!!INF_ORI_PADRAO[tipo]:ori==="paisagem";   /* v0.12.62: retrato ou paisagem, à escolha */
+      if(tipo==="painel"){ infPainelImprimir($("relDet").checked,P); return true; }
+      if(tipo==="hist"){ if(!$("relMot").value){toast("Escolha o motorista.");return false;} infImprimir(`Histórico ${infNomeDe($("relMot").value)}`,relHist(mes,$("relMot").value,+$("relN").value,frase),P); return true; }
+      if(tipo==="ger"){ infImprimir(`Gerencial de infrações ${relLabelMes(mes)}`,relGer(mes),P); return true; }
+      if(tipo==="veic"){ infImprimir(`Infrações por veículo ${relLabelMes(mes)}`,relVeic(mes),P); return true; }
+      if(tipo==="hora"){ infImprimir(`Infrações por horário ${relLabelMes(mes)}`,relHora(mes),P); return true; }
+      if(tipo==="pend"){ const td=$("relPendTodas").checked; infImprimir(`Pendências de notificação ${td?"todas":relLabelMes(mes)}`,relPend(mes,td),P); return true; }
+      if(tipo==="mural") relAbrir(`Mural ${relLabelMes(mes)}`,relMural(mes,$("relRank").checked,frase),P);
+      else if(tipo==="um") relAbrir(`Relatório ${relLabelMes(mes)}`,relIndividual(mes,$("relMot").value,frase),P);
       else { const ms=[...new Set(dados.filter(i=>relMesKey(i.data)===mes&&i.matricula).map(i=>String(i.matricula)))].sort((p,q)=>(nomeMot(p)||p).localeCompare(nomeMot(q)||q,"pt-BR"));
-        if(!ms.length){toast("Nenhuma infração nesse mês.");return false;} relAbrir(`Relatórios individuais ${relLabelMes(mes)}`,ms.map(k=>relIndividual(mes,k,frase)).join("")); }
+        if(!ms.length){toast("Nenhuma infração nesse mês.");return false;} relAbrir(`Relatórios individuais ${relLabelMes(mes)}`,ms.map(k=>relIndividual(mes,k,frase)).join(""),P); }
       return true;
     });
   const DICA={
@@ -10457,15 +10469,16 @@ window.infRelatorios=()=>{
     hora:"Mapa de calor hora do dia × dia da semana, faixas do dia (madrugada, manhã, tarde, noite) com % de graves e os horários de pico do mês. A4 deitado.",
     pend:"Infrações ainda não notificadas por WhatsApp, agrupadas por motorista (graves primeiro), com os dias desde a infração e uma coluna de visto para a ciência. A4 deitado.",
     hist:"Evolução mês a mês do motorista no período que termina no mês escolhido, tendência, reincidência (graves em 2 ou mais meses), média da frota, todas as infrações e o termo de ciência para assinatura. A4 em pé.",
-    mural:"Abre numa nova janela já pronta para imprimir (ou salvar como PDF). Preto e branco, uma página.",
-    todos:"Abre numa nova janela já pronta para imprimir (ou salvar como PDF). Preto e branco, uma página por motorista.",
-    um:"Abre numa nova janela já pronta para imprimir (ou salvar como PDF). Preto e branco, uma página."};
+    mural:"Abre numa nova janela já pronta para imprimir (ou salvar como PDF). Preto e branco, pensado para uma página em retrato.",
+    todos:"Abre numa nova janela já pronta para imprimir (ou salvar como PDF). Preto e branco, uma página em retrato por motorista.",
+    um:"Abre numa nova janela já pronta para imprimir (ou salvar como PDF). Preto e branco, pensado para uma página em retrato."};
   const sync=()=>{const t=$("relTipo").value, mostra=(id,v)=>{$(id).style.display=v?"":"none";};
     mostra("relMotWrap",t==="um"||t==="hist"); mostra("relRankWrap",t==="mural"); mostra("relPainelWrap",t==="painel"); mostra("relPendWrap",t==="pend"); mostra("relNWrap",t==="hist");
     mostra("relMesWrap",t!=="painel"&&!(t==="pend"&&$("relPendTodas").checked)); $("relMesLbl").textContent=t==="hist"||t==="ger"?"Até o mês":"Mês";
     $("relFrase").closest(".field").style.display=["mural","todos","um","hist"].includes(t)?"":"none";
-    $("relHint").textContent=DICA[t]||"";};
-  $("relTipo").addEventListener("change",sync); $("relPendTodas").addEventListener("change",sync); sync(); $("mSave").textContent="Gerar";
+    $("relOriAuto").textContent=`Padrão do relatório (${INF_ORI_PADRAO[t]?"paisagem":"retrato"})`;
+    $("relHint").textContent=(DICA[t]||"").replace(/\s*A4 (deitado|em pé)\./,"").replace("em A4 deitado, colorido","colorido");};
+  $("relTipo").addEventListener("change",()=>{ $("relOri").value="auto"; sync(); }); $("relPendTodas").addEventListener("change",sync);   /* cada tipo começa na orientação padrão dele */ sync(); $("mSave").textContent="Gerar";
 };
 $("btn-relatorios").addEventListener("click",()=>infRelatorios());
 

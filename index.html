@@ -3019,6 +3019,13 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   .field input[type="date"], .field input[type="month"], .field input[type="time"] { display: block; width: 100%; min-height: 44px }   /* sem appearance:none — o iPhone esconderia o "dd/mm/aaaa" */
   .grid2 { grid-template-columns: 1fr }
 }
+/* v0.12.69 · Diretoria › Relatório Executivo: o documento impresso na tela (iframe), notas de origem e duplo clique */
+#execRoot .exec-doc{position:relative;overflow:hidden;border:1px solid var(--line, #DDE1E6);border-radius:var(--geo-r, 2px);background:#fff;margin-top:10px}
+#execRoot .exec-doc iframe{border:0;display:block;background:#fff}
+#execRoot .exec-info{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:10px;font-size:12.5px;color:var(--muted, #6B7280)}
+#execRoot .exec-badge{display:inline-block;border:1px solid #C9CFD8;border-radius:10px;padding:2px 9px;font-size:11.5px;font-weight:700;color:#1E2153;background:#F6F7F9}
+#execRoot .exec-badge.warn{color:#9A6A00;border-color:#E6C77A;background:#FFF6E5}#execRoot .exec-badge.ok{color:#197A46;border-color:#A9D5B8;background:#EEF8F1}
+#execRoot .exec-origens{margin-top:10px;font-size:12px;color:var(--muted, #6B7280);line-height:1.5}#execRoot .exec-origens .dev{color:#9A6A00}
 /* v0.12.68 · correções: Relatórios ao DETRO com "Por tipo"/"Por linha" como subquadros (sem número) e coluna "NC concluídas (todas)"; renomear o prefixo do veículo troca também em manutenções, não conformidades e multas (com confirmação). */
 /* v0.12.67 · Operacional › Frota: abas Veículos, Manutenção e Não conformidades (listas "Frota — Veículos", "Frota — Manutenção", "Frota — Não conformidades"); Relatórios ao DETRO de ponta a ponta (resumo executivo, indicadores com referência, gráficos, histórico de 6 meses, frota, vistoria, manutenção, plano de ação) — do cadastro quando há veículo; sem veículo, modelo fictício */
 /* v0.12.66 · Operacional › Frota: 🖨 Relatórios ao DETRO (frota, vistoria e conformidade, manutenção e disponibilidade, completo) — modelos com dados fictícios enquanto Frota/Vistoria/Manutenção estão em prévia; sem custos, valores, fornecedores nem nomes */
@@ -3117,7 +3124,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.68<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.69<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3154,7 +3161,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.68",
+  version: "v0.12.69",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -3223,6 +3230,7 @@ const MODULES = [
   { id: "recebimento", path: "#/financeiro/recebimento",       icon: "cash",    name: "Arrecadação",         area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto" },   /* v0.12.27 #15: saiu de prévia */
   { id: "sac",        path: "#/diretoria/sac",                 icon: "chart",   name: "SAC",                 area: "Diretoria",   groups: ["diretoria"],               status: "ativo", wide: true },
   { id: "pesquisa",   path: "#/diretoria/pesquisa-de-satisfacao", icon: "chart", name: "Pesquisa de Satisfação", area: "Diretoria", groups: ["diretoria"],               status: "ativo", wide: true },   /* v0.12.65 */
+  { id: "exec",       path: "#/diretoria/relatorio-executivo", icon: "chart",  name: "Relatório Executivo",  area: "Diretoria",   groups: ["diretoria"],               status: "piloto", wide: true },   /* v0.12.69 */
   /* v0.12.48: "Funcionários" saiu do menu do RH — o cadastro vive em Banco de Dados › Funcionários (#/rh/funcionarios redireciona) */
   /* v0.12.20: Avaliação de Desempenho (piloto) */
   { id: "rh_aval",    path: "#/rh/avaliacao-desempenho",       icon: "award",   name: "Avaliação de Desempenho", area: "Recursos Humanos", groups: ["rh", "diretoria"], status: "piloto" },
@@ -14518,6 +14526,7 @@ const PAG_DEF = {
   equip: [{ k: "pagbank", n: "Máquinas PagBank", rota: "#/operacional/equipamentos/pagbank" }, { k: "riocard", n: "Rio Card", rota: "#/operacional/equipamentos/riocard" }],
   di_equip: [{ k: "tablets", n: "Samsung Tablets", rota: "#/diretoria/equipamentos/tablets" }],
   rh_rel: [{ k: "ponto", n: "Controle de Ponto", rota: "#/rh/relatorios/controle-de-ponto" }],
+  exec: [{ k: "geral", n: "Geral", aba: "execAba('geral')" }, { k: "operacoes", n: "Operações", aba: "execAba('operacoes')" }],   /* v0.12.69 */
   frota: [{ k: "veic", n: "Veículos", aba: "frotaAba('veic')" }, { k: "manut", n: "Manutenção", aba: "frotaAba('manut')" }, { k: "nc", n: "Não conformidades", aba: "frotaAba('nc')" }, { k: "geral", n: "Visão geral (prévia)", aba: "frotaAba('geral')" }, { k: "multas", n: "Registro de Multas", aba: "frotaAba('multas')" }],
   rh_clt: [["leis", "Leis Ordinárias"], ["resumo", "Resumo (NMB)"], ["alertas", "Alertas & Ações"]].map(([k, n]) => ({ k, n, aba: `rhCltTab(decodeURIComponent('${k}')` })),
   rh_db: RHDB_CARDS.map(c => ({ k: c.id, n: c.name, rota: `#/rh/banco-de-dados/${c.id}` }))
@@ -18714,7 +18723,7 @@ window.capCtbImprimir = () => {
    centralizado, títulos em vermelho e cabeçalhos cinza). Cabeçalho com logo, título e ficha do documento (nº, emissão,
    emitido por); seções numeradas; tabelas com filete fino e números alinhados; rodapé com origem e paginação.
    ===================================================================== */
-function printDoc(o) {
+function printDocHtml(o) {   /* v0.12.69: monta o HTML completo do impresso (também usado pela tela do Relatório Executivo) */
   const tit = String(o.titulo || "Documento").replace(/[^\p{L}\p{N} .,:;·/()_+\-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "Documento";   /* v0.12.46: só letras, números e pontuação simples — o título vai dentro de <style> e <title> */
   const css = `
     @page { size: A4 ${o.paisagem ? "landscape" : "portrait"}; margin: 13mm 12mm 15mm;
@@ -18760,8 +18769,12 @@ function printDoc(o) {
     .rod, p.rod { margin: 12px 0 0; padding-top: 5px; border-top: .5px solid #C9CFD8; font-size: 9px; color: #6B7280; display: flex; justify-content: space-between; gap: 10px; text-align: left; }
     .rod b { color: #3B4352; }
     .blk { margin-top: 10px; }
+    .org { display: none; }   /* v0.12.69: nota de origem — só aparece na tela do Relatório Executivo */
     ${o.css || ""}`;
-  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(o.titulo || "Impressão")}</title><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet"><style>${css}</style></head><body>${o.html}</body></html>`;
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(o.titulo || "Impressão")}</title><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet"><style>${css}</style></head><body>${o.html}</body></html>`;
+}
+function printDoc(o) {
+  const html = printDocHtml(o);
   let fr = $("printFrame");
   if (!fr) { fr = document.createElement("iframe"); fr.id = "printFrame"; fr.setAttribute("aria-hidden", "true"); fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0"; document.body.appendChild(fr); }
   fr.srcdoc = html;
@@ -18781,7 +18794,7 @@ function printCab(titulo, sub, opt) {
 }
 function printKpis(arr) { return `<div class="kpis">${arr.map(([l, v, s, cls]) => `<div><div class="l">${esc(l)}</div><div class="v ${cls || ""}">${esc(v)}</div>${s ? `<div class="s">${esc(s)}</div>` : ""}</div>`).join("")}</div>`; }
 let PRINT_SEC_N = 0;
-function printSec(t, s, n) { return `<h2 class="sec">${n ? `<span class="n">${esc(String(n))}</span>` : ""}${esc(t)}${s ? `<span class="s">${esc(s)}</span>` : ""}</h2>`; }
+function printSec(t, s, n, attrs) { return `<h2 class="sec"${attrs || ""}>${n ? `<span class="n">${esc(String(n))}</span>` : ""}${esc(t)}${s ? `<span class="s">${esc(s)}</span>` : ""}</h2>`; }   /* attrs (v0.12.69): atributos de origem para a tela (data-rota/data-origem) */
 function printRodape(origem) { const quem = vcQuemEmite(); return `<div class="rod"><span>ERP NMB · ${esc(origem || "")}</span><span>Impresso em ${esc(new Date().toLocaleString("pt-BR"))} por <b>${esc(quem)}</b></span></div>`; }
 function printAssin(arr) { return `<div class="assin">${arr.map(([cargo, nome, quando]) => `<div><b>${esc(cargo)}</b>${esc(nome || "")}${quando ? `<br><span>${esc(quando)}</span>` : ""}</div>`).join("")}</div>`; }
 
@@ -22879,9 +22892,11 @@ function frotaDetroChart(cfg, w, h) {   /* gráfico fora da tela → imagem para
   try { cfg.options = Object.assign({ animation: false, responsive: false, devicePixelRatio: 2, plugins: {}, font: { family: "Manrope, Arial, sans-serif", size: 11 } }, cfg.options || {}); cfg.options.plugins = Object.assign({ legend: { display: false } }, cfg.options.plugins || {});
     const ch = new Chart(c, cfg); const src = ch.toBase64Image("image/png", 1); ch.destroy(); return src; } catch (e) { return ""; } finally { c.remove(); }
 }
-function frotaDetroRelatorio(tipo, paisagem) {
+const FROTA_ORG_ABAS = { veic: "Veículos", manut: "Manutenção", nc: "Não conformidades", multas: "Registro de Multas" };
+function frotaOrg(aba) { return ` data-rota="#/operacional/frota|${aba}" data-origem="${esc("Operacional › Frota › " + (FROTA_ORG_ABAS[aba] || "Veículos"))}"`; }   /* v0.12.69: origem da seção (duplo clique na tela do Relatório Executivo) */
+function frotaDetroRelatorio(tipo, paisagem, opt) {   /* opt.tela (v0.12.69): devolve o documento em vez de imprimir */
   const { demo, V, hist } = frotaDetroDados(), hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-  if (!V.length) { toast("Nenhum veículo ativo no cadastro.", 5000); return; }
+  if (!V.length) { toast("Nenhum veículo ativo no cadastro.", 5000); return null; }
   const titulos = { frota: "Relação da frota", vistoria: "Vistoria e conformidade da frota", manut: "Manutenção e disponibilidade da frota", dossie: "Frota e manutenção: relatório ao DETRO/RJ" };
   tipo = titulos[tipo] ? tipo : "dossie";
   const br = x => x ? `${String(x.getDate()).padStart(2, "0")}/${String(x.getMonth() + 1).padStart(2, "0")}/${x.getFullYear()}` : "—";
@@ -22889,7 +22904,7 @@ function frotaDetroRelatorio(tipo, paisagem) {
   const mesRef = hoje.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
   const selo = demo ? `<div class="alerta" style="font-weight:800;text-align:center;letter-spacing:.06em">MODELO — DADOS FICTÍCIOS (nenhum veículo cadastrado em Frota › Veículos; o relatório sai do cadastro assim que houver)</div>` : "";
   const tagSit = t => `<span class="tag" style="background:${/Reprovado|vencid|Sem vistoria/i.test(t) ? "#B3271E" : /restri|vence|manuten|aten/i.test(t) ? "#9A6A00" : "#197A46"}">${esc(t)}</span>`;
-  let n = 0; const S = (t, s) => printSec(t, s, ++n);
+  let n = 0; const S = (t, s, aba) => printSec(t, s, ++n, frotaOrg(aba || "veic"));
   /* ---- números ---- */
   const comIdade = V.filter(v => v.idade != null), idadeMed = comIdade.length ? comIdade.reduce((s, v) => s + v.idade, 0) / comIdade.length : null;
   const ncAb = V.flatMap(v => v.ncs.filter(x => x.status === "Aberta").map(x => Object.assign({ prefixo: v.prefixo }, x))), ncVenc = ncAb.filter(x => x.prazo && dias(x.prazo) < 0), ncGrav = ncAb.filter(x => x.grav === "Grave");
@@ -22951,15 +22966,15 @@ function frotaDetroRelatorio(tipo, paisagem) {
     <tr class="tot"><td>Período</td><td class="r">${hist.reduce((s, h) => s + h.prev, 0)}</td><td class="r">${hist.reduce((s, h) => s + h.corr, 0)}</td><td class="r">${hist.reduce((s, h) => s + h.prev, 0) ? (hist.reduce((s, h) => s + h.corr, 0) / hist.reduce((s, h) => s + h.prev, 0)).toFixed(1).replace(".", ",") : "—"}</td><td class="r">${hist.reduce((s, h) => s + h.ncAb, 0)}</td><td class="r">${hist.reduce((s, h) => s + h.ncCo, 0)}</td><td class="r">${hist.some(h => h.dispo != null) ? Math.round(hist.filter(h => h.dispo != null).reduce((s, h) => s + h.dispo, 0) / hist.filter(h => h.dispo != null).length) + "%" : "—"}</td></tr></tbody></table>`;
   /* ---- 5. relação da frota ---- */
   const secFrota = () => S("Relação da frota", `${V.length} veículo(s)`) + `<table class="t"><thead><tr><th>Prefixo</th><th>Placa</th><th>Tipo / modelo</th><th class="r">Ano</th><th class="r">Idade</th><th class="r">Sentados</th><th class="r">Em pé</th><th class="c">Acessível (elevador)</th><th class="c">Ar-cond.</th><th>Linha principal</th><th>Situação</th></tr></thead><tbody>${V.map(v => `<tr><td class="nw"><b>${esc(v.prefixo)}</b></td><td class="nw">${esc(v.placa)}</td><td>${esc(v.tipo)}${v.carroceria ? `<div class="mut">${esc(v.carroceria)}</div>` : ""}</td><td class="r">${n0(v.ano)}</td><td class="r ${v.idade != null && v.idade > DETRO_REF.idade ? "neg" : ""}">${v.idade == null ? "—" : `${v.idade} ano(s)`}</td><td class="r">${v.sentados}</td><td class="r">${v.empe || "—"}</td><td class="c">${v.elevador ? "Sim" : "Não"}</td><td class="c">${v.ar ? "Sim" : "Não"}</td><td>${esc(v.linha)}</td><td>${tagSit(v.situacao)}</td></tr>`).join("")}</tbody></table>`
-    + `<div class="grid2"><div class="blq">${printSec("Por tipo", "")}<table class="t"><thead><tr><th>Tipo</th><th class="r">Veículos</th><th class="r">Idade média</th><th class="r">Lugares</th><th class="r">Acessíveis</th></tr></thead><tbody>${[...new Set(V.map(v => v.tipo))].map(t => { const a = V.filter(v => v.tipo === t), ai = a.filter(v => v.idade != null); return `<tr><td>${esc(t)}</td><td class="r">${a.length}</td><td class="r">${ai.length ? dec(ai.reduce((s, v) => s + v.idade, 0) / ai.length) : "—"}</td><td class="r">${a.reduce((s, v) => s + v.sentados + v.empe, 0)}</td><td class="r">${a.filter(v => v.elevador).length}</td></tr>`; }).join("")}</tbody></table></div>
-       <div class="blq">${printSec("Por linha", "veículos alocados")}<table class="t"><thead><tr><th>Linha</th><th class="r">Veículos</th><th class="r">Lugares</th><th class="r">Acessíveis</th></tr></thead><tbody>${[...new Set(V.map(v => v.linha))].map(l => { const a = V.filter(v => v.linha === l); return `<tr><td>${esc(l)}</td><td class="r">${a.length}</td><td class="r">${a.reduce((s, v) => s + v.sentados + v.empe, 0)}</td><td class="r">${a.filter(v => v.elevador).length}</td></tr>`; }).join("")}</tbody></table></div></div>`;
+    + `<div class="grid2"><div class="blq">${printSec("Por tipo", "", 0, frotaOrg("veic"))}<table class="t"><thead><tr><th>Tipo</th><th class="r">Veículos</th><th class="r">Idade média</th><th class="r">Lugares</th><th class="r">Acessíveis</th></tr></thead><tbody>${[...new Set(V.map(v => v.tipo))].map(t => { const a = V.filter(v => v.tipo === t), ai = a.filter(v => v.idade != null); return `<tr><td>${esc(t)}</td><td class="r">${a.length}</td><td class="r">${ai.length ? dec(ai.reduce((s, v) => s + v.idade, 0) / ai.length) : "—"}</td><td class="r">${a.reduce((s, v) => s + v.sentados + v.empe, 0)}</td><td class="r">${a.filter(v => v.elevador).length}</td></tr>`; }).join("")}</tbody></table></div>
+       <div class="blq">${printSec("Por linha", "veículos alocados", 0, frotaOrg("veic"))}<table class="t"><thead><tr><th>Linha</th><th class="r">Veículos</th><th class="r">Lugares</th><th class="r">Acessíveis</th></tr></thead><tbody>${[...new Set(V.map(v => v.linha))].map(l => { const a = V.filter(v => v.linha === l); return `<tr><td>${esc(l)}</td><td class="r">${a.length}</td><td class="r">${a.reduce((s, v) => s + v.sentados + v.empe, 0)}</td><td class="r">${a.filter(v => v.elevador).length}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   /* ---- 6. vistoria ---- */
   const secVist = () => S("Vistoria e conformidade por veículo", "última vistoria, validade e não conformidades") + `<table class="t"><thead><tr><th>Prefixo</th><th>Última vistoria</th><th>Válida até</th><th>Resultado</th><th class="r">NC abertas</th><th class="r">Graves</th><th class="r">NC concluídas (todas)</th></tr></thead><tbody>${V.map(v => { const dv = dias(v.validade), ab = v.ncs.filter(x => x.status === "Aberta"); return `<tr><td class="nw"><b>${esc(v.prefixo)}</b></td><td class="nw">${br(v.vistoria)}</td><td class="nw ${dv != null && dv < 0 ? "neg" : ""}">${br(v.validade)}${dv == null ? "" : dv < 0 ? " · vencida" : dv === 0 ? " · vence hoje" : dv <= 60 ? ` · vence em ${dv} d` : ""}</td><td>${tagSit(v.resultado)}</td><td class="r">${ab.length || ""}</td><td class="r ${ab.some(x => x.grav === "Grave") ? "neg" : ""}">${ab.filter(x => x.grav === "Grave").length || ""}</td><td class="r">${v.ncs.filter(x => x.status === "Concluída").length || ""}</td></tr>`; }).join("")}</tbody></table>`
-    + `<div class="blq">${S("Não conformidades abertas", `${ncAb.length} item(ns) · prazo: Grave imediato, Média 7 dias, Leve 30 dias`)}<table class="t"><thead><tr><th>Prefixo</th><th>Item</th><th>Gravidade</th><th>Aberta em</th><th>Prazo</th><th>Situação</th></tr></thead><tbody>${ncAb.slice().sort((a, b) => (a.prazo || 0) - (b.prazo || 0)).map(x => { const dp = dias(x.prazo); return `<tr><td class="nw">${esc(x.prefixo)}</td><td>${esc(x.item)}</td><td class="${x.grav === "Grave" ? "neg" : ""}">${esc(x.grav)}</td><td class="nw">${br(x.abertura)}</td><td class="nw ${dp != null && dp < 0 ? "neg" : ""}">${br(x.prazo)}</td><td>${dp == null ? "—" : dp < 0 ? `vencida há ${-dp} d` : dp === 0 ? "vence hoje" : `em ${dp} d`}</td></tr>`; }).join("") || `<tr><td colspan="6">Nenhuma não conformidade aberta.</td></tr>`}</tbody></table></div>`;
+    + `<div class="blq">${S("Não conformidades abertas", `${ncAb.length} item(ns) · prazo: Grave imediato, Média 7 dias, Leve 30 dias`, "nc")}<table class="t"><thead><tr><th>Prefixo</th><th>Item</th><th>Gravidade</th><th>Aberta em</th><th>Prazo</th><th>Situação</th></tr></thead><tbody>${ncAb.slice().sort((a, b) => (a.prazo || 0) - (b.prazo || 0)).map(x => { const dp = dias(x.prazo); return `<tr><td class="nw">${esc(x.prefixo)}</td><td>${esc(x.item)}</td><td class="${x.grav === "Grave" ? "neg" : ""}">${esc(x.grav)}</td><td class="nw">${br(x.abertura)}</td><td class="nw ${dp != null && dp < 0 ? "neg" : ""}">${br(x.prazo)}</td><td>${dp == null ? "—" : dp < 0 ? `vencida há ${-dp} d` : dp === 0 ? "vence hoje" : `em ${dp} d`}</td></tr>`; }).join("") || `<tr><td colspan="6">Nenhuma não conformidade aberta.</td></tr>`}</tbody></table></div>`;
   /* ---- 7. manutenção ---- */
-  const secManut = () => S(`Manutenção e disponibilidade — ${mesRef}`, "preventivas, corretivas e disponibilidade (%) no mês") + `<table class="t"><thead><tr><th>Prefixo</th><th>Situação</th><th class="r">Preventivas</th><th class="r">Corretivas</th><th class="r">Disponibilidade</th><th>Próxima preventiva</th><th>Cronotacógrafo</th><th>Extintor</th><th class="c">Licenciamento</th></tr></thead><tbody>${V.map(v => `<tr><td class="nw"><b>${esc(v.prefixo)}</b></td><td>${tagSit(v.situacao)}</td><td class="r">${v.prevs || ""}</td><td class="r">${v.corr || ""}</td><td class="r ${v.dispo < 85 ? "neg" : ""}">${v.dispo}%</td><td class="nw">${[v.proxPrev ? br(v.proxPrev) : "", v.proxKm ? `${v.proxKm.toLocaleString("pt-BR")} km` : ""].filter(Boolean).join(" ou ") || '<span class="neg">não programada</span>'}</td><td class="nw ${v.tacografo && dias(v.tacografo) < 0 ? "neg" : ""}">${br(v.tacografo)}</td><td class="nw ${v.extintor && dias(v.extintor) < 0 ? "neg" : ""}">${br(v.extintor)}</td><td class="c">${n0(v.crlv)}${v.crlv != null && v.crlv < hoje.getFullYear() ? ' <span class="neg">pendente</span>' : ""}</td></tr>`).join("")}
+  const secManut = () => S(`Manutenção e disponibilidade — ${mesRef}`, "preventivas, corretivas e disponibilidade (%) no mês", "manut") + `<table class="t"><thead><tr><th>Prefixo</th><th>Situação</th><th class="r">Preventivas</th><th class="r">Corretivas</th><th class="r">Disponibilidade</th><th>Próxima preventiva</th><th>Cronotacógrafo</th><th>Extintor</th><th class="c">Licenciamento</th></tr></thead><tbody>${V.map(v => `<tr><td class="nw"><b>${esc(v.prefixo)}</b></td><td>${tagSit(v.situacao)}</td><td class="r">${v.prevs || ""}</td><td class="r">${v.corr || ""}</td><td class="r ${v.dispo < 85 ? "neg" : ""}">${v.dispo}%</td><td class="nw">${[v.proxPrev ? br(v.proxPrev) : "", v.proxKm ? `${v.proxKm.toLocaleString("pt-BR")} km` : ""].filter(Boolean).join(" ou ") || '<span class="neg">não programada</span>'}</td><td class="nw ${v.tacografo && dias(v.tacografo) < 0 ? "neg" : ""}">${br(v.tacografo)}</td><td class="nw ${v.extintor && dias(v.extintor) < 0 ? "neg" : ""}">${br(v.extintor)}</td><td class="c">${n0(v.crlv)}${v.crlv != null && v.crlv < hoje.getFullYear() ? ' <span class="neg">pendente</span>' : ""}</td></tr>`).join("")}
       <tr class="tot"><td colspan="2">Frota</td><td class="r">${prevMes}</td><td class="r">${corrMes}</td><td class="r">${dispoMed}%</td><td colspan="4"></td></tr></tbody></table>`
-    + `<div class="blq">${S("Serviços realizados no mês", `${V.reduce((s, v) => s + v.servicos.length, 0)} ordem(ns)`)}<table class="t"><thead><tr><th>Prefixo</th><th>Serviço</th><th>Tipo</th><th>Início</th><th>Fim</th><th>Situação</th></tr></thead><tbody>${V.flatMap(v => v.servicos.map(m => Object.assign({ prefixo: v.prefixo }, m))).sort((a, b) => String(a.DataInicio).localeCompare(String(b.DataInicio))).map(m => `<tr><td class="nw">${esc(m.prefixo)}</td><td>${esc(m.Title || "—")}</td><td class="${m.Tipo === "Corretiva" ? "neg" : ""}">${esc(m.Tipo || "—")}</td><td class="nw">${br(dLocal(ymd(m.DataInicio)))}</td><td class="nw">${m.DataFim ? br(dLocal(ymd(m.DataFim))) : "—"}</td><td>${esc(m.Situacao || "—")}</td></tr>`).join("") || `<tr><td colspan="6">Nenhum serviço registrado no mês.</td></tr>`}</tbody></table></div>`;
+    + `<div class="blq">${S("Serviços realizados no mês", `${V.reduce((s, v) => s + v.servicos.length, 0)} ordem(ns)`, "manut")}<table class="t"><thead><tr><th>Prefixo</th><th>Serviço</th><th>Tipo</th><th>Início</th><th>Fim</th><th>Situação</th></tr></thead><tbody>${V.flatMap(v => v.servicos.map(m => Object.assign({ prefixo: v.prefixo }, m))).sort((a, b) => String(a.DataInicio).localeCompare(String(b.DataInicio))).map(m => `<tr><td class="nw">${esc(m.prefixo)}</td><td>${esc(m.Title || "—")}</td><td class="${m.Tipo === "Corretiva" ? "neg" : ""}">${esc(m.Tipo || "—")}</td><td class="nw">${br(dLocal(ymd(m.DataInicio)))}</td><td class="nw">${m.DataFim ? br(dLocal(ymd(m.DataFim))) : "—"}</td><td>${esc(m.Situacao || "—")}</td></tr>`).join("") || `<tr><td colspan="6">Nenhum serviço registrado no mês.</td></tr>`}</tbody></table></div>`;
   /* ---- 8. plano de ação ---- */
   const plano = () => { const A = [];
     ncAb.forEach(x => A.push({ q: x.prazo, pre: x.prefixo, o: `${x.item} (NC ${x.grav.toLowerCase()})`, acao: "Corrigir e registrar a conclusão", pr: x.grav === "Grave" ? 1 : x.grav === "Média" ? 2 : 3 }));
@@ -22970,7 +22985,7 @@ function frotaDetroRelatorio(tipo, paisagem) {
     V.filter(v => v.dispo < 85).forEach(v => A.push({ q: null, pre: v.prefixo, o: `Disponibilidade ${v.dispo}% no mês`, acao: "Avaliar a causa das paradas", pr: 2 }));
     A.sort((a, b) => a.pr - b.pr || ((a.q || 9e15) - (b.q || 9e15)) || a.pre.localeCompare(b.pre, "pt-BR", { numeric: true }));
     const P = ["", "Imediata", "Curto prazo", "Programada"];
-    return S("Plano de ação", `${A.length} item(ns) · por prioridade e data`) + `<table class="t"><thead><tr><th>Prioridade</th><th>Prefixo</th><th>Ocorrência</th><th>Ação</th><th>Até</th></tr></thead><tbody>${A.map(a => `<tr><td class="${a.pr === 1 ? "neg" : ""}">${P[a.pr]}</td><td class="nw">${esc(a.pre)}</td><td>${esc(a.o)}</td><td>${esc(a.acao)}</td><td class="nw ${a.q && dias(a.q) < 0 ? "neg" : ""}">${a.q ? br(a.q) : "—"}</td></tr>`).join("") || `<tr><td colspan="5">Nenhuma pendência: frota em conformidade.</td></tr>`}</tbody></table>`; };
+    return S("Plano de ação", `${A.length} item(ns) · por prioridade e data`, "nc") + `<table class="t"><thead><tr><th>Prioridade</th><th>Prefixo</th><th>Ocorrência</th><th>Ação</th><th>Até</th></tr></thead><tbody>${A.map(a => `<tr><td class="${a.pr === 1 ? "neg" : ""}">${P[a.pr]}</td><td class="nw">${esc(a.pre)}</td><td>${esc(a.o)}</td><td>${esc(a.acao)}</td><td class="nw ${a.q && dias(a.q) < 0 ? "neg" : ""}">${a.q ? br(a.q) : "—"}</td></tr>`).join("") || `<tr><td colspan="5">Nenhuma pendência: frota em conformidade.</td></tr>`}</tbody></table>`; };
   const kpis = () => printKpis([["Frota", String(V.length), `${operando.length} em operação · ${parados.length} em manutenção`], ["Idade média", idadeMed == null ? "—" : dec(idadeMed) + " anos", comIdade.length ? `mais nova ${Math.min(...comIdade.map(v => v.idade))} · mais antiga ${Math.max(...comIdade.map(v => v.idade))}` : "sem ano de fabricação"],
       ["Acessíveis", `${pct(acess.length, V.length)}%`, `${acess.length} com elevador`], ["Vistoria em dia", `${vistOk.length}/${V.length}`, `${ncAb.length} não conformidade(s) aberta(s)`, vistVenc.length ? "neg" : ""], ["Disponibilidade", dispoMed + "%", `média de ${mesRef}`, dispoMed < DETRO_REF.dispo ? "neg" : ""], ["Pendências", String(ncAb.length + docsVenc.length), `${ncGrav.length} grave(s) · ${docsVenc.length} doc. vencido(s)`, ncGrav.length + docsVenc.length ? "neg" : ""]]);
   const quebra = `<div style="break-before:page"></div>`;
@@ -22982,7 +22997,7 @@ function frotaDetroRelatorio(tipo, paisagem) {
   html += `<div class="filt" style="margin-top:6px">Informações operacionais da frota. Não incluem custos, valores, fornecedores nem dados pessoais.${demo ? "" : " Fonte: cadastro do ERP (Frota › Veículos, Manutenção e Não conformidades)."}</div>`;
   if (tipo === "dossie" || tipo === "vistoria") html += printAssin([["Responsável técnico pela frota", ""], ["Diretoria", ""]]);
   html += printRodape("Operacional · Frota · relatório ao DETRO");
-  printDoc({ titulo: titulos[tipo], html, paisagem: !!paisagem, fonte: paisagem ? 10 : 9, css: `
+  const doc = { titulo: titulos[tipo], html, paisagem: !!paisagem, fonte: paisagem ? 10 : 9, css: `
     .tag{display:inline-block;padding:0 6px;border-radius:8px;font-size:9px;font-weight:800;color:#fff;white-space:nowrap}
     .alerta{border-left:3px solid #D9480F;background:#FFF6F0;padding:6px 9px;margin:6px 0;font-size:10.5px}
     .filt{font-size:10px;color:#3B4352}
@@ -22990,7 +23005,9 @@ function frotaDetroRelatorio(tipo, paisagem) {
     .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px} .g3 .g-l{grid-column:span 2} .g3 > div{min-width:0}
     .gr{border:.6px solid #C9CFD8;border-radius:3px;padding:6px 8px;break-inside:avoid} .gr h3{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#1E2153;margin:0 0 4px;display:flex;justify-content:space-between;gap:6px} .gr h3 span{text-transform:none;letter-spacing:0;font-weight:600;color:#6B7280} .gr img{width:100%;height:auto;display:block}
     h2.sec{break-after:avoid;page-break-after:avoid}.blq{break-inside:avoid;page-break-inside:avoid}
-    ${paisagem ? "table.t th,table.t td{padding:3px 6px} h2.sec{margin:10px 0 4px} .rod{margin-top:8px}" : "table.t th,table.t td{padding:3px 4px;font-size:8.5px} table.t th{font-size:7.5px} .grid2{grid-template-columns:1fr} .g3{grid-template-columns:1fr 1fr} .g3 .g-l{grid-column:span 2}"}` });
+    ${paisagem ? "table.t th,table.t td{padding:3px 6px} h2.sec{margin:10px 0 4px} .rod{margin-top:8px}" : "table.t th,table.t td{padding:3px 4px;font-size:8.5px} table.t th{font-size:7.5px} .grid2{grid-template-columns:1fr} .g3{grid-template-columns:1fr 1fr} .g3 .g-l{grid-column:span 2}"}` };
+  if (opt && opt.tela) return doc;
+  printDoc(doc); return doc;
 }
 window.frotaDetroRelatorios = () => {
   openModal("Relatórios ao DETRO — Frota e manutenção", `
@@ -23271,6 +23288,217 @@ window.multaExcluir = async id => {
     const m = MODULES.find(x => x.id === "frota"); if (!canSee(m)) { location.hash = "#/inicio"; return; }
     session.modAtual = "frota"; session.pagAtual = ""; document.body.classList.remove("wide", "nav-open");
     $("main").innerHTML = pageFrota(); renderFrota(); navAtivo("frota"); window.scrollTo(0, 0);
+  };
+}
+
+/* =====================================================================
+   v0.12.69 · Diretoria › Relatório Executivo — saúde da empresa ao DETRO/RJ (aba Geral) e relatórios por departamento (aba Operações).
+   A tela mostra o próprio documento impresso (mesmo HTML do printDoc, num iframe): o que se vê é o que sai no PDF.
+   Duplo clique numa seção, linha ou gráfico abre no ERP a origem do dado; quando a origem ainda não existe, uma nota diz
+   "em desenvolvimento" e nomeia o módulo. A aba Geral sai em modo de demonstração (massa fictícia determinística) até as
+   origens serem ligadas; a aba Operações mostra os dados e os relatórios ao DETRO da Frota (cadastro real ou modelo).
+   ===================================================================== */
+const EXEC = { aba: "geral", W: 800 };
+const EXEC_ROTAS = {
+  viag: ["dev", "Operacional › Controle de Viagens"], pax: ["#/operacional/estatistica-de-passageiros", "Operacional › Estatística de Passageiros"],
+  veic: ["#/operacional/frota|veic", "Operacional › Frota › Veículos"], manut: ["#/operacional/frota|manut", "Operacional › Frota › Manutenção"], nc: ["#/operacional/frota|nc", "Operacional › Frota › Não conformidades"], multas: ["#/operacional/frota|multas", "Operacional › Frota › Registro de Multas"],
+  inf: ["#/operacional/painel-de-infracoes", "Operacional › Painel de Infrações"], sin: ["dev", "Operacional › Ocorrências e sinistros"],
+  func: ["#/rh/banco-de-dados/funcs", "Recursos Humanos › Banco de Dados › Funcionários"], ponto: ["#/rh/relatorios/controle-de-ponto", "Recursos Humanos › Relatórios › Controle de Ponto"], trein: ["dev", "Recursos Humanos › Treinamentos"],
+  sac: ["#/diretoria/sac", "Diretoria › SAC"], psq: ["#/diretoria/pesquisa-de-satisfacao", "Diretoria › Pesquisa de Satisfação"],
+  hor: ["#/operacional/tabela-de-horarios", "Operacional › Tabela de Horários"], tar: ["#/operacional/tabela-de-tarifas", "Operacional › Tabela de Tarifas"],
+  vist: ["dev", "Operacional › Vistoria (checklist)"], seg: ["dev", "Operacional › Frota › Seguros"] };
+function execOrg(k) { const r = EXEC_ROTAS[k]; return r ? ` data-rota="${esc(r[0])}" data-origem="${esc(r[1])}"` : ""; }
+/* mês de referência = último mês fechado */
+function execRef() { const h = new Date(); const ref = new Date(h.getFullYear(), h.getMonth() - 1, 1); const fim = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+  const mes = d => d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }), curto = d => d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "") + "/" + String(d.getFullYear()).slice(2);
+  const meses = Array.from({ length: 6 }, (_, i) => curto(new Date(ref.getFullYear(), ref.getMonth() - 5 + i, 1)));
+  const br = d => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  const mais = n => { const d = new Date(fim); d.setDate(d.getDate() + n); return br(d); };
+  return { ref, fim, mes: mes(ref), mesAnt: new Date(ref.getFullYear(), ref.getMonth() - 1, 1).toLocaleDateString("pt-BR", { month: "long" }), meses, fimBr: br(fim), mais, cod: `DETRO-SAUDE-${ref.getFullYear()}${String(ref.getMonth() + 1).padStart(2, "0")}`, ano: ref.getFullYear() }; }
+/* documento da aba Geral (dados fictícios determinísticos; cada bloco passa a ler a origem real quando ela existir) */
+function execGeralDoc() {
+  const R = execRef(), C = { azul: "#1E2153", verde: "#197A46", amb: "#9A6A00", verm: "#B3271E", cinza: "#8D96A3", claro: "#C9CFD8", lar: "#F1612F" };
+  const n = x => Number(x).toLocaleString("pt-BR"), p1 = x => x.toFixed(1).replace(".", ",") + "%";
+  const tag = t => `<span class="tag ${t === "Adequado" ? "ok" : t === "Atenção" ? "at" : "cr"}">${esc(t)}</span>`;
+  let ns = 0; const S = (t, s, k) => printSec(t, s, ++ns, execOrg(k));
+  const img = (src, t, s, k) => `<div class="gr"${execOrg(k)}><h3>${esc(t)}${s ? `<span>${esc(s)}</span>` : ""}</h3>${src ? `<img src="${src}" alt="${esc(t)}">` : '<p class="mut">—</p>'}</div>`;
+  const leg = { legend: { display: true, position: "top", align: "end", labels: { boxWidth: 8, boxHeight: 8, font: { size: 8 }, padding: 6, filter: it => it.text && it.text !== "undefined" } } };
+  const eixo = { ticks: { font: { size: 8 } } }, M = R.meses, Cap = R.mes.charAt(0).toUpperCase() + R.mes.slice(1);
+  /* ---- massa fictícia ---- */
+  const linhas = [["Macaé ↔ Conceição de Macabu", 1860, 1842, 95.8, 71240, 12610, 68], ["Macaé ↔ Madalena", 1240, 1214, 91.3, 42380, 7920, 61], ["Conceição de Macabu ↔ Madalena", 620, 614, 95.1, 14810, 2330, 47]];
+  const tProg = 3720, tReal = 3670, tPax = 128430, tGrat = 22860, pont = 94.2, km = 186400;
+  const hCump = [97.9, 98.4, 97.6, 98.1, 98.3, 98.7], hPont = [92.1, 93.0, 91.8, 93.4, 93.9, 94.2], hPag = [101.2, 103.8, 99.6, 104.1, 102.9, 105.6], hGrat = [20.9, 21.6, 20.8, 22.0, 21.7, 22.9], hDispo = [91, 92, 89, 93, 92, 93];
+  const hInf = { Leve: [30, 28, 33, 27, 29, 26], Média: [14, 12, 15, 13, 13, 12], Grave: [6, 4, 5, 5, 4, 3], Gravíssima: [1, 0, 1, 0, 1, 0] }, hNps = [31, 35, 33, 38, 40, 42];
+  const blocos = [["Compra da passagem", 84], ["Viagem", 76], ["Motorista", 88], ["Atendimento", 81]];
+  /* ---- gráficos (fora da tela → imagem) ---- */
+  const g1 = frotaDetroChart({ type: "line", data: { labels: M, datasets: [{ label: "Viagens cumpridas", data: hCump, borderColor: C.azul, backgroundColor: C.azul, tension: .3, pointRadius: 2.5 }, { label: "Pontualidade", data: hPont, borderColor: C.lar, backgroundColor: C.lar, tension: .3, pointRadius: 2.5 }, { label: "Referência 98% / 95%", data: hCump.map(() => 98), borderColor: C.cinza, borderDash: [4, 4], pointRadius: 0 }, { data: hCump.map(() => 95), borderColor: C.cinza, borderDash: [4, 4], pointRadius: 0 }] }, options: { plugins: leg, scales: { x: eixo, y: { min: 88, max: 100, ticks: { font: { size: 8 }, callback: x => x + "%" } } } } }, 345, 150);
+  const g2 = frotaDetroChart({ type: "bar", data: { labels: M, datasets: [{ label: "Pagantes (mil)", data: hPag, backgroundColor: C.azul, stack: "a" }, { label: "Gratuidades (mil)", data: hGrat, backgroundColor: C.lar, stack: "a" }] }, options: { plugins: leg, scales: { x: { stacked: true, ticks: { font: { size: 8 } } }, y: { stacked: true, beginAtZero: true, ticks: { font: { size: 8 } } } } } }, 345, 150);
+  const g3 = frotaDetroChart({ type: "bar", data: { labels: M, datasets: [{ label: "Disponibilidade", data: hDispo, backgroundColor: hDispo.map(v => v >= DETRO_REF.dispo ? C.verde : C.amb) }, { label: `Referência ${DETRO_REF.dispo}%`, type: "line", data: hDispo.map(() => DETRO_REF.dispo), borderColor: C.cinza, borderDash: [4, 4], pointRadius: 0 }] }, options: { plugins: leg, scales: { x: eixo, y: { min: 80, max: 100, ticks: { font: { size: 8 }, callback: x => x + "%" } } } } }, 345, 225);
+  const g4 = frotaDetroChart({ type: "bar", data: { labels: M, datasets: [{ label: "Leve", data: hInf.Leve, backgroundColor: C.claro, stack: "a" }, { label: "Média", data: hInf.Média, backgroundColor: C.amb, stack: "a" }, { label: "Grave", data: hInf.Grave, backgroundColor: C.verm, stack: "a" }, { label: "Gravíssima", data: hInf.Gravíssima, backgroundColor: "#6B1410", stack: "a" }] }, options: { plugins: leg, scales: { x: { stacked: true, ticks: { font: { size: 8 } } }, y: { stacked: true, beginAtZero: true, ticks: { font: { size: 8 }, precision: 0 } } } } }, 345, 205);
+  const g5 = frotaDetroChart({ type: "bar", data: { labels: blocos.map(b => b[0]), datasets: [{ label: "Aprovação (Excelente + Bom)", data: blocos.map(b => b[1]), backgroundColor: blocos.map(b => b[1] >= 80 ? C.verde : C.amb) }] }, options: { indexAxis: "y", plugins: leg, scales: { x: { min: 0, max: 100, ticks: { font: { size: 8 }, callback: x => x + "%" } }, y: { ticks: { font: { size: 8 }, autoSkip: false } } } } }, 345, 112);
+  const g6 = frotaDetroChart({ type: "line", data: { labels: M, datasets: [{ label: "NPS", data: hNps, borderColor: C.azul, backgroundColor: C.azul, tension: .3, pointRadius: 2.5 }, { label: "Referência +30", data: hNps.map(() => 30), borderColor: C.cinza, borderDash: [4, 4], pointRadius: 0 }] }, options: { plugins: leg, scales: { x: eixo, y: { min: 0, max: 60, ticks: { font: { size: 8 } } } } } }, 345, 95);
+  /* ---- cabeçalho, selo, síntese e números-chave ---- */
+  const cab = printCab("Relatório mensal de saúde operacional", `${Cap} · operação, frota, segurança, pessoas, atendimento e conformidade`, { doc: R.cod, meta: [["Destinatário", "DETRO/RJ"], ["Referência", R.mes]], stamp: "Modelo · dados fictícios", stampCls: "warn" });
+  const selo = `<div class="alerta" style="font-weight:800;text-align:center;letter-spacing:.06em">MODELO — DADOS FICTÍCIOS (demonstração: os blocos passam a ler o ERP conforme as origens forem ligadas)</div>`;
+  const sintese = `<div class="sint"><b>Situação geral: ${tag("Adequado")} com 3 pontos de atenção.</b> Em ${R.mes} a empresa realizou <b>${n(tReal)} de ${n(tProg)} viagens programadas (${p1(tReal / tProg * 100)})</b> e transportou <b>${n(tPax)} passageiros</b> (${p1(tGrat / tPax * 100)} em gratuidades), com pontualidade de ${p1(pont)} — abaixo da referência de 95% na linha Macaé ↔ Madalena. A frota de 13 veículos tem idade média de 7,4 anos, 92% das vistorias em dia (1 vence em 15 dias) e disponibilidade de 93%. Houve <b>3 infrações graves</b> (eram 5 em ${R.mesAnt}), nenhum sinistro com vítima, 2,1 reclamações por 100 mil passageiros e NPS +42. Pontos de atenção: pontualidade da linha Macaé ↔ Madalena, extintor vencido em 1 veículo e 1 motorista reincidente em infrações graves (termo de ciência aplicado).</div>`;
+  const kpi = (l, v, sub, st, small, k) => `<div${execOrg(k)}><div class="l">${esc(l)}</div><div class="v">${esc(v)}${small ? `<small>${esc(small)}</small>` : ""}</div><div class="s"><span>${esc(sub)}</span>${st ? tag(st) : ""}</div></div>`;
+  const kpis = `<div class="k8">
+    ${kpi("Viagens cumpridas", p1(tReal / tProg * 100), "ref. ≥ 98% · 50 não realizadas", "Adequado", "", "viag")}
+    ${kpi("Pontualidade (até 5 min)", p1(pont), `ref. ≥ 95% · ${R.mesAnt.slice(0, 3)} 93,9%`, "Atenção", "", "viag")}
+    ${kpi("Passageiros transportados", n(tPax), `▲ 3,1% sobre ${R.mesAnt} · 17,8% gratuidades`, null, "", "pax")}
+    ${kpi("Frota ativa · idade média", "13", "ref. ≤ 10 anos · 2 acima de 10", "Adequado", "7,4 anos", "veic")}
+    ${kpi("Vistoria DETRO em dia", "92%", "12 de 13 · 1 vence em 15 d", "Atenção", "", "veic")}
+    ${kpi("Disponibilidade da frota", "93%", "ref. ≥ 90% · 1 veículo abaixo de 85%", "Adequado", "", "manut")}
+    ${kpi("Infrações graves · sinistros", "3", `▼ 2 sobre ${R.mesAnt} · 0 sinistros com vítima`, "Atenção", "1 reincidente", "inf")}
+    ${kpi("Reclamações · NPS", "2,1", "por 100 mil passageiros · ref. ≤ 3 · NPS +42", "Adequado", "SLA 96%", "sac")}
+  </div>`;
+  /* ---- 1. operação ---- */
+  const secOp = S("Operação: viagens e passageiros", `${R.mes} · ${n(km)} km rodados`, "viag") + `<table class="t"><thead><tr><th>Linha</th><th class="r">Viagens programadas</th><th class="r">Realizadas</th><th class="r">Cumprimento</th><th class="r">Pontualidade</th><th class="r">Passageiros</th><th class="r">Gratuidades</th><th class="r">Ocupação média</th></tr></thead><tbody>
+    ${linhas.map(([l, pr, re, po, px, gr, oc]) => `<tr><td><b>${esc(l)}</b></td><td class="r"${execOrg("hor")}>${n(pr)}</td><td class="r">${n(re)}</td><td class="r ${re / pr < .98 ? "neg" : ""}">${p1(re / pr * 100)}</td><td class="r ${po < 95 ? "neg" : ""}">${p1(po)}</td><td class="r"${execOrg("pax")}>${n(px)}</td><td class="r"${execOrg("pax")}>${n(gr)} <span class="mut">(${p1(gr / px * 100)})</span></td><td class="r"${execOrg("pax")}>${oc}%</td></tr>`).join("")}
+    <tr class="tot"><td>Total</td><td class="r">${n(tProg)}</td><td class="r">${n(tReal)}</td><td class="r">${p1(tReal / tProg * 100)}</td><td class="r">${p1(pont)}</td><td class="r">${n(tPax)}</td><td class="r">${n(tGrat)} (${p1(tGrat / tPax * 100)})</td><td class="r">63%</td></tr></tbody></table>
+    <div class="filt">Viagens não realizadas (50): quebra em viagem 18 · falta de veículo 9 · condições da via 11 · outros 12. <span${execOrg("pax")}>Gratuidades: idosos 61%, PCD e acompanhante 14%, estudantes 19%, demais 6%.</span></div>
+    <div class="grid2" style="margin-top:5px">${img(g1, "Viagens cumpridas e pontualidade", "últimos 6 meses", "viag")}${img(g2, "Passageiros por mês", "pagantes e gratuidades, em milhares", "pax")}</div>`;
+  /* ---- 2. frota ---- */
+  const lin = (l, v, r, o, st, k) => `<tr${execOrg(k)}><td>${esc(l)}</td><td class="r"><b>${esc(v)}</b></td><td class="r mut">${esc(r)}</td><td class="mut">${esc(o)}</td><td>${st ? tag(st) : ""}</td></tr>`;
+  const tabInd = rows => `<table class="t"><thead><tr><th>Indicador</th><th class="r">Valor</th><th class="r">Referência</th><th>Observação</th><th>Situação</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  const secFrota = S("Frota e manutenção", "13 veículos ativos: 11 em operação, 1 em manutenção, 1 de reserva", "veic") + `<div class="grid2 g21">
+    <div>${tabInd([
+      lin("Idade média da frota", "7,4 anos", `≤ ${DETRO_REF.idade} anos`, "mais antigo: 12 anos; 2 acima de 10", "Adequado", "veic"),
+      lin("Acessibilidade (elevador)", "69%", "100%", "9 de 13 veículos", "Atenção", "veic"),
+      lin("Vistoria DETRO em dia", "92%", "100%", "12 de 13; 11 aprovados, 2 com restrições", "Atenção", "veic"),
+      lin("Disponibilidade média", "93%", `≥ ${DETRO_REF.dispo}%`, "1 veículo com 78% (corretiva longa)", "Adequado", "manut"),
+      lin("Preventivas / corretivas", "9 / 6", "corr. ≤ prev.", "0,7 corretiva por preventiva", "Adequado", "manut"),
+      lin("Não conformidades abertas", "7", `≤ ${DETRO_REF.ncVeic} por veículo`, "0 graves, 2 médias, 5 leves; 1 fora do prazo", "Adequado", "nc"),
+      lin("Documentos técnicos vencidos", "1", "0", "1 extintor; 3 vencem em 60 dias", "Crítico", "veic")])}</div>
+    <div>${img(g3, "Disponibilidade da frota", `dias operáveis ÷ dias do mês · referência ${DETRO_REF.dispo}%`, "manut")}</div></div>`;
+  /* ---- 3. segurança ---- */
+  const secSeg = S("Segurança viária", "infrações de velocidade (telemetria), multas e sinistros", "inf") + `<div class="grid2 g21">
+    <div>${tabInd([
+      lin("Infrações de velocidade", "41", "queda", `▼ 13% sobre ${R.mesAnt}; 22 por 100 mil km`, "Adequado", "inf"),
+      lin("Graves e gravíssimas", "3", "0", `eram 5 em ${R.mesAnt}; excesso médio 9 km/h`, "Atenção", "inf"),
+      lin("Motoristas reincidentes", "1", "0", "graves em 2+ meses; termo de ciência aplicado", "Atenção", "inf"),
+      lin("Notificação ao motorista", "100%", "100% em 48 h", "41 de 41 notificadas", "Adequado", "inf"),
+      lin("Multas de trânsito recebidas", "2", "—", "1 média, 1 leve; nenhuma por velocidade", null, "multas"),
+      lin("Sinistros", "1 / 0", "0 com vítima", "1 sem vítima (manobra em pátio)", "Adequado", "sin")])}</div>
+    <div>${img(g4, "Infrações por gravidade", "últimos 6 meses", "inf")}</div></div>`;
+  /* ---- 4. motoristas ---- */
+  const secMot = S("Motoristas e jornada", "24 motoristas ativos", "func") + tabInd([
+      lin("Aptos pela documentação", "96%", "100%", "23 de 24: 1 ASO periódico agendado", "Atenção", "func"),
+      lin("CNH D/E e exame toxicológico em dia", "100%", "100%", "24 de 24 nos dois itens", "Adequado", "func"),
+      lin("Curso de transporte coletivo válido", "96%", "100%", "1 vence em 20 dias; reciclagem agendada", "Atenção", "func"),
+      lin("Horas extras no mês (média)", "11,6 h", "≤ 20 h", "maior individual 19 h; 0 acima de 2 h/dia", "Adequado", "ponto"),
+      lin("Treinamento no mês", "18", "—", "direção defensiva (18 de 24); turma 2 no mês seguinte", null, "trein")]);
+  /* ---- 5. atendimento ---- */
+  const secAt = S("Atendimento ao passageiro", "SAC e pesquisa de satisfação", "sac") + `<div class="grid2 g21">
+    <div>${tabInd([
+      lin("Chamados no SAC", "27", "—", "15 reclamações, 6 sugestões, 5 elogios, 1 informação", null, "sac"),
+      lin("Reclamações por 100 mil passageiros", "1,2", "≤ 3", "temas: atraso 6 · conduta 4 · lotação 3 · limpeza 2", "Adequado", "sac"),
+      lin("Resolvidos no prazo", "96%", "≥ 95%", "1ª resposta em 3 h; resolução em 1,8 dias; 2 abertos, nenhum atrasado", "Adequado", "sac"),
+      lin("Pesquisa: respostas válidas", "86", "—", "passageiros únicos no mês; itens mais criticados: pontualidade (22% ruim), lotação (18%), ar-condicionado (15%)", null, "psq"),
+      lin("NPS · satisfação geral", "+42 · 7,9", "≥ +30 · ≥ 7", "56% promotores, 14% detratores; nota do motorista 8,3", "Adequado", "psq")])}</div>
+    <div>${img(g5, "Aprovação por bloco", "% Excelente + Bom", "psq")}<div style="height:6px"></div>${img(g6, "NPS", "últimos 6 meses · referência +30", "psq")}</div></div>`;
+  /* ---- 6. conformidade + 7. plano ---- */
+  const conf = [["Vistoria DETRO", "12 de 13 em dia", "MOD 011 vence em 15 dias (agendada)", "Atenção", "veic"], ["Licenciamento anual (CRLV)", "13 de 13", `exercício ${R.ano} pago`, "Adequado", "veic"], ["Cronotacógrafos aferidos", "13 de 13", "2 aferições vencem em 60 dias", "Adequado", "veic"], ["Extintores de incêndio", "12 de 13", `MOD 007 vencido; troca em ${R.mais(10)}`, "Crítico", "veic"], ["Adesivos e informações obrigatórias", "29 de 30 itens", "média da frota pelo checklist; 1 NC leve", "Atenção", "vist"], ["Quadro de horários e tarifas vigentes", "publicados", `quadro de ${R.ano} em vigor; tarifas conforme ato do DETRO`, "Adequado", "hor"], ["Canais de atendimento (SAC)", "ativos", "WhatsApp, telefone e e-mail; prazos conforme SLA", "Adequado", "sac"], ["Seguro de responsabilidade civil", "vigente", "renovação em 60 dias", "Adequado", "seg"]];
+  const secConf = S("Conformidade e regularidade", `em ${R.fimBr}`, "veic") + `<table class="t"><thead><tr><th>Item</th><th>Situação</th><th>Status</th></tr></thead><tbody>${conf.map(([a, b, c, d, k]) => `<tr${execOrg(k)}><td><b>${esc(a)}</b></td><td>${esc(b)}<div class="mut">${esc(c)}</div></td><td>${tag(d)}</td></tr>`).join("")}</tbody></table>`;
+  const plano = [["Imediata", "Substituir o extintor vencido do MOD 007 e registrar a NC como concluída", R.mais(10), "Manutenção", "nc"], ["Curto prazo", "Vistoria DETRO do MOD 011 (vence em 15 dias)", R.mais(22), "Frota", "veic"], ["Curto prazo", "Pontualidade da linha Macaé ↔ Madalena: ajustar o quadro nos horários de pico (+10 min)", R.mais(31), "Operação", "viag"], ["Curto prazo", "Motorista reincidente: reciclagem em direção defensiva e acompanhamento por 90 dias", R.mais(31), "RH / Operação", "inf"], ["Programada", "Turma 2 de direção defensiva (6 motoristas) e ASO periódico pendente", R.mais(46), "RH", "func"], ["Programada", `Ampliar a acessibilidade: próximas renovações com elevador (meta 85% em ${R.ano + 1})`, String(R.ano + 1), "Diretoria", "veic"]];
+  const secPlano = S("Plano de ação", "compromissos para o próximo período", "nc") + `<table class="t"><thead><tr><th>Prioridade</th><th>Ação</th><th class="nw">Prazo</th></tr></thead><tbody>${plano.map(([p, a, z, r, k]) => `<tr${execOrg(k)}><td class="nw"><span class="tag ${p === "Imediata" ? "cr" : p === "Curto prazo" ? "at" : "ok"}">${esc(p)}</span></td><td>${esc(a)}<div class="mut">${esc(r)}</div></td><td class="nw">${esc(z)}</td></tr>`).join("")}</tbody></table>`;
+  const refs = `<div class="filt" style="margin-top:6px">Referências internas de acompanhamento: viagens cumpridas ≥ 98%; pontualidade ≥ 95% (até 5 min); idade média ≤ ${DETRO_REF.idade} anos; vistoria 100%; disponibilidade ≥ ${DETRO_REF.dispo}%; até ${DETRO_REF.ncVeic} NC aberta por veículo; reclamações ≤ 3 por 100 mil passageiros; resolução no prazo ≥ 95%; NPS ≥ +30; motoristas aptos 100%. Adequado = dentro da referência; Atenção = fora, sem impedir a operação; Crítico = exige ação imediata. <b>Informações operacionais da empresa: não incluem custos, valores, fornecedores nem dados pessoais.</b> Modelo com dados fictícios.</div>`;
+  const html = cab + selo + sintese + kpis + secOp + secFrota + `<div style="break-before:page"></div>` + secSeg + secMot + secAt + `<div class="grid2"><div>${secConf}</div><div>${secPlano}</div></div>` + refs + printAssin([["Responsável operacional", ""], ["Responsável técnico pela frota", ""], ["Diretoria", ""]]);
+  return { titulo: "Relatório mensal de saúde operacional", html, paisagem: false, fonte: 9, css: `
+    .tag{display:inline-block;padding:0 6px;border-radius:8px;font-size:8px;font-weight:800;color:#fff;white-space:nowrap;line-height:14px}.tag.ok{background:#197A46}.tag.at{background:#9A6A00}.tag.cr{background:#B3271E}
+    .alerta{border-left:3px solid #D9480F;background:#FFF6F0;padding:4px 9px;margin:0 0 6px;font-size:9.5px}
+    .sint{border:.6px solid #C9CFD8;border-left:3px solid #1E2153;border-radius:3px;padding:6px 9px;margin:0 0 6px;font-size:9.5px;line-height:1.45}
+    .k8{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0 0 2px}.k8>div{border:.6px solid #C9CFD8;border-radius:3px;padding:5px 8px;min-width:0}
+    .k8 .l{font-size:7.5px;text-transform:uppercase;letter-spacing:.08em;color:#6B7280;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .k8 .v{font-size:15px;font-weight:800;color:#1B2230;margin-top:1px;white-space:nowrap;display:flex;align-items:baseline;gap:6px}.k8 .v small{font-size:8.5px;color:#6B7280;font-weight:700}
+    .k8 .s{font-size:8px;color:#6B7280;display:flex;justify-content:space-between;align-items:center;gap:4px;margin-top:2px;line-height:1.3}
+    .filt{font-size:8.5px;color:#3B4352;margin-top:2px}
+    .grid2{gap:10px}.grid2.g21{grid-template-columns:1.45fr 1fr}.grid2>div{min-width:0}
+    .gr{border:.6px solid #C9CFD8;border-radius:3px;padding:5px 8px;break-inside:avoid}.g21>div>.gr:only-child{height:100%}.gr h3{font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#1E2153;margin:0 0 3px;display:flex;justify-content:space-between;gap:6px}.gr h3 span{text-transform:none;letter-spacing:0;font-weight:600;color:#6B7280}.gr img{width:100%;height:auto;display:block}
+    h2.sec{margin:7px 0 3px;break-after:avoid;page-break-after:avoid}
+    table.t th,table.t td{padding:2px 5px;font-size:8.5px} table.t th{font-size:7.5px}
+    .assin{margin-top:8px;gap:20px}.assin>div{padding-top:4px;font-size:9px}.assin b{font-size:9px}` };
+}
+/* ---- tela ---- */
+const EXEC_TELA_CSS = `
+  body{padding:16px 20px 24px;background:#fff}
+  h2.sec .org{display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:8.5px;font-weight:700;letter-spacing:0;text-transform:none;color:#1E2153;background:#EEF1F5;border-radius:10px;padding:1px 8px;white-space:nowrap;cursor:pointer}
+  h2.sec .org.dev{color:#9A6A00;background:#FFF6E5}
+  [data-rota]{cursor:pointer} tr[data-rota]:hover td,.k8>div[data-rota]:hover,.gr[data-rota]:hover{background:#F3F5F9}`;
+function execIr(rota, origem) {
+  if (!rota) return;
+  if (rota === "dev") { toast(`Link em desenvolvimento · origem dos dados: ${origem || "módulo a definir"}. Esse módulo ainda não existe no ERP.`, 6500); return; }
+  const [path, aba] = String(rota).split("|");
+  const mod = MODULES.find(m => m.path === path) || MODULES.find(m => m.path && path.startsWith(m.path + "/"));
+  if (!mod || !canSee(mod)) { toast(`Sem acesso a ${origem || path} (peça a um administrador).`, 5000); return; }
+  if (aba && path === "#/operacional/frota" && typeof FROTA !== "undefined") FROTA.aba = aba;
+  location.hash = path;
+}
+window.execIr = execIr;
+function execAlvo(el, raiz) {   /* elemento com data-rota mais próximo: ancestrais e, em cada nível, os irmãos anteriores (a seção é o h2 que vem antes) */
+  while (el && el !== raiz) { let p = el; while (p) { if (p.dataset && p.dataset.rota) return p; p = p.previousElementSibling; } el = el.parentElement; }
+  return null;
+}
+function execAjustar() {
+  const fr = $("execFrame"), wrap = fr && fr.parentElement; if (!fr || !wrap || !fr.contentDocument) return;
+  const cw = wrap.parentElement.clientWidth || EXEC.W, sc = Math.min(1.6, cw / EXEC.W), h = fr.contentDocument.documentElement.scrollHeight || 1200;   /* amplia até 1,6× para a letra do A4 ficar legível na tela; reduz no celular */
+  fr.style.width = EXEC.W + "px"; fr.style.height = h + "px"; fr.style.transform = `scale(${sc})`; fr.style.transformOrigin = "0 0";
+  wrap.style.height = Math.ceil(h * sc) + "px"; wrap.style.width = Math.min(cw, Math.ceil(EXEC.W * sc)) + "px"; wrap.style.margin = "10px auto 0";
+}
+function execIframe(host, doc) {
+  if (!doc) { host.innerHTML = `<div class="cap-empty"><h3>Sem dados para o relatório</h3></div>`; return; }
+  const html = printDocHtml(Object.assign({}, doc, { css: (doc.css || "") + EXEC_TELA_CSS }));
+  host.innerHTML = `<div class="exec-doc"><iframe id="execFrame" title="${esc(doc.titulo || "Relatório")}"></iframe></div>`;
+  const fr = $("execFrame");
+  fr.onload = () => {
+    const d = fr.contentDocument; if (!d) return;
+    d.querySelectorAll("h2.sec[data-rota]").forEach(h => { const dev = h.dataset.rota === "dev"; const b = d.createElement("span"); b.className = "org" + (dev ? " dev" : ""); b.title = dev ? "Origem ainda em desenvolvimento" : "Clique para abrir a origem dos dados"; b.textContent = (dev ? "⏳ em desenvolvimento · " : "↗ ") + (h.dataset.origem || ""); b.addEventListener("click", ev => { ev.stopPropagation(); execIr(h.dataset.rota, h.dataset.origem); }); h.appendChild(b); });
+    d.querySelectorAll("[data-rota]").forEach(e => { if (!e.title) e.title = (e.dataset.rota === "dev" ? "Em desenvolvimento · origem: " : "Duplo clique abre: ") + (e.dataset.origem || ""); });
+    d.addEventListener("dblclick", ev => { const a = execAlvo(ev.target, d.body); if (a) execIr(a.dataset.rota, a.dataset.origem); });
+    execAjustar(); setTimeout(execAjustar, 600); setTimeout(execAjustar, 1800);
+  };
+  fr.srcdoc = html;
+  if (!EXEC.resize) { EXEC.resize = true; window.addEventListener("resize", () => execAjustar()); }
+}
+function pageExec() {
+  return `<div class="page" id="execRoot">
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Diretoria">Diretoria</a><span>›</span><b>Relatório Executivo</b></nav>
+    <div class="cap-topo"><div><h1 style="margin:0">Relatório Executivo</h1><p class="sup" style="margin:2px 0 0">Saúde da empresa ao DETRO/RJ e relatórios por departamento</p></div><span class="grow"></span><div id="execActions" class="page-actions"></div></div>
+    <div class="cap-views" id="execTabs"><button class="tab" data-k="geral" onclick="execAba('geral')">Geral</button><button class="tab" data-k="operacoes" onclick="execAba('operacoes')">Operações</button></div>
+    <div id="execInfo"></div>
+    <div id="execBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
+  </div>`;
+}
+window.execAba = a => { EXEC.aba = a; renderExec(); };
+window.execImprimir = () => { if (EXEC.aba === "operacoes") { frotaDetroRelatorios(); return; } printDoc(execGeralDoc()); };
+async function renderExec() {
+  const body = $("execBody"); if (!body) return;
+  if (!pagAba("exec", EXEC.aba, v => { EXEC.aba = v; })) { body.innerHTML = PAG_SEM; $("execInfo").innerHTML = ""; $("execActions").innerHTML = ""; return; }
+  document.querySelectorAll("#execTabs .tab").forEach(b => b.classList.toggle("on", b.dataset.k === EXEC.aba));
+  const dica = `<span class="exec-dica">Duplo clique numa seção, linha ou gráfico abre a origem dos dados no ERP · ⏳ marca o que ainda está em desenvolvimento</span>`;
+  if (EXEC.aba === "geral") {
+    const R = execRef();
+    $("execActions").innerHTML = `<button class="btn primary" id="execImprimir" onclick="execImprimir()">🖨 Gerar PDF (A4, 2 páginas)</button>`;
+    $("execInfo").innerHTML = `<div class="exec-info"><span class="exec-badge warn">Demonstração · dados fictícios</span><span class="exec-badge">Referência: ${esc(R.mes)}</span>${dica}</div>`;
+    execIframe(body, execGeralDoc());
+    body.insertAdjacentHTML("beforeend", `<div class="exec-origens"><b>Origem dos dados</b> · já no ERP: Frota (veículos, manutenção, não conformidades, multas), Painel de Infrações, Funcionários e Controle de Ponto, SAC, Pesquisa de Satisfação, Estatística de Passageiros, Tabelas de Horários e Tarifas · <span class="dev">em desenvolvimento: Controle de Viagens (viagens realizadas, pontualidade, km), Ocorrências e sinistros, Treinamentos, Vistoria (checklist), Seguros</span>.</div>`);
+    return;
+  }
+  body.innerHTML = `<div class="cap-empty"><h3>Carregando a frota…</h3></div>`; $("execInfo").innerHTML = ""; $("execActions").innerHTML = "";
+  await frotaCarregar();
+  if (EXEC.aba !== "operacoes" || !$("execBody")) return;
+  const D = frotaDetroDados();
+  $("execActions").innerHTML = `<button class="btn" onclick="renderExec()">Atualizar</button><button class="btn primary" id="execRelDetro" onclick="frotaDetroRelatorios()" title="Relação da frota, vistoria e conformidade, manutenção e disponibilidade, completo">🖨 Relatórios ao DETRO</button>`;
+  $("execInfo").innerHTML = `<div class="exec-info">${D.demo ? `<span class="exec-badge warn">Modelo · dados fictícios (sem veículo cadastrado em Frota › Veículos)</span>` : `<span class="exec-badge ok">Cadastro da frota · ${D.V.length} veículo(s) ativo(s)</span>`}${FROTA.erro ? `<span class="exec-badge warn">${esc(FROTA.erro)}</span>` : ""}${dica}</div>`;
+  execIframe($("execBody"), frotaDetroRelatorio("dossie", false, { tela: true }));
+}
+{ const r6 = route;
+  route = function () {
+    const hash = (location.hash || "").split("?")[0];
+    if (hash !== "#/diretoria/relatorio-executivo") return r6.apply(this, arguments);
+    const m = MODULES.find(x => x.id === "exec"); if (!canSee(m)) { location.hash = "#/inicio"; return; }
+    session.modAtual = "exec"; session.pagAtual = ""; document.body.classList.remove("nav-open"); document.body.classList.add("wide");
+    $("main").innerHTML = pageExec(); renderExec(); navAtivo("exec"); window.scrollTo(0, 0);
   };
 }
 

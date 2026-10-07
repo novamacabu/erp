@@ -3019,6 +3019,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   .field input[type="date"], .field input[type="month"], .field input[type="time"] { display: block; width: 100%; min-height: 44px }   /* sem appearance:none — o iPhone esconderia o "dd/mm/aaaa" */
   .grid2 { grid-template-columns: 1fr }
 }
+/* v0.12.68 · correções: Relatórios ao DETRO com "Por tipo"/"Por linha" como subquadros (sem número) e coluna "NC concluídas (todas)"; renomear o prefixo do veículo troca também em manutenções, não conformidades e multas (com confirmação). */
 /* v0.12.67 · Operacional › Frota: abas Veículos, Manutenção e Não conformidades (listas "Frota — Veículos", "Frota — Manutenção", "Frota — Não conformidades"); Relatórios ao DETRO de ponta a ponta (resumo executivo, indicadores com referência, gráficos, histórico de 6 meses, frota, vistoria, manutenção, plano de ação) — do cadastro quando há veículo; sem veículo, modelo fictício */
 /* v0.12.66 · Operacional › Frota: 🖨 Relatórios ao DETRO (frota, vistoria e conformidade, manutenção e disponibilidade, completo) — modelos com dados fictícios enquanto Frota/Vistoria/Manutenção estão em prévia; sem custos, valores, fornecedores nem nomes */
 /* v0.12.65 · Diretoria › Pesquisa de Satisfação (SurveyMonkey → Make → SharePoint), nos moldes do SAC e das Infrações, com 🖨 Relatórios */
@@ -3116,7 +3117,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.67<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.68<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3153,7 +3154,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.67",
+  version: "v0.12.68",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -22950,10 +22951,10 @@ function frotaDetroRelatorio(tipo, paisagem) {
     <tr class="tot"><td>Período</td><td class="r">${hist.reduce((s, h) => s + h.prev, 0)}</td><td class="r">${hist.reduce((s, h) => s + h.corr, 0)}</td><td class="r">${hist.reduce((s, h) => s + h.prev, 0) ? (hist.reduce((s, h) => s + h.corr, 0) / hist.reduce((s, h) => s + h.prev, 0)).toFixed(1).replace(".", ",") : "—"}</td><td class="r">${hist.reduce((s, h) => s + h.ncAb, 0)}</td><td class="r">${hist.reduce((s, h) => s + h.ncCo, 0)}</td><td class="r">${hist.some(h => h.dispo != null) ? Math.round(hist.filter(h => h.dispo != null).reduce((s, h) => s + h.dispo, 0) / hist.filter(h => h.dispo != null).length) + "%" : "—"}</td></tr></tbody></table>`;
   /* ---- 5. relação da frota ---- */
   const secFrota = () => S("Relação da frota", `${V.length} veículo(s)`) + `<table class="t"><thead><tr><th>Prefixo</th><th>Placa</th><th>Tipo / modelo</th><th class="r">Ano</th><th class="r">Idade</th><th class="r">Sentados</th><th class="r">Em pé</th><th class="c">Acessível (elevador)</th><th class="c">Ar-cond.</th><th>Linha principal</th><th>Situação</th></tr></thead><tbody>${V.map(v => `<tr><td class="nw"><b>${esc(v.prefixo)}</b></td><td class="nw">${esc(v.placa)}</td><td>${esc(v.tipo)}${v.carroceria ? `<div class="mut">${esc(v.carroceria)}</div>` : ""}</td><td class="r">${n0(v.ano)}</td><td class="r ${v.idade != null && v.idade > DETRO_REF.idade ? "neg" : ""}">${v.idade == null ? "—" : `${v.idade} ano(s)`}</td><td class="r">${v.sentados}</td><td class="r">${v.empe || "—"}</td><td class="c">${v.elevador ? "Sim" : "Não"}</td><td class="c">${v.ar ? "Sim" : "Não"}</td><td>${esc(v.linha)}</td><td>${tagSit(v.situacao)}</td></tr>`).join("")}</tbody></table>`
-    + `<div class="grid2"><div class="blq">${S("Por tipo", "")}<table class="t"><thead><tr><th>Tipo</th><th class="r">Veículos</th><th class="r">Idade média</th><th class="r">Lugares</th><th class="r">Acessíveis</th></tr></thead><tbody>${[...new Set(V.map(v => v.tipo))].map(t => { const a = V.filter(v => v.tipo === t), ai = a.filter(v => v.idade != null); return `<tr><td>${esc(t)}</td><td class="r">${a.length}</td><td class="r">${ai.length ? dec(ai.reduce((s, v) => s + v.idade, 0) / ai.length) : "—"}</td><td class="r">${a.reduce((s, v) => s + v.sentados + v.empe, 0)}</td><td class="r">${a.filter(v => v.elevador).length}</td></tr>`; }).join("")}</tbody></table></div>
-       <div class="blq">${S("Por linha", "veículos alocados")}<table class="t"><thead><tr><th>Linha</th><th class="r">Veículos</th><th class="r">Lugares</th><th class="r">Acessíveis</th></tr></thead><tbody>${[...new Set(V.map(v => v.linha))].map(l => { const a = V.filter(v => v.linha === l); return `<tr><td>${esc(l)}</td><td class="r">${a.length}</td><td class="r">${a.reduce((s, v) => s + v.sentados + v.empe, 0)}</td><td class="r">${a.filter(v => v.elevador).length}</td></tr>`; }).join("")}</tbody></table></div></div>`;
+    + `<div class="grid2"><div class="blq">${printSec("Por tipo", "")}<table class="t"><thead><tr><th>Tipo</th><th class="r">Veículos</th><th class="r">Idade média</th><th class="r">Lugares</th><th class="r">Acessíveis</th></tr></thead><tbody>${[...new Set(V.map(v => v.tipo))].map(t => { const a = V.filter(v => v.tipo === t), ai = a.filter(v => v.idade != null); return `<tr><td>${esc(t)}</td><td class="r">${a.length}</td><td class="r">${ai.length ? dec(ai.reduce((s, v) => s + v.idade, 0) / ai.length) : "—"}</td><td class="r">${a.reduce((s, v) => s + v.sentados + v.empe, 0)}</td><td class="r">${a.filter(v => v.elevador).length}</td></tr>`; }).join("")}</tbody></table></div>
+       <div class="blq">${printSec("Por linha", "veículos alocados")}<table class="t"><thead><tr><th>Linha</th><th class="r">Veículos</th><th class="r">Lugares</th><th class="r">Acessíveis</th></tr></thead><tbody>${[...new Set(V.map(v => v.linha))].map(l => { const a = V.filter(v => v.linha === l); return `<tr><td>${esc(l)}</td><td class="r">${a.length}</td><td class="r">${a.reduce((s, v) => s + v.sentados + v.empe, 0)}</td><td class="r">${a.filter(v => v.elevador).length}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   /* ---- 6. vistoria ---- */
-  const secVist = () => S("Vistoria e conformidade por veículo", "última vistoria, validade e não conformidades") + `<table class="t"><thead><tr><th>Prefixo</th><th>Última vistoria</th><th>Válida até</th><th>Resultado</th><th class="r">NC abertas</th><th class="r">Graves</th><th class="r">NC concluídas</th></tr></thead><tbody>${V.map(v => { const dv = dias(v.validade), ab = v.ncs.filter(x => x.status === "Aberta"); return `<tr><td class="nw"><b>${esc(v.prefixo)}</b></td><td class="nw">${br(v.vistoria)}</td><td class="nw ${dv != null && dv < 0 ? "neg" : ""}">${br(v.validade)}${dv == null ? "" : dv < 0 ? " · vencida" : dv === 0 ? " · vence hoje" : dv <= 60 ? ` · vence em ${dv} d` : ""}</td><td>${tagSit(v.resultado)}</td><td class="r">${ab.length || ""}</td><td class="r ${ab.some(x => x.grav === "Grave") ? "neg" : ""}">${ab.filter(x => x.grav === "Grave").length || ""}</td><td class="r">${v.ncs.filter(x => x.status === "Concluída").length || ""}</td></tr>`; }).join("")}</tbody></table>`
+  const secVist = () => S("Vistoria e conformidade por veículo", "última vistoria, validade e não conformidades") + `<table class="t"><thead><tr><th>Prefixo</th><th>Última vistoria</th><th>Válida até</th><th>Resultado</th><th class="r">NC abertas</th><th class="r">Graves</th><th class="r">NC concluídas (todas)</th></tr></thead><tbody>${V.map(v => { const dv = dias(v.validade), ab = v.ncs.filter(x => x.status === "Aberta"); return `<tr><td class="nw"><b>${esc(v.prefixo)}</b></td><td class="nw">${br(v.vistoria)}</td><td class="nw ${dv != null && dv < 0 ? "neg" : ""}">${br(v.validade)}${dv == null ? "" : dv < 0 ? " · vencida" : dv === 0 ? " · vence hoje" : dv <= 60 ? ` · vence em ${dv} d` : ""}</td><td>${tagSit(v.resultado)}</td><td class="r">${ab.length || ""}</td><td class="r ${ab.some(x => x.grav === "Grave") ? "neg" : ""}">${ab.filter(x => x.grav === "Grave").length || ""}</td><td class="r">${v.ncs.filter(x => x.status === "Concluída").length || ""}</td></tr>`; }).join("")}</tbody></table>`
     + `<div class="blq">${S("Não conformidades abertas", `${ncAb.length} item(ns) · prazo: Grave imediato, Média 7 dias, Leve 30 dias`)}<table class="t"><thead><tr><th>Prefixo</th><th>Item</th><th>Gravidade</th><th>Aberta em</th><th>Prazo</th><th>Situação</th></tr></thead><tbody>${ncAb.slice().sort((a, b) => (a.prazo || 0) - (b.prazo || 0)).map(x => { const dp = dias(x.prazo); return `<tr><td class="nw">${esc(x.prefixo)}</td><td>${esc(x.item)}</td><td class="${x.grav === "Grave" ? "neg" : ""}">${esc(x.grav)}</td><td class="nw">${br(x.abertura)}</td><td class="nw ${dp != null && dp < 0 ? "neg" : ""}">${br(x.prazo)}</td><td>${dp == null ? "—" : dp < 0 ? `vencida há ${-dp} d` : dp === 0 ? "vence hoje" : `em ${dp} d`}</td></tr>`; }).join("") || `<tr><td colspan="6">Nenhuma não conformidade aberta.</td></tr>`}</tbody></table></div>`;
   /* ---- 7. manutenção ---- */
   const secManut = () => S(`Manutenção e disponibilidade — ${mesRef}`, "preventivas, corretivas e disponibilidade (%) no mês") + `<table class="t"><thead><tr><th>Prefixo</th><th>Situação</th><th class="r">Preventivas</th><th class="r">Corretivas</th><th class="r">Disponibilidade</th><th>Próxima preventiva</th><th>Cronotacógrafo</th><th>Extintor</th><th class="c">Licenciamento</th></tr></thead><tbody>${V.map(v => `<tr><td class="nw"><b>${esc(v.prefixo)}</b></td><td>${tagSit(v.situacao)}</td><td class="r">${v.prevs || ""}</td><td class="r">${v.corr || ""}</td><td class="r ${v.dispo < 85 ? "neg" : ""}">${v.dispo}%</td><td class="nw">${[v.proxPrev ? br(v.proxPrev) : "", v.proxKm ? `${v.proxKm.toLocaleString("pt-BR")} km` : ""].filter(Boolean).join(" ou ") || '<span class="neg">não programada</span>'}</td><td class="nw ${v.tacografo && dias(v.tacografo) < 0 ? "neg" : ""}">${br(v.tacografo)}</td><td class="nw ${v.extintor && dias(v.extintor) < 0 ? "neg" : ""}">${br(v.extintor)}</td><td class="c">${n0(v.crlv)}${v.crlv != null && v.crlv < hoje.getFullYear() ? ' <span class="neg">pendente</span>' : ""}</td></tr>`).join("")}
@@ -23094,19 +23095,35 @@ function frotaPintarCad(body, ed) {
   }
   const qe = $("frotaQ"); if (qe) qe.addEventListener("input", () => { F.q = qe.value; const pos = qe.selectionStart; frotaPintar(); const e2 = $("frotaQ"); if (e2) { e2.focus(); try { e2.setSelectionRange(pos, pos); } catch (e) {} } });
 }
-function frotaCadForm(opt) {   /* opt: { lista, item, titulo, html, ler(g, err), msgOk, excluir } */
+function frotaCadForm(opt) {   /* opt: { lista, item, titulo, html, ler(g, err), antes(f) → { erro } | { msg, desfazer } } */
   const ed = podeEditar("frota") && !(typeof vcAtivo === "function" && vcAtivo()) && !!FROTA[opt.lista], dis = ed ? "" : "disabled", m = opt.item;
   $("modal").className = "modal wide";
   openModal(opt.titulo, opt.html(dis) + `<div class="err-msg" id="fcErr" style="display:none"></div>`, async () => {
     if (!ed) return true;
     const g = k => ($(k).value || "").trim(), err = t => { const e = $("fcErr"); e.textContent = t; e.style.display = "block"; return false; };
     const f = opt.ler(g, err); if (!f) return false;
-    if (m) await SP.update(FROTA.site.id, FROTA[opt.lista].id, m._id, f); else await SP.create(FROTA.site.id, FROTA[opt.lista].id, f);
-    toast(m ? "Atualizado" : "Registrado"); await frotaCarregar(); frotaPintar(); return true;
+    let r = null; if (opt.antes) { r = await opt.antes(f); if (r && r.erro) return err(r.erro); }   /* v0.12.68: troca do prefixo nos registros ligados */
+    try { if (m) await SP.update(FROTA.site.id, FROTA[opt.lista].id, m._id, f); else await SP.create(FROTA.site.id, FROTA[opt.lista].id, f); }
+    catch (e) { if (r && r.desfazer) { const t = await r.desfazer(); return err(`Não foi possível gravar o veículo (${e.message}). ` + (t || "A troca do prefixo nos registros ligados foi desfeita.")); } throw e; }
+    toast((m ? "Atualizado" : "Registrado") + (r && r.msg ? " · " + r.msg : ""), r && r.msg ? 5000 : undefined); await frotaCarregar(); frotaPintar(); return true;
   });
   if (!ed) { const b = $("mSave"); if (b) b.style.display = "none"; }
   if (m && ed && (session.n1 || podeExcluir("frota"))) document.querySelector("#modal .modal-foot").insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="frotaCadExcluir('${esc(opt.lista)}','${esc(m._id)}')">Excluir</button>`);
   return ed;
+}
+/* v0.12.68: manutenções, não conformidades e multas ligam ao veículo pelo texto do prefixo — ao renomear, a troca vai junto (com confirmação no formulário) */
+const FROTA_LIG_ABA = { listManut: ["manut", "Manutenção"], listNc: ["nc", "Não conformidades"], list: ["multas", "Registro de Multas"] };
+function frotaLigados(pref, dados) {   /* dados: { listManut, listNc, list } relidos do SharePoint; sem ele, o que está em memória */
+  const k = String(pref || "").trim().toUpperCase(); if (!k) return [];
+  const D = dados || { listManut: FROTA.manut, listNc: FROTA.ncs, list: FROTA.itens };
+  return Object.keys(FROTA_LIG_ABA).flatMap(l => FROTA[l] ? (D[l] || []).filter(x => String(x.Veiculo || "").trim().toUpperCase() === k).map(x => ({ lista: l, id: x._id, antes: x.Veiculo, titulo: x.Title })) : []);
+}
+/* abas com registros ligados em que quem está salvando não pode editar (o administrador sempre pode) */
+function frotaLigadosSemAcesso(L) { return [...new Set(L.map(x => x.lista))].filter(l => !["editar", "proprietario"].includes(pagNivel("frota", FROTA_LIG_ABA[l][0]))).map(l => FROTA_LIG_ABA[l][1]); }
+function frotaLigadosTxt(L) {
+  const n = l => L.filter(x => x.lista === l).length, p = [];
+  if (n("listManut")) p.push(`${n("listManut")} manutenção(ões)`); if (n("listNc")) p.push(`${n("listNc")} não conformidade(s)`); if (n("list")) p.push(`${n("list")} multa(s)`);
+  return p.length > 1 ? p.slice(0, -1).join(", ") + " e " + p[p.length - 1] : (p[0] || "");
 }
 window.frotaCadExcluir = async (lista, id) => {
   const arr = { listVeic: FROTA.veics, listManut: FROTA.manut, listNc: FROTA.ncs }[lista] || [], m = arr.find(x => x._id === String(id)); if (!m) return;
@@ -23128,6 +23145,7 @@ window.veicForm = id => {
       <div class="field"><label>Modelo / carroceria</label><input id="vcC" value="${esc(v.Carroceria || "")}" ${dis}></div>
       <div class="field"><label>Ano de fabricação</label>${fcNum("vcA", v.Ano, dis)}</div>
       <div class="field"><label>Situação</label>${fcSel("vcS", VEIC_SIT, v.Situacao, dis)}</div>
+      <div class="field full" id="vcRenW" style="display:none"><label class="check" style="display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink)"><input type="checkbox" id="vcRen"> <span id="vcRenT"></span></label></div>
       <div class="field full form-sec">Capacidade e conforto</div>
       <div class="field"><label>Lugares sentados</label>${fcNum("vcSe", v.Sentados, dis)}</div>
       <div class="field"><label>Lugares em pé</label>${fcNum("vcEp", v.EmPe, dis)}</div>
@@ -23143,9 +23161,31 @@ window.veicForm = id => {
       <div class="field"><label>Próxima preventiva (data)</label>${fcDate("vcPd", v.ProxPrevData, dis)}</div>
       <div class="field"><label>Próxima preventiva (km)</label>${fcNum("vcPk", v.ProxPrevKm, dis)}</div>
       <div class="field full"><label>Observações</label><textarea id="vcO" rows="2" ${dis}>${esc(v.Observacoes || "")}</textarea></div></div>`,
-    ler: (g, err) => { if (!g("vcP")) return err("Informe o prefixo."); if (FROTA.veics.some(x => String(x.Title || "").trim().toUpperCase() === g("vcP").toUpperCase() && (!m || x._id !== m._id))) return err("Já existe veículo com este prefixo."); const num = k => g(k) === "" ? null : Number(g(k)); const a = num("vcA"); if (a != null && (a < 1980 || a > new Date().getFullYear() + 1)) return err("Ano de fabricação inválido.");
+    antes: f => vcAntes(f),
+    ler: (g, err) => { if (!g("vcP")) return err("Informe o prefixo."); if (FROTA.veics.some(x => String(x.Title || "").trim().toUpperCase() === g("vcP").toUpperCase() && (!m || x._id !== m._id))) return err("Já existe veículo com este prefixo."); if (vcRenomeia()) { vcRenPintar(); const sem = frotaLigadosSemAcesso(lig); if (sem.length) return err(`Este veículo tem registros em ${sem.join(", ")}, que você não pode editar. Para trocar o prefixo, peça a um administrador — ou volte ao prefixo anterior.`); if (!$("vcRen").checked) return err("Marque a caixa para trocar o prefixo também nos registros ligados — ou volte ao prefixo anterior."); } const num = k => g(k) === "" ? null : Number(g(k)); const a = num("vcA"); if (a != null && (a < 1980 || a > new Date().getFullYear() + 1)) return err("Ano de fabricação inválido.");
       return { Title: g("vcP"), Placa: g("vcPl").toUpperCase() || null, Chassi: g("vcCh").toUpperCase() || null, Tipo: g("vcT") || null, Carroceria: g("vcC") || null, Ano: a, Situacao: g("vcS"), Sentados: num("vcSe"), EmPe: num("vcEp"), Elevador: g("vcEl"), ArCond: g("vcAr"), Linha: g("vcL") || null,
         UltimaVistoria: g("vcUv") || null, ValidadeVistoria: g("vcVv") || null, Tacografo: g("vcTa") || null, Extintor: g("vcEx") || null, Licenciamento: num("vcLi"), ProxPrevData: g("vcPd") || null, ProxPrevKm: num("vcPk"), Observacoes: g("vcO") || null }; } });
+  let lig = m ? frotaLigados(m.Title) : []; const antigo = m ? String(m.Title || "").trim() : "";
+  const vcRenomeia = () => !!(m && lig.length && $("vcP") && $("vcP").value.trim() && $("vcP").value.trim() !== antigo);
+  const vcRenPintar = () => { const w = $("vcRenW"); if (!w) return; const on = vcRenomeia(), sem = on ? frotaLigadosSemAcesso(lig) : []; w.style.display = on ? "" : "none"; $("vcRen").style.display = sem.length ? "none" : ""; if (!on || sem.length) $("vcRen").checked = false;
+    if (on) $("vcRenT").innerHTML = sem.length ? `<span style="color:var(--err)">Este veículo tem registros em ${esc(sem.join(", "))}, que você não pode editar. Para trocar o prefixo, peça a um administrador.</span>` : `Trocar "<b>${esc(antigo)}</b>" por "<b>${esc($("vcP").value.trim())}</b>" também em ${esc(frotaLigadosTxt(lig))} ligada(s) a este veículo`; };
+  const pIn = $("vcP"); if (pIn && !pIn.disabled) pIn.addEventListener("input", vcRenPintar);
+  const vcAntes = async f => {
+    if (!m || f.Title === antigo) return null;   /* renomeou: relê mesmo se não havia registro ligado ao abrir */
+    let L;   /* relê as três listas: um registro lançado depois que a página abriu também entra na troca */
+    try { const dados = {}; for (const l of Object.keys(FROTA_LIG_ABA)) dados[l] = FROTA[l] ? (await SP.items(FROTA.site.id, FROTA[l].id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : []; L = frotaLigados(antigo, dados); }
+    catch (e) { return { erro: `Não foi possível conferir os registros ligados; nada foi alterado. (${e.message})` }; }
+    if (L.length && !($("vcRen") && $("vcRen").checked)) { lig = L; vcRenPintar(); const sem0 = frotaLigadosSemAcesso(L); return { erro: sem0.length ? `Este veículo tem registros em ${sem0.join(", ")}, que você não pode editar. Para trocar o prefixo, peça a um administrador.` : `Há ${frotaLigadosTxt(L)} ligada(s) a este veículo lançada(s) depois que a página abriu. Confira e marque a caixa para trocar o prefixo também nelas.` }; }
+    const sem = frotaLigadosSemAcesso(L); if (sem.length) { lig = L; vcRenPintar(); return { erro: `Este veículo tem registros em ${sem.join(", ")}, que você não pode editar. Para trocar o prefixo, peça a um administrador.` }; }
+    const campos = x => { const o = { Veiculo: f.Title }; const ta = `Multa ${String(x.antes || "").trim()} `; if (x.lista === "list" && String(x.titulo || "").startsWith(ta)) o.Title = `Multa ${f.Title} ` + String(x.titulo).slice(ta.length); return o; };   /* título automático da multa sem nº de auto */
+    const volta = x => { const o = { Veiculo: x.antes }; if (x.lista === "list" && campos(x).Title) o.Title = x.titulo; return o; };
+    const feitos = [];
+    const reverter = async () => { const falhas = []; for (const x of feitos) { try { await SP.update(FROTA.site.id, FROTA[x.lista].id, x.id, volta(x)); } catch (e2) { falhas.push(x); } } return falhas; };
+    const txtFalhas = F => `${F.length} registro(s) ficaram com o prefixo "${f.Title}" e o veículo continua "${antigo}": ${F.map(x => `${FROTA_LIG_ABA[x.lista][1]} · ${x.titulo || x.id}`).join("; ")}. Corrija esses registros ou tente salvar de novo.`;
+    try { for (const x of L) { await SP.update(FROTA.site.id, FROTA[x.lista].id, x.id, campos(x)); feitos.push(x); } }
+    catch (e) { const F = await reverter(); return { erro: F.length ? `Não foi possível trocar o prefixo em todos os registros ligados (${e.message}). ` + txtFalhas(F) : `Não foi possível trocar o prefixo em todos os registros ligados; nada foi alterado. (${e.message})` }; }
+    return { msg: L.length ? `prefixo trocado em ${frotaLigadosTxt(L)}` : "", desfazer: async () => { const F = await reverter(); return F.length ? txtFalhas(F) : ""; } };
+  };
   const uv = $("vcUv"), vv = $("vcVv"); if (uv && vv) uv.addEventListener("change", () => { if (uv.value && !vv.value) { const d = dLocal(uv.value); d.setFullYear(d.getFullYear() + 1); vv.value = ymd(d); } });
 };
 window.manutForm = id => {

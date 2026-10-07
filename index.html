@@ -3017,7 +3017,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   .field input[type="date"], .field input[type="month"], .field input[type="time"] { display: block; width: 100%; min-height: 44px }   /* sem appearance:none — o iPhone esconderia o "dd/mm/aaaa" */
   .grid2 { grid-template-columns: 1fr }
 }
-/* v0.12.62 · Infrações › Relatórios: orientação da folha à escolha (padrão do relatório, retrato ou paisagem) — o navegador não deixa trocar quando a página define a orientação */
+/* v0.12.62 · Infrações › Relatórios: orientação da folha à escolha (padrão do relatório, retrato ou paisagem) — o navegador não deixa trocar quando a página define a orientação; Gerencial também mensal e anual */
 /* v0.12.61 · Infrações › Relatórios novos: Gerencial (12 meses), Por veículo, Por horário e dia da semana, Pendências de notificação e Histórico do motorista (reincidência + termo de ciência) */
 /* v0.12.60 · Infrações › Relatórios › Painel principal: impressão do painel como está na tela (período, filtros, indicadores, 5 gráficos; detalhamento opcional) */
 /* v0.12.59 · (1) Frota › Registro de Multas (lista "Frota — Multas") (2) CAP: Lista → Faturas; Obrigações como aba da CAP (fora dos menus)
@@ -10331,7 +10331,8 @@ function infImprimir(titulo,html,paisagem){
     table.hm th{background:#EEF1F5;color:#1E2153;font-weight:800}
     table.hm td.d{font-weight:800;text-align:left;padding-left:6px;background:#F6F7F9}
     td.chk{width:16mm;border-left:.5px solid #C9CFD8}
-    tr.mot td{background:#F6F7F9;font-weight:800;color:#1E2153;border-top:.9px solid #8D96A3}`+(paisagem?"":`
+    tr.mot td{background:#F6F7F9;font-weight:800;color:#1E2153;border-top:.9px solid #8D96A3}
+    h2.sec{break-after:avoid;page-break-after:avoid} .blq{break-inside:avoid;page-break-inside:avoid}`+(paisagem?"":`
     table.t th,table.t td{padding:3px 4px} table.t th{font-size:8px}
     table.hm td,table.hm th{font-size:7.5px;padding:2px 0}
     .grid2{grid-template-columns:1fr}`)});   /* retrato depois do CSS base, para valer */
@@ -10363,12 +10364,12 @@ function relHist(mesFim,mat,n,frase){
   html+=printRodape("Operacional · Infrações · documento pessoal");
   return html;
 }
-/* 2 · Gerencial dos últimos 12 meses */
+/* 2 · Gerencial dos últimos 12 meses (v0.12.62: também mensal e anual, abaixo) */
 function relGer(mesFim){
   const meses=infMesesAte(mesFim,12), pm=infPrimeiroMes();
   const L=meses.map(k=>{const a=dados.filter(i=>relMesKey(i.data)===k);const g=a.filter(relGrave).length;return {k,a,c:infContaCls(a),g,mot:new Set(a.filter(i=>i.matricula).map(i=>i.matricula)).size,exc:infMedia(a,i=>i.excesso),not:a.filter(i=>i.notificado).length,ar:a.filter(i=>i.lista==="Área Restrita").length};});
   const cur=L[11], ant=L[10], antSem=ant.k<pm, parc=mesFim===infMesAtual(), comDados=L.filter(x=>x.k>=pm&&x.k!==infMesAtual()), med=comDados.length?comDados.reduce((s,x)=>s+x.a.length,0)/comDados.length:0;   /* média só de meses completos com registro no sistema */
-  const vr=(a,b)=>antSem?"sem registros no mês anterior":b?`${a>b?"▲ +":a<b?"▼ ":"= "}${Math.round((a-b)/b*100)}% vs ${infMesCurto(ant.k)}${parc?" (mês em andamento)":""}`:"mês anterior sem infrações";
+  const vr=(a,b)=>antSem?"sem registros no mês anterior":b?`${infVar(a,b,infMesCurto(ant.k))}${parc?" (mês em andamento)":""}`:"mês anterior sem infrações";
   const at=cur.a, fx=f=>{const h=at.map(infHora).filter(x=>x!=null);const q=INF_FAIXAS.map(([n,r,a,b])=>[`${n} (${r})`,h.filter(x=>x>=a&&x<=b).length]).sort((p,q)=>q[1]-p[1])[0];return q&&q[1]?q:null;};
   const tm=infTop(at.filter(relGrave),i=>i.matricula,1)[0]||infTop(at,i=>i.matricula,1)[0], tl=infTop(at,i=>i.localizacao,1)[0], tv=infTop(at,i=>i.veiculo,1)[0], tf=fx();
   const pontos=[tm?`<b>Motorista:</b> ${esc(infNomeDe(tm[0]))} — ${tm[1]} infração(ões)${at.filter(relGrave).some(i=>i.matricula===tm[0])?" graves/gravíssimas":""}`:"",tl?`<b>Local:</b> ${esc(tl[0])} — ${tl[1]} ocorrência(s)`:"",tf?`<b>Horário:</b> ${esc(tf[0])} — ${tf[1]} ocorrência(s)`:"",tv?`<b>Carro:</b> ${esc(tv[0])} — ${tv[1]} infração(ões)`:""].filter(Boolean);
@@ -10379,6 +10380,66 @@ function relGer(mesFim){
   html+=printRodape("Operacional · Infrações · gerencial");
   return html;
 }
+/* v0.12.62 · Gerencial também mensal (um mês, dia a dia) e anual (ano civil, jan–dez) */
+function infResumoMes(k,ateDia){const a=dados.filter(i=>relMesKey(i.data)===k&&(!ateDia||i._dia.getDate()<=ateDia));const g=a.filter(relGrave).length;return {k,a,c:infContaCls(a),g,mot:new Set(a.filter(i=>i.matricula).map(i=>i.matricula)).size,exc:infMedia(a,i=>i.excesso),not:a.filter(i=>i.notificado).length,ar:a.filter(i=>i.lista==="Área Restrita").length};}
+function infVar(a,b,rot){if(!b)return `${rot}: sem infrações`;const p=Math.round((a-b)/b*100);return `${p>0?"▲ +":p<0?"▼ ":"= "}${Math.abs(p)}% vs ${rot}`;}
+function infPontos(at){
+  const h=at.map(infHora).filter(x=>x!=null), tf=INF_FAIXAS.map(([n,r,a,b])=>[`${n} (${r})`,h.filter(x=>x>=a&&x<=b).length]).sort((p,q)=>q[1]-p[1])[0];
+  const tm=infTop(at.filter(relGrave),i=>i.matricula,1)[0]||infTop(at,i=>i.matricula,1)[0], tl=infTop(at,i=>i.localizacao,1)[0], tv=infTop(at,i=>i.veiculo,1)[0];
+  return [tm?`<b>Motorista:</b> ${esc(infNomeDe(tm[0]))} — ${tm[1]} infração(ões)${at.filter(relGrave).some(i=>i.matricula===tm[0])?" graves/gravíssimas":""}`:"",tl?`<b>Local:</b> ${esc(tl[0])} — ${tl[1]} ocorrência(s)`:"",tf&&tf[1]?`<b>Horário:</b> ${esc(tf[0])} — ${tf[1]} ocorrência(s)`:"",tv?`<b>Carro:</b> ${esc(tv[0])} — ${tv[1]} infração(ões)`:""].filter(Boolean);
+}
+function infTabMot(arr,n){
+  const M=[...arr.filter(i=>i.matricula).reduce((m,i)=>{(m.get(i.matricula)||m.set(i.matricula,[]).get(i.matricula)).push(i);return m;},new Map())].map(([k,a])=>({k,a,g:a.filter(relGrave).length})).sort((p,q)=>q.g-p.g||q.a.length-p.a.length).slice(0,n);
+  return `<table class="t"><thead><tr><th>Motorista</th><th class="r">Graves + gravíss.</th><th class="r">Total</th><th class="r">Excesso médio</th></tr></thead><tbody>${M.map(x=>`<tr><td>${esc(infNomeDe(x.k))}</td><td class="r">${x.g}</td><td class="r"><b>${x.a.length}</b></td><td class="r">+${infMedia(x.a,i=>i.excesso).toFixed(0)} km/h</td></tr>`).join("")||`<tr><td colspan="4">—</td></tr>`}</tbody></table>`;
+}
+function infTabTop(arr,chave,rot,n){const T=infTop(arr,chave,n),tot=arr.length;return `<table class="t"><thead><tr><th>${esc(rot)}</th><th class="r">Ocorrências</th><th class="r">%</th></tr></thead><tbody>${T.map(([k,q])=>`<tr><td>${esc(k)}</td><td class="r">${q}</td><td class="r">${infPct(q,tot)}</td></tr>`).join("")||`<tr><td colspan="3">—</td></tr>`}</tbody></table>`;}
+const INF_TH_MES=`<th>Mês</th>${ORDEM_CLASS.map(c=>`<th class="r">${c}</th>`).join("")}<th class="r">Total</th><th class="r">% graves</th><th class="r">Motoristas</th><th class="r">Excesso médio</th><th class="r">Área restrita</th><th class="r">Notificadas</th>`;
+function infLinhaMesTab(x,pm,dest){
+  if(x.k<pm) return `<tr><td>${esc(relLabelMes(x.k))}</td><td colspan="10" class="mut">sem registros no sistema (antes de ${esc(relLabelMes(pm))})</td></tr>`;
+  if(x.k>infMesAtual()) return `<tr><td>${esc(relLabelMes(x.k))}</td><td colspan="10" class="mut">—</td></tr>`;
+  return `<tr${dest?' class="grp"':""}><td>${esc(relLabelMes(x.k))}${x.k===infMesAtual()?' <span class="mut">(em andamento)</span>':""}</td>${ORDEM_CLASS.map(c=>`<td class="r">${x.c[c]||""}</td>`).join("")}<td class="r"><b>${x.a.length}</b></td><td class="r">${x.a.length?infPct(x.g,x.a.length):"—"}</td><td class="r">${x.mot||""}</td><td class="r">${x.a.length?"+"+x.exc.toFixed(0)+" km/h":"—"}</td><td class="r">${x.ar||""}</td><td class="r">${x.a.length?infPct(x.not,x.a.length):"—"}</td></tr>`;
+}
+function infLinhaTotTab(L,rot){const tot=L.reduce((s,x)=>s+x.a.length,0),g=L.reduce((s,x)=>s+x.g,0),todos=L.flatMap(x=>x.a);
+  return `<tr class="tot"><td>${esc(rot)}</td>${ORDEM_CLASS.map(c=>`<td class="r">${L.reduce((s,x)=>s+(x.c[c]||0),0)}</td>`).join("")}<td class="r">${tot}</td><td class="r">${infPct(g,tot)}</td><td class="r">${new Set(todos.filter(i=>i.matricula).map(i=>i.matricula)).size}</td><td class="r">${tot?"+"+infMedia(todos,i=>i.excesso).toFixed(0)+" km/h":"—"}</td><td class="r">${L.reduce((s,x)=>s+x.ar,0)}</td><td class="r">${infPct(L.reduce((s,x)=>s+x.not,0),tot)}</td></tr>`;}
+function infMediaMensal(pm,excluir){const ks=[];if(pm){let k=relMesAnterior(infMesAtual());while(k>=pm){if(k!==excluir)ks.push(k);k=relMesAnterior(k);}}   /* todos os meses completos desde o 1º registro, inclusive os sem infração */return ks.length?{v:ks.reduce((s,k)=>s+dados.filter(i=>relMesKey(i.data)===k).length,0)/ks.length,n:ks.length}:null;}
+
+/* Gerencial — mensal: um mês, dia a dia */
+function relGerMes(mes){
+  const parc=mes===infMesAtual(), hojeDia=new Date().getDate(), ateDia=parc?hojeDia:0, sufx=parc?` (dias 1 a ${hojeDia})`:"";   /* mês em andamento: compara com os mesmos dias dos outros meses */
+  const pm=infPrimeiroMes(), X=infResumoMes(mes), at=X.a, kAnt=relMesAnterior(mes), A=infResumoMes(kAnt,ateDia), antSem=kAnt<pm;
+  const [ano,mm]=mes.split("-").map(Number), kAA=`${ano-1}-${String(mm).padStart(2,"0")}`, AA=infResumoMes(kAA,ateDia), aaSem=kAA<pm;
+  const ndias=new Date(ano,mm,0).getDate(), dias=Array.from({length:ndias},(_,d)=>{const a=at.filter(i=>i._dia.getDate()===d+1);return {l:String(d+1),c:infContaCls(a)};});
+  const med=infMediaMensal(pm,mes), pontos=infPontos(at);
+  const origem=["Velocidade Excedida","Área Restrita"].map(o=>[o,at.filter(i=>i.lista===o)]);
+  const fx=INF_FAIXAS.map(([n,r,a,b])=>{const arr=at.filter(i=>{const h=infHora(i);return h!=null&&h>=a&&h<=b;});return [n,r,arr];});
+  let html=printCab("Relatório gerencial de infrações — mensal",`${relLabelMes(mes)}${parc?" (mês em andamento)":""}`,{doc:`INF-GER-M-${mes.replace("-","")}`});
+  html+=printKpis([["Infrações no mês",String(at.length),antSem?"sem registros no mês anterior":infVar(at.length,A.a.length,infMesCurto(kAnt))+sufx],["Graves + gravíssimas",String(X.g),`${infPct(X.g,at.length)} do mês${antSem?"":` (${infMesCurto(kAnt)}: ${A.g}${sufx})`}`],["Motoristas envolvidos",String(X.mot),`${antSem?"—":A.mot} no mês anterior${sufx}`],["Excesso médio",at.length?`+${X.exc.toFixed(0)} km/h`:"—",`${!antSem&&A.a.length?"+"+A.exc.toFixed(0)+" km/h":"—"} no mês anterior${sufx}`],["Notificadas",infPct(X.not,at.length),`${at.length-X.not} pendente(s)`],[`${infMesCurto(kAA)} (ano anterior)`,aaSem?"—":String(AA.a.length),aaSem?"sem registros no sistema":"este mês "+infVar(at.length,AA.a.length,infMesCurto(kAA))+sufx]]);
+  html+=`<div class="grid2"><div>${printSec("Dia a dia","por gravidade",1)}<div class="gr">${infSvgPilha(dias,640,190)}</div></div><div>${printSec("Pontos de atenção","",2)}${pontos.length?`<div class="alerta">${pontos.join("<br>")}</div>`:`<div class="alerta ok">Nenhuma infração no mês.</div>`}<div class="alerta ${med&&at.length<=med.v?"ok":""}">${!med?"Ainda não há outro mês completo para comparar com a média.":at.length<=med.v?`O mês ficou <b>abaixo ou na média</b> mensal (${med.v.toFixed(0)}, ${med.n} mês(es) completo(s)).`:`O mês ficou <b>acima da média</b> mensal (${med.v.toFixed(0)}, ${med.n} mês(es) completo(s)).`}${parc?esc(INF_PARCIAL)+".":""}</div>
+    <div class="blq">${printSec("Por origem","",3)}<table class="t"><thead><tr><th>Origem</th><th class="r">Infrações</th><th class="r">Graves + gravíss.</th><th class="r">Excesso médio</th></tr></thead><tbody>${origem.map(([o,a])=>`<tr><td>${esc(o)}</td><td class="r">${a.length}</td><td class="r">${a.filter(relGrave).length}</td><td class="r">${a.length?"+"+infMedia(a,i=>i.excesso).toFixed(0)+" km/h":"—"}</td></tr>`).join("")}</tbody></table></div></div></div>`;
+  html+=`<div class="grid2"><div><div class="blq">${printSec("Motoristas com mais infrações","10 primeiros, graves primeiro",4)}${infTabMot(at,10)}</div></div><div><div class="blq">${printSec("Locais com mais ocorrências","",5)}${infTabTop(at,i=>i.localizacao,"Local",8)}</div>
+    <div class="blq">${printSec("Por faixa do dia","",6)}<table class="t"><thead><tr><th>Faixa</th><th class="r">Infrações</th><th class="r">Graves + gravíss.</th></tr></thead><tbody>${fx.map(([n,r,a])=>`<tr><td>${esc(n)} <span class="mut">${esc(r)}</span></td><td class="r">${a.length}</td><td class="r">${a.filter(relGrave).length}</td></tr>`).join("")}</tbody></table></div></div></div>`;
+  html+=printRodape("Operacional · Infrações · gerencial mensal");
+  return html;
+}
+/* Gerencial — anual: ano civil, janeiro a dezembro */
+function relGerAno(ano){
+  const pm=infPrimeiroMes(), hoje=infMesAtual(), meses=Array.from({length:12},(_,m)=>`${ano}-${String(m+1).padStart(2,"0")}`);
+  const L=meses.map(k=>infResumoMes(k)), val=L.filter(x=>x.k>=pm&&x.k<=hoje), todos=L.flatMap(x=>x.a), tot=todos.length, g=L.reduce((s,x)=>s+x.g,0);
+  const completos=val.filter(x=>x.k!==hoje), med=completos.length?completos.reduce((s,x)=>s+x.a.length,0)/completos.length:0;
+  const emAndamento=String(ano)===hoje.slice(0,4);
+  const mmdd=emAndamento?`${hoje.slice(5)}-${String(new Date().getDate()).padStart(2,"0")}`:"12-31";   /* ano em andamento: mesmo período = 1º de janeiro até o dia de hoje */
+  const antSem=`${ano-1}-01`<pm, antTot=dados.filter(i=>{const d=String(i.data).slice(0,10);return d>=`${ano-1}-01-01`&&d<=`${ano-1}-${mmdd}`;}).length;
+  const pior=completos.slice().sort((p,q)=>q.a.length-p.a.length)[0], melhor=completos.slice().sort((p,q)=>p.a.length-q.a.length)[0];
+  const pontos=infPontos(todos);
+  let html=printCab("Relatório gerencial de infrações — anual",`${ano}${emAndamento?` (até ${relLabelMes(hoje)}, ano em andamento)`:""}${pm>meses[0]&&pm<=meses[11]?` · registros desde ${relLabelMes(pm)}`:""}`,{doc:`INF-GER-A-${ano}`});
+  html+=printKpis([["Infrações no ano",String(tot),antSem?"sem registros do mesmo período do ano anterior":infVar(tot,antTot,`${ano-1}${emAndamento?` (1º/jan a ${mmdd.slice(3)}/${mmdd.slice(0,2)})`:""}`)],["Graves + gravíssimas",String(g),`${infPct(g,tot)} do ano`],["Motoristas envolvidos",String(new Set(todos.filter(i=>i.matricula).map(i=>i.matricula)).size),"com ao menos uma infração"],["Excesso médio",tot?`+${infMedia(todos,i=>i.excesso).toFixed(0)} km/h`:"—",""],["Notificadas",infPct(todos.filter(i=>i.notificado).length,tot),`${todos.filter(i=>!i.notificado).length} pendente(s)`],["Média mensal",completos.length?med.toFixed(0):"—",`${completos.length} mês(es) completo(s) com registros`]]);
+  html+=`<div class="grid2"><div>${printSec("Evolução mês a mês","por gravidade",1)}<div class="gr">${infSvgPilha(L.map(x=>({l:infMesCurto(x.k).slice(0,3),c:x.c})),640,190)}</div></div><div>${printSec(`Pontos de atenção em ${ano}`,"",2)}${pontos.length?`<div class="alerta">${pontos.join("<br>")}</div>`:`<div class="alerta ok">Nenhuma infração no ano.</div>`}${completos.length>1?`<div class="alerta"><b>Mês com mais infrações:</b> ${esc(relLabelMes(pior.k))} (${pior.a.length}) · <b>com menos:</b> ${esc(relLabelMes(melhor.k))} (${melhor.a.length}).</div>`:""}</div></div>`;
+  html+=printSec("Mês a mês","",3)+`<table class="t"><thead><tr>${INF_TH_MES}</tr></thead><tbody>${L.map(x=>infLinhaMesTab(x,pm,false)).join("")}${infLinhaTotTab(val,String(ano))}</tbody></table>`;
+  html+=`<div class="grid2"><div class="blq">${printSec("Motoristas com mais infrações no ano","10 primeiros, graves primeiro",4)}${infTabMot(todos,10)}</div><div class="blq">${printSec("Locais com mais ocorrências no ano","",5)}${infTabTop(todos,i=>i.localizacao,"Local",10)}</div></div>`;
+  html+=printRodape("Operacional · Infrações · gerencial anual");
+  return html;
+}
+
 /* 3 · Por veículo */
 function relVeic(mes){
   const cur=dados.filter(i=>relMesKey(i.data)===mes), ant=dados.filter(i=>relMesKey(i.data)===relMesAnterior(mes)), antSem=relMesAnterior(mes)<infPrimeiroMes();
@@ -10439,6 +10500,8 @@ window.infRelatorios=()=>{
         <optgroup label="Motoristas"><option value="hist">Histórico do motorista (reincidência e termo de ciência)</option><option value="mural">Mural do mês (1 página, sala dos motoristas)</option><option value="todos">Individuais — todos os motoristas com infração</option><option value="um">Individual — um motorista</option></optgroup>
       </select></div>
       <div class="field" id="relMesWrap"><label id="relMesLbl">Mês</label><select id="relMes">${meses.map(k=>`<option value="${k}">${relEsc(relLabelMes(k))}</option>`).join("")}</select></div>
+      <div class="field" id="relGerWrap" style="display:none"><label>Período do gerencial</label><select id="relGerModo"><option value="12m">Últimos 12 meses</option><option value="mes">Mensal (um mês, dia a dia)</option><option value="ano">Anual (janeiro a dezembro)</option></select></div>
+      <div class="field" id="relAnoWrap" style="display:none"><label>Ano</label><select id="relAno">${[...new Set(meses.map(k=>k.slice(0,4)))].map(a=>`<option>${a}</option>`).join("")}</select></div>
       <div class="field" id="relNWrap" style="display:none"><label>Período</label><select id="relN"><option value="3">3 meses</option><option value="6" selected>6 meses</option><option value="12">12 meses</option></select></div>
       <div class="field" id="relMotWrap" style="display:none"><label>Motorista</label><select id="relMot">${mots.map(m=>`<option value="${relEsc(m.k)}">${relEsc(m.nome)}</option>`).join("")}</select></div>
       <div class="field" id="relOriWrap"><label>Orientação da folha</label><select id="relOri"><option value="auto" id="relOriAuto">Padrão do relatório</option><option value="retrato">Retrato (vertical)</option><option value="paisagem">Paisagem (horizontal)</option></select></div>
@@ -10452,7 +10515,11 @@ window.infRelatorios=()=>{
       const ori=$("relOri").value, P=ori==="auto"?!!INF_ORI_PADRAO[tipo]:ori==="paisagem";   /* v0.12.62: retrato ou paisagem, à escolha */
       if(tipo==="painel"){ infPainelImprimir($("relDet").checked,P); return true; }
       if(tipo==="hist"){ if(!$("relMot").value){toast("Escolha o motorista.");return false;} infImprimir(`Histórico ${infNomeDe($("relMot").value)}`,relHist(mes,$("relMot").value,+$("relN").value,frase),P); return true; }
-      if(tipo==="ger"){ infImprimir(`Gerencial de infrações ${relLabelMes(mes)}`,relGer(mes),P); return true; }
+      if(tipo==="ger"){ const md=$("relGerModo").value;
+        if(md==="mes") infImprimir(`Gerencial mensal de infrações ${relLabelMes(mes)}`,relGerMes(mes),P);
+        else if(md==="ano") infImprimir(`Gerencial anual de infrações ${$("relAno").value}`,relGerAno(+$("relAno").value),P);
+        else infImprimir(`Gerencial de infrações ${relLabelMes(mes)}`,relGer(mes),P);
+        return true; }
       if(tipo==="veic"){ infImprimir(`Infrações por veículo ${relLabelMes(mes)}`,relVeic(mes),P); return true; }
       if(tipo==="hora"){ infImprimir(`Infrações por horário ${relLabelMes(mes)}`,relHora(mes),P); return true; }
       if(tipo==="pend"){ const td=$("relPendTodas").checked; infImprimir(`Pendências de notificação ${td?"todas":relLabelMes(mes)}`,relPend(mes,td),P); return true; }
@@ -10464,7 +10531,7 @@ window.infRelatorios=()=>{
     });
   const DICA={
     painel:"Imprime o painel como está na tela (período, filtros, indicadores e os 5 gráficos), em A4 deitado, colorido, com o cabeçalho do ERP. Para outro período ou filtro, ajuste o painel antes.",
-    ger:"Os 12 meses até o mês escolhido: evolução por gravidade, % de graves, motoristas, excesso, notificadas e os pontos de atenção do mês (motorista, local, horário e carro). A4 deitado.",
+    ger:"Últimos 12 meses: evolução por gravidade, % de graves, motoristas, excesso, notificadas e os pontos de atenção do mês. Mensal: o mês dia a dia, comparado com o mês anterior e com o mesmo mês do ano anterior, com motoristas, locais, origem e faixas do dia. Anual: janeiro a dezembro, comparado com o mesmo período do ano anterior, com o mês a mês e os motoristas e locais do ano. A4 deitado.",
     veic:"Carro a carro no mês: gravidade, comparação com o mês anterior, motoristas que dirigiam, excesso e local. Aponta carros acima do dobro da média da frota (com 3 ou mais motoristas: verificar carro, linha e limitador) e carros em que um motorista concentra as infrações. A4 deitado.",
     hora:"Mapa de calor hora do dia × dia da semana, faixas do dia (madrugada, manhã, tarde, noite) com % de graves e os horários de pico do mês. A4 deitado.",
     pend:"Infrações ainda não notificadas por WhatsApp, agrupadas por motorista (graves primeiro), com os dias desde a infração e uma coluna de visto para a ciência. A4 deitado.",
@@ -10474,11 +10541,12 @@ window.infRelatorios=()=>{
     um:"Abre numa nova janela já pronta para imprimir (ou salvar como PDF). Preto e branco, pensado para uma página em retrato."};
   const sync=()=>{const t=$("relTipo").value, mostra=(id,v)=>{$(id).style.display=v?"":"none";};
     mostra("relMotWrap",t==="um"||t==="hist"); mostra("relRankWrap",t==="mural"); mostra("relPainelWrap",t==="painel"); mostra("relPendWrap",t==="pend"); mostra("relNWrap",t==="hist");
-    mostra("relMesWrap",t!=="painel"&&!(t==="pend"&&$("relPendTodas").checked)); $("relMesLbl").textContent=t==="hist"||t==="ger"?"Até o mês":"Mês";
+    const gm=$("relGerModo").value; mostra("relGerWrap",t==="ger"); mostra("relAnoWrap",t==="ger"&&gm==="ano");
+    mostra("relMesWrap",t!=="painel"&&!(t==="pend"&&$("relPendTodas").checked)&&!(t==="ger"&&gm==="ano")); $("relMesLbl").textContent=t==="hist"||(t==="ger"&&gm==="12m")?"Até o mês":"Mês";
     $("relFrase").closest(".field").style.display=["mural","todos","um","hist"].includes(t)?"":"none";
     $("relOriAuto").textContent=`Padrão do relatório (${INF_ORI_PADRAO[t]?"paisagem":"retrato"})`;
     $("relHint").textContent=(DICA[t]||"").replace(/\s*A4 (deitado|em pé)\./,"").replace("em A4 deitado, colorido","colorido");};
-  $("relTipo").addEventListener("change",()=>{ $("relOri").value="auto"; sync(); }); $("relPendTodas").addEventListener("change",sync);   /* cada tipo começa na orientação padrão dele */ sync(); $("mSave").textContent="Gerar";
+  $("relTipo").addEventListener("change",()=>{ $("relOri").value="auto"; sync(); }); $("relPendTodas").addEventListener("change",sync); $("relGerModo").addEventListener("change",sync);   /* cada tipo começa na orientação padrão dele */ sync(); $("mSave").textContent="Gerar";
 };
 $("btn-relatorios").addEventListener("click",()=>infRelatorios());
 

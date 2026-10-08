@@ -3127,7 +3127,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.70<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.71<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3164,7 +3164,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.70",
+  version: "v0.12.71",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -3229,7 +3229,7 @@ const MODULES = [
   { id: "escala",     path: "#/financeiro/escala-agencia",    icon: "people",  name: "Escala Agência",      area: "Financeiro", groups: ["financeiro", "diretoria"], status: "ativo", wide: true },
   /* v0.12.20: Agência Conceição como grupo (abre tiles) + Fechamento de Caixa como filho em prévia; Recebimento piloto */
   { id: "ag_conc",    path: "#/financeiro/agencia-conceicao",  icon: "ticket",  name: "Agência",             area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto" },   /* v0.12.24: renomeado para "Agência" (sem Conceição) e saiu de prévia para piloto */
-  { id: "roletas",    path: "#/financeiro/controle-de-roletas", icon: "chart",  name: "Controle de Roletas", area: "Financeiro", groups: ["financeiro", "operacional", "diretoria"], status: "piloto" },   /* v0.12.27 #14 */
+  { id: "roletas",    path: "#/operacional/controle-de-roletas", icon: "chart",  name: "Controle de Roletas", area: "Operacional", groups: ["financeiro", "operacional", "diretoria"], status: "piloto" },   /* v0.12.27 #14 · v0.12.71: do Financeiro para o Operacional (o endereço antigo redireciona) */
   { id: "recebimento", path: "#/financeiro/recebimento",       icon: "cash",    name: "Arrecadação",         area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto" },   /* v0.12.27 #15: saiu de prévia */
   { id: "sac",        path: "#/diretoria/sac",                 icon: "chart",   name: "SAC",                 area: "Diretoria",   groups: ["diretoria"],               status: "ativo", wide: true },
   { id: "pesquisa",   path: "#/diretoria/pesquisa-de-satisfacao", icon: "chart", name: "Pesquisa de Satisfação", area: "Diretoria", groups: ["diretoria"],               status: "ativo", wide: true },   /* v0.12.65 */
@@ -3296,7 +3296,8 @@ const FORN_CLASSES = [
   ["Sazonal / Periódica", "Previsíveis, mas não mensais; lançadas na data prevista. Exemplos: IPTU, IPVA, seguros, anuidades, 13º salário. Costumam pesar no caixa se não houver reserva mensal."],
   ["Eventual / Extraordinária", "Imprevistas; só entram quando chega a NF e pode haver meses sem nenhuma. Exemplos: manutenção, conserto de equipamento, serviço avulso."],
   ["Dívidas / Parcelamento", "Compras parceladas, empréstimos, financiamentos. Na prática funcionam como fixas, mas têm data para acabar, então vale separar (cadastre a dívida em Obrigações)."],
-  ["Investimentos / Reservas", "Valor separado no início do mês para reserva de caixa ou investimento, e não o que sobra no fim."]
+  ["Investimentos / Reservas", "Valor separado no início do mês para reserva de caixa ou investimento, e não o que sobra no fim."],
+  ["Balde", "Conta \"balde\": despesas miúdas e variadas que não valem um fornecedor próprio, agrupadas numa só conta para controle (compras de almoxarifado, pequenos consertos, materiais diversos). Não gera conta automática."]   /* v0.12.71 #4d */
 ];
 const fornClasseDesc = t => { const c = FORN_CLASSES.find(x => x[0] === t); return c ? c[1] : ""; };
 const ESTABELECIMENTOS = ["02.224.206/0001-20", "02.224.206/0002-01", "02.224.206/0004-73", "02.224.206/0006-35"];
@@ -3709,6 +3710,7 @@ function guardaEscrita(method, path, body) {
   let mod = session.modAtual;   /* módulo pelo alvo da gravação (lista); pastas/arquivos seguem a página */
   if (mod === "cap" && /^obr\./.test(session.pagAtual || "") && !document.querySelector("#modal #capDocsWrap")) mod = "obr";   /* v0.12.59: aba Obrigações dentro da CAP (anexos das obrigações); conta da CAP aberta ali segue a CAP */
   else if (mod === "almox" && session.pagAtual === "almox.forn") mod = "forn";        /* v0.12.59: Fornecedores do Almoxarifado = cadastro de Fornecedores */
+  else if (mod === "almox" && session.pagAtual === "almox.faturas") mod = "cap";       /* v0.12.71: aba Faturas do Almoxarifado = Contas a Pagar (anexos das contas) */
   if (idDe(CAP_STATE) && path.includes(idDe(CAP_STATE))) mod = "cap";
   else if (idDe(FORN_STATE) && path.includes(idDe(FORN_STATE))) mod = "forn";
   else if ((idDe(OBR_STATE) && path.includes(idDe(OBR_STATE))) || (idDe(OBR_CART_STATE) && path.includes(idDe(OBR_CART_STATE)))) mod = "obr";
@@ -4078,8 +4080,9 @@ function route() {
   if (hash.startsWith("#/operacional/almoxarifado/")) { const m = MODULES.find(x => x.id === "almox"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "almox"; document.body.classList.remove("wide", "nav-open"); let sub = ""; try { sub = decodeURIComponent(hash.slice(27)); } catch (e) { sub = ""; } $("main").innerHTML = pageAlmoxSub(sub); navAtivo("almox"); window.scrollTo(0, 0); return; }
   /* v0.12.20: Equipamentos > Máquinas Pagbank */
   if (hash === "#/operacional/equipamentos/pagbank") { const m = MODULES.find(x => x.id === "equip"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "equip"; document.body.classList.remove("wide", "nav-open"); if (MOD_RESET.pb) MOD_RESET.pb(); $("main").innerHTML = pagePb(); renderPb(); navAtivo("equip"); window.scrollTo(0, 0); return; }
-  /* v0.12.27 #14: Financeiro > Controle de Roletas */
-  if (hash === "#/financeiro/controle-de-roletas") { const m = MODULES.find(x => x.id === "roletas"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "roletas"; document.body.classList.remove("wide", "nav-open"); if (MOD_RESET.rol) MOD_RESET.rol(); $("main").innerHTML = pageRol(); renderRol(); navAtivo("roletas"); window.scrollTo(0, 0); return; }
+  /* v0.12.27 #14: Controle de Roletas (v0.12.71: em Operacional; o endereço antigo do Financeiro redireciona) */
+  if (hash === "#/financeiro/controle-de-roletas") { location.replace("#/operacional/controle-de-roletas"); return; }
+  if (hash === "#/operacional/controle-de-roletas") { const m = MODULES.find(x => x.id === "roletas"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "roletas"; document.body.classList.remove("wide", "nav-open"); if (MOD_RESET.rol) MOD_RESET.rol(); $("main").innerHTML = pageRol(); renderRol(); navAtivo("roletas"); window.scrollTo(0, 0); return; }
   /* v0.12.27 #15: Financeiro > Recebimento Motorista (sai da prévia) */
   if (hash === "#/financeiro/recebimento") { const m = MODULES.find(x => x.id === "recebimento"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "recebimento"; document.body.classList.remove("wide", "nav-open"); if (MOD_RESET.rec) MOD_RESET.rec(); $("main").innerHTML = pageRec(); renderRec(); navAtivo("recebimento"); window.scrollTo(0, 0); return; }
   /* v0.12.26: RH > Normas CLT */
@@ -4365,7 +4368,7 @@ const SETUP_TEXT = {
 function pageConfig() {
   const card = (key) => { const def = LISTS[key]; return `<section class="setup-card">
       <h2>${esc(def.displayName)}</h2>
-      <p class="desc">${SETUP_TEXT[key]}</p>
+      <p class="desc">${SETUP_TEXT[key] || esc(def.description || "")}</p>
       <div class="setup-meta"><span><b>Onde</b> ${esc(CONFIG.spHost)}${esc(CONFIG.sites[def.siteKey])}</span><span><b>Colunas</b> ${def.columns.length + 1}</span><span><b>Reversível</b> apagar a lista pelo SharePoint desfaz tudo</span></div>
       <div class="actions">
         <button class="btn primary" data-setup="${key}">Executar setup</button>
@@ -7839,7 +7842,7 @@ const ALMOX_MODS = [
   { id: "requisicoes",  name: "Requisições",             icon: "people",   desc: "Pedidos das áreas e aprovação",         status: "prévia" },
   { id: "ordens-de-compra", name: "Ordens de Compra",   icon: "invoice",  desc: "Pedido de compra com aprovação por administrador",     status: "piloto", href: "#/operacional/almoxarifado/ordens-de-compra" },   /* v0.12.27 #11 */
   { id: "compras",      name: "Compras e cotações",      icon: "cash",     desc: "Cotação com fornecedores e pedido",     status: "prévia" },
-  { id: "fornecedores", name: "Fornecedores do Almoxarifado", icon: "supplier", desc: "Fornecedores do centro de custo Operacional (espelho de Terceiros › Fornecedores)", status: "ativo", href: "#/operacional/almoxarifado/fornecedores" },   /* v0.12.59 */
+  { id: "fornecedores", name: "Fornecedores (Almoxarifado)", icon: "supplier", desc: "Faturas e fornecedores do centro de custo Operacional (espelho da CAP e de Terceiros › Fornecedores)", status: "ativo", href: "#/operacional/almoxarifado/fornecedores" },   /* v0.12.59 · v0.12.71: nome e abas */
   { id: "inventario",   name: "Inventário",              icon: "pulse",    desc: "Contagem e acerto de saldo",            status: "prévia" },
   { id: "relatorios",   name: "Relatórios",              icon: "chart",    desc: "Consumo por veículo e por área",        status: "prévia" }
 ];
@@ -8475,16 +8478,28 @@ window.agMovRejeitar = async id => {
 
 /* v0.12.27 #14 · Controle de Roletas — lançamento por carro × horário × roleta inicial/final */
 const ROL_STATE = { site: null, list: undefined, itens: [], ready: false, erro: "", filtroStatus: "" };
+const ROL_LEGADO = { displayName: "Financeiro — Controle de Roletas", siteKey: "financeiro" };   /* v0.12.71: lista antiga (site Financeiro) */
 async function loadRol(force) {
-  if (!ROL_STATE.site) ROL_STATE.site = await SP.site(CONFIG.sites[LISTS.cx_roletas.siteKey]);
-  if (force || ROL_STATE.list === undefined) { const ls = await SP.lists(ROL_STATE.site.id); ROL_STATE.list = ls.find(l => l.displayName === LISTS.cx_roletas.displayName) || null; }
+  /* v0.12.71: a lista oficial é "Operacional — Controle de Roletas" (site Operacional). Enquanto ela não existe, a antiga do Financeiro continua servindo;
+     quando as duas existem, o administrador vê o botão de migrar os lançamentos e, depois, a pendência de apagar a antiga. */
+  if (!ROL_STATE.siteNovo) ROL_STATE.siteNovo = await SP.site(CONFIG.sites[LISTS.cx_roletas.siteKey]);
+  if (force || ROL_STATE.listNova === undefined) { const ls = await SP.lists(ROL_STATE.siteNovo.id); ROL_STATE.listNova = ls.find(l => l.displayName === LISTS.cx_roletas.displayName) || null; }
+  if (force || ROL_STATE.listVelha === undefined) {
+    try { if (!ROL_STATE.siteVelho) ROL_STATE.siteVelho = await SP.site(CONFIG.sites[ROL_LEGADO.siteKey]); const ls = await SP.lists(ROL_STATE.siteVelho.id); ROL_STATE.listVelha = ls.find(l => l.displayName === ROL_LEGADO.displayName) || null; }
+    catch (e) { ROL_STATE.listVelha = null; }   /* sem acesso ao site Financeiro: só a lista nova conta */
+  }
+  if (ROL_STATE.listNova) { ROL_STATE.site = ROL_STATE.siteNovo; ROL_STATE.list = ROL_STATE.listNova; ROL_STATE.legado = false; }
+  else if (ROL_STATE.listVelha) { ROL_STATE.site = ROL_STATE.siteVelho; ROL_STATE.list = ROL_STATE.listVelha; ROL_STATE.legado = true; }
+  else { ROL_STATE.site = ROL_STATE.siteNovo; ROL_STATE.list = null; ROL_STATE.legado = false; }
+  ROL_STATE.velhaN = null;
   if (!ROL_STATE.list) { ROL_STATE.ready = false; return; }
   const its = await SP.items(ROL_STATE.site.id, ROL_STATE.list.id);
   ROL_STATE.itens = its.map(it => Object.assign({ _id: it.id }, it.fields || {}));
   ROL_STATE.ready = true;
+  if (ROL_STATE.listNova && ROL_STATE.listVelha && session.n1) { try { ROL_STATE.velhaN = (await SP.items(ROL_STATE.siteVelho.id, ROL_STATE.listVelha.id)).length; } catch (e) { ROL_STATE.velhaN = null; } }
 }
 function pageRol() {
-  const crumbs = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><b>Controle de Roletas</b></nav>`;
+  const crumbs = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><b>Controle de Roletas</b></nav>`;   /* v0.12.71: Operacional */
   return `<div class="page" id="rolRoot">${crumbs}<div class="cap-topo"><div><h1 style="margin:0">Controle de Roletas</h1><p class="sup" style="margin:2px 0 0">Catracas por carro × horário · aprovação por administrador ou proprietário do módulo</p></div><span class="grow"></span><div id="rolActions"></div></div><div id="rolBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`;
 }
 async function renderRol() { const body = $("rolBody"); if (!body) return; try { await loadRol(true); } catch (e) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(e.message)}</p></div>`; return; } paintRol(); }
@@ -13631,7 +13646,7 @@ function paintForn() {
       <td>${!pronto ? esp : r && r.obrAtivas.length ? `<b>${r.obrAtivas.length}</b> ativa(s)<div class="sup">${car.map(cartBadge).join(" ")}</div>` : `<span class="sup">—</span>`}</td>
       <td>${esc(x.CategoriaPadrao || "—")}${x.SubcategoriaPadrao ? `<div class="sup">${esc(x.SubcategoriaPadrao)}</div>` : ""}</td>
       <td class="forn-cls-cel" onclick="event.stopPropagation()">${fornClasseCel(x)}</td>
-      <td>${esc(x.CentroCustoPadrao || "—")}</td>
+      <td>${esc(x.CentroCustoPadrao || "—")}</td>${FORN_STATE.ccFixo ? `<td class="nw forn-venc-cel">${x.DiaVencimento ? `dia ${esc(String(x.DiaVencimento))}` : `<span class="sup">—</span>`}</td>` : ""}
       <td class="nw forn-cap-cel">${!pronto ? esp : r && r.n ? `<div>${r.pagas} paga(s)</div><div>${r.abertas} em aberto</div><div>${r.vencidas ? `<span class="venc-txt">${r.vencidas} vencida(s) · ${esc(fmtBRL(r.vVencido))}</span>` : `<span class="sup">nenhuma vencida</span>`}</div>` : `<span class="sup">sem contas</span>`}</td>
       <td>${!pronto ? `<span class="sup">carregando…</span>` : r ? obrSitPill(r.sit.k, r.sit.why) : "—"}</td>
       <td>${x.Ativo === false ? `<span class="pill st-vencido"><i></i>Inativo</span>` : `<span class="pill st-pago"><i></i>Ativo</span>`}</td>
@@ -13651,7 +13666,7 @@ function paintForn() {
       <select id="fornAtivo"><option value="ativos" ${f.ativo==="ativos"?"selected":""}>Só ativos</option><option value="todos" ${f.ativo==="todos"?"selected":""}>Ativos e inativos</option><option value="inativos" ${f.ativo==="inativos"?"selected":""}>Só inativos</option></select>
       <select id="fornPag" ${pronto ? "" : "disabled"} title="Situação de pagamento">${[["", "Qualquer pagamento"], ["atraso", "Em atraso"], ["atencao", "Atenção"], ["emdia", "Em dia"], ["sem", "Sem lançamentos"], ["obr", "Com obrigações ativas"]].map(([v, l]) => `<option value="${v}" ${(f.pag || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select>
     </div>
-    ${rows ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Fornecedor</th><th>Obrigação</th><th>Categoria</th><th>Classificação</th><th>Centro de Custo</th><th>Contas na CAP</th><th>Pagamento</th><th>Cadastro</th></tr></thead><tbody>${rows}</tbody></table></div>${moreBtnF}`
+    ${rows ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Fornecedor</th><th>Obrigação</th><th>Categoria</th><th>Classificação</th><th>Centro de Custo</th>${FORN_STATE.ccFixo ? `<th title="Dia de vencimento das faturas do fornecedor">Vencimento</th>` : ""}<th>Contas na CAP</th><th>Pagamento</th><th>Cadastro</th></tr></thead><tbody>${rows}</tbody></table></div>${moreBtnF}`
            : `<div class="cap-empty"><h3>Nenhum fornecedor encontrado</h3><p>Ajuste os filtros para ver mais resultados.</p></div>`}`;
   $("fornBusca").addEventListener("input", ev => { FORN_STATE.filter.busca = ev.target.value; keepFocus(paintForn); });
   $("fornTipo").addEventListener("change", ev => { FORN_STATE.filter.tipo = ev.target.value; paintForn(); });
@@ -14547,7 +14562,7 @@ const PAG_DEF = {
   obr: [{ k: "carteiras", n: "Carteiras", aba: "obrSetView('carteiras')" }, { k: "todas", n: "Todas as obrigações", aba: "obrSetView('todas')" }],
   caixa: [["boletim", "Boletim do dia"], ["movimento", "Movimento"], ["mensal", "Fluxo do mês"], ["fechamento", "Fechamento do mês"], ["contas", "Contas e caixas"], ["painel", "Painel"], ["resumo", "Resumo"], ["importar", "Importar planilha"]].map(([k, n]) => ({ k, n, aba: `cxTab('${k}')` })),
   ag_conc: [{ k: "mov", n: "Movimento de Caixa", rota: "#/financeiro/agencia-conceicao/movimento-de-caixa" }, { k: "ven", n: "Vendas", rota: "#/financeiro/agencia-conceicao/vendas" }, { k: "_caixa", n: "Controle de caixa (só administrador)", info: true }],
-  almox: [{ k: "oc", n: "Ordens de Compra", rota: "#/operacional/almoxarifado/ordens-de-compra" }, { k: "forn", n: "Fornecedores do Almoxarifado", rota: "#/operacional/almoxarifado/fornecedores" }],
+  almox: [{ k: "oc", n: "Ordens de Compra", rota: "#/operacional/almoxarifado/ordens-de-compra" }, { k: "forn", n: "Fornecedores (Almoxarifado)", rota: "#/operacional/almoxarifado/fornecedores" }],
   equip: [{ k: "pagbank", n: "Máquinas PagBank", rota: "#/operacional/equipamentos/pagbank" }, { k: "riocard", n: "Rio Card", rota: "#/operacional/equipamentos/riocard" }],
   di_equip: [{ k: "tablets", n: "Samsung Tablets", rota: "#/diretoria/equipamentos/tablets" }],
   rh_rel: [{ k: "ponto", n: "Controle de Ponto", rota: "#/rh/relatorios/controle-de-ponto" }],
@@ -15402,6 +15417,7 @@ async function loadHor(force) {
 function horVigencia() { const ds = HOR_STATE.itens.filter(x => x.Ativo !== false && x.VigenciaInicio).map(x => ymd(x.VigenciaInicio)).sort(); return ds.length ? ds[ds.length - 1] : ""; }
 function horDe(quadro, bloco, origem, comInativos) { return HOR_STATE.itens.filter(x => x.Quadro === quadro && x.Bloco === bloco && x.Origem === origem && (comInativos || x.Ativo !== false)).sort((a, b) => String(a.Horario).localeCompare(String(b.Horario)) || Number(a.Ordem || 0) - Number(b.Ordem || 0)); }
 function horServCls(s) { return (s === "Preço Único" || s === "Direto") ? "unico" : s === "Madalena" ? "mad" : s === "Fretamento" ? "fret" : ""; }
+const horViaMad = x => /^via madalena$/i.test(String((x && x.Observacao) || "").trim());   /* v0.12.71: "via Madalena" sai como etiqueta verde ao lado do serviço */
 function pageHor() {
   return `<div class="page">
     <div class="page-head"><div><h1>Tabela de Horários</h1>
@@ -15418,7 +15434,7 @@ async function renderHor() {
 }
 function horBlocoHtml(quadro, bloco, titulo, sub, origens, edita) {
   const cols = origens.map(o => { const its = horDe(quadro, bloco, o, edita);   /* quem edita vê também os desativados (riscados), para poder reativar */
-    return `<div><table class="hor-t"><thead><tr><th colspan="3">Saída de ${esc(o)}</th></tr></thead><tbody>${its.length ? its.map(x => `<tr class="${x.Ativo === false ? "off" : ""}" ${edita ? `onclick="horForm(${jsArg(x._id)})" title="${x.Ativo === false ? "Desativado — clique para reativar" : "Editar"}"` : ""}><td class="h">${esc(x.Horario)}</td><td class="s">${x.Servico ? `<span class="hor-servico ${horServCls(x.Servico)}">${esc(horServRot(x.Servico))}</span>` : ""}${x.Observacao ? `<span class="obs">${esc(x.Observacao)}</span>` : ""}${x.Ativo === false ? `<span class="obs">desativado</span>` : ""}</td><td class="a"></td></tr>`).join("") : `<tr><td colspan="3" class="sup">—</td></tr>`}</tbody></table></div>`; }).join("");
+    return `<div><table class="hor-t"><thead><tr><th colspan="3">Saída de ${esc(o)}</th></tr></thead><tbody>${its.length ? its.map(x => `<tr class="${x.Ativo === false ? "off" : ""}" ${edita ? `onclick="horForm(${jsArg(x._id)})" title="${x.Ativo === false ? "Desativado — clique para reativar" : "Editar"}"` : ""}><td class="h">${esc(x.Horario)}</td><td class="s">${x.Servico ? `<span class="hor-servico ${horServCls(x.Servico)}">${esc(horServRot(x.Servico))}</span>` : ""}${x.Observacao ? (horViaMad(x) ? `<span class="hor-servico mad">${esc(x.Observacao)}</span>` : `<span class="obs">${esc(x.Observacao)}</span>`) : ""}${x.Ativo === false ? `<span class="obs">desativado</span>` : ""}</td><td class="a"></td></tr>`).join("") : `<tr><td colspan="3" class="sup">—</td></tr>`}</tbody></table></div>`; }).join("");
   return `<div class="cap-card hor-card"><h3>${esc(titulo)}</h3><p class="sub">${esc(sub)}</p><div class="hor-grid">${cols}</div></div>`;
 }
 function paintHor() {
@@ -15428,7 +15444,7 @@ function paintHor() {
   if (acts) acts.innerHTML = `<button class="btn" onclick="horImprimir(false)" title="Abre a impressão do quadro escolhido (salve como PDF)">Imprimir (PDF)</button><button class="btn" onclick="horImprimir(true)" title="Todos os tipos de dia, uma folha por quadro">Imprimir tudo</button><button class="btn" onclick="horExcel()">Baixar Excel</button>${edita ? `<button class="btn" onclick="horImportAbrir()" title="Importar quadro de horários a partir de .xlsx">Importar Excel</button>` : ""}${siteBotao("horarios")}${edita ? `<button class="btn primary" onclick="horForm()">Novo horário</button>` : ""}`;
   const aviso = HOR_STATE.ready ? "" : HOR_STATE.erro ? `<div class="import-help">Não foi possível ler a lista de horários (${esc(HOR_STATE.erro)}) — o quadro mostrado é o embutido (válido a partir de ${fmtDate(HOR_VIGENCIA_SEED)}).</div>` : `<div class="import-help">A lista "Operacional — Horários" ainda não existe no SharePoint — o quadro mostrado é o embutido (válido a partir de ${fmtDate(HOR_VIGENCIA_SEED)}). Para editar, rode Sistema › Configuração › "Executar tudo na ordem".</div>`;
   const tabs = `<div class="seg-tabs" role="tablist">${HOR_QUADROS.map(x => `<button role="tab" class="${q === x ? "on" : ""}" onclick="horQuadro(${jsArg(x)})">${esc(x)}</button>`).join("")}</div>`;
-  const semana = q === "Segunda a sexta" ? "De 2ª a 6ª feira" : q === "Sábados" ? "Sábados" : "Domingos e feriados";
+  const semana = q === "Segunda a sexta" ? "Segunda a sexta" : q === "Sábados" ? "Sábados" : q === "Domingos e feriados" ? "Domingos e feriados" : q;   /* v0.12.71: o mesmo nome do tipo de dia, sem "De 2ª a 6ª feira" */
   body.innerHTML = `${aviso}
     <div class="op-topo">${tabs}<span class="grow"></span><span class="sup">Válida a partir de <b>${vig ? fmtDate(vig) : "—"}</b>${edita ? ` <button class="btn sm ghost" onclick="horVigenciaEditar()">alterar</button>` : ""}</span></div>
     ${horBlocoHtml(q, "Linha", "Conceição de Macabu × Macaé", semana, ["Macabu", "Macaé"], edita)}
@@ -15851,7 +15867,7 @@ function paxChartDia(its) {
   const dias = diasDoMes(PAX_STATE.mes), porDia = {}; its.forEach(x => { porDia[x.Data] = (porDia[x.Data] || 0) + paxTotal(x); });
   const el = $("paxChartDia"); const old = Chart.getChart(el); if (old) old.destroy();
   const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
-  try { new Chart(el, { type: "bar", data: { labels: dias.map(d => String(dLocal(d).getDate())), datasets: [{ label: "Passageiros", data: dias.map(d => porDia[d] || 0), backgroundColor: dias.map(d => fimDeSemanaOuFeriado(d) ? css("--orange") : css("--navy")) }] }, onClick: (ev, els) => { if (els && els.length) { const i = els[0].index; const d = dias[i]; if (d) paxSelDia(d); } }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, datalabels: { display: true, anchor: "end", align: "end", clamp: true, formatter: v => v ? v.toLocaleString("pt-BR") : "", font: { size: 11, weight: 800 }, color: ctx => { const d = ctx && ctx.chart && ctx.chart.data && ctx.chart.data.labels, i = ctx.dataIndex, dias = diasDoMes(PAX_STATE.mes); const diaStr = dias[i]; return diaStr && fimDeSemanaOuFeriado(diaStr) ? "#A33B00" : "#1E2153"; } }   /* v0.12.22b: rótulo maior + cor laranja escuro em fins de semana/feriados */ }, scales: { x: { ticks: { font: { size: 12 } } }, y: { ticks: { font: { size: 11 } }, beginAtZero: true, grace: "20%" } } }, plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [] }); } catch (e) { console.warn("chart pax", e); }   /* v0.12.22b: fonte +2px */
+  try { new Chart(el, { type: "bar", data: { labels: dias.map(d => String(dLocal(d).getDate())), datasets: [{ label: "Passageiros", data: dias.map(d => porDia[d] || 0), backgroundColor: dias.map(d => fimDeSemanaOuFeriado(d) ? css("--orange") : css("--navy")) }] }, onClick: (ev, els) => { if (els && els.length) { const i = els[0].index; const d = dias[i]; if (d) paxSelDia(d); } }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, datalabels: { display: true, anchor: "end", align: "end", clamp: true, formatter: v => v ? v.toLocaleString("pt-BR") : "", font: { size: PAX_CH.rot, weight: 800 }, color: ctx => { const d = ctx && ctx.chart && ctx.chart.data && ctx.chart.data.labels, i = ctx.dataIndex, dias = diasDoMes(PAX_STATE.mes); const diaStr = dias[i]; return diaStr && fimDeSemanaOuFeriado(diaStr) ? "#A33B00" : "#1E2153"; } }   /* v0.12.22b: rótulo maior + cor laranja escuro em fins de semana/feriados */ }, scales: { x: { ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade } }, y: { ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade }, beginAtZero: true, grace: "20%" } } }, plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [] }); } catch (e) { console.warn("chart pax", e); }   /* v0.12.71 #9: eixos em cinza-escuro e maiores */   /* v0.12.22b: fonte +2px */
 }
 function paxPorTrecho(its) {
   const porServ = {};
@@ -15931,10 +15947,12 @@ function paxPainel() {
   </div>`;
   const linhas = meses.map(m => `<tr><td class="nw">${esc(mesLabel(m.k))}</td><td class="n">${m.dias.size}</td><td class="n">${m.n}</td><td class="n">${m.pag.toLocaleString("pt-BR")}</td><td class="n">${m.grat.toLocaleString("pt-BR")}</td><td class="n">${(m.pag + m.grat).toLocaleString("pt-BR")}</td><td>${paxOcupHtml(m.lug ? m.pag / m.lug : 0)}</td></tr>`).join("");
   return `${kpis}
-    <div class="cap-card"><div class="cap-card-h"><h3>Passageiros por mês</h3><span class="cap-card-s">pagantes e gratuidades · ${meses.length} mês(es)</span><span class="grow"></span><span class="seg-tabs" role="tablist" style="margin-left:auto"><button class="${(PAX_UI.painelGrafMes||"bar")==="bar" ? "on" : ""}" onclick="PAX_UI.painelGrafMes='bar'; paxPainelCharts()">Barras</button><button class="${PAX_UI.painelGrafMes==="line" ? "on" : ""}" onclick="PAX_UI.painelGrafMes='line'; paxPainelCharts()">Linhas</button></span></div><div class="cap-chart" style="height:260px"><canvas id="paxChartMes"></canvas></div></div>
+    <div class="cap-card"><div class="cap-card-h"><h3>Passageiros por mês</h3><span class="cap-card-s">pagantes e gratuidades · ${meses.length} mês(es)</span><span class="grow"></span><span class="seg-tabs" role="tablist" style="margin-left:auto" id="paxGrafMesSeg"><button data-modo="bar" class="${(PAX_UI.painelGrafMes||"bar")==="bar" ? "on" : ""}" onclick="PAX_UI.painelGrafMes='bar'; paxPainelCharts()">Barras</button><button data-modo="line" class="${PAX_UI.painelGrafMes==="line" ? "on" : ""}" onclick="PAX_UI.painelGrafMes='line'; paxPainelCharts()">Linhas</button></span></div><div class="cap-chart" style="height:260px"><canvas id="paxChartMes"></canvas></div></div>
     <div class="cap-card"><div class="cap-card-h"><h3>Comparação por ano</h3><span class="cap-card-s">total de passageiros no ano</span></div><div class="cap-chart" style="height:180px"><canvas id="paxChartAno"></canvas></div></div>
     <div class="cap-card"><div class="cap-card-h"><h3>Mês a mês</h3></div><div class="table-wrap"><table class="cap-table"><thead><tr><th>Mês</th><th class="n">Dias</th><th class="n">Viagens</th><th class="n">Pagantes</th><th class="n">Gratuid.</th><th class="n">Total</th><th>Ocupação</th></tr></thead><tbody>${linhas}</tbody></table></div></div>`;
 }
+/* v0.12.71 #9: rótulos de dados maiores e eixos/legendas em cinza-escuro, com fonte maior (Painel de Passageiros) */
+const PAX_CH = { rot: 13, eixo: 12.5, cor: "#2F3747", grade: "#E3E7EE" };
 function paxPainelCharts() {
   if (!window.Chart) return;
   const todos = PAX_STATE.itens;
@@ -15947,14 +15965,15 @@ function paxPainelCharts() {
     const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
     /* v0.12.22b: barras sobrepostas (padrão) OU linhas; se linhas, mostra rótulo acima do ponto na mesma cor */
     const modo = PAX_UI.painelGrafMes || "bar";
+    document.querySelectorAll("#paxGrafMesSeg button").forEach(b => b.classList.toggle("on", b.dataset.modo === modo));   /* v0.12.71 #9c: o botão Barras/Linhas acompanha a escolha */
     try {
       if (modo === "line") {
         new Chart(el, { type: "line", data: { labels: meses.map(m => mesLabelCurto(m.k)), datasets: [
           { label: "Pagantes", data: meses.map(m => m.pag), borderColor: css("--navy"), backgroundColor: css("--navy"), tension: 0.3, pointRadius: 4 },
           { label: "Gratuidades", data: meses.map(m => m.grat), borderColor: css("--orange"), backgroundColor: css("--orange"), tension: 0.3, pointRadius: 4 }
-        ] }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: true }, datalabels: { display: true, anchor: "end", align: "top", formatter: v => v ? v.toLocaleString("pt-BR") : "", font: { size: 10, weight: 800 }, color: ctx => ctx.datasetIndex === 1 ? css("--orange") : css("--navy") } }, scales: { x: { ticks: { font: { size: 11 } } }, y: { ticks: { font: { size: 10 } }, beginAtZero: true, grace: "25%" } } }, plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [] });
+        ] }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: true, labels: { color: PAX_CH.cor, font: { size: PAX_CH.eixo, weight: 600 } } }, datalabels: { display: true, anchor: "end", align: "top", formatter: v => v ? v.toLocaleString("pt-BR") : "", font: { size: PAX_CH.rot, weight: 800 }, color: ctx => ctx.datasetIndex === 1 ? css("--orange") : css("--navy") } }, scales: { x: { ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade } }, y: { ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade }, beginAtZero: true, grace: "25%" } } }, plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [] });
       } else {
-        new Chart(el, { type: "bar", data: { labels: meses.map(m => mesLabelCurto(m.k)), datasets: [{ label: "Pagantes", data: meses.map(m => m.pag), backgroundColor: css("--navy") }, { label: "Gratuidades", data: meses.map(m => m.grat), backgroundColor: css("--orange") }] }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: true }, datalabels: { display: true, anchor: "end", align: "top", formatter: v => v ? v.toLocaleString("pt-BR") : "", font: { size: 10, weight: 800 }, color: ctx => ctx.datasetIndex === 1 ? css("--orange") : css("--navy") } }, scales: { x: { stacked: false, ticks: { font: { size: 11 } } }, y: { stacked: false, ticks: { font: { size: 10 } }, beginAtZero: true, grace: "20%" } } }, plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [] });   /* v0.12.26: colunas agrupadas lado a lado, com rótulo acima na cor da coluna */
+        new Chart(el, { type: "bar", data: { labels: meses.map(m => mesLabelCurto(m.k)), datasets: [{ label: "Pagantes", data: meses.map(m => m.pag), backgroundColor: css("--navy") }, { label: "Gratuidades", data: meses.map(m => m.grat), backgroundColor: css("--orange") }] }, options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: true, labels: { color: PAX_CH.cor, font: { size: PAX_CH.eixo, weight: 600 } } }, datalabels: { display: true, anchor: "end", align: "top", formatter: v => v ? v.toLocaleString("pt-BR") : "", font: { size: PAX_CH.rot, weight: 800 }, color: ctx => ctx.datasetIndex === 1 ? css("--orange") : css("--navy") } }, scales: { x: { stacked: false, ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade } }, y: { stacked: false, ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade }, beginAtZero: true, grace: "20%" } } }, plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [] });   /* v0.12.26: colunas agrupadas lado a lado, com rótulo acima na cor da coluna */
       }
     } catch (e) { console.warn("chart mes", e); }
   }
@@ -15964,7 +15983,7 @@ function paxPainelCharts() {
     const porAno = {};
     meses.forEach(m => { const y = m.k.slice(0, 4); porAno[y] = (porAno[y] || 0) + m.pag + m.grat; });
     const anos = Object.keys(porAno).sort();
-    try { new Chart(el2, { type: "bar", data: { labels: anos, datasets: [{ label: "Total do ano", data: anos.map(a => porAno[a]), backgroundColor: "#2E8B57" }] }, options: { responsive: true, maintainAspectRatio: false, animation: false, indexAxis: "y", plugins: { legend: { display: false }, datalabels: { display: true, anchor: "end", align: "end", formatter: v => v.toLocaleString("pt-BR"), font: { size: 10, weight: 700 } } }, scales: { x: { beginAtZero: true } } }, plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [] }); } catch (e) { console.warn("chart ano", e); }
+    try { new Chart(el2, { type: "bar", data: { labels: anos, datasets: [{ label: "Total do ano", data: anos.map(a => porAno[a]), backgroundColor: "#2E8B57" }] }, options: { responsive: true, maintainAspectRatio: false, animation: false, indexAxis: "y", plugins: { legend: { display: false }, datalabels: { display: true, anchor: "end", align: "end", formatter: v => v.toLocaleString("pt-BR"), font: { size: PAX_CH.rot, weight: 800 }, color: "#1E2153" } }, scales: { x: { beginAtZero: true, ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade } }, y: { ticks: { font: { size: PAX_CH.eixo, weight: 700 }, color: PAX_CH.cor }, grid: { display: false } } } }, plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [] }); } catch (e) { console.warn("chart ano", e); }
   }
 }
 function mesLabelCurto(c) { const m = String(c || "").match(/^(\d{4})-(\d{2})$/); if (!m) return c; return `${["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"][Number(m[2])-1]}/${m[1].slice(2)}`; }
@@ -17747,8 +17766,8 @@ LISTS.rh_clt_acoes = {
 SETUP_ORDER.push("rh_clt_acoes");   /* v0.12.26 */
 /* v0.12.27 #14: Controle de Roletas - lançamento de catracas (números iniciais e finais) por carro × horário × motorista */
 LISTS.cx_roletas = {
-  key: "cx_roletas", displayName: "Financeiro — Controle de Roletas", siteKey: "financeiro", titleAs: "Protocolo",
-  description: "Financeiro NMB · controle de catracas: por data, carro, horário/sentido, motorista, roleta inicial e final. Aprovação por administrador ou proprietário do módulo.",
+  key: "cx_roletas", displayName: "Operacional — Controle de Roletas", siteKey: "operacional", titleAs: "Protocolo",   /* v0.12.71: o módulo foi para o Operacional; a lista nova fica no site Operacional (a antiga, "Financeiro — Controle de Roletas", é lida até a migração) */
+  description: "Operacional NMB · controle de catracas: por data, carro, horário/sentido, motorista, roleta inicial e final. Aprovação por administrador ou proprietário do módulo.",
   columns: [
     { name: "Data", displayName: "Data", required: true, dateTime: dateOnly },
     { name: "Agencia", displayName: "Agência", choice: choice(["Macaé (matriz)", "Conceição de Macabu", "Sub-agência"]), update: true },
@@ -19228,11 +19247,11 @@ function lancCampoHtml(f, v, ro) {
   return `<div class="lanc-f ${f.larg ? "w" + f.larg : ""}"><label for="${id}">${esc(f.lbl)}${req}</label>${inp}${dica ? `<div class="hint">${esc(dica)}</div>` : ""}</div>`;
 }
 function lancFuncSelect(id, v, dis, soMot, cls) {
-  const { mot, out } = lancMotoristas(), todos = mot.concat(out);
-  if (LANC_AUX.funcs && !todos.length) return `<input class="lanc-in ${cls || ""}" id="${id}" value="${esc(v || "")}" placeholder="Digite o nome" title="Cadastre os funcionários em RH › Banco de Dados › Funcionários para escolher da lista" ${dis}>`;
+  const { mot, out } = lancMotoristas(), todos = soMot ? mot : mot.concat(out);   /* v0.12.71: lista de motorista só com motoristas (quem tem "Motorista" no cargo) — sem "Outros funcionários" */
+  if (LANC_AUX.funcs && !todos.length) return `<input class="lanc-in ${cls || ""}" id="${id}" value="${esc(v || "")}" placeholder="Digite o nome" title="${soMot ? "Cadastre os motoristas em RH › Banco de Dados › Funcionários (cargo Motorista) para escolher da lista" : "Cadastre os funcionários em RH › Banco de Dados › Funcionários para escolher da lista"}" ${dis}>`;
   const temV = v && !todos.some(f => f.Title === v);
   const og = (rot, arr) => arr.length ? `<optgroup label="${esc(rot)}">${arr.map(f => `<option ${f.Title === v ? "selected" : ""} value="${esc(f.Title)}">${esc(f.Title)}</option>`).join("")}</optgroup>` : "";
-  return `<select class="lanc-in lanc-sel ${cls || ""}" id="${id}" ${dis} data-func="1"><option value="">${LANC_AUX.funcs ? "Selecione…" : "Carregando funcionários…"}</option>${temV ? `<option selected>${esc(v)}</option>` : ""}${soMot && mot.length ? og("Motoristas", mot) + og("Outros funcionários", out) : og("Funcionários", todos)}</select>`;
+  return `<select class="lanc-in lanc-sel ${cls || ""}" id="${id}" ${dis} data-func="1"><option value="">${LANC_AUX.funcs ? "Selecione…" : "Carregando funcionários…"}</option>${temV ? `<option selected>${esc(v)}</option>` : ""}${soMot ? og("Motoristas", mot) : og("Funcionários", todos)}</select>`;
 }
 function lancCelHtml(c, v, i, ro) {
   const dis = ro || c.calc ? "disabled" : "", nm = `data-i="${i}" data-c="${c.k}"`;
@@ -22694,17 +22713,14 @@ function pageFornAlmox() {
 { const r3 = route;
   route = function () {
     const hash = (location.hash || "").split("?")[0];
-    if (hash !== "#/operacional/almoxarifado/fornecedores") { if (FORN_STATE.ccFixo) { FORN_STATE.ccFixo = ""; FORN_STATE.filter = Object.assign({}, FORN_STATE.filter, { busca: "" }); } return r3.apply(this, arguments); }
+    if (hash !== "#/operacional/almoxarifado/fornecedores") { if (FORN_STATE.ccFixo) { FORN_STATE.ccFixo = ""; FORN_STATE.filter = Object.assign({}, FORN_STATE.filter, { busca: "" }); } almfSair(); return r3.apply(this, arguments); }
     const m = MODULES.find(x => x.id === "almox");
     session.pagAtual = "almox.forn";
     if (!canSee(m) || (!session.n1 && pagNivel("almox", "forn") === "nenhum")) { session.pagAtual = ""; location.hash = "#/inicio"; return; }
     session.modAtual = "almox"; document.body.classList.remove("wide", "nav-open");
-    if (!session.n1 && permModuloSo("forn") === "nenhum") {   /* o espelho mostra o cadastro (e as contas da CAP): exige acesso a Terceiros › Fornecedores */
-      $("main").innerHTML = pageFornAlmox().replace(/<div id="fornBody">[\s\S]*$/, `<div class="cap-empty"><h3>Sem acesso a Fornecedores</h3><p>Esta página espelha Terceiros › Fornecedores. Peça a um administrador o acesso a Fornecedores (Sistema › Usuários e permissões).</p></div></div>`);
-      navAtivo("almox"); window.scrollTo(0, 0); return;
-    }
+    /* v0.12.71: quem não tem CAP nem Fornecedores vê o aviso dentro da página (almfEntrar) */
     FORN_STATE.ccFixo = "Operacional";
-    $("main").innerHTML = pageFornAlmox(); renderForn(); navAtivo("almox"); window.scrollTo(0, 0);
+    $("main").innerHTML = pageFornAlmox(); almfEntrar(); navAtivo("almox"); window.scrollTo(0, 0);   /* v0.12.71: abas Faturas e Fornecedores */
   };
 }
 
@@ -24067,6 +24083,446 @@ function initPesq() {
   $q("ps-atualizado").textContent = "Demonstração";
   carregar(); lerLink();
 }
+
+/* =====================================================================
+   v0.12.71 · Pedido de 08/10 (itens 1, 2, 4, 5, 6, 8, 9, 12 e 13): Controle de Roletas no Operacional; impressão e Excel de
+   Tarifas e Horários no padrão técnico; quadro de sábados/domingos e Madalena corrigido; Fornecedores (Almoxarifado) com as
+   abas Faturas e Fornecedores; Balde na classificação; OC em página inteira; gráficos de Passageiros; listas de motoristas.
+   ===================================================================== */
+/* ---- 1 · Controle de Roletas: migração da lista antiga (site Financeiro) para a nova (site Operacional) ---- */
+SETUP_TEXT.cx_roletas = `Cria no site Operacional a lista "Operacional — Controle de Roletas" (vazia): lançamentos de catracas por carro × horário × motorista, com aprovação por administrador ou proprietário do módulo. Usada em Operacional › Controle de Roletas. Até a v0.12.70 a lista ficava no site Financeiro ("Financeiro — Controle de Roletas"): depois de criar a nova, o administrador migra os lançamentos pelo botão da página e apaga a antiga no SharePoint.`;
+SETUP_TEXT.cx_recebimento = SETUP_TEXT.cx_recebimento || `Cria no site Financeiro a lista "Financeiro — Recebimentos de Motorista" (vazia): malotes recebidos dos motoristas, com conferência de valor recebido × esperado e aprovação. Usada em Financeiro › Arrecadação.`;
+SETUP_TEXT.ag_mov = SETUP_TEXT.ag_mov || `Cria no site Financeiro a lista "Agência — Movimentos" (vazia): movimento diário do caixa da agência (entradas, saídas e aprovação). Usada em Financeiro › Operações da Agência › Movimento de Caixa.`;
+SETUP_TEXT.alm_oc = SETUP_TEXT.alm_oc || `Cria no site Operacional a lista "Almoxarifado — Ordens de Compra" (vazia): pedidos de compra com itens, total estimado e aprovação por administrador. Usada em Operacional › Almoxarifado › Ordens de Compra.`;
+function rolMigracaoHtml() {
+  if (!session.n1 || !ROL_STATE.ready) return "";
+  if (ROL_STATE.legado) return `<div class="import-help"><b>Controle de Roletas mudou para o Operacional.</b> Os lançamentos ainda estão na lista antiga <b>${esc(ROL_LEGADO.displayName)}</b> (site Financeiro). Rode Sistema › Configuração › "Executar tudo na ordem" para criar a lista nova no site Operacional; depois o botão de migração aparece aqui.</div>`;
+  if (!ROL_STATE.listVelha) return "";
+  const n = ROL_STATE.velhaN, mig = ROL_STATE.migracao;
+  if (n === 0) return `<div class="import-help"><b>Pendência:</b> a lista antiga <b>${esc(ROL_LEGADO.displayName)}</b> (site Financeiro) está vazia e não é mais usada — pode ser apagada no SharePoint.</div>`;
+  if (mig && mig.em) return `<div class="import-help"><b>Migração concluída</b> em ${esc(fmtDate(mig.em))} (${esc(String(mig.n || 0))} lançamento(s), por ${esc(mig.por || "")}). <b>Pendência:</b> apagar a lista antiga <b>${esc(ROL_LEGADO.displayName)}</b> no site Financeiro (ela ainda tem ${esc(String(n == null ? "?" : n))} registro(s), já copiados).</div>`;
+  return `<div class="import-help"><b>Controle de Roletas mudou para o Operacional.</b> A lista nova <b>${esc(LISTS.cx_roletas.displayName)}</b> já existe; a antiga (site Financeiro) ainda tem <b>${esc(String(n == null ? "?" : n))}</b> lançamento(s). <button class="btn sm primary" onclick="rolMigrar()">Migrar ${esc(String(n == null ? "" : n))} lançamento(s) para a lista nova</button> <span class="sup">Copia todos os registros (com status, aprovador e histórico). A lista antiga não é apagada: você faz isso no SharePoint depois de conferir.</span></div>`;
+}
+window.rolMigrar = async () => {
+  if (!session.n1 || !ROL_STATE.listNova || !ROL_STATE.listVelha) return;
+  const velhos = (await SP.items(ROL_STATE.siteVelho.id, ROL_STATE.listVelha.id)).map(it => it.fields || {});
+  if (!velhos.length) { toast("A lista antiga está vazia."); await loadRol(true); paintRol(); return; }
+  const jaTem = new Set(ROL_STATE.itens.map(x => String(x.Title || "")));
+  const novos = velhos.filter(f => !jaTem.has(String(f.Title || "")));
+  if (!(await erpConfirmar({ titulo: "Migrar o Controle de Roletas", html: `<p>Copiar <b>${novos.length}</b> lançamento(s) da lista antiga (site Financeiro) para <b>${esc(LISTS.cx_roletas.displayName)}</b>?${velhos.length - novos.length ? ` <span class="sup">${velhos.length - novos.length} já estão na lista nova (mesmo protocolo) e não serão repetidos.</span>` : ""}</p><p class="sup">Nada é apagado. Depois de conferir, apague a lista antiga no SharePoint.</p>`, sim: "Migrar" }))) return;
+  const cols = new Set(LISTS.cx_roletas.columns.map(c => c.name).concat(["Title"]));
+  let ok = 0, falha = 0;
+  for (const f of novos) {
+    const campos = {}; Object.keys(f).forEach(k => { if (cols.has(k) && f[k] != null && f[k] !== "") campos[k] = f[k]; });
+    campos.Historico = ((f.Historico ? f.Historico + "\n" : "")) + `${lancAgora()} · ${lancQuem()} · migrado da lista do Financeiro`;
+    try { await SP.create(ROL_STATE.siteNovo.id, ROL_STATE.listNova.id, campos); ok++; } catch (e) { falha++; console.warn("rolMigrar", f.Title, e); }
+  }
+  try { await erpParamGravar("rol_migracao", { em: todayISO(), n: ok, por: lancQuem() }); ROL_STATE.migracao = { em: todayISO(), n: ok, por: lancQuem() }; } catch (e) {}
+  toast(`${ok} lançamento(s) migrado(s)${falha ? ` · ${falha} falha(s)` : ""}`, 6000);
+  await loadRol(true); paintRol();
+};
+{ const p0 = paintRol;
+  paintRol = function () {
+    const r = p0.apply(this, arguments);
+    const body = $("rolBody"); if (body && !(LANC_ED && LANC_ED.k === "rol")) { const h = rolMigracaoHtml(); if (h) body.insertAdjacentHTML("afterbegin", h); }
+    return r;
+  };
+  const r0 = renderRol;
+  renderRol = async function () {
+    if (session.n1 && ROL_STATE.migracao === undefined) { try { const p = await erpParamLer("rol_migracao"); ROL_STATE.migracao = p && p.valor ? p.valor : null; } catch (e) { ROL_STATE.migracao = null; } }
+    return r0.apply(this, arguments);
+  };
+}
+
+/* ---- 4 · Almoxarifado › Fornecedores (Almoxarifado): abas Faturas (CAP só com o CC Operacional) e Fornecedores (espelho de Terceiros) ---- */
+const ALMF = { aba: "faturas", cc: "Operacional" };
+MOD_RESET.almf = () => { ALMF.aba = "faturas"; };
+function almfTemCap() { return session.n1 || permModuloSo("cap") !== "nenhum"; }
+function almfTemForn() { return session.n1 || permModuloSo("forn") !== "nenhum"; }
+function pageFornAlmox() {
+  return `<div class="page" id="almfRoot">
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><a href="#/operacional/almoxarifado">Almoxarifado</a><span>›</span><b>Fornecedores (Almoxarifado)</b></nav>
+    <div class="page-head"><div><h1>Fornecedores (Almoxarifado)</h1>
+    <p class="lead">As faturas e os fornecedores do centro de custo <b>${esc(ALMF.cc)}</b>, direto da Contas a Pagar e de Terceiros › Fornecedores: o que mudar aqui muda lá.</p></div>
+    <div class="page-actions" id="almfActions"></div></div>
+    <div class="cap-topo"><div class="cap-views" id="almfTabs"></div></div>
+    <div id="almfBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
+  </div>`;
+}
+function almfTabsHtml() {
+  const t = [];
+  if (almfTemCap()) t.push(`<button class="${ALMF.aba === "faturas" ? "on" : ""}" onclick="almfAba('faturas')">Faturas</button>`);
+  if (almfTemForn()) t.push(`<button class="${ALMF.aba === "forn" ? "on" : ""}" onclick="almfAba('forn')">Fornecedores</button>`);
+  return t.join("");
+}
+function almfEntrar() {
+  CAP_STATE.espelhoCC = ALMF.cc;
+  if (!almfTemCap() && !almfTemForn()) { $("almfBody").innerHTML = `<div class="cap-empty"><h3>Sem acesso</h3><p>Esta página espelha a Contas a Pagar e Terceiros › Fornecedores. Peça a um administrador o acesso (Sistema › Usuários e permissões).</p></div>`; return; }
+  if (ALMF.aba === "faturas" && !almfTemCap()) ALMF.aba = "forn";
+  if (ALMF.aba === "forn" && !almfTemForn()) ALMF.aba = "faturas";
+  almfAba(ALMF.aba);
+}
+function almfSair() {
+  if (!CAP_STATE.espelhoCC) return;
+  CAP_STATE.espelhoCC = "";
+  if (CAP_STATE._todos) { CAP_STATE.items = CAP_STATE._todos; CAP_STATE._todos = null; }
+}
+window.almfAba = async k => {
+  ALMF.aba = k; const tabs = $("almfTabs"), body = $("almfBody"), acts = $("almfActions"); if (!body) return;
+  if (tabs) tabs.innerHTML = almfTabsHtml();
+  if (k === "forn") {
+    session.pagAtual = "almox.forn";
+    if (acts) acts.innerHTML = podeEditar("forn") ? `<button class="btn primary" onclick="fornNew()">Novo fornecedor</button>` : "";
+    body.innerHTML = `<div id="fornBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>`;
+    renderForn(); return;
+  }
+  session.pagAtual = "almox.faturas";
+  if (acts) acts.innerHTML = `<div id="capActions"></div>`;
+  body.innerHTML = `<div id="capBody"><div class="cap-empty"><h3>Carregando as faturas…</h3></div></div>`;
+  CAP_STATE.view = "lista";
+  renderCAP();
+};
+/* enquanto o espelho está aberto, a CAP só enxerga as contas do centro de custo Operacional (a lista completa fica guardada e volta ao sair) */
+{ const l0 = loadCAP;
+  loadCAP = async function (opts) {
+    const r = await l0.apply(this, arguments);
+    if (CAP_STATE.espelhoCC) { CAP_STATE._todos = CAP_STATE.items; CAP_STATE.items = CAP_STATE.items.filter(it => (ccDe(it) || "") === CAP_STATE.espelhoCC); return CAP_STATE.items; }
+    return r;
+  };
+  const g0 = capRecorrentesGerar;
+  capRecorrentesGerar = async function () { if (CAP_STATE.espelhoCC) return; return g0.apply(this, arguments); };   /* as recorrentes só são geradas na própria CAP, com a lista inteira */
+  const v0 = capViewsBar;
+  capViewsBar = function () {
+    if (!CAP_STATE.espelhoCC) return v0.apply(this, arguments);
+    const ocupado = !!CAP_STATE.atualizando;
+    return `<div class="cap-topo"><div class="cap-views"><span class="sup">Faturas do centro de custo <b>${esc(CAP_STATE.espelhoCC)}</b></span></div>
+      <div class="cap-atual"><span class="sup" id="capStamp">${CAP_STATE.carregadoEm ? "atualizado às " + horaCurta(CAP_STATE.carregadoEm) : ""}</span><button class="btn sm" id="capAtualizar" onclick="renderCAP()" title="Recarregar do SharePoint" ${ocupado ? "disabled" : ""}>${ocupado ? "Atualizando…" : "Atualizar"}</button></div></div>`;
+  };
+  const n0 = window.capNew;
+  window.capNew = function (pre) { const r = n0.apply(this, arguments); if (CAP_STATE.espelhoCC && $("fCC")) { const s = $("fCC"); if (!s.value) s.value = CAP_STATE.espelhoCC; } return r; };   /* fCC é um campo com sugestões (datalist) */
+  const s0 = window.capSetView;
+  window.capSetView = function (v) { if (CAP_STATE.espelhoCC && v !== "lista") { toast("No Almoxarifado só as Faturas e os Fornecedores do centro de custo Operacional."); return; } return s0.apply(this, arguments); };
+}
+/* a tabela de fornecedores do espelho ganha a coluna Vencimento (dia de vencimento do fornecedor) */
+
+/* ---- 8 · Almoxarifado › Ordens de Compra: a OC abre numa página inteira, como o Movimento de Caixa (editor, rascunho neste navegador, confirmação em janela do ERP) ---- */
+const OC_AREAS = ["Oficina", "Tráfego", "Administrativo", "Agência", "RH", "TI", "Diretoria", "Outro"], OC_URG = ["Normal", "Urgente", "Parado por falta"];
+let OC_ED = null;
+function ocNovoVazio() { return { cab: { Data: todayISO(), Requisitante: autorFixo(""), Area: "Oficina", FornecedorSugerido: "", Urgencia: "Normal" }, itens: [ocItemVazio()], obs: "" }; }
+function ocItemVazio() { return { desc: "", un: "un", qt: 1, vu: "" }; }
+function ocItemVazioQ(l) { return !String(l.desc || "").trim() && !lancNum(l.vu); }
+function ocLer(x) { return { cab: { Data: lancDataIso(x.Data), Requisitante: x.Requisitante || "", Area: x.Area || "", FornecedorSugerido: x.FornecedorSugerido || "", Urgencia: x.Urgencia || "Normal" }, itens: almOcItensFromJson(x.Itens).map(l => ({ desc: l.desc || "", un: l.un || "un", qt: l.qt === 0 || l.qt ? Number(l.qt) : "", vu: Number(l.vu || 0) || "" })), obs: x.Observacoes || "" }; }
+function ocTot(itens) { const v = itens.filter(l => !ocItemVazioQ(l)); return { n: v.length, total: Math.round(v.reduce((s, l) => s + lancNum(l.qt) * lancNum(l.vu), 0) * 100) / 100 }; }
+function ocPodeEditarReg(x) { if (!almOcPodeEditar()) return false; return !x || x.Status === "Pendente" || x.Status === "Rejeitada"; }
+function ocPill(st) { const c = { Pendente: "pendente", Aprovada: "pago", Rejeitada: "vencido", Comprada: "pago", Recebida: "pago", Rascunho: "aguardando" }[st] || "pendente"; return `<span class="pill st-${c}"><i></i>${esc(st || "—")}</span>`; }
+function ocMudou() { if (!OC_ED) return false; const n = o => JSON.stringify({ cab: o.cab, itens: o.itens.filter(l => !ocItemVazioQ(l)), obs: o.obs }); return n(OC_ED) !== n(JSON.parse(OC_ED.base)); }
+function ocRascunho() {
+  if (!OC_ED) return; const x = OC_ED.id ? ALM_OC_STATE.itens.find(y => String(y._id) === OC_ED.id) : null; if (x && !ocPodeEditarReg(x)) return;
+  if (!ocMudou()) { lancRascGravar("oc", OC_ED.id, null); OC_ED.salvoEm = ""; const e0 = $("ocSalvoEm"); if (e0) e0.textContent = "As alterações ficam como rascunho neste navegador até você salvar ou cancelar"; return; }
+  OC_ED.salvoEm = lancAgora().slice(11);
+  lancRascGravar("oc", OC_ED.id, { cab: OC_ED.cab, itens: OC_ED.itens, obs: OC_ED.obs, em: lancAgora(), base: OC_ED.id ? OC_ED.base : "" });
+  const el = $("ocSalvoEm"); if (el) el.textContent = `Rascunho guardado neste navegador às ${OC_ED.salvoEm}`;
+}
+window.almOcNovo = () => almOcAbrirPag(null);
+window.almOcAbrir = id => almOcAbrirPag(id);
+async function almOcAbrirPag(id) {
+  const x = id ? ALM_OC_STATE.itens.find(y => String(y._id) === String(id)) : null;
+  if (id && !x) { toast("Ordem não encontrada — clique em Atualizar."); return; }
+  if (!x && !almOcPodeEditar()) { toast("Seu acesso ao Almoxarifado é só de leitura."); return; }
+  const base = x ? ocLer(x) : ocNovoVazio();
+  let rasc = lancRascTodos("oc")[x ? String(x._id) : "novo"];
+  if (rasc && x && ocPodeEditarReg(x) && rasc.base && rasc.base !== JSON.stringify(base)) {
+    const usar = await erpConfirmar({ titulo: "A OC mudou depois do seu rascunho", html: `<p>Alguém salvou esta ordem depois que você guardou o rascunho (${esc(rasc.em || "")}). Usar o rascunho <b>substitui</b> o que foi salvo; descartar abre a versão atual.</p>`, sim: "Usar meu rascunho", nao: "Descartar e abrir a versão atual", perigo: true });
+    if (usar === null) return;
+    if (!usar) { lancRascGravar("oc", String(x._id), null); rasc = null; }
+  } else if (rasc && x && !ocPodeEditarReg(x)) rasc = null;
+  const ed = rasc ? { cab: Object.assign({}, base.cab, rasc.cab || {}), itens: Array.isArray(rasc.itens) && rasc.itens.length ? rasc.itens : base.itens, obs: rasc.obs != null ? rasc.obs : base.obs } : base;
+  OC_ED = { id: x ? String(x._id) : null, cab: ed.cab, itens: ed.itens.length ? ed.itens : [ocItemVazio()], obs: ed.obs || "", base: JSON.stringify(base), salvoEm: rasc ? rasc.em : "" };
+  if (!session.n1) OC_ED.cab.Requisitante = x ? (x.Requisitante || "") : autorFixo("");   /* v0.12.56: o requisitante é quem lança */
+  ocPintar(); window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function ocPintar() {
+  const E = OC_ED, body = $("almOcBody"); if (!E || !body) return;
+  const x = E.id ? ALM_OC_STATE.itens.find(y => String(y._id) === E.id) : null;
+  const pode = ocPodeEditarReg(x), ro = !pode, st = x ? x.Status || "Pendente" : "Rascunho", aprova = almOcEhAprov() && x && st === "Pendente";
+  const acts = $("almOcActions"); if (acts) acts.innerHTML = "";
+  const foco = document.activeElement && body.contains(document.activeElement) ? { c: document.activeElement.dataset && document.activeElement.dataset.c, i: document.activeElement.dataset && document.activeElement.dataset.i, id: document.activeElement.id } : null;
+  const trava = !session.n1, dis = ro ? "disabled" : "";
+  const T = ocTot(E.itens);
+  const forns = [...new Set(((typeof FORN_STATE !== "undefined" && FORN_STATE.items) || []).filter(f => f.Ativo !== false).map(f => f.Title).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const grid = "grid-template-columns: 34px minmax(220px,3fr) minmax(80px,.7fr) minmax(90px,.8fr) minmax(130px,1.1fr) minmax(120px,1fr) 40px";
+  const linhas = E.itens.map((l, i) => `<div class="lanc-row" style="${grid}" data-row="${i}"><div class="lanc-idx">${i + 1}</div>
+    <div class="lanc-cell" data-l="Descrição"><input class="lanc-in" data-i="${i}" data-c="desc" value="${esc(l.desc || "")}" placeholder="Óleo motor 15W40 — 20L" autocomplete="off" ${dis} aria-label="Descrição"></div>
+    <div class="lanc-cell" data-l="Un."><input class="lanc-in" data-i="${i}" data-c="un" value="${esc(l.un || "")}" placeholder="un" autocomplete="off" ${dis} aria-label="Unidade"></div>
+    <div class="lanc-cell" data-l="Qtd"><input class="lanc-in num" data-i="${i}" data-c="qt" inputmode="decimal" value="${l.qt === 0 || l.qt ? esc(String(l.qt).replace(".", ",")) : ""}" placeholder="1" autocomplete="off" ${dis} aria-label="Quantidade"></div>
+    <div class="lanc-cell" data-l="Valor un."><div class="lanc-money"><span>R$</span><input class="lanc-in" data-i="${i}" data-c="vu" inputmode="decimal" value="${esc(lancMoedaTxt(l.vu))}" placeholder="0,00" autocomplete="off" ${dis} aria-label="Valor unitário"></div></div>
+    <div class="lanc-cell" data-l="Total"><div class="lanc-calc forte" data-i="${i}" data-c="vt">${esc(fmtBRL(lancNum(l.qt) * lancNum(l.vu)))}</div></div>
+    <div class="lanc-del">${ro ? "" : `<button type="button" class="lanc-x" title="Remover este item" onclick="ocItemDel(${i})" ${E.itens.length === 1 ? "disabled" : ""}>×</button>`}</div></div>`).join("");
+  const stBox = x ? `<div class="lanc-statusbox">${ocPill(st)}${x.Aprovador ? `<span>${st === "Rejeitada" ? "Rejeitada" : "Aprovada"} por <b>${esc(x.Aprovador)}</b>${x.DataAprovacao ? " em " + fmtDate(x.DataAprovacao) : ""}</span>` : st === "Pendente" ? `<span>Aguardando aprovação de um administrador</span>` : ""}${x.MotivoRejeicao ? `<span class="venc-txt">Motivo: ${esc(x.MotivoRejeicao)}</span>` : ""}</div>` : "";
+  const roAviso = ro ? `<div class="ro-aviso">${x && st !== "Pendente" && st !== "Rejeitada" && almOcPodeEditar() ? `Ordem ${esc(st.toLowerCase())}: não é mais editada.` : "Seu acesso a este módulo é só de leitura."}</div>` : "";
+  const campo = (k, lbl, inp, req, larg, dica) => `<div class="lanc-f ${larg ? "w" + larg : ""}"><label for="oc_${k}">${esc(lbl)}${req ? '<span class="req">*</span>' : ""}</label>${inp}${dica ? `<div class="hint">${esc(dica)}</div>` : ""}</div>`;
+  const sel = (k, ops, v) => `<select class="lanc-in lanc-sel" id="oc_${k}" ${dis}>${(ops.includes(v) ? ops : [v].concat(ops)).map(o => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+  body.innerHTML = `<div class="lanc-ed" id="ocEd">
+    <div class="lanc-top"><button type="button" class="btn ghost" onclick="ocVoltar()">← Voltar</button>
+      <div class="lanc-tit"><h2>${esc(x ? `Ordem de compra de ${fmtDate(x.Data)}` : "Nova ordem de compra")}</h2><span class="sup" id="ocSalvoEm">${pode ? (E.salvoEm ? `Rascunho guardado neste navegador às ${esc(E.salvoEm)}` : "As alterações ficam como rascunho neste navegador até você salvar ou cancelar") : ""}</span></div>
+      <span class="grow"></span>${x ? `<span class="sup">Protocolo ${esc(x.Title || "")}</span>` : ocPill("Rascunho")}</div>
+    ${roAviso}${stBox}
+    <section class="lanc-card"><h3>Identificação</h3><div class="lanc-cab">
+      ${campo("Data", "Data", `<input class="lanc-in" type="date" id="oc_Data" value="${esc(E.cab.Data || "")}" ${dis}>`, true)}
+      ${campo("Requisitante", "Requisitante", `<input class="lanc-in" id="oc_Requisitante" value="${esc(E.cab.Requisitante || "")}" autocomplete="off" ${trava || ro ? "disabled" : ""}>`, true, 2, trava && !ro ? (x ? "Quem lançou não muda" : "Preenchido com o seu nome") : "")}
+      ${campo("Area", "Área", sel("Area", OC_AREAS, E.cab.Area || "Oficina"))}
+      ${campo("Urgencia", "Urgência", sel("Urgencia", OC_URG, E.cab.Urgencia || "Normal"))}
+      ${campo("FornecedorSugerido", "Fornecedor sugerido", `<input class="lanc-in" id="oc_FornecedorSugerido" list="ocFornList" value="${esc(E.cab.FornecedorSugerido || "")}" placeholder="Opcional" autocomplete="off" ${dis}><datalist id="ocFornList">${forns.map(f => `<option value="${esc(f)}">`).join("")}</datalist>`, false, 2)}
+    </div></section>
+    <section class="lanc-card"><div class="lanc-card-h"><h3>Itens</h3><span class="sup">${E.itens.length} item(ns) · Tab avança · Enter na última linha cria outra</span></div>
+      <div class="lanc-grid"><div class="lanc-row lanc-head" style="${grid}"><div>#</div><div>Descrição</div><div>Un.</div><div class="r">Qtd</div><div class="r">Valor un.</div><div class="r">Total</div><div></div></div>${linhas}</div>
+      ${ro ? "" : `<button type="button" class="lanc-add" onclick="ocItemAdd()">+ Adicionar item</button>`}
+    </section>
+    <section class="lanc-tots" id="ocTots">${ocTotsInner(T)}</section>
+    <section class="lanc-card"><h3>Observações</h3><textarea class="lanc-in lanc-ta" id="oc__obs" rows="3" ${dis} placeholder="Informações para quem aprova e compra">${esc(E.obs || "")}</textarea></section>
+    <div class="err-msg" id="ocErr" role="alert"></div>
+    <div class="lanc-acts">
+      ${pode ? `<button type="button" class="btn ghost" onclick="ocCancelar()">${x ? "Descartar alterações" : "Cancelar ordem"}</button>` : ""}
+      <span class="grow"></span>
+      ${aprova ? `<button type="button" class="btn danger-ghost" onclick="ocRejeitar()">Rejeitar</button><button type="button" class="btn ok-solid" onclick="ocAprovar()">Aprovar</button>` : ""}
+      ${x && st === "Aprovada" && almOcPodeEditar() ? `<button type="button" class="btn" onclick="ocMarcar('Comprada')">Marcar como comprada</button>` : ""}
+      ${x && st === "Comprada" && almOcPodeEditar() ? `<button type="button" class="btn ok-solid" onclick="ocMarcar('Recebida')">Marcar como recebida</button>` : ""}
+      ${pode ? `<button type="button" class="btn primary" id="ocSalvarBtn" onclick="ocSalvar()">${x ? "Salvar e enviar" : "Salvar e enviar para aprovação"}</button>` : ""}
+    </div></div>`;
+  ocLigar();
+  if (foco) { const el = foco.id ? $(foco.id) : foco.c != null ? body.querySelector(`[data-i="${foco.i}"][data-c="${foco.c}"]`) : null; if (el) { try { el.focus({ preventScroll: true }); } catch (e) {} } }
+}
+function ocTotsInner(T) { return `<div class="lanc-tot"><div class="l">Itens</div><div class="v">${T.n}</div></div><div class="lanc-tot forte"><div class="l">Total estimado</div><div class="v">${esc(fmtBRL(T.total))}</div></div>`; }
+function ocLigar() {
+  const E = OC_ED, body = $("almOcBody"); if (!E || !body) return;
+  ["Data", "Requisitante", "Area", "Urgencia", "FornecedorSugerido"].forEach(k => { const el = $("oc_" + k); if (!el) return; el.addEventListener(el.tagName === "SELECT" || el.type === "date" ? "change" : "input", () => { E.cab[k] = el.value; ocRascunho(); }); });
+  body.querySelectorAll(".lanc-row [data-c]").forEach(el => {
+    if (el.classList.contains("lanc-calc")) return;
+    const i = Number(el.dataset.i), c = el.dataset.c;
+    const ler = () => { E.itens[i][c] = c === "vu" ? lancNum(el.value) : c === "qt" ? (el.value.trim() === "" ? "" : Math.max(0, lancNum(el.value))) : el.value; const vt = body.querySelector(`.lanc-calc[data-i="${i}"][data-c="vt"]`); if (vt) vt.textContent = fmtBRL(lancNum(E.itens[i].qt) * lancNum(E.itens[i].vu)); const t = $("ocTots"); if (t) t.innerHTML = ocTotsInner(ocTot(E.itens)); ocRascunho(); };
+    el.addEventListener("input", ler);
+    if (c === "vu") el.addEventListener("blur", () => { el.value = lancMoedaTxt(el.value); });
+    el.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); if (i === E.itens.length - 1) ocItemAdd(); else { const nx = body.querySelector(`[data-i="${i + 1}"][data-c="desc"]`); if (nx) nx.focus(); } } });
+  });
+  const ob = $("oc__obs"); if (ob) ob.addEventListener("input", () => { E.obs = ob.value; ocRascunho(); });
+}
+window.ocItemAdd = () => { const E = OC_ED; if (!E) return; E.itens.push(ocItemVazio()); ocPintar(); ocRascunho(); const el = document.querySelector(`#almOcBody [data-i="${E.itens.length - 1}"][data-c="desc"]`); if (el) el.focus(); };
+window.ocItemDel = i => { const E = OC_ED; if (!E || E.itens.length <= 1) return; E.itens.splice(i, 1); ocPintar(); ocRascunho(); };
+window.ocVoltar = () => { const E = OC_ED; if (!E) return; ocRascunho(); const tem = !!lancRascTodos("oc")[E.id || "novo"]; OC_ED = null; paintAlmOc(); if (tem) toast("Rascunho guardado neste navegador — continue quando quiser.", 4500); };
+window.ocCancelar = async () => {
+  const E = OC_ED; if (!E) return;
+  const ok = await erpConfirmar({ titulo: E.id ? "Descartar alterações" : "Cancelar ordem", texto: E.id ? "As alterações não salvas serão perdidas e a ordem continua como estava. Continuar?" : "A ordem não será enviada e o rascunho será apagado. Continuar?", sim: E.id ? "Descartar" : "Cancelar ordem", nao: "Continuar editando", perigo: true });
+  if (!ok) return; lancRascGravar("oc", E.id, null); OC_ED = null; paintAlmOc(); toast(E.id ? "Alterações descartadas." : "Ordem cancelada.");
+};
+function ocErro(m) { const el = $("ocErr"); if (el) { el.textContent = m; el.style.display = m ? "block" : "none"; if (m) el.scrollIntoView({ block: "nearest", behavior: "smooth" }); } }
+function ocValidar(cab, itens) {
+  if (!cab.Data) return "Informe a data."; if (!String(cab.Requisitante || "").trim()) return "Informe o requisitante."; if (!itens.length) return "Adicione pelo menos um item.";
+  for (let i = 0; i < itens.length; i++) { const l = itens[i]; if (!String(l.desc || "").trim()) return `Item ${i + 1}: informe a descrição.`; if (!(lancNum(l.qt) > 0)) return `Item ${i + 1}: informe a quantidade.`; }
+  return "";
+}
+async function ocGravar(campos, msgOk) {
+  const E = OC_ED, x = E.id ? ALM_OC_STATE.itens.find(y => String(y._id) === E.id) : null;
+  if (x) await SP.update(ALM_OC_STATE.site.id, ALM_OC_STATE.list.id, x._id, campos); else await SP.create(ALM_OC_STATE.site.id, ALM_OC_STATE.list.id, campos);
+  lancRascGravar("oc", E.id, null); OC_ED = null; toast(msgOk); await loadAlmOc(true); paintAlmOc();
+}
+window.ocSalvar = async () => {
+  const E = OC_ED; if (!E) return; const x = E.id ? ALM_OC_STATE.itens.find(y => String(y._id) === E.id) : null;
+  if (!ocPodeEditarReg(x)) { ocErro("Você não pode alterar esta ordem."); return; }
+  const itens = E.itens.filter(l => !ocItemVazioQ(l)); const erro = ocValidar(E.cab, itens); if (erro) { ocErro(erro); return; } ocErro("");
+  const T = ocTot(itens);
+  const ok = await erpConfirmar({ titulo: x ? "Salvar e enviar" : "Enviar para aprovação", html: `<p>${esc(fmtDate(E.cab.Data))} · ${esc(E.cab.Requisitante || "")} · ${esc(E.cab.Area || "")}${E.cab.Urgencia && E.cab.Urgencia !== "Normal" ? " · " + esc(E.cab.Urgencia) : ""}</p>${lancTotsExtrato([{ lbl: "Itens", val: String(T.n) }, { lbl: "Total estimado", val: fmtBRL(T.total), cls: "forte" }])}<p class="sup">A ordem fica Pendente até a aprovação por um administrador.</p>`, sim: x ? "Salvar" : "Enviar", nao: "Voltar à edição" });
+  if (!ok) return;
+  const b = $("ocSalvarBtn"); if (b) { b.disabled = true; b.textContent = "Salvando…"; }
+  try {
+    const campos = { Data: E.cab.Data, Requisitante: session.n1 ? String(E.cab.Requisitante).trim() : (x ? String(x.Requisitante || "").trim() : autorFixo("")), Area: E.cab.Area || null, FornecedorSugerido: String(E.cab.FornecedorSugerido || "").trim() || null, Urgencia: E.cab.Urgencia || "Normal", Itens: JSON.stringify(itens.map(l => ({ desc: String(l.desc).trim(), un: String(l.un || "un").trim(), qt: lancNum(l.qt), vu: lancNum(l.vu) }))), Total: T.total, Status: "Pendente", Observacoes: String(E.obs || "").trim() || null, Aprovador: null, DataAprovacao: null, MotivoRejeicao: null };
+    if (!x) campos.Title = `OC-${String(E.cab.Data || todayISO()).slice(2).replace(/-/g, "")}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+    await ocGravar(campos, x ? "OC atualizada — segue pendente" : "OC enviada para aprovação");
+  } catch (e) { ocErro("Erro ao salvar: " + e.message); if (b) { b.disabled = false; b.textContent = x ? "Salvar e enviar" : "Salvar e enviar para aprovação"; } }
+};
+window.ocAprovar = async () => {
+  const E = OC_ED; if (!E || !E.id || !almOcEhAprov()) return;
+  if (!(await erpConfirmar({ titulo: "Aprovar", html: `<p>Aprovar esta ordem de compra?</p><p class="sup">Depois de aprovada, quem edita o Almoxarifado marca a compra e o recebimento.</p>`, sim: "Aprovar" }))) return;
+  try { await ocGravar({ Status: "Aprovada", Aprovador: lancQuem(), DataAprovacao: todayISO(), MotivoRejeicao: null }, "OC aprovada"); } catch (e) { ocErro("Erro ao aprovar: " + e.message); }
+};
+window.ocRejeitar = async () => {
+  const E = OC_ED; if (!E || !E.id || !almOcEhAprov()) return;
+  const r = await erpConfirmar({ titulo: "Rejeitar", html: `<p>Informe o motivo — ele aparece para quem lançou corrigir.</p><textarea data-cf="motivo" class="lanc-in lanc-ta" rows="3" aria-label="Motivo da rejeição"></textarea>`, sim: "Rejeitar", perigo: true, validar: v => String(v.motivo || "").trim() ? "" : "Informe o motivo da rejeição." });
+  if (!r) return;
+  try { await ocGravar({ Status: "Rejeitada", Aprovador: lancQuem(), DataAprovacao: todayISO(), MotivoRejeicao: String(r.motivo || "").trim() }, "OC rejeitada"); } catch (e) { ocErro("Erro ao rejeitar: " + e.message); }
+};
+window.ocMarcar = async st => {
+  const E = OC_ED; if (!E || !E.id || !almOcPodeEditar()) return;
+  if (!(await erpConfirmar({ titulo: `Marcar como ${st.toLowerCase()}`, texto: `Marcar esta ordem como ${st.toLowerCase()}?`, sim: "Marcar" }))) return;
+  try { await ocGravar({ Status: st }, `OC marcada como ${st.toLowerCase()}`); } catch (e) { ocErro("Erro: " + e.message); }
+};
+{ const p0 = paintAlmOc;
+  paintAlmOc = function () {
+    if (OC_ED && $("almOcBody")) { ocPintar(); return; }
+    const r = p0.apply(this, arguments);
+    const body = $("almOcBody"); if (!body || !ALM_OC_STATE.ready) return r;
+    const rasc = lancRascTodos("oc"), rk = Object.keys(rasc);
+    if (rk.length && almOcPodeEditar()) body.insertAdjacentHTML("afterbegin", `<div class="lanc-rasc"><b>${rk.length === 1 ? "Rascunho não enviado" : rk.length + " rascunhos não enviados"}</b>${rk.map(id => { const r2 = rasc[id] || {}; const c = r2.cab || {}; return `<span class="lanc-rasc-it">${id === "novo" ? "Nova OC" : "Edição"} · ${esc(c.Data ? fmtDate(c.Data) : "sem data")}${c.Requisitante ? " · " + esc(c.Requisitante) : ""} <span class="sup">salvo ${esc(r2.em || "")}</span> <button class="btn mini" onclick="almOcAbrirPag(${id === "novo" ? "null" : jsArg(id)})">Continuar</button> <button class="btn mini ghost" onclick="ocRascDescartar(${jsArg(id)})">Descartar</button></span>`; }).join("")}</div>`);
+    return r;
+  };
+  window.ocRascDescartar = async id => { if (!(await erpConfirmar({ titulo: "Descartar rascunho", texto: "O rascunho guardado neste navegador será apagado. Continuar?", sim: "Descartar", perigo: true }))) return; lancRascGravar("oc", id === "novo" ? null : id, null); paintAlmOc(); };
+  const m0 = MOD_RESET.alm_oc;
+  MOD_RESET.alm_oc = () => { if (m0) m0(); if (OC_ED) { ocRascunho(); OC_ED = null; } };
+  window.addEventListener("hashchange", () => { if (OC_ED) { ocRascunho(); if (!$("almOcBody")) OC_ED = null; } });
+}
+
+/* ---- 5 e 12 · Tabela de Horários: correção única do quadro gravado, impressão no padrão técnico e Excel profissional ---- */
+/* Correção do quadro (uma vez, pelo administrador, ao abrir a Tabela de Horários; anotada em "ERP — Parâmetros", chave hor_correcao_v71):
+   sábados/domingos: a linha é Parador e "Madalena" quer dizer "via Madalena"; o bloco Horário de Madalena também é Parador via Madalena;
+   Macabu 08:30 que vem de Madalena é 08:45; Madalena 15:45 (sábados e domingos) é 15:30. */
+function horCorrecaoPlano(itens) {
+  const out = [];
+  const fimSem = q => q === "Sábados" || q === "Domingos e feriados";
+  itens.forEach(x => {
+    if (x.Ativo === false) return;
+    const c = {}, obs = String(x.Observacao || "").trim(), serv = String(x.Servico || "").trim();
+    if (x.Bloco === "Linha" && fimSem(x.Quadro)) {
+      if (serv === "Madalena" || /^madalena$/i.test(obs)) { c.Servico = "Parador"; c.Observacao = "via Madalena"; }
+      else if (!serv) c.Servico = "Parador";
+      if (x.Origem === "Macabu" && x.Quadro === "Sábados" && x.Horario === "08:30" && (serv === "Madalena" || /madalena/i.test(obs))) c.Horario = "08:45";
+    }
+    if (x.Bloco === "Linha" && x.Quadro === "Segunda a sexta" && x.Origem === "Macabu" && x.Horario === "08:30" && /vem de madalena/i.test(obs)) c.Horario = "08:45";
+    if (x.Bloco === "Madalena") {
+      if (serv !== "Parador") c.Servico = "Parador";
+      if (!/^via madalena$/i.test(obs)) c.Observacao = "via Madalena";
+      if (x.Origem === "Madalena" && x.Horario === "15:45" && fimSem(x.Quadro)) c.Horario = "15:30";
+    }
+    if (Object.keys(c).length) { const n = Object.assign({}, x, c); c.Title = `${n.Quadro} · ${n.Bloco} · ${n.Origem} ${n.Horario}`; out.push({ x, c }); }
+  });
+  return out;
+}
+async function horCorrecaoAplicar() {
+  if (!session.n1 || !HOR_STATE.ready || !HOR_STATE.list || (typeof vcAtivo === "function" && vcAtivo())) return false;
+  const feito = await erpParamLer("hor_correcao_v71"); if (feito === undefined || (feito && feito.valor)) return false;   /* sem parâmetros (erro) ou já feito */
+  const plano = horCorrecaoPlano(HOR_STATE.itens);
+  let ok = 0, falha = 0;
+  if (plano.length) {
+    const r = await graphBatch(plano.map(({ x, c }) => ({ method: "PATCH", url: `/sites/${HOR_STATE.site.id}/lists/${HOR_STATE.list.id}/items/${x._id}/fields`, body: c })));
+    ok = r.filter(z => z.ok).length; falha = r.length - ok;
+  }
+  if (!falha) { try { await erpParamGravar("hor_correcao_v71", { em: todayISO(), n: ok, por: lancQuem() }); } catch (e) {} }
+  if (ok) toast(`Quadro de horários ajustado: ${ok} horário(s) corrigido(s) (Parador, via Madalena, 08:45 e 15:30)${falha ? ` · ${falha} falha(s) — abra a página de novo` : ""}`, 8000);
+  return ok > 0;
+}
+{ const r0 = renderHor;
+  renderHor = async function () {
+    await r0.apply(this, arguments);
+    try { if (await horCorrecaoAplicar()) { await loadHor(); paintHor(); } } catch (e) { console.warn("horCorrecao", e); }
+  };
+}
+/* impressão: cartaz A4 no padrão técnico (cabeçalho com logo e ficha, tipo de dia em destaque, horários grandes, serviço em etiqueta, via Madalena em verde) */
+const HOR_PRINT_CSS = `
+  .hq{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:2px 0 10px;padding:9px 14px;background:#1E2153;color:#fff;border-radius:3px}
+  .hq b{font-size:17px;letter-spacing:.14em;text-transform:uppercase;font-weight:800}.hq span{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#C9CFE8;font-weight:700}
+  h2.sec{margin-top:11px}
+  table.ht{width:100%;border-collapse:collapse;table-layout:fixed}
+  table.ht th{background:#EEF1F5;color:#1E2153;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;text-align:left;padding:6px 9px;border-bottom:1px solid #8D96A3;width:50%}
+  table.ht td{padding:0;vertical-align:top;border-bottom:.5px solid #DDE1E6;width:50%}
+  table.ht td+td{border-left:.5px solid #DDE1E6}
+  .hr{display:flex;align-items:center;gap:9px;padding:5px 9px;min-height:27px}
+  .hr .h{font-size:14.5px;font-weight:800;font-variant-numeric:tabular-nums;color:#1B2230;min-width:46px}
+  .hp{display:inline-block;font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:3px;background:#E7EBF5;color:#1E2153;white-space:nowrap}
+  .hp.unico{background:#FFF0E8;color:#A33B00}.hp.mad{background:#E3F2E7;color:#1F7A3E}.hp.fret{background:#F1EAF7;color:#6E4B8E}
+  .ho{font-size:10px;color:#3B4352;font-weight:600}
+  .hleg{display:flex;gap:14px;flex-wrap:wrap;margin:12px 0 0;font-size:9.5px;color:#3B4352;align-items:center}
+  .hnota{font-size:9.5px;color:#6B7280;margin:6px 0 0}`;
+function horPrintLinha(z, comServ) {
+  if (!z) return `<div class="hr"></div>`;
+  const obs = String(z.Observacao || "").trim(), via = horViaMad(z);
+  const pill = comServ && z.Servico ? `<span class="hp ${horServCls(z.Servico)}">${esc(horServRot(z.Servico))}</span>` : "";
+  const o = obs ? (via ? `<span class="hp mad">via Madalena</span>` : `<span class="ho">${esc(obs)}</span>`) : "";
+  return `<div class="hr"><span class="h">${esc(z.Horario)}</span>${pill}${o}</div>`;
+}
+function horPrintPagina(q) {
+  const linha = o => horDe(q, "Linha", o), fret = o => horDe(q, "Fretamento", o), mad = o => horDe(q, "Madalena", o);
+  const par = (a, b, comServ) => { const n = Math.max(a.length, b.length); let h = ""; for (let i = 0; i < n; i++) h += `<tr><td>${horPrintLinha(a[i], comServ)}</td><td>${horPrintLinha(b[i], comServ)}</td></tr>`; return h; };
+  const tabela = (tit, sub, a, b, oa, ob) => `${printSec(tit, sub)}<table class="ht"><thead><tr><th>Saída de ${esc(oa)}</th><th>Saída de ${esc(ob)}</th></tr></thead><tbody>${par(a, b, true)}</tbody></table>`;
+  const vig = horVigencia(), hoje = new Date();
+  const doc = `HOR-${q === "Segunda a sexta" ? "SEGSEX" : q === "Sábados" ? "SAB" : q === "Domingos e feriados" ? "DOMFER" : "ESP"}-${(vig || todayISO()).replace(/-/g, "")}`;
+  const temServ = ["Linha", "Fretamento", "Madalena"].some(bl => HOR_ORIGENS.some(o => horDe(q, bl, o).some(z => z.Servico)));
+  return `<div class="pg">${printCab(`Tabela de horários`, `Válida a partir de ${vig ? fmtDate(vig).replace(/(\d{2})\/(\d{2})\/(\d{2})$/, "$1/$2/20$3") : "—"}`, { doc, meta: [["Tipo de dia", q]] })}
+    <div class="hq"><b>${esc(q)}</b><span>Conceição de Macabu · Macaé · Santa Maria Madalena</span></div>
+    ${tabela("Conceição de Macabu × Macaé", "linha regular", linha("Macabu"), linha("Macaé"), "Macabu", "Macaé")}
+    ${fret("Macabu").length || fret("Macaé").length ? tabela("Fretamento", "", fret("Macabu"), fret("Macaé"), "Macabu", "Macaé") : ""}
+    ${mad("Madalena").length || mad("Macaé").length ? tabela("Horário de Madalena", "Macaé × Santa Maria Madalena", mad("Madalena"), mad("Macaé"), "Madalena", "Macaé") : ""}
+    ${temServ ? `<div class="hleg"><b>Serviços:</b> <span class="hp">Parador</span> para em todos os pontos · <span class="hp unico">Direto</span> preço único, sem paradas intermediárias · <span class="hp mad">via Madalena</span> segue até Santa Maria Madalena${fret("Macabu").length ? ` · <span class="hp fret">Fretamento</span> firmas` : ""}</div>` : ""}
+    <p class="hnota">Horários sujeitos a alteração sem aviso prévio. Em feriados vale o quadro de domingos.</p>
+    ${printRodape("Operacional · Tabela de Horários")}</div>`;
+}
+window.horImprimir = tudo => { const qs = tudo ? HOR_QUADROS.filter(q => q !== "Especiais" || HOR_BLOCOS.some(bl => HOR_ORIGENS.some(o => horDe(q, bl, o).length))) : [HOR_STATE.quadro]; printDoc({ titulo: "Tabela de Horários", html: qs.map(horPrintPagina).join(""), fonte: 11, css: HOR_PRINT_CSS }); };
+/* Excel: uma aba por tipo de dia, com cabeçalho na paleta do ERP, faixa do tipo de dia, serviço e observação em colunas próprias, bordas finas e impressão A4 */
+window.horExcel = async () => {
+  try {
+    const { wb } = await xlsxNovo();
+    const vig = horVigencia(), NAVY = "FF1E2153", CINZA = "FFEEF1F5", LINHA = "FFDDE1E6", VERDE = "FF1F7A3E", LAR = "FFA33B00";
+    const fina = { style: "thin", color: { argb: LINHA } }, borda = { top: fina, left: fina, bottom: fina, right: fina };
+    for (const q of HOR_QUADROS) {
+      if (q === "Especiais" && !HOR_BLOCOS.some(bl => HOR_ORIGENS.some(o => horDe(q, bl, o).length))) continue;
+      const ws = wb.addWorksheet(q.replace(/\//g, "-"), { pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 1, margins: { left: 0.5, right: 0.5, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } }, views: [{ showGridLines: false }], properties: { defaultRowHeight: 18 } });
+      ws.columns = [{ width: 9 }, { width: 13 }, { width: 24 }, { width: 3 }, { width: 9 }, { width: 13 }, { width: 24 }];
+      let r = ws.addRow(["TRANSPORTADORA NOVA MACABU"]); ws.mergeCells(r.number, 1, r.number, 7); r.getCell(1).font = { name: "Arial", size: 9, bold: true, color: { argb: "FF6B7280" } }; r.height = 16;
+      r = ws.addRow([`TABELA DE HORÁRIOS VÁLIDA A PARTIR DE ${vig ? fmtDate(vig).replace(/(\d{2})\/(\d{2})\/(\d{2})$/, "$1/$2/20$3") : "—"}`]); ws.mergeCells(r.number, 1, r.number, 7); r.getCell(1).font = { name: "Arial", size: 15, bold: true, color: { argb: NAVY } }; r.height = 26;
+      r = ws.addRow([q.toUpperCase()]); ws.mergeCells(r.number, 1, r.number, 7); r.getCell(1).font = { name: "Arial", size: 12, bold: true, color: { argb: "FFFFFFFF" } }; r.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } }; r.getCell(1).alignment = { horizontal: "center", vertical: "middle" }; r.height = 24;
+      ws.addRow([]);
+      const bloco = (nome, sub, a, b, oa, ob) => {
+        r = ws.addRow([nome.toUpperCase() + (sub ? `  —  ${sub}` : "")]); ws.mergeCells(r.number, 1, r.number, 7); r.getCell(1).font = { name: "Arial", size: 10, bold: true, color: { argb: NAVY } }; r.getCell(1).border = { bottom: { style: "thin", color: { argb: "FF8D96A3" } } }; r.height = 20;
+        const h = ws.addRow([`SAÍDA DE ${oa.toUpperCase()}`, "", "", "", `SAÍDA DE ${ob.toUpperCase()}`, "", ""]); ws.mergeCells(h.number, 1, h.number, 3); ws.mergeCells(h.number, 5, h.number, 7);
+        [1, 5].forEach(k => { const c = h.getCell(k); c.font = { name: "Arial", size: 9, bold: true, color: { argb: NAVY } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: CINZA } }; c.alignment = { horizontal: "left", vertical: "middle" }; c.border = borda; });
+        const sh = ws.addRow(["Horário", "Serviço", "Observação", "", "Horário", "Serviço", "Observação"]);
+        sh.eachCell({ includeEmpty: false }, c => { c.font = { name: "Arial", size: 8, bold: true, color: { argb: "FF6B7280" } }; c.border = { bottom: fina }; });
+        const n = Math.max(a.length, b.length);
+        for (let i = 0; i < n; i++) {
+          const x = a[i], y = b[i], cel = z => z ? [z.Horario, horServRot(z.Servico) || "", z.Observacao || ""] : ["", "", ""];
+          const row = ws.addRow(cel(x).concat([""], cel(y))); row.height = 18;
+          [[1, x], [5, y]].forEach(([k, z]) => { row.getCell(k).font = { name: "Arial", size: 11, bold: true, color: { argb: "FF1B2230" } }; row.getCell(k).alignment = { horizontal: "left", vertical: "middle" };
+            const sv = row.getCell(k + 1), ob2 = row.getCell(k + 2); sv.font = { name: "Arial", size: 9, bold: true, color: { argb: z && /direto|preço único/i.test(z.Servico || "") ? LAR : NAVY } }; ob2.font = { name: "Arial", size: 9, color: { argb: z && horViaMad(z) ? VERDE : "FF3B4352" }, bold: !!(z && horViaMad(z)) };
+            [k, k + 1, k + 2].forEach(c => { row.getCell(c).border = { bottom: fina }; row.getCell(c).alignment = Object.assign({ vertical: "middle" }, row.getCell(c).alignment || {}); }); });
+        }
+        ws.addRow([]);
+      };
+      bloco("Conceição de Macabu × Macaé", "linha regular", horDe(q, "Linha", "Macabu"), horDe(q, "Linha", "Macaé"), "Macabu", "Macaé");
+      if (horDe(q, "Fretamento", "Macabu").length || horDe(q, "Fretamento", "Macaé").length) bloco("Fretamento", "", horDe(q, "Fretamento", "Macabu"), horDe(q, "Fretamento", "Macaé"), "Macabu", "Macaé");
+      if (horDe(q, "Madalena", "Madalena").length || horDe(q, "Madalena", "Macaé").length) bloco("Horário de Madalena", "Macaé × Santa Maria Madalena", horDe(q, "Madalena", "Madalena"), horDe(q, "Madalena", "Macaé"), "Madalena", "Macaé");
+      r = ws.addRow(["Parador: para em todos os pontos · Direto: preço único, sem paradas intermediárias · via Madalena: segue até Santa Maria Madalena. Horários sujeitos a alteração."]); ws.mergeCells(r.number, 1, r.number, 7); r.getCell(1).font = { name: "Arial", size: 8, italic: true, color: { argb: "FF6B7280" } }; r.getCell(1).alignment = { wrapText: true }; r.height = 26;
+      r = ws.addRow([`Transportadora Nova Macabu · gerado pelo ERP NMB em ${new Date().toLocaleDateString("pt-BR")}`]); ws.mergeCells(r.number, 1, r.number, 7); r.getCell(1).font = { name: "Arial", size: 8, color: { argb: "FF6B7280" } };
+      ws.headerFooter = { oddFooter: "&L&8Transportadora Nova Macabu · Tabela de Horários&R&8Página &P de &N" };
+    }
+    await xlsxBaixar(wb, `tabela-de-horarios_${todayISO()}.xlsx`); toast("Excel gerado.");
+  } catch (e) { toast("Não foi possível gerar o Excel: " + e.message, 6000); }
+};
+
+/* ---- 2 e 6 · Tabela de Tarifas: impressão no padrão técnico (cabeçalho com logo e ficha, seções numeradas, rodapé) com desenho moderno ---- */
+const TAR_PRINT_CSS = `
+  .tq{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:2px 0 10px;padding:9px 14px;background:#1E2153;color:#fff;border-radius:3px}
+  .tq b{font-size:17px;letter-spacing:.14em;text-transform:uppercase;font-weight:800}.tq span{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#C9CFE8;font-weight:700}
+  .tg{border:.6px solid #C9CFD8;border-radius:4px;margin:10px 0 0;break-inside:avoid;overflow:hidden}
+  .tg .tgh{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 11px;background:#EEF1F5;border-bottom:1px solid #8D96A3}
+  .tg .tgh b{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#1E2153}
+  .tg .tgh .ln{display:inline-block;background:#1E2153;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.08em;padding:2px 8px;border-radius:3px;margin-right:8px}
+  .tg .tgh span{font-size:9px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#6B7280}
+  table.tt{width:100%;border-collapse:collapse}
+  table.tt td{padding:6px 11px;border-bottom:.5px solid #DDE1E6;font-size:11.5px;color:#1B2230}
+  table.tt tr:last-child td{border-bottom:0}
+  table.tt td.v{text-align:right;white-space:nowrap;font-weight:800;font-size:12.5px;font-variant-numeric:tabular-nums;width:22%;color:#1E2153}
+  table.tt td.v small{display:block;font-size:8.5px;font-weight:600;color:#6B7280;letter-spacing:.02em}
+  table.tt td.t{font-weight:600}table.tt td.t .t2{display:block;font-weight:600}
+  .tleg{margin:12px 0 0;font-size:9.5px;color:#6B7280}
+  .tgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;align-items:start}.tgrid>div{min-width:0}`;
+window.tarImprimir = () => {
+  const atual = tarAtualizadoEm(), doc = `TAR-${String(atual || todayISO()).replace(/-/g, "")}`;
+  const grupo = g => `<div class="tg"><div class="tgh"><b><span class="ln">${esc(g.linha)}</span>${esc(g.titulo.replace(/^\d+\s*-\s*/, ""))}</b><span>Preço</span></div><table class="tt"><tbody>${g.itens.map(it => { const v = tarValorExibido(it), r = tarValor(it); return `<tr><td class="t">${it.t.map((t, i) => i ? `<span class="t2">${esc(t)}</span>` : esc(t)).join("")}</td><td class="v">${esc(fmtBRL(v))}${r.origem === "lista" && r.nova && r.vig && Math.abs(r.v - it.v) >= 0.005 ? `<small>reajustada em ${esc(fmtDate(r.vig))}</small>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`;
+  const gs = TAR_QUADRO.grupos, g1000 = gs.filter(g => g.linha === "1000" || g.linha === "1001"), g2000 = gs.filter(g => g.linha !== "1000" && g.linha !== "1001");
+  const html = `<div class="pg">${printCab("Valor das tarifas", `Quadro do guichê · atualizado em ${fmtDate(atual).replace(/(\d{2})\/(\d{2})\/(\d{2})$/, "$1/$2/20$3")}`, { doc, meta: [["Linhas", gs.map(g => g.linha).join(", ")]] })}
+    <div class="tq"><b>Valor das tarifas</b><span>${esc(TAR_QUADRO.nome)} · DETRO/RJ</span></div>
+    <div class="tgrid"><div>${g1000.map(grupo).join("")}</div><div>${g2000.map(grupo).join("")}</div></div>
+    <p class="tleg">Valores em reais por passageiro, por trecho. Gratuidades e meia-passagem conforme a legislação vigente. Tarifas sujeitas a reajuste pelo DETRO/RJ.</p>
+    ${printRodape("Operacional · Tabela de Tarifas")}</div>`;
+  printDoc({ titulo: "Valor das tarifas", fonte: 11, css: TAR_PRINT_CSS, html });
+};
 
 /* v0.12.21: aliases para inspeção pelo console (DevTools) e testes — não altera comportamento */
 try { window.session = session; window.MODULES = MODULES; window.canSee = canSee; } catch (e) {}

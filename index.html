@@ -3776,7 +3776,7 @@ function guardaEscrita(method, path, body) {
   let mod = session.modAtual;   /* módulo pelo alvo da gravação (lista); pastas/arquivos seguem a página */
   if (mod === "cap" && /^obr\./.test(session.pagAtual || "") && !document.querySelector("#modal #capDocsWrap")) mod = "obr";   /* v0.12.59: aba Obrigações dentro da CAP (anexos das obrigações); conta da CAP aberta ali segue a CAP */
   else if (mod === "almox" && session.pagAtual === "almox.forn") mod = "forn";        /* v0.12.59: Fornecedores do Almoxarifado = cadastro de Fornecedores */
-  else if (mod === "almox" && session.pagAtual === "almox.faturas") mod = "cap";       /* v0.12.71: aba Faturas do Almoxarifado = Contas a Pagar (anexos das contas) */
+  else if (mod === "almox" && /^(almox\.faturas$|cap\.)/.test(session.pagAtual || "")) mod = "cap";   /* v0.12.73 (revisão): a aba Faturas do espelho usa a página cap.lista */       /* v0.12.71: aba Faturas do Almoxarifado = Contas a Pagar (anexos das contas) */
   if (idDe(CAP_STATE) && path.includes(idDe(CAP_STATE))) mod = "cap";
   else if (idDe(FORN_STATE) && path.includes(idDe(FORN_STATE))) mod = "forn";
   else if ((idDe(OBR_STATE) && path.includes(idDe(OBR_STATE))) || (idDe(OBR_CART_STATE) && path.includes(idDe(OBR_CART_STATE)))) mod = "obr";
@@ -6392,7 +6392,7 @@ function capForm(it) {
       <div class="field"><label>Categoria</label><select id="fCat">${opt(CATEGORIAS, v.Categoria, true)}</select></div>
       <div class="field"><label>Subcategoria</label><input id="fSub" list="subList" autocomplete="off" value="${esc(v.Subcategoria || "")}"><datalist id="subList">${subcatOptions(v.Categoria)}</datalist></div>
       <div class="field"><label>Centro de custo</label><input id="fCC" list="fCCList" autocomplete="off" value="${esc(v.CentroCusto || "")}" placeholder="${esc(ccSugerido(v.Categoria, v.Fornecedor) || "Ex.: Administrativo")}">${ccDatalist("fCCList")}<div class="hint" id="fCCHint">${v.CentroCusto ? "" : ccSugerido(v.Categoria, v.Fornecedor) ? "Sugestão pela categoria — deixe vazio para aceitar ou escolha outro" : "Quem responde por esta despesa"}</div></div>
-      ${CAP_STATE.cols && CAP_STATE.cols.has("Natureza") ? `<div class="field"><label>Natureza do gasto</label><select id="fNat"><option value="">Automática${isNew ? "" : ` (${esc(cpxNat(Object.assign({}, v, { Natureza: "" }), cpxCtx()).nat)})`}</option>${CPX_NAT.map(n => `<option value="${esc(n)}" ${v.Natureza === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select><div class="hint">OPEX = custeio · CAPEX = investimento · Financeiro = juros e dívidas (Diretoria › CAPEX / OPEX)</div></div>` : ""}   <!-- v0.12.73 -->
+      ${CAP_STATE.cols && CAP_STATE.cols.has("Natureza") ? `<div class="field"><label>Natureza do gasto</label><select id="fNat"><option value="">Automática${isNew ? "" : ` (${IMOB.list === undefined ? "provável: " : ""}${esc(cpxNat(Object.assign({}, v, { Natureza: "" }), cpxCtx()).nat)})`}</option>${CPX_NAT.map(n => `<option value="${esc(n)}" ${v.Natureza === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select><div class="hint">OPEX = custeio · CAPEX = investimento · Financeiro = juros e dívidas (Diretoria › CAPEX / OPEX)</div></div>` : ""}   <!-- v0.12.73 -->
       <div class="field full form-sec">Vencimento e valor</div>
       <!-- v0.12.20: Isenta (N/A) — marca a parcela como isenta no mês, verde na matriz Recorrentes -->
       <div class="field"><label>N/A — Isenta no mês</label><label class="check" style="display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink)"><input type="checkbox" id="fIsenta" ${v.Isenta ? "checked" : ""}> <span>Marcar esta parcela como <b>Isenta</b> (não cobra, não vence, aparece em verde)</span></label><div class="hint">Útil para meses em que uma recorrência não é cobrada (férias, suspensão, cortesia). Isentas não entram em "Vencido".</div></div>
@@ -8551,8 +8551,8 @@ const ROL_LEGADO = { displayName: "Financeiro — Controle de Roletas", siteKey:
 async function loadRol(force) {
   /* v0.12.71: a lista oficial é "Operacional — Controle de Roletas" (site Operacional). Enquanto ela não existe, a antiga do Financeiro continua servindo;
      quando as duas existem, o administrador vê o botão de migrar os lançamentos e, depois, a pendência de apagar a antiga. */
-  if (!ROL_STATE.siteNovo) ROL_STATE.siteNovo = await SP.site(CONFIG.sites[LISTS.cx_roletas.siteKey]);
-  if (force || ROL_STATE.listNova === undefined) { const ls = await SP.lists(ROL_STATE.siteNovo.id); ROL_STATE.listNova = ls.find(l => l.displayName === LISTS.cx_roletas.displayName) || null; }
+  if (!ROL_STATE.siteNovo) { try { ROL_STATE.siteNovo = await SP.site(CONFIG.sites[LISTS.cx_roletas.siteKey]); } catch (e) { ROL_STATE.siteNovo = null; ROL_STATE.listNova = null; } }   /* v0.12.73 (revisão): sem acesso ao site Operacional, a lista antiga continua servindo */
+  if (ROL_STATE.siteNovo && (force || ROL_STATE.listNova === undefined)) { try { const ls = await SP.lists(ROL_STATE.siteNovo.id); ROL_STATE.listNova = ls.find(l => l.displayName === LISTS.cx_roletas.displayName) || null; } catch (e) { ROL_STATE.listNova = null; } }
   if (force || ROL_STATE.listVelha === undefined) {
     try { if (!ROL_STATE.siteVelho) ROL_STATE.siteVelho = await SP.site(CONFIG.sites[ROL_LEGADO.siteKey]); const ls = await SP.lists(ROL_STATE.siteVelho.id); ROL_STATE.listVelha = ls.find(l => l.displayName === ROL_LEGADO.displayName) || null; }
     catch (e) { ROL_STATE.listVelha = null; }   /* sem acesso ao site Financeiro: só a lista nova conta */
@@ -8560,12 +8560,12 @@ async function loadRol(force) {
   if (ROL_STATE.listNova) { ROL_STATE.site = ROL_STATE.siteNovo; ROL_STATE.list = ROL_STATE.listNova; ROL_STATE.legado = false; }
   else if (ROL_STATE.listVelha) { ROL_STATE.site = ROL_STATE.siteVelho; ROL_STATE.list = ROL_STATE.listVelha; ROL_STATE.legado = true; }
   else { ROL_STATE.site = ROL_STATE.siteNovo; ROL_STATE.list = null; ROL_STATE.legado = false; }
-  ROL_STATE.velhaN = null;
+  ROL_STATE.velhaN = null; ROL_STATE.velhaFalta = null;
   if (!ROL_STATE.list) { ROL_STATE.ready = false; return; }
   const its = await SP.items(ROL_STATE.site.id, ROL_STATE.list.id);
   ROL_STATE.itens = its.map(it => Object.assign({ _id: it.id }, it.fields || {}));
   ROL_STATE.ready = true;
-  if (ROL_STATE.listNova && ROL_STATE.listVelha && session.n1) { try { ROL_STATE.velhaN = (await SP.items(ROL_STATE.siteVelho.id, ROL_STATE.listVelha.id)).length; } catch (e) { ROL_STATE.velhaN = null; } }
+  if (ROL_STATE.listNova && ROL_STATE.listVelha && session.n1) { try { const v = await SP.items(ROL_STATE.siteVelho.id, ROL_STATE.listVelha.id), ja = new Set(ROL_STATE.itens.map(x => String(x.Title || ""))); ROL_STATE.velhaN = v.length; ROL_STATE.velhaFalta = v.filter(it => !ja.has(String((it.fields || {}).Title || ""))).length; } catch (e) { ROL_STATE.velhaN = null; ROL_STATE.velhaFalta = null; } }   /* v0.12.73 (revisão): quantos da antiga ainda não estão na nova */
 }
 function pageRol() {
   const crumbs = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><b>Controle de Roletas</b></nav>`;   /* v0.12.71: Operacional */
@@ -8577,7 +8577,7 @@ function rolPodeEditar() { return !!podeEditar("roletas"); }
 function paintRol() {
   const body = $("rolBody"); if (!body) return;
   const acts = $("rolActions"); if (acts) acts.innerHTML = rolPodeEditar() ? `<button class="btn primary" onclick="rolNovo()">+ Novo lançamento</button>` : "";
-  if (!ROL_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>A lista "Financeiro — Controle de Roletas" ainda não existe</h3><p>Vá em Sistema › Configuração e rode "Executar tudo na ordem".</p></div>`; return; }
+  if (!ROL_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>A lista "${esc(LISTS.cx_roletas.displayName)}" ainda não existe</h3><p>Vá em Sistema › Configuração e rode "Executar tudo na ordem".</p></div>`; return; }
   const its = ROL_STATE.itens.slice().sort((a, b) => String(b.Data || "").localeCompare(String(a.Data || "")));
   const flt = ROL_STATE.filtroStatus, vis = flt ? its.filter(x => x.Status === flt) : its;
   const kpis = `<div class="cap-kpis">
@@ -13939,7 +13939,10 @@ async function loadBil() {
   const get = async (k) => (await SP.items(BIL_STATE.site.id, BIL_STATE.lists[k].id)).map(it => Object.assign({ _id: it.id }, it.fields || {}));
   [BIL_STATE.linhas, BIL_STATE.tarifas, BIL_STATE.lanc, BIL_STATE.fech] = await Promise.all([get("bil_linhas"), get("bil_tarifas"), get("bil_lanc"), get("bil_fech")]);
 }
-function bilTarifa(linha, secao) { const t = BIL_STATE.tarifas.find(x => x.Linha === linha && x.Secao === secao && x.Ativa !== false); return t ? Number(t.Valor) : 0; }
+function bilTarifa(linha, secao, data) {   /* v0.12.73 (revisão): com a data, vale a tarifa em vigor naquele dia (um reajuste com vigência futura não vale antes da data) */
+  const d = data ? String(data).slice(0, 10) : "", dia = v => v ? ymd(v) : "";
+  if (d) { const t0 = BIL_STATE.tarifas.find(x => x.Linha === linha && x.Secao === secao && dia(x.VigenciaInicio) && dia(x.VigenciaInicio) <= d && (!x.VigenciaFim || dia(x.VigenciaFim) >= d)); if (t0) return Number(t0.Valor); }
+  const t = BIL_STATE.tarifas.find(x => x.Linha === linha && x.Secao === secao && x.Ativa !== false); return t ? Number(t.Valor) : 0; }
 function bilSecoes(linha) { return BIL_STATE.tarifas.filter(t => t.Linha === linha && t.Ativa !== false); }
 function bilMes(arr) { return arr.filter(x => compFromDate(x.Data) === BIL_STATE.mes); }
 
@@ -14004,7 +14007,7 @@ function bilFormLanc() {
 }
 function bilWireLanc() {
   const upd = () => { const l = $("bLinha").value, secs = bilSecoes(l); $("bSec").innerHTML = secs.map(s=>`<option value="${esc(s.Secao)}">${esc(s.Secao)} — ${esc(s.Descricao||"")} (${fmtBRL(s.Valor)})</option>`).join(""); calc(); };
-  const calc = () => { const t = bilTarifa($("bLinha").value, $("bSec").value); $("bRec").textContent = fmtBRL(t * Number($("bPass").value||0)); };
+  const calc = () => { const t = bilTarifa($("bLinha").value, $("bSec").value, $("bData") ? $("bData").value : ""); $("bRec").textContent = fmtBRL(t * Number($("bPass").value||0)); };
   $("bLinha").addEventListener("change", upd); $("bSec").addEventListener("change", calc); $("bPass").addEventListener("input", calc); upd();
   $("bSave").onclick = bilSave;
 }
@@ -14014,7 +14017,7 @@ async function bilSave() {
   if (!data || !linha || !sec) return err("Preencha data, linha e seção.");
   const ri = g("bRolI"), rf = g("bRolF");
   if (ri && rf && Number(rf) - Number(ri) !== pass + grat) { if (!confirm(`A roleta indica ${Number(rf)-Number(ri)} passagens e você lançou ${pass + grat} (pagantes + gratuidades). Gravar mesmo assim?`)) return; }
-  const tarifa = bilTarifa(linha, sec);
+  const tarifa = bilTarifa(linha, sec, data);
   const fields = { Title: `${data} · ${linha} · ${g("bSent")} · ${g("bHora")||"—"} · ${sec}`, Data: data, Linha: linha, Sentido: g("bSent"), Horario: g("bHora")||null, Carro: g("bCarro")||null, Motorista: g("bMot")||null, Origem: g("bOrig"), Secao: sec, Passageiros: pass, Gratuidades: grat, Tarifa: tarifa, Receita: Math.round(tarifa*pass*100)/100, Metodo: g("bMet"), RoletaInicial: ri?Number(ri):null, RoletaFinal: rf?Number(rf):null, TalaoInicial: g("bTalI")||null, TalaoFinal: g("bTalF")||null };
   const btn = $("bSave"); btn.disabled = true; btn.textContent = "Gravando…";
   try { await SP.create(BIL_STATE.site.id, BIL_STATE.lists.bil_lanc.id, fields); toast("Lançamento gravado"); await loadBil(); paintBil(); }
@@ -15491,7 +15494,9 @@ async function loadHor(force) {
 function horVigencia() { const ds = HOR_STATE.itens.filter(x => x.Ativo !== false && x.VigenciaInicio).map(x => ymd(x.VigenciaInicio)).sort(); return ds.length ? ds[ds.length - 1] : ""; }
 function horDe(quadro, bloco, origem, comInativos) { return HOR_STATE.itens.filter(x => x.Quadro === quadro && x.Bloco === bloco && x.Origem === origem && (comInativos || x.Ativo !== false)).sort((a, b) => String(a.Horario).localeCompare(String(b.Horario)) || Number(a.Ordem || 0) - Number(b.Ordem || 0)); }
 function horServCls(s) { return (s === "Preço Único" || s === "Direto") ? "unico" : s === "Madalena" ? "mad" : s === "Fretamento" ? "fret" : ""; }
-const horViaMad = x => /^via madalena$/i.test(String((x && x.Observacao) || "").trim());   /* v0.12.71: "via Madalena" sai como etiqueta verde ao lado do serviço */
+const horViaMad = x => /^via madalena(\s*[·,;:-]|$)/i.test(String((x && x.Observacao) || "").trim());   /* v0.12.73 (revisão): aceita "via Madalena · outra observação" */
+const horObsResto = x => String((x && x.Observacao) || "").trim().replace(/^via madalena\s*[·,;:-]?\s*/i, "");
+const horComVia = o => { const t = String(o || "").trim(); if (!t || /^(via\s+)?madalena$/i.test(t)) return "via Madalena"; if (/^via madalena\b/i.test(t)) return t; const r = t.replace(/^madalena\s*[·,;:-]?\s*/i, "").trim(); return r ? `via Madalena · ${r}` : "via Madalena"; };   /* v0.12.71: "via Madalena" sai como etiqueta verde ao lado do serviço */
 function pageHor() {
   return `<div class="page">
     <div class="page-head"><div><h1>Tabela de Horários</h1>
@@ -15508,7 +15513,7 @@ async function renderHor() {
 }
 function horBlocoHtml(quadro, bloco, titulo, sub, origens, edita) {
   const cols = origens.map(o => { const its = horDe(quadro, bloco, o, edita);   /* quem edita vê também os desativados (riscados), para poder reativar */
-    return `<div><table class="hor-t"><thead><tr><th colspan="3">Saída de ${esc(o)}</th></tr></thead><tbody>${its.length ? its.map(x => `<tr class="${x.Ativo === false ? "off" : ""}" ${edita ? `onclick="horForm(${jsArg(x._id)})" title="${x.Ativo === false ? "Desativado — clique para reativar" : "Editar"}"` : ""}><td class="h">${esc(x.Horario)}</td><td class="s">${x.Servico ? `<span class="hor-servico ${horServCls(x.Servico)}">${esc(horServRot(x.Servico))}</span>` : ""}${x.Observacao ? (horViaMad(x) ? `<span class="hor-servico mad">${esc(x.Observacao)}</span>` : `<span class="obs">${esc(x.Observacao)}</span>`) : ""}${x.Ativo === false ? `<span class="obs">desativado</span>` : ""}</td><td class="a"></td></tr>`).join("") : `<tr><td colspan="3" class="sup">—</td></tr>`}</tbody></table></div>`; }).join("");
+    return `<div><table class="hor-t"><thead><tr><th colspan="3">Saída de ${esc(o)}</th></tr></thead><tbody>${its.length ? its.map(x => `<tr class="${x.Ativo === false ? "off" : ""}" ${edita ? `onclick="horForm(${jsArg(x._id)})" title="${x.Ativo === false ? "Desativado — clique para reativar" : "Editar"}"` : ""}><td class="h">${esc(x.Horario)}</td><td class="s">${x.Servico ? `<span class="hor-servico ${horServCls(x.Servico)}">${esc(horServRot(x.Servico))}</span>` : ""}${x.Observacao ? (horViaMad(x) ? `<span class="hor-servico mad">via Madalena</span>${horObsResto(x) ? `<span class="obs">${esc(horObsResto(x))}</span>` : ""}` : `<span class="obs">${esc(x.Observacao)}</span>`) : ""}${x.Ativo === false ? `<span class="obs">desativado</span>` : ""}</td><td class="a"></td></tr>`).join("") : `<tr><td colspan="3" class="sup">—</td></tr>`}</tbody></table></div>`; }).join("");
   return `<div class="cap-card hor-card"><h3>${esc(titulo)}</h3><p class="sub">${esc(sub)}</p><div class="hor-grid">${cols}</div></div>`;
 }
 function paintHor() {
@@ -22778,7 +22783,7 @@ window.fornClasseSet = async (id, sel) => {
   sel.disabled = true;
   try { await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, f._id, { Tipo: novo }); f.Tipo = novo; sel.classList.toggle("vazio", !novo); sel.title = novo ? fornClasseDesc(novo) : "Sem classificação: não gera conta recorrente"; toast(`${f.Title}: ${novo || "a classificar"}`);
     if ($("capBody") && CAP_STATE.view === "lista") keepFocus(paintCAP);   /* v0.12.70: as outras contas do mesmo fornecedor na lista da CAP acompanham */ }
-  catch (e) { sel.value = antes || ""; toast("Não foi possível gravar: " + e.message + (/required|obrigat/i.test(e.message) ? " (rode a Configuração)" : ""), 7000); }
+  catch (e) { sel.value = antes || ""; toast("Não foi possível gravar: " + e.message + (/required|obrigat|choice|escolha|valid|válid/i.test(e.message) ? " (rode Sistema › Configuração para atualizar as opções)" : ""), 7000); }
   finally { sel.disabled = false; }
 };
 
@@ -24180,9 +24185,10 @@ function rolMigracaoHtml() {
   if (!session.n1 || !ROL_STATE.ready) return "";
   if (ROL_STATE.legado) return `<div class="import-help"><b>Controle de Roletas mudou para o Operacional.</b> Os lançamentos ainda estão na lista antiga <b>${esc(ROL_LEGADO.displayName)}</b> (site Financeiro). Rode Sistema › Configuração › "Executar tudo na ordem" para criar a lista nova no site Operacional; depois o botão de migração aparece aqui.</div>`;
   if (!ROL_STATE.listVelha) return "";
-  const n = ROL_STATE.velhaN, mig = ROL_STATE.migracao;
+  const n = ROL_STATE.velhaN, mig = ROL_STATE.migracao, falta = ROL_STATE.velhaFalta;
   if (n === 0) return `<div class="import-help"><b>Pendência:</b> a lista antiga <b>${esc(ROL_LEGADO.displayName)}</b> (site Financeiro) está vazia e não é mais usada — pode ser apagada no SharePoint.</div>`;
-  if (mig && mig.em) return `<div class="import-help"><b>Migração concluída</b> em ${esc(fmtDate(mig.em))} (${esc(String(mig.n || 0))} lançamento(s), por ${esc(mig.por || "")}). <b>Pendência:</b> apagar a lista antiga <b>${esc(ROL_LEGADO.displayName)}</b> no site Financeiro (ela ainda tem ${esc(String(n == null ? "?" : n))} registro(s), já copiados).</div>`;
+  if (falta > 0) return `<div class="import-help"><b>Controle de Roletas mudou para o Operacional.</b> A lista antiga (site Financeiro) ainda tem <b>${esc(String(falta))}</b> lançamento(s) que não estão na lista nova <b>${esc(LISTS.cx_roletas.displayName)}</b>. <button class="btn sm primary" onclick="rolMigrar()">Migrar ${esc(String(falta))} lançamento(s) para a lista nova</button> <span class="sup">Copia os registros que faltam (com status, aprovador e histórico). Não apague a lista antiga antes de todos estarem na nova.</span></div>`;   /* v0.12.73 (revisão) */
+  if ((mig && mig.em) || falta === 0) return `<div class="import-help"><b>Migração concluída</b>${mig && mig.em ? ` em ${esc(fmtDate(mig.em))} (${esc(String(mig.n || 0))} lançamento(s), por ${esc(mig.por || "")})` : ""}. <b>Pendência:</b> apagar a lista antiga <b>${esc(ROL_LEGADO.displayName)}</b> no site Financeiro (ela ainda tem ${esc(String(n == null ? "?" : n))} registro(s), já copiados).</div>`;
   return `<div class="import-help"><b>Controle de Roletas mudou para o Operacional.</b> A lista nova <b>${esc(LISTS.cx_roletas.displayName)}</b> já existe; a antiga (site Financeiro) ainda tem <b>${esc(String(n == null ? "?" : n))}</b> lançamento(s). <button class="btn sm primary" onclick="rolMigrar()">Migrar ${esc(String(n == null ? "" : n))} lançamento(s) para a lista nova</button> <span class="sup">Copia todos os registros (com status, aprovador e histórico). A lista antiga não é apagada: você faz isso no SharePoint depois de conferir.</span></div>`;
 }
 window.rolMigrar = async () => {
@@ -24200,7 +24206,7 @@ window.rolMigrar = async () => {
     campos.Historico = ((f.Historico ? f.Historico + "\n" : "")) + `${lancAgora()} · ${lancQuem()} · migrado da lista do Financeiro`;
     try { await SP.create(ROL_STATE.siteNovo.id, ROL_STATE.listNova.id, campos); ok++; } catch (e) { falha++; console.warn("rolMigrar", f.Title, e); }
   }
-  try { await erpParamGravar("rol_migracao", { em: todayISO(), n: ok, por: lancQuem() }); ROL_STATE.migracao = { em: todayISO(), n: ok, por: lancQuem() }; } catch (e) {}
+  if (!falha) { try { await erpParamGravar("rol_migracao", { em: todayISO(), n: ok, por: lancQuem() }); ROL_STATE.migracao = { em: todayISO(), n: ok, por: lancQuem() }; } catch (e) {} }   /* v0.12.73 (revisão): com falha, não vale como concluída (o botão continua para os que faltam) */
   toast(`${ok} lançamento(s) migrado(s)${falha ? ` · ${falha} falha(s)` : ""}`, 6000);
   await loadRol(true); paintRol();
 };
@@ -24220,7 +24226,7 @@ window.rolMigrar = async () => {
 /* ---- 4 · Almoxarifado › Fornecedores (Almoxarifado): abas Faturas (CAP só com o CC Operacional) e Fornecedores (espelho de Terceiros) ---- */
 const ALMF = { aba: "faturas", cc: "Operacional" };
 MOD_RESET.almf = () => { ALMF.aba = "faturas"; };
-function almfTemCap() { return session.n1 || permModuloSo("cap") !== "nenhum"; }
+function almfTemCap() { return session.n1 || pagNivel("cap", "lista") !== "nenhum"; }   /* v0.12.73 (revisão): segue a página Faturas da CAP, não só o módulo */
 function almfTemForn() { return session.n1 || permModuloSo("forn") !== "nenhum"; }
 function pageFornAlmox() {
   return `<div class="page" id="almfRoot">
@@ -24259,7 +24265,7 @@ window.almfAba = async k => {
     body.innerHTML = `<div id="fornBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>`;
     renderForn(); return;
   }
-  session.pagAtual = "almox.faturas";
+  session.pagAtual = "cap.lista";   /* v0.12.73 (revisão): botões, guarda e baixa automática seguem a página Faturas da CAP */
   if (acts) acts.innerHTML = `<div id="capActions"></div>`;
   body.innerHTML = `<div id="capBody"><div class="cap-empty"><h3>Carregando as faturas…</h3></div></div>`;
   CAP_STATE.view = "lista";
@@ -24422,19 +24428,26 @@ window.ocSalvar = async () => {
     await ocGravar(campos, x ? "OC atualizada — segue pendente" : "OC enviada para aprovação");
   } catch (e) { ocErro("Erro ao salvar: " + e.message); if (b) { b.disabled = false; b.textContent = x ? "Salvar e enviar" : "Salvar e enviar para aprovação"; } }
 };
+async function ocSemSalvarOk() {   /* v0.12.73 (revisão): aprovar, rejeitar ou marcar não grava as alterações da tela — pergunta antes de descartá-las */
+  if (!ocMudou()) return true;
+  return !!(await erpConfirmar({ titulo: "Alterações não salvas", texto: "Esta ordem tem alterações que ainda não foram salvas. Para que elas valham, use antes \"Salvar e enviar\". Continuar descarta as alterações.", sim: "Continuar sem as alterações", nao: "Voltar à edição", perigo: true }));
+}
 window.ocAprovar = async () => {
   const E = OC_ED; if (!E || !E.id || !almOcEhAprov()) return;
+  if (!(await ocSemSalvarOk())) return;
   if (!(await erpConfirmar({ titulo: "Aprovar", html: `<p>Aprovar esta ordem de compra?</p><p class="sup">Depois de aprovada, quem edita o Almoxarifado marca a compra e o recebimento.</p>`, sim: "Aprovar" }))) return;
   try { await ocGravar({ Status: "Aprovada", Aprovador: lancQuem(), DataAprovacao: todayISO(), MotivoRejeicao: null }, "OC aprovada"); } catch (e) { ocErro("Erro ao aprovar: " + e.message); }
 };
 window.ocRejeitar = async () => {
   const E = OC_ED; if (!E || !E.id || !almOcEhAprov()) return;
+  if (!(await ocSemSalvarOk())) return;
   const r = await erpConfirmar({ titulo: "Rejeitar", html: `<p>Informe o motivo — ele aparece para quem lançou corrigir.</p><textarea data-cf="motivo" class="lanc-in lanc-ta" rows="3" aria-label="Motivo da rejeição"></textarea>`, sim: "Rejeitar", perigo: true, validar: v => String(v.motivo || "").trim() ? "" : "Informe o motivo da rejeição." });
   if (!r) return;
   try { await ocGravar({ Status: "Rejeitada", Aprovador: lancQuem(), DataAprovacao: todayISO(), MotivoRejeicao: String(r.motivo || "").trim() }, "OC rejeitada"); } catch (e) { ocErro("Erro ao rejeitar: " + e.message); }
 };
 window.ocMarcar = async st => {
   const E = OC_ED; if (!E || !E.id || !almOcPodeEditar()) return;
+  if (!(await ocSemSalvarOk())) return;
   if (!(await erpConfirmar({ titulo: `Marcar como ${st.toLowerCase()}`, texto: `Marcar esta ordem como ${st.toLowerCase()}?`, sim: "Marcar" }))) return;
   try { await ocGravar({ Status: st }, `OC marcada como ${st.toLowerCase()}`); } catch (e) { ocErro("Erro: " + e.message); }
 };
@@ -24464,14 +24477,14 @@ function horCorrecaoPlano(itens) {
     if (x.Ativo === false) return;
     const c = {}, obs = String(x.Observacao || "").trim(), serv = String(x.Servico || "").trim();
     if (x.Bloco === "Linha" && fimSem(x.Quadro)) {
-      if (serv === "Madalena" || /^madalena$/i.test(obs)) { c.Servico = "Parador"; c.Observacao = "via Madalena"; }
+      if (serv === "Madalena" || /^madalena$/i.test(obs)) { c.Servico = "Parador"; if (horComVia(obs) !== obs) c.Observacao = horComVia(obs); }   /* v0.12.73 (revisão): outra observação é mantida depois da etiqueta */
       else if (!serv) c.Servico = "Parador";
       if (x.Origem === "Macabu" && x.Quadro === "Sábados" && x.Horario === "08:30" && (serv === "Madalena" || /madalena/i.test(obs))) c.Horario = "08:45";
     }
     if (x.Bloco === "Linha" && x.Quadro === "Segunda a sexta" && x.Origem === "Macabu" && x.Horario === "08:30" && /vem de madalena/i.test(obs)) c.Horario = "08:45";
     if (x.Bloco === "Madalena") {
       if (serv !== "Parador") c.Servico = "Parador";
-      if (!/^via madalena$/i.test(obs)) c.Observacao = "via Madalena";
+      if (horComVia(obs) !== obs) c.Observacao = horComVia(obs);
       if (x.Origem === "Madalena" && x.Horario === "15:45" && fimSem(x.Quadro)) c.Horario = "15:30";
     }
     if (Object.keys(c).length) { const n = Object.assign({}, x, c); c.Title = `${n.Quadro} · ${n.Bloco} · ${n.Origem} ${n.Horario}`; out.push({ x, c }); }
@@ -24517,7 +24530,7 @@ function horPrintLinha(z, comServ) {
   if (!z) return `<div class="hr"></div>`;
   const obs = String(z.Observacao || "").trim(), via = horViaMad(z);
   const pill = comServ && z.Servico ? `<span class="hp ${horServCls(z.Servico)}">${esc(horServRot(z.Servico))}</span>` : "";
-  const o = obs ? (via ? `<span class="hp mad">via Madalena</span>` : `<span class="ho">${esc(obs)}</span>`) : "";
+  const o = obs ? (via ? `<span class="hp mad">via Madalena</span>${horObsResto(z) ? `<span class="ho">${esc(horObsResto(z))}</span>` : ""}` : `<span class="ho">${esc(obs)}</span>`) : "";
   return `<div class="hr"><span class="h">${esc(z.Horario)}</span>${pill}${o}</div>`;
 }
 function horPrintPagina(q) {
@@ -24685,7 +24698,7 @@ function paintCapFav(body) {
   if (typeof vcAtivo === "function" && vcAtivo()) { body.innerHTML = `${topo}<div class="cap-empty"><h3>Favoritos</h3><p>Na visualização como outra pessoa os favoritos não aparecem: eles são uma preferência de quem está logado, guardada no navegador.</p></div>`; return; }
   if (!B.fat && !B.forn && !B.obr) { body.innerHTML = topo + PAG_SEM; return; }
   const obrOk = !!(OBR_STATE.items && OBR_STATE.items.length);
-  if ((B.obr || B.forn) && !obrOk && !CAP_STATE._favObrTentou) { CAP_STATE._favObrTentou = true; loadObr().then(() => { if ($("capBody") && CAP_STATE.view === "fav") paintCAP(); }).catch(() => {}); }
+  if ((B.obr || B.forn) && !obrOk && !CAP_STATE._favObrTentou) { CAP_STATE._favObrTentou = true; CAP_STATE._favObrErro = ""; loadObr().then(() => { if ($("capBody") && CAP_STATE.view === "fav") paintCAP(); }).catch(e => { CAP_STATE._favObrErro = (e && e.message) || "erro"; if ($("capBody") && CAP_STATE.view === "fav") paintCAP(); }); }
   const D = obrCalcular();
   if (obrOk) capFavLimpar(D);
   const F = capFavGet();
@@ -24712,7 +24725,7 @@ function paintCapFav(body) {
   }
   if (B.obr) {
     const os = obrOk ? D.obrs.filter(o => obrVisivel(o) && F.obr.includes(String(o._id))).sort(obrOrdem(D)) : [];
-    h += sec("Obrigações", os.length, "obrigação(ões) favorita(s)", !obrOk && F.obr.length ? `<p class="cap-fav-vazio">Carregando as obrigações…</p>`
+    h += sec("Obrigações", os.length, "obrigação(ões) favorita(s)", !obrOk && F.obr.length ? `<p class="cap-fav-vazio">${CAP_STATE._favObrErro ? `Não foi possível carregar as obrigações (${esc(CAP_STATE._favObrErro)}). Clique em Atualizar.` : "Carregando as obrigações…"}</p>`
       : os.length ? `<div class="table-wrap"><table class="cap-table" id="capFavObr">${obrThead(true)}<tbody>${os.map(o => obrLinha(o, D, true)).join("")}</tbody></table></div>
       <div class="cap-foot"><span><b>${os.length}</b> obrigação(ões)</span><span>Por mês <b>${esc(fmtBRL(os.filter(o => o.Status !== "Encerrada" && o.Tipo !== "Anual").reduce((s, o) => s + Number(o.ValorParcela || 0), 0)))}</b></span><span class="venc">Vencido <b>${esc(fmtBRL(os.reduce((s, o) => s + D.res.get(String(o._id)).vVencido, 0)))}</b></span></div>`
       : vazio("Nenhuma obrigação favorita.", "obr", "Obrigações"));
@@ -24829,8 +24842,10 @@ function bilTarComparar(linhas) {
     const t = atual.get(it.k);
     if (!t) return Object.assign(it, { tipo: "nova", vigNova: x.vig || hoje });
     it.t = t; it.vigAtual = bilTarDia(t.VigenciaInicio);
+    if (x.vig && it.vigAtual && x.vig < it.vigAtual) return Object.assign(it, { tipo: "erro", msg: `vigência anterior à atual (${fmtDate(it.vigAtual)}): para corrigir o passado, edite a seção na tabela` });   /* v0.12.73 (revisão) */
     const mudaValor = r2(t.Valor) !== r2(x.valor), mudaTrecho = !!x.trecho && normName(x.trecho) !== normName(t.Descricao || ""), mudaVig = !!x.vig && x.vig !== it.vigAtual;
     if (mudaValor && x.vig && (!it.vigAtual || x.vig > it.vigAtual)) return Object.assign(it, { tipo: "reajuste", mudaTrecho, fim: (() => { const d = new Date(x.vig + "T12:00:00"); d.setDate(d.getDate() - 1); return ymd(d.toISOString()); })() });
+    if (mudaVig && !mudaValor && BIL_STATE.tarifas.some(z => z !== t && z.Ativa === false && chave(z.Linha, z.Secao) === it.k)) return Object.assign(it, { tipo: "erro", msg: "só a vigência mudou e a seção tem tarifa anterior encerrada: mudar a data abriria um intervalo sem tarifa — edite a seção na tabela" });   /* v0.12.73 (revisão) */
     if (mudaValor || mudaTrecho || mudaVig) return Object.assign(it, { tipo: "ajuste", mudaValor, mudaTrecho, mudaVig });
     return Object.assign(it, { tipo: "igual" });
   });
@@ -24865,19 +24880,21 @@ function bilTarPrevPintar() {
     const trecho = x.tipo === "ajuste" && x.mudaTrecho || x.tipo === "reajuste" && x.mudaTrecho ? de(t.Descricao, x.trecho, tx) : esc(x.trecho || t.Descricao || "—");
     const valor = x.tipo === "erro" ? (isNaN(x.valor) ? "—" : esc(brl(x.valor))) : x.tipo === "nova" ? `<b class="bti-para">${esc(brl(x.valor))}</b>` : (x.tipo === "ajuste" && x.mudaValor) || x.tipo === "reajuste" ? de(t.Valor, x.valor, brl) + pct(t.Valor, x.valor) : esc(brl(x.valor));
     const vig = x.tipo === "nova" ? `a partir de <b>${esc(dt(x.vigNova))}</b>` : x.tipo === "reajuste" ? `<b>${esc(dt(x.vig))}</b><div class="sup">atual encerra em ${esc(dt(x.fim))}</div>` : x.tipo === "ajuste" && x.mudaVig ? de(x.vigAtual, x.vig, dt) : x.tipo === "erro" ? esc(x.vig ? dt(x.vig) : "—") : esc(dt(x.vigAtual));
-    return `<tr class="bti-${x.tipo}"><td class="favc">${sel ? `<input type="checkbox" class="btiSel" data-n="${x.n}" checked onchange="bilTarSelConta()" aria-label="Aplicar a linha ${x.n}">` : ""}</td><td>${pill(x.tipo)}${x.msg ? `<div class="sup">${esc(x.msg)}</div>` : ""}</td><td class="nw">${esc(x.linha || "—")}</td><td class="nw">${esc(x.secao || "—")}</td><td>${trecho}</td><td class="right nw">${valor}</td><td class="nw">${vig}</td><td class="sup nw">linha ${x.n}</td></tr>`;
+    return `<tr class="bti-${x.tipo}"><td class="favc">${sel ? `<input type="checkbox" class="btiSel" data-n="${x.n}" ${I.off && I.off.has(x.n) ? "" : "checked"} onchange="bilTarSel(${x.n}, this.checked)" aria-label="Aplicar a linha ${x.n}">` : ""}</td><td>${pill(x.tipo)}${x.msg ? `<div class="sup">${esc(x.msg)}</div>` : ""}</td><td class="nw">${esc(x.linha || "—")}</td><td class="nw">${esc(x.secao || "—")}</td><td>${trecho}</td><td class="right nw">${valor}</td><td class="nw">${vig}</td><td class="sup nw">linha ${x.n}</td></tr>`;
   };
   const vis = I.itens.filter(x => I.mostrarIguais || x.tipo !== "igual");
   const ordem = { erro: 0, reajuste: 1, ajuste: 2, nova: 3, igual: 4 };
   vis.sort((a, b) => ordem[a.tipo] - ordem[b.tipo] || a.n - b.n);
   P.innerHTML = `<div class="bti-resumo"><span class="sup">${esc(I.arquivo)} · ${I.itens.length} linha(s)</span>${["nova", "ajuste", "reajuste", "igual", "erro"].map(k => `<span class="bti-chip bti-${k}">${esc(BIL_TAR_TIPO[k][0])}: <b>${cnt(k)}</b></span>`).join("")}${I.fora.length ? `<span class="bti-chip bti-fora" title="Continuam na tabela — nada é apagado">Não constam na planilha: <b>${I.fora.length}</b></span>` : ""}</div>
     <div class="bti-ferr"><label class="sup"><input type="checkbox" ${I.mostrarIguais ? "checked" : ""} onchange="BIL_IMP.mostrarIguais=this.checked; bilTarPrevPintar()"> mostrar também as linhas sem alteração</label></div>
-    ${vis.length ? `<div class="table-wrap bti-wrap"><table class="cap-table bti-t"><thead><tr><th class="favc"><input type="checkbox" id="btiTodas" checked onchange="document.querySelectorAll('#btiPrev .btiSel').forEach(c=>c.checked=this.checked); bilTarSelConta()" aria-label="Marcar todas"></th><th>Situação</th><th>Linha</th><th>Seção</th><th>Trecho</th><th style="text-align:right">Tarifa</th><th>Vigência</th><th></th></tr></thead><tbody>${vis.map(linha).join("")}</tbody></table></div>`
+    ${vis.length ? `<div class="table-wrap bti-wrap"><table class="cap-table bti-t"><thead><tr><th class="favc"><input type="checkbox" id="btiTodas" ${I.off && I.off.size ? "" : "checked"} onchange="bilTarSelTodas(this.checked)" aria-label="Marcar todas"></th><th>Situação</th><th>Linha</th><th>Seção</th><th>Trecho</th><th style="text-align:right">Tarifa</th><th>Vigência</th><th></th></tr></thead><tbody>${vis.map(linha).join("")}</tbody></table></div>`
       : `<p class="cap-muted" style="margin:12px 0 0">A planilha é igual à tabela: nada a gravar.</p>`}
     ${I.fora.length ? `<details class="bti-fora-det"><summary>${I.fora.length} seção(ões) vigente(s) não constam na planilha (continuam na tabela)</summary><p class="sup">${I.fora.map(t => esc(`${t.Linha} · ${t.Secao}`)).join(" · ")}</p></details>` : ""}`;
   bilTarSelConta();
   if (!mudas.length) { const b = $("btiGo"); if (b) { b.disabled = true; b.textContent = "Aplicar"; } }
 }
+window.bilTarSel = (n, on) => { const I = BIL_IMP; if (!I) return; if (!I.off) I.off = new Set(); if (on) I.off.delete(n); else I.off.add(n); bilTarSelConta(); };   /* v0.12.73 (revisão) */
+window.bilTarSelTodas = on => { const I = BIL_IMP; if (!I) return; I.off = new Set(); document.querySelectorAll("#btiPrev .btiSel").forEach(c => { c.checked = on; if (!on) I.off.add(Number(c.dataset.n)); }); bilTarSelConta(); };
 window.bilTarSelConta = () => { const n = document.querySelectorAll("#btiPrev .btiSel:checked").length, b = $("btiGo"); if (b) { b.disabled = !n; b.textContent = n ? `Aplicar ${n} alteração(ões)` : "Aplicar"; } };
 window.bilTarAplicar = async () => {
   const I = BIL_IMP; if (!I || !podeEditar("bilhet") || !BIL_STATE.ready) return;
@@ -24926,7 +24943,8 @@ boot();
    · o imobilizado (bens e depreciação linear mês a mês) é o módulo novo Financeiro › Imobilizado ("Financeiro — Imobilizado");
    · o plano de investimentos é a lista nova "Diretoria — Plano de investimentos", com simulação de financiamento e payback.
    Referências públicas: vida útil e residual gerenciais do ônibus pelo método do GEIPOT (10 anos, 15%) e do micro-ônibus pela
-   ANTP (8 anos, 10%); taxas fiscais da IN RFB 1.700/2017 (Anexo III); capitalização de reformas pelo CPC 27 (itens 7, 12 e 13);
+   planilhas tarifárias (8 anos, 10%) — padrões editáveis bem a bem; taxas fiscais da IN RFB 1.700/2017 (Anexo III); reformas que aumentam a vida útil
+   (CPC 27; RIR/2018, art. 354, § 1º);
    bens de até R$ 1.200 direto na despesa (Decreto-Lei 1.598/1977, art. 15, redação da Lei 12.973/2014).
    Nada de dado real no código: só regras, rótulos e referências.
    ===================================================================== */
@@ -24980,20 +24998,22 @@ function cpxCtx() {
   const linkados = new Set();
   (IMOB.itens || []).forEach(b => imobCapIds(b).forEach(id => linkados.add(id)));
   const obrById = new Map(((typeof OBR_STATE !== "undefined" && OBR_STATE.items) || []).map(o => [String(o._id), o]));
-  return { linkados, obrById, limiar: Number(((CPX.prem || CPX_PREM_PAD).limiar)) || 5000 };
+  const forn = new Map(((typeof FORN_STATE !== "undefined" && FORN_STATE.items) || []).map(f => [String(f.Title || "").trim().toLowerCase(), f]));   /* v0.12.73 (revisão): busca do fornecedor sem varrer a lista a cada conta */
+  return { linkados, obrById, forn, limiar: Number(((CPX.prem || CPX_PREM_PAD).limiar)) || 5000 };
 }
 /* natureza de uma conta: a gravada na conta vale; sem ela, a regra (na ordem) */
 function cpxNat(it, ctx) {
-  const ex = String(it.Natureza || "").trim();
+  const ex = String(it.Natureza || "").trim(), id = String(it._id);
+  /* v0.12.73 (revisão): conta que compõe um bem do Imobilizado entra pelo bem — mesmo com outra natureza gravada (senão contaria duas vezes) */
+  if (ctx && ctx.linkados && ctx.linkados.has(id)) return { nat: "CAPEX", auto: true, motivo: "ligada a um bem do Imobilizado", revisar: CPX_NAT.includes(ex) && ex !== "CAPEX" ? `está ligada a um bem do Imobilizado, mas marcada como ${ex}: enquanto estiver ligada, o valor entra pelo bem` : undefined };
   if (CPX_NAT.includes(ex)) return { nat: ex, auto: false, motivo: "classificada na conta" };
-  const id = String(it._id), cat = String(it.Categoria || "").trim(), sub = normName(it.Subcategoria), tl = it.TipoLancamento || "";
-  if (ctx && ctx.linkados && ctx.linkados.has(id)) return { nat: "CAPEX", auto: true, motivo: "ligada a um bem do Imobilizado" };
+  const cat = String(it.Categoria || "").trim(), sub = normName(it.Subcategoria), tl = it.TipoLancamento || "";
   if (tl === "Transferência entre contas") return { nat: "Fora do resultado", auto: true, motivo: "transferência entre contas" };
   if (tl === "Parcela de dívida") return { nat: "Financeiro", auto: true, motivo: "lançamento do tipo Parcela de dívida" };
   if (cat === "Financeiras") return { nat: "Financeiro", auto: true, motivo: "categoria Financeiras" };
   if (cat === "Tributárias" && /parcelamento|refis/.test(sub)) return { nat: "Financeiro", auto: true, motivo: "parcelamento de tributos" };
   if (cat === "Consórcio") return { nat: "CAPEX", auto: true, motivo: "consórcio de veículos (formação de ativo)" };
-  const f = typeof fornByName === "function" ? fornByName(it.Fornecedor) : null;
+  const f = ctx && ctx.forn ? (ctx.forn.get(String(it.Fornecedor || "").trim().toLowerCase()) || null) : typeof fornByName === "function" ? fornByName(it.Fornecedor) : null;
   if (f && f.Tipo === "Dívidas / Parcelamento") return { nat: "Financeiro", auto: true, motivo: "fornecedor classificado como Dívidas / Parcelamento" };
   if (f && f.Tipo === "Investimentos / Reservas") return { nat: "Fora do resultado", auto: true, motivo: "fornecedor classificado como Investimentos / Reservas", revisar: "confira: reserva de caixa (fora do resultado) ou compra de bem (CAPEX)" };
   const o = ctx && ctx.obrById && it.ObrigacaoLookupId != null && it.ObrigacaoLookupId !== "" ? ctx.obrById.get(String(it.ObrigacaoLookupId)) : null;
@@ -25001,7 +25021,7 @@ function cpxNat(it, ctx) {
   const r = { nat: "OPEX", auto: true, motivo: cat ? `categoria ${cat}` : "sem categoria" };
   if (!cat || cat === "Outros") r.revisar = "sem categoria do plano de contas: confira a natureza";
   else if (Number(it.Valor || 0) >= ((ctx && ctx.limiar) || 5000) && (CPX_SUB_CONFERIR.has(sub) || ["Frota Auxiliar", "Peças e Acessórios"].includes(cat)))
-    r.revisar = `valor alto em ${it.Subcategoria || cat}: pode ser investimento (bem durável ou reforma que aumenta a vida útil)`;
+    r.revisar = `valor alto em ${it.Subcategoria || cat}: pode ser investimento (bem durável, ou reforma que aumenta a vida útil em mais de um ano)`;
   return r;
 }
 /* mês da conta no regime escolhido: competência (padrão) ou caixa (só as pagas, pelo dia do pagamento) */
@@ -25012,16 +25032,16 @@ function cpxMesConta(it, regime) {
 
 /* ---- imobilizado: categorias, vida útil e valor residual padrão ---- */
 const IMOB_CATS = [
-  { n: "Frota — ônibus",                     vida: 120, res: 15, fiscal: 25,   frota: true, ref: "gerencial: 10 anos e 15% de valor residual (método GEIPOT para ônibus); fiscal: 25% ao ano (4 anos)" },
-  { n: "Frota — micro-ônibus",               vida: 96,  res: 10, fiscal: 25,   frota: true, ref: "gerencial: 8 anos e 10% de valor residual (ANTP, micro e miniônibus); fiscal: 25% ao ano (4 anos)" },
-  { n: "Veículos de apoio",                  vida: 60,  res: 20, fiscal: 20,   ref: "automóveis e utilitários; fiscal: 20% ao ano para automóveis (5 anos)" },
+  { n: "Frota — ônibus",                     vida: 120, res: 15, fiscal: 25,   frota: true, ref: "referência gerencial: 10 anos e 15% de valor residual (o GEIPOT usa 15% de residual para ônibus pesado; o ERP deprecia de forma linear); fiscal: 25% ao ano (4 anos)" },
+  { n: "Frota — micro-ônibus",               vida: 96,  res: 10, fiscal: 25,   frota: true, ref: "referência gerencial: 8 anos e 10% de valor residual (parâmetros usuais de planilhas tarifárias para micro e miniônibus; ajuste ao contrato); fiscal: 25% ao ano (4 anos)" },
+  { n: "Veículos de apoio",                  vida: 60,  res: 20, fiscal: "20% a 25% a.a.", ref: "automóveis e utilitários; fiscal: 20% ao ano para automóveis (5 anos) e 25% para veículos de carga (4 anos)" },
   { n: "Garagem e edificações",              vida: 300, res: 0,  fiscal: 4,    ref: "edificações; fiscal: 4% ao ano (25 anos). O terreno vai na categoria Terrenos" },
   { n: "Instalações e benfeitorias",         vida: 120, res: 0,  fiscal: 10,   ref: "instalações; fiscal: 10% ao ano. Benfeitoria em imóvel alugado: pelo prazo do contrato, se for menor" },
   { n: "Máquinas e equipamentos de oficina", vida: 120, res: 0,  fiscal: 10,   ref: "máquinas e equipamentos; fiscal: 10% ao ano (10 anos)" },
   { n: "Equipamentos embarcados",            vida: 60,  res: 0,  fiscal: null, ref: "validadores, câmeras, telemetria e GPS; referência: 5 anos" },
   { n: "Tecnologia (computadores e redes)",  vida: 60,  res: 0,  fiscal: 20,   ref: "computadores e periféricos; fiscal: 20% ao ano (5 anos)" },
   { n: "Móveis e utensílios",                vida: 120, res: 0,  fiscal: 10,   ref: "fiscal: 10% ao ano (10 anos)" },
-  { n: "Reforma ou retífica capitalizada",   vida: 36,  res: 0,  fiscal: null, ref: "só quando aumenta a vida útil em mais de 1 ano (CPC 27); deprecie pelo tempo de vida que a reforma acrescenta" },
+  { n: "Reforma ou retífica capitalizada",   vida: 36,  res: 0,  fiscal: null, ref: "só quando aumenta a vida útil ou a capacidade do bem (CPC 27; para o fisco, quando aumenta a vida útil em mais de um ano — RIR/2018, art. 354, § 1º); deprecie pelo tempo de vida que a reforma acrescenta" },
   { n: "Software e licenças (intangível)",   vida: 60,  res: 0,  fiscal: null, ref: "amortização linear; referência: 5 anos" },
   { n: "Terrenos",                           vida: 0,   res: 0,  fiscal: 0,    ref: "terreno não deprecia" },
   { n: "Outros",                             vida: 60,  res: 0,  fiscal: null, ref: "defina a vida útil do bem" }
@@ -25050,7 +25070,7 @@ LISTS.fin_imob = {
     { name: "CentroCusto",       displayName: "Centro de custo",           choice: choice(CENTROS_CUSTO, true), update: true },
     { name: "Fornecedor",        displayName: "Fornecedor",                text: { allowMultipleLines: false, maxLength: 255 } },
     { name: "NumeroNF",          displayName: "Nº da NF",                  text: { allowMultipleLines: false, maxLength: 50 } },
-    { name: "CapRef",            displayName: "Contas da CAP (IDs)",       text: { allowMultipleLines: false, maxLength: 255 } },
+    { name: "CapRef",            displayName: "Contas da CAP (IDs)",       text: { allowMultipleLines: true, textType: "plain" } },   /* várias parcelas (consórcio) num bem */
     { name: "Observacoes",       displayName: "Observações",               text: { allowMultipleLines: true, textType: "plain" } }
   ]
 };
@@ -25092,9 +25112,10 @@ PAG_DEF.imob = [["bens", "Bens"], ["deprec", "Depreciação"], ["incorporar", "A
 /* quem vê / quem grava (as páginas com permissão própria valem) */
 const cpxVe = id => { const m = MODULES.find(x => x.id === id); return !!m && canSee(m); };
 const cpxNivel = k => permModulo(k);   /* "mod.pagina" → a da página ou a do módulo */
-const imobEdita = () => ["editar", "proprietario"].includes(cpxNivel("imob.bens"));
+const cpxPagVe = k => !!session.n1 || pagNivel("capex", k) !== "nenhum";   /* v0.12.73 (revisão): relatório e planilha seguem as páginas */
+const imobEdita = () => !vcAtivo() && ["editar", "proprietario"].includes(cpxNivel("imob.bens"));
 const imobExclui = () => cpxNivel("imob.bens") === "proprietario";
-const invEdita = () => ["editar", "proprietario"].includes(cpxNivel("capex.plano"));
+const invEdita = () => !vcAtivo() && ["editar", "proprietario"].includes(cpxNivel("capex.plano"));
 const invExclui = () => cpxNivel("capex.plano") === "proprietario";
 /* guarda: gravação nas listas novas segue a página dona da lista, de qualquer tela */
 { const g0 = guardaEscrita;
@@ -25134,13 +25155,14 @@ async function invCarregar(force) {
 function cpxFonteErro(e) { const m = String((e && e.message) || e || ""); return { st: e && (e.status === 401 || e.status === 403) ? "semacesso" : /ainda não existe/i.test(m) ? "semlista" : "erro", msg: m }; }
 async function cpxCarregar(force) {
   if (CPX.carregando) return CPX.carregando;
+  if (CAP_STATE.espelhoCC && !$("almfRoot")) { almfSair(); force = true; }   /* v0.12.73 (revisão): nunca ler a CAP filtrada pelo espelho do Almoxarifado */
   if (CPX.carregado && !force && Date.now() - CPX.t < 5 * 60e3) return;
   CPX.carregando = (async () => {
     const F = {};
     const t = async (k, fn) => { try { F[k] = await fn(); } catch (e) { F[k] = cpxFonteErro(e); } };
     await Promise.all([
       t("cap", async () => { await loadCAP({ soLeitura: true }); return { st: CAP_STATE.items.length ? "ok" : "vazio", n: CAP_STATE.items.length }; }),
-      t("obr", async () => { if (!cpxVe("obr") && !cpxVe("cap")) return { st: "semperm" }; await loadObr(); return { st: OBR_STATE.items.length ? "ok" : "vazio", n: OBR_STATE.items.length }; }),
+      t("obr", async () => { await loadObr(); return { st: OBR_STATE.items.length ? "ok" : "vazio", n: OBR_STATE.items.length }; }),   /* v0.12.73 (revisão): sempre (só leitura) — a regra e a dívida não podem depender de quem olha */
       t("cx", async () => { const r = await cpxLista("financeiro", LISTS.cx_mov.displayName, "Data,Tipo,Origem,Valor"); CPX.cx = r.itens; return { st: !r.list ? "semlista" : r.itens.length ? "ok" : "vazio", n: r.itens.length }; }),
       t("pax", async () => { const r = await cpxLista("operacional", LISTS.pax.displayName, "Data,Pagantes,Gratuidade"); CPX.pax = r.itens; return { st: !r.list ? "semlista" : r.itens.length ? "ok" : "vazio", n: r.itens.length }; }),
       t("veic", async () => { const r = await cpxLista("operacional", LISTS.frota_veic.displayName, "Title,Ano,Tipo,Situacao,Placa"); CPX.veic = r.itens; return { st: !r.list ? "semlista" : r.itens.length ? "ok" : "vazio", n: r.itens.length }; }),
@@ -25164,7 +25186,7 @@ function imobCalc(b) {
   const cat = imobCat(b.Categoria) || imobCat("Outros");
   const valor = Number(b.ValorAquisicao || 0), vida = cpxNum(b.VidaUtilMeses) != null ? Math.max(0, Math.round(cpxNum(b.VidaUtilMeses))) : cat.vida;
   const res = cpxNum(b.ResidualPct) != null ? Math.min(95, Math.max(0, cpxNum(b.ResidualPct))) : cat.res;
-  const base = Math.max(0, valor * (1 - res / 100)), mensal = vida > 0 ? base / vida : 0;
+  const base = vida > 0 ? Math.max(0, valor * (1 - res / 100)) : 0, mensal = vida > 0 ? base / vida : 0;   /* v0.12.73 (revisão): o que não deprecia (terreno) fica fora da base */
   const aq = b.DataAquisicao ? ymd(b.DataAquisicao).slice(0, 7) : "";
   const ini = (b.InicioDepreciacao ? ymd(b.InicioDepreciacao).slice(0, 7) : "") || aq;
   const baixado = b.Situacao === "Baixado", implant = b.Situacao === "Em implantação";
@@ -25201,7 +25223,8 @@ function cpxJanelaAnterior(meses, horiz) {
 }
 /* meses com dados confiáveis: a partir do mês em que a CAP passou a valer, até o mês atual */
 const cpxValido = m => m >= (CONFIG.capInicio || "2000-01") && m <= todayISO().slice(0, 7);
-function cpxAcc() { return { rec: 0, recOrig: {}, opex: 0, grp: {}, cat: {}, gc: {}, cc: {}, forn: {}, capexCap: 0, capexImob: 0, fin: 0, fora: 0, dep: 0, pax: 0, nRev: 0 }; }
+function cpxAcc() { return { rec: 0, recOrig: {}, opex: 0, grp: {}, cat: {}, gc: {}, cc: {}, forn: {}, capexCap: 0, capexImob: 0, capexImobFin: 0, fin: 0, fora: 0, dep: 0, pax: 0, nRev: 0 }; }
+const CPX_FIN_TERC = ["FINAME / BNDES", "Financiamento bancário", "Leasing", "Consórcio"];   /* bem pago por terceiros: entra no CAPEX e o caixa sai nas parcelas (Juros e dívidas) */
 /* base: tudo mês a mês (todos os meses com algum dado) + a natureza de cada conta */
 function cpxBase() {
   const ctx = cpxCtx(), regime = CPX.regime, A = new Map(), N = new Map();
@@ -25213,16 +25236,17 @@ function cpxBase() {
     const m = cpxMesConta(it, regime); if (!/^\d{4}-\d{2}$/.test(m)) return;
     const v = Number(it.Valor || 0); if (!v) return;
     const a = ac(m);
+    if (n.auto && n.revisar) a.nRev++;
+    if (ctx.linkados.has(String(it._id))) return;   /* v0.12.73 (revisão): conta que compõe um bem do Imobilizado entra pelo bem, não aqui */
     if (n.nat === "OPEX") { const g = opexGrupo(it.Categoria, it.Subcategoria), cl = String(it.Categoria || "").trim() || "(sem categoria)"; a.opex += v; add(a.grp, g, v); add(a.cat, cl, v); add(a.gc, g + "\u0001" + cl, v); add(a.cc, ccDe(it) || "(sem centro de custo)", v); add(a.forn, it.Fornecedor || "—", v); }
-    else if (n.nat === "CAPEX") { if (!ctx.linkados.has(String(it._id))) a.capexCap += v; }
+    else if (n.nat === "CAPEX") a.capexCap += v;
     else if (n.nat === "Financeiro") a.fin += v;
     else a.fora += v;
-    if (n.auto && n.revisar) a.nRev++;
   });
   (CPX.cx || []).forEach(x => { if (x.Tipo !== "Entrada" || !x.Data) return; const m = ymd(x.Data).slice(0, 7), v = Number(x.Valor || 0); if (!v) return; const a = ac(m); a.rec += v; add(a.recOrig, x.Origem || "Outras receitas", v); });
   (CPX.pax || []).forEach(x => { if (!x.Data) return; ac(ymd(x.Data).slice(0, 7)).pax += Number(x.Pagantes || 0) + Number(x.Gratuidade || 0); });
   const bens = (IMOB.itens || []).map(b => ({ b, c: imobCalc(b) }));
-  bens.forEach(({ c }) => { if (/^\d{4}-\d{2}$/.test(c.aq)) ac(c.aq).capexImob += c.valor; });
+  bens.forEach(({ b, c }) => { if (!/^\d{4}-\d{2}$/.test(c.aq)) return; const a = ac(c.aq); a.capexImob += c.valor; if (CPX_FIN_TERC.includes(b.Financiamento) && !imobCapIds(b).length) a.capexImobFin += c.valor; });
   return { A, N, ctx, bens, ac };
 }
 function cpxSoma(B, meses) {
@@ -25230,19 +25254,28 @@ function cpxSoma(B, meses) {
   meses.forEach(m => {
     const a = B.A.get(m); B.bens.forEach(({ c }) => { t.dep += c.dep(m); });
     if (!a) return;
-    ["rec", "opex", "capexCap", "capexImob", "fin", "fora", "pax", "nRev"].forEach(k => { t[k] += a[k]; });
+    ["rec", "opex", "capexCap", "capexImob", "capexImobFin", "fin", "fora", "pax", "nRev"].forEach(k => { t[k] += a[k]; });
     ["recOrig", "grp", "cat", "gc", "cc", "forn"].forEach(k => Object.entries(a[k]).forEach(([x, v]) => { t[k][x] = (t[k][x] || 0) + v; }));
   });
-  t.capex = t.capexCap + t.capexImob; t.ebitda = t.rec - t.opex; t.ebit = t.ebitda - t.dep; t.res = t.ebit - t.fin; t.livre = t.ebitda - t.capex - t.fin;
+  t.capex = t.capexCap + t.capexImob; t.ebitda = t.rec - t.opex; t.ebit = t.ebitda - t.dep; t.res = t.ebit - t.fin;
+  t.livre = t.ebitda - (t.capex - t.capexImobFin) - t.fin;   /* bens financiados: o caixa sai nas parcelas (já em Juros e dívidas) */
   t.margem = t.rec > 0 ? t.ebitda / t.rec : null;
   return t;
 }
-function cpxDados() {
+let CPX_MEMO = null;
+function cpxDados() {   /* v0.12.73 (revisão): refaz as contas só quando algum dado ou filtro muda (a busca da Classificação repinta a cada letra) */
+  const k = [CAP_STATE.items, CAP_STATE.rev || 0, IMOB.itens, INV.itens, CPX.cx, CPX.pax, CPX.veic, CPX.prem, typeof OBR_STATE !== "undefined" ? OBR_STATE.items : null, FORN_STATE.items, CPX.ref, CPX.horiz, CPX.regime, todayISO(), CPX.t, CPX.fontes];
+  if (CPX_MEMO && CPX_MEMO.k.every((x, i) => x === k[i])) return CPX_MEMO.d;
+  const d = cpxDadosAgora(); CPX_MEMO = { k, d }; return d;
+}
+function cpxDadosAgora() {
   const ref = CPX.ref || cpxRefPadrao(), B = cpxBase(), hoje = todayISO().slice(0, 7);
   const meses = cpxMesesJanela(ref, CPX.horiz), validos = meses.filter(cpxValido);
-  const ant = cpxJanelaAnterior(meses, CPX.horiz).filter(cpxValido);
+  /* comparação mês a mês: só os meses que têm dados nos dois períodos (12 contra 12, nunca 12 contra 4) */
+  const antTodos = cpxJanelaAnterior(meses, CPX.horiz), pares = meses.map((m, i) => [m, antTodos[i]]).filter(([m, a]) => cpxValido(m) && a && cpxValido(a));
+  const ant = pares.map(x => x[1]);
   const m12 = cpxMesesJanela(ref, "12m"), v12 = m12.filter(cpxValido);
-  const T = cpxSoma(B, validos), P = cpxSoma(B, ant), T12 = cpxSoma(B, v12);
+  const T = cpxSoma(B, validos), Tc = cpxSoma(B, pares.map(x => x[0])), P = cpxSoma(B, ant), T12 = cpxSoma(B, v12);
   const serie = m12.map(m => ({ m, ok: cpxValido(m), t: cpxSoma(B, [m]) }));
   /* imobilizado e frota hoje */
   const emUso = B.bens.filter(x => !x.c.baixado);
@@ -25266,11 +25299,11 @@ function cpxDados() {
     opexPax: T.pax > 0 ? T.opex / T.pax : null, recPax: T.pax > 0 ? T.rec / T.pax : null,
     reinv: T12.dep > 0 ? T12.capex / T12.dep : null,
     idade: F.idadeMedia, depFrota: imob.pctDepFrota != null ? imob.pctDepFrota : imob.pctDep,
-    divEbitda: divida != null && ebitdaAno != null ? (ebitdaAno > 0 ? divida / ebitdaAno : Infinity) : null,
+    divEbitda: divida != null && ebitdaAno != null ? (divida === 0 ? 0 : ebitdaAno > 0 ? divida / ebitdaAno : Infinity) : null,   /* sem dívida: zero, mesmo com EBITDA negativo */
     cobert: finAno != null && finAno > 0 && ebitdaAno != null ? ebitdaAno / finAno : null,
     folga: ebitdaAno != null ? ebitdaAno - (finAno || 0) - pl.caixa12 : null
   };
-  return { ref, meses, validos, ant, m12, v12, T, P, T12, serie, B, imob, F, divida, ebitdaAno, finAno, H, pl, k12 };
+  return { ref, meses, validos, ant, pares, comparavel: pares.length > 0, parcial: pares.length > 0 && pares.length < validos.length, m12, v12, T, Tc, P, T12, serie, B, imob, F, divida, ebitdaAno, finAno, H, pl, k12 };
 }
 /* frota: idade e substituição pela idade-limite das premissas */
 function cpxFrota() {
@@ -25296,16 +25329,18 @@ function invSim(o) {
   const total = ent + parc * n, eco = Number(o.EconomiaMensal || 0);
   return { valor, fin, forma, ent, pv, n, i, parc, total, juros: Math.max(0, total - valor), eco, payback: eco > 0 ? valor / eco : null };
 }
-function invFluxo(o) {   /* entrada no mês previsto; parcelas a partir do mês seguinte */
-  const s = invSim(o), m0 = /^\d{4}-\d{2}$/.test(String(o.MesPrevisto || "")) ? o.MesPrevisto : null; if (!m0 || !s.valor) return [];
+function invFluxo(o, hoje) {   /* entrada no mês previsto; parcelas a partir do mês seguinte. Com "hoje" (v0.12.73, revisão): o que já devia ter saído e não foi executado conta a partir deste mês */
+  const s = invSim(o); let m0 = /^\d{4}-\d{2}$/.test(String(o.MesPrevisto || "")) ? o.MesPrevisto : null; if (!m0 || !s.valor) return [];
+  if (hoje && m0 < hoje && !["Executado", "Cancelado"].includes(o.Status)) m0 = hoje;
   const out = [{ m: m0, ent: s.ent, parc: 0 }];
   for (let k = 1; k <= s.n; k++) out.push({ m: capCompAdd(m0, k), ent: 0, parc: s.parc });
   return out;
 }
+const invAtrasado = (o, hoje) => /^\d{4}-\d{2}$/.test(String(o.MesPrevisto || "")) && o.MesPrevisto < hoje && !["Executado", "Cancelado"].includes(o.Status);
 const INV_COMPROMETIDO = ["Aprovado", "Contratado"], INV_PIPELINE = ["Ideia", "Em análise"];
 function invPlanoResumo(hoje) {
   const its = INV.itens || [], fim12 = capCompAdd(hoje, 11), fim24 = capCompAdd(hoje, 23);
-  const r = { ativos: 0, vAtivos: 0, nComp: 0, vComp: 0, nPipe: 0, vPipe: 0, caixa12: 0, caixaPipe12: 0, parcMedia: 0, paybacks: [], meses: [] };
+  const r = { ativos: 0, vAtivos: 0, nComp: 0, vComp: 0, nPipe: 0, vPipe: 0, caixa12: 0, caixaPipe12: 0, parcMedia: 0, paybacks: [], meses: [], nAtras: 0 };
   for (let i = 0; i < 24; i++) r.meses.push({ m: capCompAdd(hoje, i), ent: 0, parc: 0, pipe: 0 });
   its.forEach(o => {
     const st = o.Status || "Ideia", v = Number(o.ValorEstimado || 0);
@@ -25313,7 +25348,8 @@ function invPlanoResumo(hoje) {
     r.ativos++; r.vAtivos += v;
     const comp = INV_COMPROMETIDO.includes(st); if (comp) { r.nComp++; r.vComp += v; } else { r.nPipe++; r.vPipe += v; }
     const s = invSim(o); if (s.payback != null) r.paybacks.push(s.payback);
-    invFluxo(o).forEach(f => { if (f.m < hoje || f.m > fim24) return; const x = r.meses.find(z => z.m === f.m); if (!x) return;
+    if (invAtrasado(o, hoje)) r.nAtras++;
+    invFluxo(o, hoje).forEach(f => { if (f.m < hoje || f.m > fim24) return; const x = r.meses.find(z => z.m === f.m); if (!x) return;
       if (comp) { x.ent += f.ent; x.parc += f.parc; if (f.m <= fim12) r.caixa12 += f.ent + f.parc; } else { x.pipe += f.ent + f.parc; if (f.m <= fim12) r.caixaPipe12 += f.ent + f.parc; } });
   });
   const p12 = r.meses.slice(0, 12).reduce((s, x) => s + x.parc, 0); r.parcMedia = p12 / 12;
@@ -25401,18 +25437,19 @@ function cpxAvisos(D) {
   if (F.imob && F.imob.st === "semlista") a.push(`A lista "Financeiro — Imobilizado" ainda não existe: depreciação e CAPEX dos bens começam quando ela for criada (Sistema › Configuração) e os bens forem cadastrados em Financeiro › Imobilizado.`);
   else if (F.imob && F.imob.st === "vazio") a.push(`Nenhum bem em Financeiro › Imobilizado: depreciação, valor contábil e reinvestimento aparecem quando os bens forem cadastrados.`);
   if (F.cap && F.cap.st === "ok" && CAP_STATE.cols && !CAP_STATE.cols.has("Natureza")) a.push(`A coluna "Natureza do gasto" ainda não existe na CAP: tudo segue a regra automática até um administrador rodar Sistema › Configuração › Contas a Pagar.`);
-  ["cap", "cx", "pax", "veic", "obr"].forEach(k => { const f = F[k]; if (f && ["semacesso", "erro"].includes(f.st)) a.push(`${CPX_FONTE_NOME[k]}: ${f.st === "semacesso" ? "sem acesso no SharePoint" : "não foi possível ler"}${f.msg ? ` (${f.msg.slice(0, 90)})` : ""}.`); });
+  ["cap", "cx", "pax", "veic", "imob", "inv"].forEach(k => { const f = F[k]; if (f && ["semacesso", "erro"].includes(f.st)) a.push(`${CPX_FONTE_NOME[k]}: ${f.st === "semacesso" ? "sem acesso no SharePoint" : "não foi possível ler"}${f.msg ? ` (${f.msg.slice(0, 90)})` : ""}.`); });
+  const fo = F.obr; if (fo && ["semacesso", "erro", "semlista"].includes(fo.st)) a.push(`Obrigações: ${fo.st === "semlista" ? "a lista não existe" : fo.st === "semacesso" ? "sem acesso no SharePoint" : "não foi possível ler"} — a regra das parcelas de financiamentos e parcelamentos e o saldo da dívida ficam de fora.`);
   return a.length ? `<div class="cpx-avisos">${a.map(x => `<div>${esc(x)}</div>`).join("")}</div>` : "";
 }
 const CPX_FONTE_NOME = { cap: "Contas a Pagar", cx: "Fluxo de Caixa (entradas)", pax: "Estatística de Passageiros", veic: "Frota › Veículos", imob: "Financeiro › Imobilizado", inv: "Plano de investimentos", obr: "Obrigações", prem: "Premissas" };
 function cpxKpi(lbl, val, sub, cls, extra) { return `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(lbl)}</div><div class="val money">${esc(val)}</div><div class="sub">${sub}</div>${extra || ""}</div>`; }
 function cpxPainel(D) {
-  const T = D.T, P = D.P, H = D.H, pv = D.ant.length > 0;
+  const T = D.T, P = D.P, C = D.Tc, H = D.H, pv = D.comparavel;
   const per = CPX.horiz === "mes" ? "no mês" : CPX.horiz === "ano" ? "no ano" : "em 12 meses";
   const kpis = `<div class="cap-kpis cap-kpis-6 cpx-kpis">
-    ${cpxKpi("Receita operacional", cpxK(T.rec), `${per} · entradas do Fluxo de Caixa ${pv ? cpxDelta(T.rec, P.rec) : ""}`)}
-    ${cpxKpi("OPEX", cpxK(T.opex), `${T.rec > 0 ? cpxPct(T.opex / T.rec) + " da receita" : "custeio"} ${pv ? cpxDelta(T.opex, P.opex, true) : ""}`)}
-    ${cpxKpi("EBITDA operacional", cpxK(T.ebitda), `margem ${cpxPct(T.margem)} ${pv ? cpxDelta(T.ebitda, P.ebitda) : ""}`, T.ebitda < 0 ? "venc" : "pago")}
+    ${cpxKpi("Receita operacional", cpxK(T.rec), `${per} · entradas do Fluxo de Caixa ${pv ? cpxDelta(C.rec, P.rec) : ""}`)}
+    ${cpxKpi("OPEX", cpxK(T.opex), `${T.rec > 0 ? cpxPct(T.opex / T.rec) + " da receita" : "custeio"} ${pv ? cpxDelta(C.opex, P.opex, true) : ""}`)}
+    ${cpxKpi("EBITDA operacional", cpxK(T.ebitda), `margem ${cpxPct(T.margem)} ${pv ? cpxDelta(C.ebitda, P.ebitda) : ""}`, T.ebitda < 0 ? "venc" : "pago")}
     ${cpxKpi("CAPEX", cpxK(T.capex), `${T.capexImob ? cpxK(T.capexImob) + " em bens" : "investimentos"}${T.capexCap ? ` · ${cpxK(T.capexCap)} a incorporar` : ""}`)}
     ${cpxKpi("Depreciação", cpxK(T.dep), `${D.imob.n} bem(ns) em uso`)}
     ${cpxKpi("Juros e dívidas", cpxK(T.fin), "contas de natureza Financeiro")}
@@ -25438,21 +25475,23 @@ function cpxPainel(D) {
 }
 /* resultado gerencial do período (tipo DRE, em regime de competência ou caixa) */
 function cpxDreHtml(D) {
-  const T = D.T, P = D.P, pv = D.ant.length > 0, nM = Math.max(1, D.validos.length);
+  const T = D.T, P = D.P, C = D.Tc, pv = D.comparavel, nM = Math.max(1, D.validos.length);
   const pr = v => T.rec > 0 ? cpxPct(v / T.rec) : "—";
-  const lin = (cls, lbl, v, vp, menor, tip) => `<tr class="${cls}"${tip ? ` title="${esc(tip)}"` : ""}><td>${lbl}</td><td class="r">${esc(fmtBRL(v))}</td><td class="r mut">${pr(v)}</td><td class="r mut">${esc(fmtBRL(v / nM))}</td><td class="r mut">${pv ? esc(fmtBRL(vp)) : "—"}</td><td class="r">${pv ? cpxDelta(Math.abs(v), Math.abs(vp), menor) : ""}</td></tr>`;
-  const grupos = OPEX_GRUPOS.filter(g => T.grp[g.k] || P.grp[g.k]).map(g => lin("sub", `(−) ${esc(g.n)}`, T.grp[g.k] || 0, P.grp[g.k] || 0, true)).join("");
-  return `<div class="cap-card"><div class="cap-card-h"><h3>Resultado gerencial do período</h3><span class="cap-card-s">${esc(D.validos.length ? `${compLabel(D.validos[0])} a ${compLabel(D.validos[D.validos.length - 1])}` : "sem meses com dados")} · comparação com ${CPX.horiz === "ano" ? "os mesmos meses do ano anterior" : "o período imediatamente anterior"}</span></div>
+  const lin = (cls, lbl, f, menor, tip) => { const v = f(T), vp = f(P), vc = f(C); return `<tr class="${cls}"${tip ? ` title="${esc(tip)}"` : ""}><td>${lbl}</td><td class="r">${esc(fmtBRL(v))}</td><td class="r mut">${pr(v)}</td><td class="r mut">${esc(fmtBRL(v / nM))}</td><td class="r mut">${pv ? esc(fmtBRL(vp)) : "—"}</td><td class="r">${pv ? cpxDelta(vc, vp, menor) : ""}</td></tr>`; };   /* v0.12.73 (revisão): sinal da variação sem Math.abs */
+  const grupos = OPEX_GRUPOS.filter(g => T.grp[g.k] || P.grp[g.k]).map(g => lin("sub", `(−) ${esc(g.n)}`, X => X.grp[g.k] || 0, true)).join("");
+  const comp = !pv ? "sem dados no período anterior para comparar" : `comparação com ${CPX.horiz === "ano" ? "os mesmos meses do ano anterior" : "o período imediatamente anterior"}${D.parcial ? ` — só nos ${D.pares.length} ${D.pares.length === 1 ? "mês" : "meses"} com dados nos dois períodos` : ""}`;
+  return `<div class="cap-card"><div class="cap-card-h"><h3>Resultado gerencial do período</h3><span class="cap-card-s">${esc(D.validos.length ? `${compLabel(D.validos[0])} a ${compLabel(D.validos[D.validos.length - 1])}` : "sem meses com dados")} · ${esc(comp)}</span></div>
     <div class="table-wrap"><table class="cap-table cpx-dre" id="cpxDreT"><thead><tr><th>Linha</th><th class="r">Período</th><th class="r">% da receita</th><th class="r">Média mensal</th><th class="r">Período anterior</th><th class="r">Variação</th></tr></thead><tbody>
-      ${lin("grp", "Receita operacional (entradas do Fluxo de Caixa)", T.rec, P.rec, false)}
-      ${lin("grp", "(−) OPEX", T.opex, P.opex, true)}${grupos}
-      ${lin("tot", "= EBITDA operacional", T.ebitda, P.ebitda, false, "resultado da operação antes da depreciação, dos juros e das dívidas")}
-      ${lin("", "(−) Depreciação", T.dep, P.dep, true, "Financeiro › Imobilizado, linear mês a mês")}
-      ${lin("tot", "= Resultado operacional (EBIT)", T.ebit, P.ebit, false)}
-      ${lin("", "(−) Juros e dívidas (natureza Financeiro)", T.fin, P.fin, true)}
-      ${lin("tot", "= Resultado após juros e dívidas", T.res, P.res, false, "gerencial: as parcelas de dívida entram inteiras (juros e principal)")}
-      ${lin("grp", "Investimentos (CAPEX)", T.capex, P.capex, false, "bens adquiridos (Imobilizado) e contas da CAP de natureza CAPEX ainda não incorporadas")}
-      ${lin("tot", "= Geração de caixa após investimentos e dívidas", T.livre, P.livre, false, "EBITDA − CAPEX − juros e dívidas")}
+      ${lin("grp", "Receita operacional (entradas do Fluxo de Caixa)", X => X.rec, false)}
+      ${lin("grp", "(−) OPEX", X => X.opex, true)}${grupos}
+      ${lin("tot", "= EBITDA operacional", X => X.ebitda, false, "resultado da operação antes da depreciação, dos juros e das dívidas")}
+      ${lin("", "(−) Depreciação", X => X.dep, true, "Financeiro › Imobilizado, linear mês a mês")}
+      ${lin("tot", "= Resultado operacional (EBIT)", X => X.ebit, false)}
+      ${lin("", "(−) Juros e dívidas (natureza Financeiro)", X => X.fin, true)}
+      ${lin("tot", "= Resultado após juros e dívidas", X => X.res, false, "gerencial: as parcelas de dívida entram inteiras (juros e principal)")}
+      ${lin("grp", "Investimentos (CAPEX)", X => X.capex, false, "bens adquiridos (Imobilizado) e contas da CAP de natureza CAPEX ainda não incorporadas")}
+      ${T.capexImobFin || P.capexImobFin ? lin("sub", "dos quais bens financiados (o caixa sai nas parcelas)", X => X.capexImobFin, false, "bens com financiamento, leasing ou consórcio e sem contas da CAP ligadas") : ""}
+      ${lin("tot", "= Geração de caixa após investimentos e dívidas", X => X.livre, false, "EBITDA − CAPEX pago com recursos próprios − juros e dívidas")}
     </tbody></table></div>
     <p class="cpx-nota">Contas isentas (N/A) e de natureza "Fora do resultado" (${esc(fmtBRL(T.fora))} no período) não entram. A receita é o que entrou no caixa da matriz (Fluxo de Caixa); impostos sobre a receita aparecem no OPEX, em Tributos e taxas.</p></div>`;
 }
@@ -25473,7 +25512,7 @@ window.cpxContaAbrir = id => {
 
 /* ---- aba OPEX ---- */
 function cpxOpex(D) {
-  const T = D.T, meses = D.m12, B = D.B, nM = Math.max(1, D.validos.length), per = CPX.horiz === "mes" ? "no mês" : CPX.horiz === "ano" ? "no ano" : "em 12 meses";
+  const T = D.T, meses = D.m12.filter(cpxValido), B = D.B, nM = Math.max(1, D.validos.length), per = CPX.horiz === "mes" ? "no mês" : CPX.horiz === "ano" ? "no ano" : "em 12 meses";
   const nV = D.F.V.length, maior = OPEX_GRUPOS.map(g => [g, T.grp[g.k] || 0]).sort((a, b) => b[1] - a[1])[0];
   const kpis = `<div class="cap-kpis cap-kpis-6 cpx-kpis">
     ${cpxKpi("OPEX", cpxK(T.opex), per)}
@@ -25495,18 +25534,20 @@ function cpxOpex(D) {
     const cats = Object.keys(totCat).filter(k => k.startsWith(g.k + "\u0001")).sort((a, b) => totCat[b] - totCat[a]);
     const lg = `<tr class="grp cpx-g" onclick="cpxAbre('${g.k}')" title="Clique para ${ab ? "fechar" : "abrir"} as categorias"><td><span class="cpx-tg">${ab ? "▾" : "▸"}</span><i class="cpx-dot" style="background:${g.cor}"></i>${esc(g.n)}</td>${S.map(a => cel(a ? (a.grp[g.k] || 0) : 0, !!a)).join("")}<td class="r b">${esc(cpxTicksK(tot12[g.k]))}</td><td class="r mut">${cpxPct(somaTot ? tot12[g.k] / somaTot : null)}</td><td class="r mut">${esc(cpxTicksK(tot12[g.k] / nVal))}</td></tr>`;
     const lc = ab ? cats.map(k => { const cat = k.split("\u0001")[1], catF = cat === "(sem categoria)" ? "" : cat;
-      return `<tr class="sub" ondblclick="${cpxCapLink({ categoria: catF })}" title="Duplo clique: abrir as contas na CAP"><td>${esc(cat)}</td>${S.map((a, i) => cel(a ? ((a.gc || {})[k] || 0) : 0, !!a, a && (a.gc || {})[k] && CPX.regime === "comp" ? ` ondblclick="event.stopPropagation(); ${cpxCapLink({ categoria: catF, comp: meses[i] })}"` : "")).join("")}<td class="r">${esc(cpxTicksK(totCat[k]))}</td><td class="r mut">${cpxPct(somaTot ? totCat[k] / somaTot : null)}</td><td class="r mut">${esc(cpxTicksK(totCat[k] / nVal))}</td></tr>`; }).join("") : "";
+      const vaiCap = !!catF && cpxVe("cap");   /* v0.12.73 (revisão): "(sem categoria)" não tem filtro na CAP */
+      return `<tr class="sub" ${vaiCap ? `ondblclick="${cpxCapLink({ categoria: catF })}" title="Duplo clique: todas as contas da categoria na CAP (de qualquer natureza)"` : ""}><td>${esc(cat)}</td>${S.map((a, i) => cel(a ? ((a.gc || {})[k] || 0) : 0, !!a, vaiCap && a && (a.gc || {})[k] && CPX.regime === "comp" ? ` ondblclick="event.stopPropagation(); ${cpxCapLink({ categoria: catF, comp: meses[i] })}"` : "")).join("")}<td class="r">${esc(cpxTicksK(totCat[k]))}</td><td class="r mut">${cpxPct(somaTot ? totCat[k] / somaTot : null)}</td><td class="r mut">${esc(cpxTicksK(totCat[k] / nVal))}</td></tr>`; }).join("") : "";
     return lg + lc;
   }).join("");
   const totRow = `<tr class="tot"><td>Total OPEX</td>${S.map(a => a ? `<td class="r">${esc(cpxTicksK(a.opex))}</td>` : `<td class="r mut">—</td>`).join("")}<td class="r">${esc(cpxTicksK(somaTot))}</td><td class="r">100%</td><td class="r">${esc(cpxTicksK(somaTot / nVal))}</td></tr>`;
   const recRow = `<tr class="cpx-rec"><td>Receita (referência)</td>${S.map(a => a ? `<td class="r">${a.rec ? esc(cpxTicksK(a.rec)) : '<span class="mut">·</span>'}</td>` : `<td class="r mut">—</td>`).join("")}<td class="r">${esc(cpxTicksK(S.reduce((s, a) => s + (a ? a.rec : 0), 0)))}</td><td></td><td></td></tr>`;
-  const matriz = `<div class="cap-card"><div class="cap-card-h"><h3>OPEX mês a mês</h3><span class="cap-card-s">12 meses até ${esc(compLabel(D.ref))} · valores em R$ · clique no grupo para abrir as categorias · duplo clique na categoria abre as contas na CAP</span></div>
+  const matriz = `<div class="cap-card"><div class="cap-card-h"><h3>OPEX mês a mês</h3><span class="cap-card-s">${meses.length} ${meses.length === 1 ? "mês" : "meses"} com dados até ${esc(compLabel(D.ref))} · valores em R$ · clique no grupo para abrir as categorias${cpxVe("cap") ? " · duplo clique na categoria abre as contas na CAP" : ""}</span></div>
     ${linhas ? `<div class="table-wrap"><table class="cap-table cpx-mat" id="cpxMatT"><thead><tr><th>Grupo / categoria</th>${meses.map(m => `<th class="r">${esc(cpxMesCurto(m))}</th>`).join("")}<th class="r">Total</th><th class="r">%</th><th class="r">Média</th></tr></thead><tbody>${linhas}${totRow}${recRow}</tbody></table></div>` : `<p class="cap-muted">Sem OPEX nos últimos 12 meses.</p>`}</div>`;
   const barras = (obj, link, n) => { const arr = Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n || 10); const mx = arr.length ? arr[0][1] : 1;
     return arr.length ? arr.map(([k, v]) => `<div class="cap-bar cpx-bar-l" ${link ? `onclick="${link(k)}" title="Abrir as contas na CAP"` : ""}><span class="l" title="${esc(k)}">${esc(k)}</span><span class="t"><i style="width:${Math.max(2, Math.round(100 * v / mx))}%;background:var(--navy)"></i></span><span class="n">${cpxPct(T.opex ? v / T.opex : null, 0)}</span><span class="v">${esc(cpxK(v))}</span></div>`).join("") : `<p class="cap-muted">Sem OPEX no período.</p>`; };
   const cc = `<div class="cap-grid">
     <div class="cap-card"><div class="cap-card-h"><h3>Por centro de custo</h3><span class="cap-card-s">${per} · quem responde pelo gasto</span></div>${barras(T.cc, null, 12)}</div>
-    <div class="cap-card"><div class="cap-card-h"><h3>Maiores fornecedores do OPEX</h3><span class="cap-card-s">${per} · clique para ver as contas</span></div>${barras(T.forn, k => cpxCapLink({ forn: k }), 10)}</div>
+    ${cpxVe("cap") ? `<div class="cap-card"><div class="cap-card-h"><h3>Maiores fornecedores do OPEX</h3><span class="cap-card-s">${per} · clique para ver as contas</span></div>${barras(T.forn, k => cpxCapLink({ forn: k }), 10)}</div>`
+      : `<div class="cap-card"><div class="cap-card-h"><h3>Por categoria</h3><span class="cap-card-s">${per} · o detalhe por fornecedor exige acesso à CAP</span></div>${barras(T.cat, null, 12)}</div>`}
   </div>`;
   return cpxAvisos(D) + kpis + matriz + cc;
 }
@@ -25533,10 +25574,14 @@ function cpxCapexAba(D) {
   /* CAPEX realizado no período: bens adquiridos + contas CAPEX ainda não incorporadas */
   const its = [];
   D.B.bens.forEach(({ b, c }) => { if (D.validos.includes(c.aq)) its.push({ m: c.aq, o: "Imobilizado", d: b.Title || "—", cat: c.cat.n, v: c.valor, id: b._id, tipo: "bem" }); });
-  (CAP_STATE.items || []).forEach(it => { const n = D.B.N.get(String(it._id)); if (!n || n.nat !== "CAPEX" || D.B.ctx.linkados.has(String(it._id)) || isIsenta(it)) return; const m = cpxMesConta(it, CPX.regime); if (!D.validos.includes(m)) return; its.push({ m, o: "CAP (a incorporar)", d: `${it.Fornecedor || ""} · ${it.Title || ""}`, cat: it.Categoria || "—", v: Number(it.Valor || 0), id: it._id, tipo: "conta" }); });
+  const veCap = cpxVe("cap"), agreg = {};
+  (CAP_STATE.items || []).forEach(it => { const n = D.B.N.get(String(it._id)); if (!n || n.nat !== "CAPEX" || D.B.ctx.linkados.has(String(it._id)) || isIsenta(it)) return; const m = cpxMesConta(it, CPX.regime); if (!D.validos.includes(m)) return;
+    if (veCap) its.push({ m, o: "CAP (a incorporar)", d: `${it.Fornecedor || ""} · ${it.Title || ""}`, cat: it.Categoria || "—", v: Number(it.Valor || 0), id: it._id, tipo: "conta" });
+    else { const g = agreg[m] || (agreg[m] = { m, o: "CAP (a incorporar)", d: "", cat: "—", v: 0, n: 0, tipo: "agreg" }); g.v += Number(it.Valor || 0); g.n++; g.d = `${g.n} conta(s) da CAP de natureza CAPEX (o detalhe exige acesso à CAP)`; } });   /* v0.12.73 (revisão): sem acesso à CAP, só o total do mês */
+  Object.values(agreg).forEach(g => its.push(g));
   its.sort((a, b) => b.m.localeCompare(a.m) || b.v - a.v);
   const realiz = `<div class="cap-card"><div class="cap-card-h"><h3>CAPEX realizado</h3><span class="cap-card-s">${per} · bens do Imobilizado (mês da aquisição) e contas da CAP de natureza CAPEX ainda não incorporadas</span></div>
-    ${its.length ? `<div class="table-wrap"><table class="cap-table" id="cpxRealizT"><thead><tr><th>Mês</th><th>Origem</th><th class="l">Descrição</th><th>Categoria</th><th class="r">Valor</th></tr></thead><tbody>${its.slice(0, 200).map(x => `<tr ${x.tipo === "conta" ? `onclick="cpxContaAbrir(${jsArg(x.id)})" title="Abrir a conta"` : cpxVe("imob") ? `onclick="imobAbrirDe(${jsArg(x.id)})" title="Abrir o bem"` : ""}><td class="nw">${esc(cpxMesCurto(x.m))}</td><td>${x.tipo === "conta" ? `<span class="cpx-tag cap">CAP · a incorporar</span>` : `<span class="cpx-tag bem">Imobilizado</span>`}</td><td class="l">${esc(x.d)}</td><td>${esc(x.cat)}</td><td class="r">${esc(fmtBRL(x.v))}</td></tr>`).join("")}</tbody></table></div>` : `<p class="cap-muted">Nenhum investimento no período.</p>`}</div>`;
+    ${its.length ? `<div class="table-wrap"><table class="cap-table" id="cpxRealizT"><thead><tr><th>Mês</th><th>Origem</th><th class="l">Descrição</th><th>Categoria</th><th class="r">Valor</th></tr></thead><tbody>${its.slice(0, 200).map(x => `<tr ${x.tipo === "conta" ? `onclick="cpxContaAbrir(${jsArg(x.id)})" title="Abrir a conta"` : x.tipo === "bem" && cpxVe("imob") ? `onclick="imobAbrirDe(${jsArg(x.id)})" title="Abrir o bem"` : ""}><td class="nw">${esc(cpxMesCurto(x.m))}</td><td>${x.tipo === "bem" ? `<span class="cpx-tag bem">Imobilizado</span>` : `<span class="cpx-tag cap">CAP · a incorporar</span>`}</td><td class="l">${esc(x.d)}</td><td>${esc(x.cat)}</td><td class="r">${esc(fmtBRL(x.v))}</td></tr>`).join("")}</tbody></table></div>` : `<p class="cap-muted">Nenhum investimento no período.</p>`}</div>`;
   /* frota */
   const P = CPX.prem || CPX_PREM_PAD, semCusto = !Number(P.custoUrbano) && !Number(P.custoRodoviario) && !Number(P.custoMicro);
   const anosTxt = F.anos.map(a => `<div class="cpx-ano ${a.n ? "tem" : ""}"><b>${a.y}</b><span>${a.n} veículo(s)</span><small>${a.n ? (a.custo ? cpxK(a.custo) : "custo a definir") : "—"}${a.semCusto && a.custo ? ` · ${a.semCusto} sem custo` : ""}</small></div>`).join("");
@@ -25583,13 +25628,14 @@ window.cpxPremissas = () => {
 /* ---- aba Plano de investimentos ---- */
 function cpxPlano(D) {
   const R = D.pl, H = D.H, hoje = todayISO().slice(0, 7), ed = invEdita() && !!INV.list;
+  const fi = (CPX.fontes || {}).inv; if (!INV.list && fi && ["semacesso", "erro"].includes(fi.st)) return `<div class="cap-empty"><h3>Não foi possível ler o plano de investimentos</h3><p>${fi.st === "semacesso" ? "Sem acesso ao site Diretoria no SharePoint (peça a inclusão no grupo do site)." : esc(fi.msg || "")}</p></div>`;
   if (!INV.list) return `<div class="cap-empty"><h3>A lista "${esc(LISTS.di_invest.displayName)}" ainda não existe</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração</a> (item "${esc(LISTS.di_invest.displayName)}").` : "Peça a um administrador para rodar a Configuração."}</p></div>`;
   $("cpxActions").insertAdjacentHTML("afterbegin", ed ? `<button class="btn primary" onclick="invNovo()">Novo investimento</button>` : "");
   const kpis = `<div class="cap-kpis cap-kpis-6 cpx-kpis">
     ${cpxKpi("No plano (ativos)", cpxK(R.vAtivos), `${R.ativos} investimento(s)`)}
     ${cpxKpi("Aprovado ou contratado", cpxK(R.vComp), `${R.nComp} investimento(s)`)}
     ${cpxKpi("Em análise ou ideia", cpxK(R.vPipe), `${R.nPipe} investimento(s)`)}
-    ${cpxKpi("Saída de caixa — 12 meses", cpxK(R.caixa12), "aprovado e contratado: entradas e parcelas")}
+    ${cpxKpi("Saída de caixa — 12 meses", cpxK(R.caixa12), R.nAtras ? `aprovado e contratado · inclui ${R.nAtras} atrasado(s), contado(s) a partir deste mês` : "aprovado e contratado: entradas e parcelas")}
     ${cpxKpi("Parcelas por mês", cpxK(R.parcMedia), "média dos próximos 12 meses (financiamentos)")}
     ${cpxKpi("Folga para investir", H.folga == null ? "—" : cpxK(H.folga), "EBITDA − dívidas − plano (12 meses)", H.folga != null && H.folga < 0 ? "venc" : H.folga != null ? "pago" : "")}
   </div>`;
@@ -25600,7 +25646,7 @@ function cpxPlano(D) {
   const cont = k => (INV.itens || []).filter(o => k === "ativos" ? !["Executado", "Cancelado"].includes(o.Status) : k === "exec" ? o.Status === "Executado" : k === "canc" ? o.Status === "Cancelado" : true).length;
   const chips = `<div class="cpx-chips">${[["ativos", "Ativos"], ["exec", "Executados"], ["canc", "Cancelados"], ["todos", "Todos"]].map(([k, l]) => `<button class="chip ${filt === k ? "on" : ""}" onclick="cpxPlFiltro('${k}')">${l} <small>${cont(k)}</small></button>`).join("")}<input type="search" id="cpxPlBusca" placeholder="Buscar investimento, área, veículo…" value="${esc(CPX.plQ)}"></div>`;
   const stCls = { "Ideia": "st-aguardando", "Em análise": "st-pendente", "Aprovado": "st-aprovado", "Contratado": "st-pago", "Executado": "st-pago", "Cancelado": "st-vencido" };
-  const rows = its.map(o => { const s = invSim(o); return `<tr onclick="invAbrir(${jsArg(o._id)})" title="Abrir"><td><div class="desc">${esc(o.Title || "—")}</div><div class="sup">${esc([o.Area, o.Responsavel, o.Veiculo ? "veículo " + o.Veiculo : ""].filter(Boolean).join(" · "))}</div></td><td>${esc(o.Categoria || "—")}<div class="sup">${esc(o.TipoInvest || "")}</div></td><td>${o.Prioridade ? `<span class="cpx-tag ${o.Prioridade === "Alta" ? "cr" : o.Prioridade === "Média" ? "at" : ""}">${esc(o.Prioridade)}</span>` : ""}</td><td class="nw">${/^\d{4}-\d{2}$/.test(o.MesPrevisto || "") ? esc(compLabel(o.MesPrevisto)) : "—"}</td><td class="r b">${esc(fmtBRL(s.valor))}</td><td>${esc(s.forma)}${s.fin ? `<div class="sup">${s.n}× ${esc(fmtBRL(s.parc))}</div>` : ""}</td><td class="r">${s.payback != null ? `${(s.payback).toFixed(0)} meses` : "—"}</td><td><span class="pill ${stCls[o.Status] || "st-aguardando"}"><i></i>${esc(o.Status || "Ideia")}</span></td></tr>`; }).join("");
+  const rows = its.map(o => { const s = invSim(o); return `<tr onclick="invAbrir(${jsArg(o._id)})" title="Abrir"><td><div class="desc">${esc(o.Title || "—")}</div><div class="sup">${esc([o.Area, o.Responsavel, o.Veiculo ? "veículo " + o.Veiculo : ""].filter(Boolean).join(" · "))}</div></td><td>${esc(o.Categoria || "—")}<div class="sup">${esc(o.TipoInvest || "")}</div></td><td>${o.Prioridade ? `<span class="cpx-tag ${o.Prioridade === "Alta" ? "cr" : o.Prioridade === "Média" ? "at" : ""}">${esc(o.Prioridade)}</span>` : ""}</td><td class="nw">${/^\d{4}-\d{2}$/.test(o.MesPrevisto || "") ? esc(compLabel(o.MesPrevisto)) : "—"}${invAtrasado(o, hoje) ? ` <span class="cpx-tag cr" title="O mês previsto já passou e o investimento não foi executado: a saída de caixa conta a partir deste mês">atrasado</span>` : ""}</td><td class="r b">${esc(fmtBRL(s.valor))}</td><td>${esc(s.forma)}${s.fin ? `<div class="sup">${s.n}× ${esc(fmtBRL(s.parc))}</div>` : ""}</td><td class="r">${s.payback != null ? `${(s.payback).toFixed(0)} meses` : "—"}</td><td><span class="pill ${stCls[o.Status] || "st-aguardando"}"><i></i>${esc(o.Status || "Ideia")}</span></td></tr>`; }).join("");
   const tab = `<div class="cap-card"><div class="cap-card-h"><h3>Investimentos</h3><span class="cap-card-s">clique para abrir · payback = valor ÷ economia ou receita a mais por mês</span></div>${chips}
     ${rows ? `<div class="table-wrap"><table class="cap-table" id="cpxPlanoT"><thead><tr><th>Investimento</th><th>Categoria / tipo</th><th>Prioridade</th><th>Mês previsto</th><th class="r">Valor</th><th>Pagamento</th><th class="r">Payback</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="cap-muted">${(INV.itens || []).length ? "Nada neste filtro." : ed ? "Nenhum investimento no plano ainda. Use \"Novo investimento\" ou as sugestões da frota abaixo." : "Nenhum investimento no plano ainda."}</p>`}</div>`;
   const sug = D.F.V.filter(v => v.troca != null && v.troca <= D.F.ano + 2 && !v.plano);
@@ -25725,7 +25771,7 @@ function cpxClassif(D) {
     <li>Categoria Financeiras, ou Tributárias › Parcelamentos/REFIS → <b>Financeiro</b>; categoria Consórcio → <b>CAPEX</b>.</li>
     <li>Fornecedor classificado como "Dívidas / Parcelamento" → <b>Financeiro</b>; "Investimentos / Reservas" → <b>Fora do resultado</b> (a conferir).</li>
     <li>Parcela de obrigação parcelada das carteiras ${CPX_DIVIDA_CART.join(", ")} → <b>Financeiro</b>.</li>
-    <li>O resto → <b>OPEX</b>. Pede conferência: sem categoria (ou "Outros"), e valor a partir de ${esc(fmtBRL((CPX.prem || CPX_PREM_PAD).limiar))} em manutenção, peças, ferramentas, TI ou veículos de apoio — pode ser investimento (CPC 27: reforma que aumenta a vida útil vira ativo; bens de até R$ 1.200 podem ir direto para a despesa).</li></ol></details>`;
+    <li>O resto → <b>OPEX</b>. Pede conferência: sem categoria (ou "Outros"), e valor a partir de ${esc(fmtBRL((CPX.prem || CPX_PREM_PAD).limiar))} em manutenção, peças, ferramentas, TI ou veículos de apoio — pode ser investimento (reforma que aumenta a vida útil em mais de um ano vira ativo — RIR/2018, art. 354, § 1º, e CPC 27; bens de até R$ 1.200 podem ir direto para a despesa).</li></ol></details>`;
   setTimeout(() => { const b = $("cpxClsBusca"); if (b) b.addEventListener("input", ev => { CPX.clsQ = ev.target.value; CPX.clsMax = 300; keepFocus(paintCpx); }); }, 0);
   return aviso + `<div class="cap-card"><div class="cap-card-h"><h3>Classificação das contas</h3><span class="cap-card-s">contas da CAP no período (${CPX.regime === "caixa" ? "pagas, pelo mês do pagamento" : "pela competência"}) · ${ed ? "troque a natureza na própria linha; grava na conta" : podeEditar("cap") ? "a coluna da natureza ainda não existe" : "seu acesso à CAP é só de leitura"} · duplo clique abre a conta</span></div>
     ${regra}${chips}
@@ -25754,18 +25800,19 @@ function cpxMetodo(D) {
   const F = CPX.fontes || {}, stTxt = { ok: ["ligada", "st-pago"], vazio: ["sem dados ainda", "st-aguardando"], semlista: ["lista não existe", "st-vencido"], semacesso: ["sem acesso", "st-vencido"], erro: ["erro de leitura", "st-vencido"], semperm: ["sem permissão no ERP", "st-aguardando"] };
   const fonte = (k, uso) => { const f = F[k] || { st: "vazio" }, s = stTxt[f.st] || stTxt.erro; return `<tr><td><b>${esc(CPX_FONTE_NOME[k])}</b></td><td class="l"><span class="pill ${s[1]}"><i></i>${esc(s[0])}</span>${f.n != null ? ` <span class="sup">${f.n} registro(s)</span>` : ""}</td><td class="sup l">${esc(uso)}</td></tr>`; };
   const grupos = OPEX_GRUPOS.map(g => { const cats = CATEGORIAS.filter(c => opexGrupo(c, "") === g.k && !["Financeiras", "Consórcio"].includes(c)).map(c => c === "Tributárias" ? "Tributárias (multas e outras; IPVA e licenciamento vão para Seguros; parcelamentos são Financeiro)" : c === "Terceirização" ? "Terceirização (limpeza, segurança do trabalho, manutenção predial)" : c === "Manutenção" ? "Manutenção (exceto óleo e lubrificantes)" : c); const extra = { comb: "e Manutenção › Óleo e lubrificantes", seguro: "e Tributárias › IPVA e Licenciamento / DETRAN", manut: "e Terceirização › Manutenção externa", pessoal: "e Terceirização › Jovem aprendiz", adm: "· Financeiras e Consórcio só entram aqui quando a conta é marcada como OPEX" }[g.k] || ""; return `<tr><td><i class="cpx-dot" style="background:${g.cor}"></i>${esc(g.n)}</td><td class="sup l">${esc(cats.join(", ") || "categoria vazia, \"Outros\" ou fora do plano de contas")} ${esc(extra)}</td></tr>`; }).join("");
-  const cats = IMOB_CATS.map(c => `<tr><td>${esc(c.n)}</td><td class="r">${esc(imobVidaTxt(c.vida))}</td><td class="r">${c.res}%</td><td class="r">${c.fiscal == null ? "—" : c.fiscal + "% a.a."}</td><td class="sup l">${esc(c.ref)}</td></tr>`).join("");
+  const cats = IMOB_CATS.map(c => `<tr><td>${esc(c.n)}</td><td class="r">${esc(imobVidaTxt(c.vida))}</td><td class="r">${c.res}%</td><td class="r">${c.fiscal == null ? "—" : typeof c.fiscal === "string" ? esc(c.fiscal) : c.fiscal + "% a.a."}</td><td class="sup l">${esc(c.ref)}</td></tr>`).join("");
   const ind = [["Margem EBITDA", "(receita − OPEX) ÷ receita", CPX_REF.margem.txt], ["Reinvestimento", "CAPEX ÷ depreciação, 12 meses", CPX_REF.reinv.txt], ["Idade média da frota", "média de (ano atual − ano de fabricação) dos veículos ativos", CPX_REF.idade.txt + `; referência interna do ERP: até ${DETRO_REF.idade} anos`], ["Imobilizado depreciado", "depreciação acumulada ÷ valor depreciável (frota; sem frota, todos os bens)", CPX_REF.depr.txt], ["Dívida / EBITDA", "saldo das obrigações parceladas (carteiras " + CPX_DIVIDA_CART.join(", ") + ") ÷ EBITDA anualizado", CPX_REF.div.txt], ["Cobertura da dívida", "EBITDA ÷ juros e parcelas de dívidas, 12 meses", CPX_REF.cob.txt], ["Folga para investir", "EBITDA − juros e dívidas − saída de caixa do plano aprovado/contratado, próximos 12 meses (pela média dos últimos 12)", CPX_REF.folga.txt], ["OPEX por passageiro", "OPEX ÷ passageiros (pagantes + gratuidades)", "acompanhar a tendência e comparar com a receita por passageiro"]].map(r => `<tr><td><b>${esc(r[0])}</b></td><td class="l">${esc(r[1])}</td><td class="sup l">${esc(r[2])}</td></tr>`).join("");
   return `<div class="cpx-met">
     <div class="cap-card"><div class="cap-card-h"><h3>O que o painel mostra</h3></div>
       <p><b>OPEX</b> (custeio) é o que a empresa gasta para rodar a operação e a administração todo mês: diesel, manutenção, pneus, pessoal, seguros, tributos, aluguéis e serviços. <b>CAPEX</b> (investimento) é a compra de bens que duram mais de um ano — ônibus, equipamentos, obras na garagem, sistemas — e as reformas que aumentam a vida útil de um bem. O CAPEX não entra no resultado do mês: vira <b>imobilizado</b> e é lançado aos poucos como <b>depreciação</b>, ao longo da vida útil.</p>
       <p>O <b>EBITDA operacional</b> (receita − OPEX) mostra se a operação se paga; a <b>depreciação</b> mostra o custo do desgaste dos bens; os <b>juros e dívidas</b> mostram o peso do endividamento. Comparar o CAPEX com a depreciação (<b>reinvestimento</b>) diz se a empresa está renovando os bens ou deixando a frota envelhecer.</p>
+      <p class="cpx-nota">IRPJ e CSLL pagos por DARF entram no OPEX, em Tributos e taxas; no EBITDA contábil eles ficam de fora — se quiser o EBITDA nesse padrão, marque essas contas como "Fora do resultado". Bens financiados (financiamento, leasing ou consórcio, sem contas da CAP ligadas) entram inteiros no CAPEX no mês da aquisição; na geração de caixa, o ERP desconta só a parte paga com recursos próprios — o restante sai nas parcelas, em Juros e dívidas.</p>
       <p class="cpx-nota">Regimes: <b>competência</b> soma cada conta no mês a que ela se refere (coluna Competência da CAP; vazia = mês do vencimento); <b>caixa</b> soma só as contas pagas, no mês do pagamento. Os bens do Imobilizado entram no mês da aquisição nos dois regimes. Meses antes de ${esc(compLabel(CONFIG.capInicio || ""))} (início da CAP no ERP) ficam fora das contas.</p></div>
     <div class="cap-card"><div class="cap-card-h"><h3>Grupos de OPEX</h3><span class="cap-card-s">estrutura de custos usada nas planilhas tarifárias de ônibus: variáveis (combustível, rodagem, peças), pessoal, fixos e administrativos</span></div>
       <div class="table-wrap"><table class="cap-table"><thead><tr><th>Grupo</th><th class="l">Categorias da CAP</th></tr></thead><tbody>${grupos}</tbody></table></div></div>
     <div class="cap-card"><div class="cap-card-h"><h3>Depreciação do Imobilizado</h3><span class="cap-card-s">linear, mês a mês, do mês de início (ou da aquisição) até o fim da vida útil ou a baixa · padrões editáveis bem a bem</span></div>
       <div class="table-wrap"><table class="cap-table"><thead><tr><th>Categoria</th><th class="r">Vida útil</th><th class="r">Residual</th><th class="r">Taxa fiscal</th><th class="l">Referência</th></tr></thead><tbody>${cats}</tbody></table></div>
-      <p class="cpx-nota">A vida útil gerencial (a que mostra o desgaste real do bem) pode ser diferente da taxa fiscal. Taxas fiscais: IN RFB 1.700/2017, Anexo III. Reformas e retíficas só viram ativo quando aumentam a vida útil ou a capacidade do bem (CPC 27); bens de valor unitário até R$ 1.200 podem ir direto para a despesa (Decreto-Lei 1.598/1977, art. 15). Confirme os critérios com a contabilidade.</p></div>
+      <p class="cpx-nota">A vida útil gerencial (a que mostra o desgaste real do bem) pode ser diferente da taxa fiscal. Taxas fiscais: IN RFB 1.700/2017, Anexo III. Reformas e retíficas só viram ativo quando aumentam a vida útil ou a capacidade do bem (CPC 27; para o fisco, quando aumentam a vida útil em mais de um ano — RIR/2018, art. 354, § 1º); bens de valor unitário até R$ 1.200 podem ir direto para a despesa (Decreto-Lei 1.598/1977, art. 15). As vidas úteis e os residuais padrão são referências gerenciais (planilhas tarifárias de ônibus usam parâmetros parecidos, às vezes com depreciação não linear): ajuste bem a bem e confirme os critérios com a contabilidade.</p></div>
     <div class="cap-card"><div class="cap-card-h"><h3>Indicadores de saúde</h3><span class="cap-card-s">referências internas sugeridas para o semáforo — não são norma</span></div>
       <div class="table-wrap"><table class="cap-table"><thead><tr><th>Indicador</th><th class="l">Cálculo</th><th class="l">Referência</th></tr></thead><tbody>${ind}</tbody></table></div></div>
     <div class="cap-card"><div class="cap-card-h"><h3>Fontes de dados</h3><span class="cap-card-s">o que o painel conseguiu ler agora</span></div>
@@ -25840,7 +25887,7 @@ function cpxDoc() {
   const dre = S("Resultado gerencial", `${per}`) + `<table class="t"><thead><tr><th>Linha</th><th class="r">Período</th><th class="r">% receita</th><th class="r">Média mensal</th></tr></thead><tbody>
     ${lin("grp", "Receita operacional", T.rec)}${lin("grp", "(−) OPEX", T.opex)}${grp.map(x => lin("sub", "(−) " + esc(x.g.n), x.v)).join("")}
     ${lin("tot", "= EBITDA operacional", T.ebitda)}${lin("", "(−) Depreciação", T.dep)}${lin("tot", "= Resultado operacional (EBIT)", T.ebit)}${lin("", "(−) Juros e dívidas", T.fin)}${lin("tot", "= Resultado após juros e dívidas", T.res)}
-    ${lin("grp", "Investimentos (CAPEX)", T.capex)}${lin("tot", "= Geração de caixa após investimentos e dívidas", T.livre)}</tbody></table>`;
+    ${lin("grp", "Investimentos (CAPEX)", T.capex)}${T.capexImobFin ? lin("sub", "dos quais bens financiados (o caixa sai nas parcelas)", T.capexImobFin) : ""}${lin("tot", "= Geração de caixa após investimentos e dívidas", T.livre)}</tbody></table>`;
   const ind = (l, v, ref, s, o) => `<tr><td><b>${esc(l)}</b></td><td class="r"><b>${esc(v)}</b></td><td class="mut">${esc(ref)}</td><td class="mut">${esc(o)}</td><td>${tag(s)}</td></tr>`;
   const saude = S("Indicadores de saúde", "referências internas sugeridas") + `<table class="t"><thead><tr><th>Indicador</th><th class="r">Valor</th><th>Referência</th><th>Observação</th><th>Situação</th></tr></thead><tbody>
     ${ind("Margem EBITDA", cpxPct(H.margem), "≥ 15%", sem.margem, "receita menos OPEX, sobre a receita")}
@@ -25865,7 +25912,9 @@ function cpxDoc() {
   const ativos = (INV.itens || []).filter(o => !["Executado", "Cancelado"].includes(o.Status)).sort((a, b) => String(a.MesPrevisto || "9999").localeCompare(String(b.MesPrevisto || "9999")));
   const plano = S("Plano de investimentos", `${ativos.length} ativo(s) · saída de caixa prevista em 12 meses ${cpxK(R.caixa12)}`) + (ativos.length ? `<table class="t"><thead><tr><th>Investimento</th><th>Status</th><th class="nw">Mês</th><th class="r">Valor</th><th>Pagamento</th><th class="r">Payback</th></tr></thead><tbody>${ativos.map(o => { const s = invSim(o); return `<tr><td><b>${esc(o.Title || "—")}</b><div class="mut">${esc([o.Categoria, o.TipoInvest, o.Area].filter(Boolean).join(" · "))}</div></td><td>${esc(o.Status || "")}</td><td class="nw">${/^\d{4}-\d{2}$/.test(o.MesPrevisto || "") ? esc(cpxMesCurto(o.MesPrevisto)) : "—"}</td><td class="r">${br(s.valor)}</td><td>${esc(s.forma)}${s.fin ? `<div class="mut">${s.n}× ${br(s.parc)}</div>` : ""}</td><td class="r">${s.payback != null ? s.payback.toFixed(0) + " meses" : "—"}</td></tr>`; }).join("")}</tbody></table>` : `<p class="mut">Nenhum investimento ativo no plano.</p>`);
   const notas = `<div class="filt" style="margin-top:8px"><b>Como ler.</b> OPEX = custeio; CAPEX = investimento em bens duráveis ou reformas que aumentam a vida útil (CPC 27); depreciação linear pela vida útil gerencial de cada bem. Receita = entradas do Fluxo de Caixa (caixa da matriz). Natureza de cada conta: a gravada na CAP ou a regra automática do ERP${D.T.nRev ? ` (${D.T.nRev} conta(s) do período ainda pedem conferência)` : ""}. Meses antes de ${esc(compLabel(CONFIG.capInicio || ""))} ficam fora. Referências do semáforo: sugestões internas, não norma. Documento gerencial — não substitui as demonstrações contábeis.</div>`;
-  const html = cab + sint + kpis + dre + saude + `<div style="break-before:page"></div>` + graf + imob + frota + plano + notas + printAssin([["Diretoria", ""], ["Financeiro", ""]]) + printRodape("Diretoria › CAPEX / OPEX");
+  const vP = cpxPagVe("painel"), vC = cpxPagVe("capex"), vL = cpxPagVe("plano");   /* v0.12.73 (revisão): cada parte só sai para quem vê a página */
+  if (!vP && !vC && !vL) throw new Error("sem acesso às páginas do relatório");
+  const html = cab + (vP ? sint + kpis + dre + saude + `<div style="break-before:page"></div>` + graf : "") + (vC ? imob + frota : "") + (vL ? plano : "") + notas + printAssin([["Diretoria", ""], ["Financeiro", ""]]) + printRodape("Diretoria › CAPEX / OPEX");
   return { titulo: "Leitura de CAPEX e OPEX", html, paisagem: false, fonte: 9.5, css: `
     .tag{display:inline-block;padding:0 6px;border-radius:8px;font-size:8px;font-weight:800;color:#fff;white-space:nowrap;line-height:14px}.tag.ok{background:#197A46}.tag.at{background:#9A6A00}.tag.cr{background:#B3271E}.tag.nd{background:#8D96A3}
     .sint{border:.6px solid #C9CFD8;border-left:3px solid #1E2153;border-radius:3px;padding:6px 9px;margin:0 0 8px;font-size:9.5px;line-height:1.45}
@@ -25884,7 +25933,10 @@ window.cpxExcel = async () => {
     const cab = (ws, cols) => { const r = ws.addRow(cols); r.eachCell(c => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: nav } }; c.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; }); r.height = 30; return r; };
     const moeda = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
     const tit = (ws, t, s) => { ws.addRow([t]).font = { bold: true, size: 14, color: { argb: nav } }; ws.addRow([s]).font = { italic: true, color: { argb: "FF5B6472" } }; ws.addRow([]); };
+    const vP = cpxPagVe("painel") || cpxPagVe("opex"), vC = cpxPagVe("capex"), vL = cpxPagVe("plano");   /* v0.12.73 (revisão): cada aba só sai para quem vê a página */
+    if (!vP && !vC && !vL) { toast("Sem acesso às páginas da planilha."); return; }
     /* 1. resultado mês a mês */
+    if (vP) {
     const w1 = wb.addWorksheet("Resultado"); tit(w1, "Resultado gerencial — CAPEX / OPEX", `12 meses até ${compLabel(D.ref)} · regime de ${CPX.regime === "caixa" ? "caixa" : "competência"} · meses sem dados ficam vazios · ERP NMB ${CONFIG.version}`);
     cab(w1, ["Linha"].concat(meses.map(cpxMesCurto), ["Total"]));
     const linha = (rot, f, negrito) => { const vs = D.serie.map(s => s.ok ? f(s.t) : null), tot = vs.reduce((a, v) => a + (v || 0), 0); const r = w1.addRow([rot].concat(vs, [tot])); r.eachCell((c, i) => { if (i > 1) c.numFmt = moeda; }); if (negrito) r.font = { bold: true }; return r; };
@@ -25902,16 +25954,22 @@ window.cpxExcel = async () => {
     OPEX_GRUPOS.forEach(g => Object.keys(tc).filter(k => k.startsWith(g.k + "\u0001")).sort().forEach(k => { const vs = tc[k]; const r = w2.addRow([g.n, k.split("\u0001")[1]].concat(vs.map((v, i) => D.serie[i].ok ? v : null), [vs.reduce((a, v) => a + v, 0)])); r.eachCell((c, i) => { if (i > 2) c.numFmt = moeda; }); }));
     w2.getColumn(1).width = 32; w2.getColumn(2).width = 28; for (let i = 3; i <= meses.length + 3; i++) w2.getColumn(i).width = 14;
     w2.views = [{ state: "frozen", xSplit: 2, ySplit: 4 }]; w2.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: meses.length + 3 } };
-    /* 3. imobilizado */
+    }
+    /* 3. imobilizado: bem a bem para quem vê o Imobilizado; por categoria para os demais */
+    if (vC && !cpxVe("imob")) { const wc = wb.addWorksheet("Imobilizado"); tit(wc, "Imobilizado por categoria", "bens em uso · o detalhe bem a bem exige acesso a Financeiro › Imobilizado"); cab(wc, ["Categoria", "Bens", "Aquisição", "Depreciação acumulada", "Valor contábil", "Depreciação / mês"]); Object.entries(D.imob.porCat).forEach(([k, p]) => { const r = wc.addRow([k, p.n, p.valor, p.acum, p.contabil, p.depMes]); [3, 4, 5, 6].forEach(i => { r.getCell(i).numFmt = moeda; }); }); [34, 8, 16, 20, 16, 16].forEach((w, i) => { wc.getColumn(i + 1).width = w; }); }
+    if (vC && cpxVe("imob")) {
     const w3 = wb.addWorksheet("Imobilizado"); const hj = todayISO().slice(0, 7); tit(w3, "Imobilizado", `posição em ${compLabel(hj)} · depreciação linear`);
     cab(w3, ["Bem", "Categoria", "Identificação", "Aquisição", "Valor de aquisição", "Vida útil (meses)", "Residual (%)", "Depreciação mensal", "Depreciação acumulada", "Valor contábil", "Situação"]);
     D.B.bens.forEach(({ b, c }) => { const r = w3.addRow([b.Title || "", c.cat.n, b.Identificacao || "", c.aq ? dLocal(ymd(b.DataAquisicao)) : null, c.valor, c.vida, c.res, c.dep(hj), c.acum(hj), c.contabil(hj), b.Situacao || ""]); r.getCell(4).numFmt = "dd/mm/yyyy"; [5, 8, 9, 10].forEach(i => { r.getCell(i).numFmt = moeda; }); });
     [34, 30, 18, 12, 18, 12, 10, 16, 18, 16, 14].forEach((w, i) => { w3.getColumn(i + 1).width = w; }); w3.views = [{ state: "frozen", ySplit: 4 }];
+    }
     /* 4. plano */
+    if (vL) {
     const w4 = wb.addWorksheet("Plano de investimentos"); tit(w4, "Plano de investimentos", "Diretoria — Plano de investimentos");
     cab(w4, ["Investimento", "Categoria", "Tipo", "Área", "Prioridade", "Status", "Mês previsto", "Valor estimado", "Forma de pagamento", "Entrada", "Parcelas", "Valor da parcela", "Total pago", "Payback (meses)"]);
     (INV.itens || []).forEach(o => { const s = invSim(o); const r = w4.addRow([o.Title || "", o.Categoria || "", o.TipoInvest || "", o.Area || "", o.Prioridade || "", o.Status || "", o.MesPrevisto || "", s.valor, s.forma, s.ent, s.n || null, s.parc || null, s.total, s.payback != null ? Math.round(s.payback) : null]); [8, 10, 12, 13].forEach(i => { r.getCell(i).numFmt = moeda; }); });
     [40, 26, 26, 18, 10, 12, 12, 16, 22, 15, 9, 15, 16, 12].forEach((w, i) => { w4.getColumn(i + 1).width = w; }); w4.views = [{ state: "frozen", ySplit: 4 }];
+    }
     await xlsxBaixar(wb, `CAPEX-OPEX_${D.ref}.xlsx`); toast("Planilha baixada");
   } catch (e) { toast("Não foi possível gerar a planilha: " + e.message, 6000); }
 };
@@ -25932,6 +25990,7 @@ function pageImob() {
 window.imobAba = k => { IMOB.aba = k; paintImob(); };
 async function renderImob() {
   const body = $("imobBody"); if (!body) return;
+  IMOB.incOk = false;
   try {
     await Promise.all([imobCarregar(true), cpxLista("operacional", LISTS.frota_veic.displayName, "Title,Ano,Tipo,Situacao,Placa").then(r => { CPX.veic = r.itens; }).catch(() => {})]);
     if (!CPX.prem) { try { const p = await erpParamLer("capex_premissas"); CPX.prem = Object.assign({}, CPX_PREM_PAD, (p && p.valor) || {}); } catch (e) { CPX.prem = Object.assign({}, CPX_PREM_PAD); } }
@@ -25949,7 +26008,7 @@ function paintImob() {
   const ed = imobEdita() && !vcAtivo();
   $("imobActions").innerHTML = `${ed ? `<button class="btn primary" onclick="imobNovo()">Novo bem</button>` : `<span class="sup">Acesso só de leitura</span>`}<button class="btn" onclick="imobExcel()">Baixar planilha (.xlsx)</button><button class="btn" onclick="imobImprimir()">🖨 Imprimir (A4)</button>`;
   if (IMOB.aba === "deprec") { body.innerHTML = imobDeprecHtml(); return; }
-  if (IMOB.aba === "incorporar") { body.innerHTML = `<div class="cap-empty"><h3>Lendo as contas da CAP…</h3></div>`; imobIncorporarPinta(); return; }
+  if (IMOB.aba === "incorporar") { if (!IMOB.incOk) body.innerHTML = `<div class="cap-empty"><h3>Lendo as contas da CAP…</h3></div>`; imobIncorporarPinta(); return; }
   body.innerHTML = imobBensHtml();
   const b = $("imobBusca"); if (b) b.addEventListener("input", ev => { IMOB.q = ev.target.value; keepFocus(paintImob); });
 }
@@ -25989,8 +26048,11 @@ function imobDeprecHtml() {
       : `<p class="cap-muted">Sem depreciação em ${IMOB.ano}.</p>`}</div>`;
 }
 /* contas da CAP de natureza CAPEX ainda sem bem */
-async function imobIncorporarPinta() {
-  try { await loadCAP({ soLeitura: true }); if (cpxVe("obr") || cpxVe("cap")) await loadObr().catch(() => {}); } catch (e) { const b = $("imobBody"); if (b) b.innerHTML = `<div class="cap-empty"><h3>Não foi possível ler a CAP</h3><p>${esc(e.message)}</p></div>`; return; }
+async function imobIncorporarPinta(recarregar) {   /* v0.12.73 (revisão): a CAP é lida ao entrar na aba (ou em Atualizar), não a cada seleção */
+  if (recarregar || !IMOB.incOk) {
+    try { if (CAP_STATE.espelhoCC && !$("almfRoot")) almfSair(); await loadCAP({ soLeitura: true }); await loadObr().catch(() => {}); IMOB.incOk = true; }
+    catch (e) { const b = $("imobBody"); if (b) b.innerHTML = `<div class="cap-empty"><h3>Não foi possível ler a CAP</h3><p>${esc(e.message)}</p></div>`; return; }
+  }
   const body = $("imobBody"); if (!body || IMOB.aba !== "incorporar") return;
   const ctx = cpxCtx(), ed = imobEdita() && !vcAtivo();
   const arr = (CAP_STATE.items || []).filter(it => !isIsenta(it) && Number(it.Valor || 0) && !ctx.linkados.has(String(it._id)) && cpxNat(it, ctx).nat === "CAPEX").sort((a, b) => String(b.Vencimento || "").localeCompare(String(a.Vencimento || "")));
@@ -25998,10 +26060,30 @@ async function imobIncorporarPinta() {
   const nSel = IMOB.sel.size, vSel = arr.filter(it => IMOB.sel.has(String(it._id))).reduce((s, it) => s + Number(it.Valor || 0), 0);
   const rows = arr.map(it => { const n = cpxNat(it, ctx), id = String(it._id); return `<tr>${ed ? `<td class="selc"><input type="checkbox" ${IMOB.sel.has(id) ? "checked" : ""} onchange="imobSel(${jsArg(id)}, this.checked)" aria-label="Selecionar"></td>` : ""}<td class="nw">${fmtDate(it.DataPagamento || it.Vencimento)}</td><td class="l"><div class="desc">${esc(it.Fornecedor || "—")}</div><div class="sup">${esc(it.Title || "")}${it.NumeroNF ? " · NF " + esc(it.NumeroNF) : ""}${it.Parcela ? " · parcela " + esc(it.Parcela) : ""}</div></td><td>${esc(it.Categoria || "—")}</td><td class="r b">${esc(fmtBRL(it.Valor))}</td><td class="sup l">${esc(n.auto ? "regra: " + n.motivo : "classificada como CAPEX")}</td><td class="nw">${ed ? `<button class="btn mini" onclick="imobIncorporar([${jsArg(id)}])">Incorporar</button>` : ""}</td></tr>`; }).join("");
   body.innerHTML = `<div class="cap-card"><div class="cap-card-h"><h3>Contas de CAPEX a incorporar</h3><span class="cap-card-s">contas da CAP com natureza CAPEX (gravada ou pela regra) que ainda não viraram bem · várias contas (entrada e parcelas, consórcio) podem formar um só bem</span></div>
-    ${ed && arr.length ? `<div class="cpx-chips"><button class="btn ${nSel ? "primary" : ""}" ${nSel ? "" : "disabled"} onclick="imobIncorporar([...IMOB.sel])">Incorporar selecionadas${nSel ? ` (${nSel} · ${esc(fmtBRL(vSel))})` : ""}</button>${nSel ? `<button class="btn ghost" onclick="IMOB.sel.clear(); imobIncorporarPinta()">Limpar seleção</button>` : ""}</div>` : ""}
+    ${ed && arr.length ? `<div class="cpx-chips"><button class="btn ${nSel ? "primary" : ""}" ${nSel ? "" : "disabled"} onclick="imobIncorporar([...IMOB.sel])">Incorporar selecionadas${nSel ? ` (${nSel} · ${esc(fmtBRL(vSel))})` : ""}</button>${nSel && (IMOB.itens || []).some(b => b.Situacao !== "Baixado") ? `<button class="btn" onclick="imobJuntar([...IMOB.sel])" title="Liga as contas a um bem já cadastrado (ex.: parcelas do consórcio depois da entrega do ônibus)">Juntar a um bem já cadastrado</button>` : ""}${nSel ? `<button class="btn ghost" onclick="IMOB.sel.clear(); imobIncorporarPinta()">Limpar seleção</button>` : ""}<button class="btn ghost" onclick="imobIncorporarPinta(true)">Atualizar</button></div>` : ""}
     ${rows ? `<div class="table-wrap"><table class="cap-table" id="imobIncT"><thead><tr>${ed ? "<th></th>" : ""}<th>Data</th><th class="l">Fornecedor / descrição</th><th>Categoria</th><th class="r">Valor</th><th class="l">Natureza</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="cap-muted">Nenhuma conta de CAPEX pendente. Para marcar uma conta como investimento, use a coluna "Natureza do gasto" no formulário da conta ou a aba Classificação das contas em Diretoria › CAPEX / OPEX.</p>`}</div>`;
 }
 window.imobSel = (id, on) => { if (on) IMOB.sel.add(String(id)); else IMOB.sel.delete(String(id)); imobIncorporarPinta(); };
+/* v0.12.73 (revisão): contas que pertencem a um bem já cadastrado (ex.: parcelas do consórcio depois da entrega) entram pelo bem — sem contar duas vezes */
+window.imobJuntar = ids => {
+  if (!imobEdita()) return;
+  const its = ids.map(id => (CAP_STATE.items || []).find(x => String(x._id) === String(id))).filter(Boolean); if (!its.length) return;
+  const bens = (IMOB.itens || []).filter(b => b.Situacao !== "Baixado").sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR"));
+  if (!bens.length) { toast("Nenhum bem em uso para juntar as contas."); return; }
+  const v = Math.round(its.reduce((s, it) => s + Number(it.Valor || 0), 0) * 100) / 100;
+  openModal("Juntar a um bem já cadastrado", `<div class="form-grid">
+    <div class="field full"><label>${its.length} conta(s) · ${esc(fmtBRL(v))}</label><div class="static sup">${its.slice(0, 6).map(it => esc(`${it.Fornecedor || ""} · ${it.Title || ""}`)).join("<br>")}${its.length > 6 ? `<br>e mais ${its.length - 6}` : ""}</div></div>
+    <div class="field full"><label>Bem<span class="req">*</span></label><select id="ijBem"><option value=""></option>${bens.map(b => `<option value="${esc(b._id)}">${esc(b.Title || "—")}${b.Identificacao ? " · " + esc(b.Identificacao) : ""} · ${esc(fmtBRL(b.ValorAquisicao))}</option>`).join("")}</select></div>
+    <div class="field full"><label class="check" style="display:flex;gap:8px;align-items:flex-start;font-weight:500;text-transform:none;letter-spacing:0"><input type="checkbox" id="ijSoma"> <span>Somar ${esc(fmtBRL(v))} ao valor de aquisição do bem</span></label><div class="hint">Marque quando estas contas fazem parte do preço do bem (ex.: parcelas do consórcio pagas antes da entrega). Deixe desmarcado quando o bem já foi cadastrado pelo valor cheio: as contas passam a contar pelo bem e saem do CAPEX a incorporar.</div></div>
+  </div><div class="err-msg" id="ijErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const id = $("ijBem").value, b = bens.find(x => String(x._id) === String(id));
+    if (!b) { const e = $("ijErr"); e.textContent = "Escolha o bem."; e.style.display = "block"; return false; }
+    const f = { CapRef: [...new Set(imobCapIds(b).concat(its.map(it => String(it._id))))].join(",") };
+    if ($("ijSoma").checked) f.ValorAquisicao = Math.round((Number(b.ValorAquisicao || 0) + v) * 100) / 100;
+    await SP.update(IMOB.site.id, IMOB.list.id, b._id, f);
+    toast(`${its.length} conta(s) juntada(s) a "${b.Title || ""}"`); IMOB.sel.clear(); await imobCarregar(); setTimeout(() => { if ($("imobBody")) paintImob(); }, 0); return true;
+  });
+};
 window.imobIncorporar = ids => {
   const its = ids.map(id => (CAP_STATE.items || []).find(x => String(x._id) === String(id))).filter(Boolean); if (!its.length) return;
   const v = its.reduce((s, it) => s + Number(it.Valor || 0), 0), ult = its.map(it => ymd(it.DataPagamento || it.Vencimento || todayISO())).sort()[0];
@@ -26129,6 +26211,10 @@ window.imobImprimir = () => {
 { const r7 = route;
   route = function () {
     const hash = (location.hash || "").split("?")[0];
+    /* v0.12.73 (revisão): Frota, Relatório Executivo, CAPEX / OPEX e Imobilizado têm embrulhos posteriores ao do espelho do Almoxarifado e
+       não passavam pela limpeza dele — a CAP continuava filtrada no centro de custo Operacional. A limpeza fica aqui, no embrulho de fora. */
+    if (hash !== "#/operacional/almoxarifado/fornecedores") { if (FORN_STATE.ccFixo) { FORN_STATE.ccFixo = ""; FORN_STATE.filter = Object.assign({}, FORN_STATE.filter, { busca: "" }); } if (CAP_STATE.espelhoCC) almfSair(); }
+    if (session.modAtual === "painel_hor" && !hash.startsWith("#/marketing/painel-de-horarios") && typeof phStop === "function") phStop();
     const alvo = hash === "#/diretoria/capex-opex" ? "capex" : hash === "#/financeiro/imobilizado" ? "imob" : null;
     if (!alvo) return r7.apply(this, arguments);
     const m = MODULES.find(x => x.id === alvo); if (!canSee(m)) { location.hash = "#/inicio"; return; }
@@ -26138,6 +26224,15 @@ window.imobImprimir = () => {
     navAtivo(alvo); window.scrollTo(0, 0);
   };
 }
+/* ---- v0.12.73 · revisão independente: acabamentos das versões 0.12.71 e 0.12.72 ---- */
+/* Escala Garagem: o que abre com duplo clique também abre com Enter (teclado) e com um toque (celular) */
+{ const pg = paintGar; paintGar = function () { const r = pg.apply(this, arguments); document.querySelectorAll("#garBody [ondblclick]").forEach(el => { if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0"); }); return r; }; }
+document.addEventListener("keydown", ev => { if (ev.key !== "Enter") return; const el = ev.target; if (!el || !el.matches || !el.matches("#garBody [ondblclick]")) return; ev.preventDefault(); el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true })); });
+document.addEventListener("click", ev => { const el = ev.target && ev.target.closest ? ev.target.closest("#garBody [ondblclick]") : null; if (!el || !window.matchMedia || !matchMedia("(hover: none) and (pointer: coarse)").matches) return; el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true })); });
+/* espelho do Almoxarifado: sem Importar e Duplicadas (são ferramentas da CAP inteira) */
+{ const pc = paintCAP; paintCAP = function () { const r = pc.apply(this, arguments); if (CAP_STATE.espelhoCC) { const a = $("capActions"); if (a) a.querySelectorAll("button").forEach(b => { if (/^(Importar|Duplicadas)\b/.test(b.textContent.trim())) b.remove(); }); } return r; }; window.paintCAP = paintCAP; }
+/* Favoritos: Atualizar tenta de novo ler as obrigações (depois de uma falha) */
+{ const rc = renderCAP; renderCAP = async function () { CAP_STATE._favObrTentou = false; CAP_STATE._favObrErro = ""; return rc.apply(this, arguments); }; window.renderCAP = renderCAP; }
 
 </script>
 </body>

@@ -1699,9 +1699,9 @@ body:not(.erp-adm) .so-adm{display:none!important}
 .cap-atual{display:flex;align-items:center;gap:8px;padding-bottom:6px}
 .cap-atual .sup{white-space:nowrap}
 .cap-table th.sortable{cursor:pointer;user-select:none}.cap-table th .lblfim{white-space:nowrap}   /* v0.12.70: a seta de ordenação nunca cai sozinha numa 2ª linha (Compet./Vencimento ficavam desalinhados) */
-@media (min-width:1200px){#capBody .table-wrap{overflow-x:visible;overflow-y:visible}}#capBody .cap-table{min-width:0;width:100%}#capBody .cap-table td.forn-cls-cel{padding-left:4px;padding-right:4px}#capBody select.forn-cls{width:128px;max-width:128px;font-size:12px;padding:3px 2px;text-overflow:ellipsis}#capBody .cap-table td.act{padding-right:12px}#capBody .cap-table th,#capBody .cap-table td{padding-left:6px;padding-right:6px}#capBody .cap-table th{letter-spacing:.03em;vertical-align:middle}#capBody .cap-table td.act .btn.mini{padding-left:8px;padding-right:8px}#capBody .cap-table td.desc-cell{min-width:140px}   /* v0.12.70: a lista da CAP só rola na vertical */
-@media (min-width:900px){#capBody .cap-table thead th{position:sticky;top:60px;z-index:2}}
-@media (max-width:1400px){#capBody .cap-table td.act{white-space:normal;width:1%;text-align:center}#capBody .cap-table td.act .btn.mini{display:block;margin:2px auto;width:100%}#capBody .cap-table td.desc-cell{min-width:120px}#capBody .cap-table{font-size:13px}#capBody .cap-table th{font-size:10.5px}}   /* v0.12.70: em telas até 1400 px as ações empilham e a fonte encolhe — a lista cabe sem rolagem horizontal */
+@media (min-width:1200px){#capBody .table-wrap{overflow:visible;max-height:none}}@media (min-width:641px){#capBody .cap-table{min-width:0;width:100%}#capBody .cap-table td.forn-cls-cel{padding-left:4px;padding-right:4px}#capBody select.forn-cls{width:128px;max-width:128px;font-size:12px;padding:3px 2px;text-overflow:ellipsis}#capBody .cap-table td.act{padding-right:12px}#capBody .cap-table th,#capBody .cap-table td{padding-left:6px;padding-right:6px}#capBody .cap-table th{letter-spacing:.03em;vertical-align:middle}#capBody .cap-table td.act .btn.mini{padding-left:8px;padding-right:8px}#capBody .cap-table td.desc-cell{min-width:140px}}   /* v0.12.70: a lista da CAP só rola na vertical */
+@media (min-width:1200px){#capBody .cap-table thead th{position:sticky;top:60px;z-index:2}}
+@media (min-width:641px) and (max-width:1400px){#capBody .cap-table td.act{white-space:normal;width:1%;text-align:center}#capBody .cap-table td.act .btn.mini{display:block;margin:2px auto;width:100%}#capBody .cap-table td.desc-cell{min-width:120px}#capBody .cap-table{font-size:13px}#capBody .cap-table th{font-size:10.5px}}   /* v0.12.70: em telas até 1400 px as ações empilham e a fonte encolhe — a lista cabe sem rolagem horizontal */
 .cap-table th.sortable:hover{color:var(--orange)}
 .cap-table th.sortable.on{color:var(--navy);box-shadow:inset 0 -2px 0 var(--orange)}
 .cap-table th .seta{display:inline-block;width:12px;margin-left:3px;font-size:9px;color:var(--orange)}
@@ -9025,7 +9025,7 @@ window.CAP_COLS = window.CAP_COLS || [
 ];
 /* v0.12.70: cadastro do fornecedor de uma conta (pela referência ou pelo nome) */
 /* v0.12.70: a última palavra do título fica presa à seta de ordenação — o título pode quebrar em duas linhas, mas a seta nunca cai sozinha */
-function capThLbl(lbl) { const w = String(lbl).split(" "); const fim = w.pop(); return (w.length ? esc(w.join(" ")) + " " : "") + `<span class="lblfim">${esc(fim)}`; }
+function capThLbl(lbl, seta) { const w = String(lbl).split(" "); const fim = w.pop(); return (w.length ? esc(w.join(" ")) + " " : "") + `<span class="lblfim">${esc(fim)}<span class="seta">${seta || ""}</span></span>`; }
 function capFornDe(it) { if (!FORN_STATE.items.length) return null; const id = it.FornecedorRefLookupId; if (id != null && id !== "") { const f = FORN_STATE.items.find(x => String(x._id) === String(id)); if (f) return f; } return fornByName(it.Fornecedor); }
 function capClsCel(it) { const f = capFornDe(it); if (!f) return `<span class="sup" title="Fornecedor sem cadastro">—</span>`; return fornClasseCel(f); }
 function capOrdemCol() { const m = String(CAP_STATE.filter.ordem || "").match(/^col:(\w+):(asc|desc)$/); return m ? { k: m[1], asc: m[2] === "asc" } : null; }
@@ -9385,7 +9385,7 @@ function paintCAP() {
   const ccs = [...new Set(CENTROS_CUSTO.concat(CAP_STATE.items.map(ccDe).filter(Boolean)))];
   const ordens = [["venc", "Ordem: vencimento"], ["situacao", "Ordem: situação"], ["valor", "Ordem: maior valor"], ["forn", "Ordem: fornecedor"]];
   if (oc) { const col = CAP_COLS.find(c => c.k === oc.k); ordens.unshift([f.ordem, `Ordem: ${col ? col.lbl.toLowerCase() : oc.k} ${oc.asc ? "▲" : "▼"}`]); }
-  const th = c => `<th class="sortable ${oc && oc.k === c.k ? "on" : ""}" data-col="${c.k}" ${c.right ? 'style="text-align:right"' : ""} onclick="capOrdenarCol('${c.k}')" title="Ordenar por ${esc(c.lbl.toLowerCase())}">${capThLbl(c.lbl)}<span class="seta">${oc && oc.k === c.k ? (oc.asc ? "▲" : "▼") : ""}</span></span></th>`;
+  const th = c => `<th class="sortable ${oc && oc.k === c.k ? "on" : ""}" data-col="${c.k}" ${c.right ? 'style="text-align:right"' : ""} onclick="capOrdenarCol('${c.k}')" title="Ordenar por ${esc(c.lbl.toLowerCase())}">${capThLbl(c.lbl, oc && oc.k === c.k ? (oc.asc ? "▲" : "▼") : "")}</th>`;
   body.innerHTML = `
     ${capViewsBar()}${somenteLeituraAviso("cap")}
     <div class="cap-kpis">
@@ -15116,7 +15116,7 @@ function paintCAP() {
   const bancos = [...new Set(BANCOS.concat(CAP_STATE.items.map(it => it.Banco).filter(Boolean)))];
   const ordens = [["venc", "Ordem: vencimento"], ["situacao", "Ordem: situação"], ["valor", "Ordem: maior valor"], ["forn", "Ordem: fornecedor"]];
   if (oc) { const col = CAP_COLS.find(c => c.k === oc.k); ordens.unshift([f.ordem, `Ordem: ${col ? col.lbl.toLowerCase() : oc.k} ${oc.asc ? "▲" : "▼"}`]); }
-  const th = c => `<th class="sortable ${oc && oc.k === c.k ? "on" : ""}" data-col="${c.k}" ${c.right ? 'style="text-align:right"' : ""} onclick="capOrdenarCol('${c.k}')" title="Ordenar por ${esc(c.lbl.toLowerCase())}">${capThLbl(c.lbl)}<span class="seta">${oc && oc.k === c.k ? (oc.asc ? "▲" : "▼") : ""}</span></span></th>`;
+  const th = c => `<th class="sortable ${oc && oc.k === c.k ? "on" : ""}" data-col="${c.k}" ${c.right ? 'style="text-align:right"' : ""} onclick="capOrdenarCol('${c.k}')" title="Ordenar por ${esc(c.lbl.toLowerCase())}">${capThLbl(c.lbl, oc && oc.k === c.k ? (oc.asc ? "▲" : "▼") : "")}</th>`;
   /* chips: situação (contagem sobre a lista base) e centro de custo (só os que têm conta; contas sem CC entram como "sem centro de custo") */
   const sitOpts = CAP_SIT.map(s => ({ v: s.v, l: s.l, cls: s.cls, n: baseSit.filter(it => s.t(it, classifyItem(it))).length }));
   const ccCont = {}; CAP_STATE.items.forEach(it => { const c = ccDe(it) || CC_SEM; ccCont[c] = (ccCont[c] || 0) + 1; });
@@ -20577,11 +20577,11 @@ RHDB_COLS.funcs = [["Title", "Nome"], ["Matricula", "Matrícula"], ["Cargo", "Fu
       <select id="rhfDep" aria-label="Departamento"><option value="">Todos os departamentos</option>${deps.map(d => `<option ${S.dep === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select>
       <select id="rhfFun" aria-label="Função"><option value="">Todas as funções</option>${funs.map(d => `<option ${S.fun === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select></div>`;
     const cols = RHDB_COLS.funcs;
-    const linha = x => `<tr class="rhf-linha" data-id="${esc(x._id)}" ondblclick="rhfAbrir('${esc(x._id)}')" title="Duplo clique: abre o cadastro">${cols.map(([k, , r]) => `<td>${r ? r(x[k], x) : esc(x[k] == null ? "" : String(x[k]))}</td>`).join("")}<td>${rhAptoPill(x)}</td><td class="act nw"><button class="btn mini" onclick="event.stopPropagation(); rhfAbrir('${esc(x._id)}')">Abrir</button></td></tr>`;   /* v0.12.58: Abrir no botão; duplo clique em nova janela; coluna Apto */
+    const linha = x => `<tr class="rhf-linha" data-id="${esc(x._id)}" ondblclick="rhfAbrir('${esc(x._id)}')" title="Duplo clique: abre o cadastro">${cols.map(([k, , r]) => `<td>${r ? r(x[k], x) : esc(x[k] == null ? "" : String(x[k]))}</td>`).join("")}<td>${rhAptoPill(x)}</td><td class="act nw"><button class="btn mini" onclick="event.stopPropagation(); rhfAbrir('${esc(x._id)}')">Abrir</button></td></tr>`;   /* v0.12.58: Abrir no botão; duplo clique abre o cadastro na mesma aba (v0.12.70); coluna Apto */
     const faltam = typeof rhfColsFaltam === "function" ? rhfColsFaltam() : [];
     const aviso = faltam.length ? `<div class="rhf-aviso">A lista "RH — Funcionários" ainda não tem a(s) coluna(s) <b>${faltam.map(k => esc(RHF_ROTULO[k] || k)).join(", ")}</b>. ${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › "Executar tudo na ordem"</a>` : "Peça a um administrador para rodar Sistema › Configuração › \"Executar tudo na ordem\""}; até lá esses campos não são gravados.</div>` : "";
     body.innerHTML = aviso + kpis + filtros + (vis.length
-      ? `<div class="table-wrap"><table class="cap-table"><thead><tr>${cols.map(([, lbl]) => `<th>${esc(lbl)}</th>`).join("")}<th title="Documentos obrigatórios em dia">Apto</th><th></th></tr></thead><tbody>${vis.map(linha).join("")}</tbody></table></div><p class="cap-dica">${vis.length} de ${all.length} funcionário(s) · <b>Abrir</b> mostra o cadastro e os documentos; duplo clique na linha abre em uma nova janela${S.sit === "ativos" ? " · desligados ocultos" : ""}. Quem tem "Motorista" na função aparece primeiro nas listas de motoristas (Roletas e Recebimento).</p>`
+      ? `<div class="table-wrap"><table class="cap-table"><thead><tr>${cols.map(([, lbl]) => `<th>${esc(lbl)}</th>`).join("")}<th title="Documentos obrigatórios em dia">Apto</th><th></th></tr></thead><tbody>${vis.map(linha).join("")}</tbody></table></div><p class="cap-dica">${vis.length} de ${all.length} funcionário(s) · <b>Abrir</b> mostra o cadastro e os documentos; duplo clique na linha abre o cadastro${S.sit === "ativos" ? " · desligados ocultos" : ""}. Quem tem "Motorista" na função aparece primeiro nas listas de motoristas (Roletas e Recebimento).</p>`
       : `<div class="cap-empty"><h3>${all.length ? "Nenhum funcionário com este filtro" : "Nenhum funcionário cadastrado"}</h3>${edita && !all.length ? `<p>Use <b>Importar planilha</b> para cadastrar todos de uma vez, ou "+ Novo".</p>` : ""}</div>`);
     const qEl = $("rhfQ"); if (qEl) { qEl.addEventListener("input", () => { S.q = qEl.value; const pos = qEl.selectionStart; paintRhDbSub("funcs"); const e2 = $("rhfQ"); if (e2) { e2.focus(); try { e2.setSelectionRange(pos, pos); } catch (e) {} } }); }
     const dEl = $("rhfDep"); if (dEl) dEl.addEventListener("change", () => { S.dep = dEl.value; paintRhDbSub("funcs"); });
@@ -22676,7 +22676,7 @@ window.fornClasseSet = async (id, sel) => {
   const novo = sel.value || null, antes = f.Tipo || null; if (novo === antes) return;
   sel.disabled = true;
   try { await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, f._id, { Tipo: novo }); f.Tipo = novo; sel.classList.toggle("vazio", !novo); sel.title = novo ? fornClasseDesc(novo) : "Sem classificação: não gera conta recorrente"; toast(`${f.Title}: ${novo || "a classificar"}`);
-    if ($("capBody") && CAP_STATE.view === "lista") paintCAP();   /* v0.12.70: as outras contas do mesmo fornecedor na lista da CAP acompanham */ }
+    if ($("capBody") && CAP_STATE.view === "lista") keepFocus(paintCAP);   /* v0.12.70: as outras contas do mesmo fornecedor na lista da CAP acompanham */ }
   catch (e) { sel.value = antes || ""; toast("Não foi possível gravar: " + e.message + (/required|obrigat/i.test(e.message) ? " (rode a Configuração)" : ""), 7000); }
   finally { sel.disabled = false; }
 };

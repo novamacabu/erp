@@ -8550,16 +8550,27 @@ const ROL_STATE = { site: null, list: undefined, itens: [], ready: false, erro: 
 const ROL_LEGADO = { displayName: "Financeiro — Controle de Roletas", siteKey: "financeiro" };   /* v0.12.71: lista antiga (site Financeiro) */
 async function loadRol(force) {
   /* v0.12.71: a lista oficial é "Operacional — Controle de Roletas" (site Operacional). Enquanto ela não existe, a antiga do Financeiro continua servindo;
-     quando as duas existem, o administrador vê o botão de migrar os lançamentos e, depois, a pendência de apagar a antiga. */
-  if (!ROL_STATE.siteNovo) { try { ROL_STATE.siteNovo = await SP.site(CONFIG.sites[LISTS.cx_roletas.siteKey]); } catch (e) { ROL_STATE.siteNovo = null; ROL_STATE.listNova = null; } }   /* v0.12.73 (revisão): sem acesso ao site Operacional, a lista antiga continua servindo */
-  if (ROL_STATE.siteNovo && (force || ROL_STATE.listNova === undefined)) { try { const ls = await SP.lists(ROL_STATE.siteNovo.id); ROL_STATE.listNova = ls.find(l => l.displayName === LISTS.cx_roletas.displayName) || null; } catch (e) { ROL_STATE.listNova = null; } }
+     quando as duas existem, o administrador vê o botão de migrar os lançamentos e, depois, a pendência de apagar a antiga.
+     v0.12.73 (2ª revisão): só "sem acesso" (401/403/404) leva à lista antiga — outro erro (ex.: 500) aparece na tela e não troca de lista; quem não tem
+     acesso ao site Operacional usa a antiga só até a migração (registrada em "ERP — Parâmetros"); depois dela, vê o aviso de acesso. */
+  const semAcesso = e => !!e && [401, 403, 404].includes(e.status);
+  if (!ROL_STATE.siteNovo || force || ROL_STATE.listNova === undefined) ROL_STATE.semAcessoNovo = false;
+  if (!ROL_STATE.siteNovo) { try { ROL_STATE.siteNovo = await SP.site(CONFIG.sites[LISTS.cx_roletas.siteKey]); } catch (e) { if (!semAcesso(e)) throw e; ROL_STATE.siteNovo = null; ROL_STATE.listNova = null; ROL_STATE.semAcessoNovo = true; } }
+  if (ROL_STATE.siteNovo && (force || ROL_STATE.listNova === undefined)) { try { const ls = await SP.lists(ROL_STATE.siteNovo.id); ROL_STATE.listNova = ls.find(l => l.displayName === LISTS.cx_roletas.displayName) || null; } catch (e) { if (!semAcesso(e)) throw e; ROL_STATE.listNova = null; ROL_STATE.semAcessoNovo = true; } }
   if (force || ROL_STATE.listVelha === undefined) {
+    ROL_STATE.semAcessoVelho = false;
     try { if (!ROL_STATE.siteVelho) ROL_STATE.siteVelho = await SP.site(CONFIG.sites[ROL_LEGADO.siteKey]); const ls = await SP.lists(ROL_STATE.siteVelho.id); ROL_STATE.listVelha = ls.find(l => l.displayName === ROL_LEGADO.displayName) || null; }
-    catch (e) { ROL_STATE.listVelha = null; }   /* sem acesso ao site Financeiro: só a lista nova conta */
+    catch (e) { if (!semAcesso(e) && !ROL_STATE.listNova) throw e; ROL_STATE.listVelha = null; ROL_STATE.semAcessoVelho = semAcesso(e); }   /* sem acesso ao site Financeiro: só a lista nova conta (com a nova ok, um erro passageiro na antiga só tira o aviso de migração) */
+  }
+  ROL_STATE.erroAcesso = "";
+  let usaVelha = !ROL_STATE.listNova && !!ROL_STATE.listVelha;
+  if (usaVelha) {   /* a lista nova pode existir sem que a pessoa a veja (site ou lista sem acesso): depois da migração, a antiga não recebe mais lançamentos */
+    let mig; try { mig = await erpParamLer("rol_migracao", true); } catch (e) { mig = undefined; }
+    if (mig && mig.valor && mig.valor.em) { usaVelha = false; ROL_STATE.erroAcesso = "operacional"; }
   }
   if (ROL_STATE.listNova) { ROL_STATE.site = ROL_STATE.siteNovo; ROL_STATE.list = ROL_STATE.listNova; ROL_STATE.legado = false; }
-  else if (ROL_STATE.listVelha) { ROL_STATE.site = ROL_STATE.siteVelho; ROL_STATE.list = ROL_STATE.listVelha; ROL_STATE.legado = true; }
-  else { ROL_STATE.site = ROL_STATE.siteNovo; ROL_STATE.list = null; ROL_STATE.legado = false; }
+  else if (usaVelha) { ROL_STATE.site = ROL_STATE.siteVelho; ROL_STATE.list = ROL_STATE.listVelha; ROL_STATE.legado = true; }
+  else { ROL_STATE.site = ROL_STATE.siteNovo; ROL_STATE.list = null; ROL_STATE.legado = false; if (!ROL_STATE.erroAcesso && ROL_STATE.semAcessoNovo) ROL_STATE.erroAcesso = ROL_STATE.semAcessoVelho ? "ambos" : "operacional"; }
   ROL_STATE.velhaN = null; ROL_STATE.velhaFalta = null;
   if (!ROL_STATE.list) { ROL_STATE.ready = false; return; }
   const its = await SP.items(ROL_STATE.site.id, ROL_STATE.list.id);
@@ -13941,7 +13952,13 @@ async function loadBil() {
 }
 function bilTarifa(linha, secao, data) {   /* v0.12.73 (revisão): com a data, vale a tarifa em vigor naquele dia (um reajuste com vigência futura não vale antes da data) */
   const d = data ? String(data).slice(0, 10) : "", dia = v => v ? ymd(v) : "";
-  if (d) { const t0 = BIL_STATE.tarifas.find(x => x.Linha === linha && x.Secao === secao && dia(x.VigenciaInicio) && dia(x.VigenciaInicio) <= d && (!x.VigenciaFim || dia(x.VigenciaFim) >= d)); if (t0) return Number(t0.Valor); }
+  if (d) {   /* 2ª revisão: entre as tarifas em vigor na data, vale a de início mais recente; encerrada sem "vigência fim" só vale até a seguinte começar
+               (se nenhuma começou depois dela, foi cancelada e não vale) */
+    const todas = BIL_STATE.tarifas.filter(x => x.Linha === linha && x.Secao === secao && dia(x.VigenciaInicio));
+    const c = todas.filter(x => { const i0 = dia(x.VigenciaInicio); if (i0 > d) return false; if (x.VigenciaFim) return dia(x.VigenciaFim) >= d; if (x.Ativa !== false) return true; return todas.some(y => dia(y.VigenciaInicio) > i0); })
+      .sort((a, b) => dia(b.VigenciaInicio).localeCompare(dia(a.VigenciaInicio)));
+    if (c.length) return Number(c[0].Valor);
+  }
   const t = BIL_STATE.tarifas.find(x => x.Linha === linha && x.Secao === secao && x.Ativa !== false); return t ? Number(t.Valor) : 0; }
 function bilSecoes(linha) { return BIL_STATE.tarifas.filter(t => t.Linha === linha && t.Ativa !== false); }
 function bilMes(arr) { return arr.filter(x => compFromDate(x.Data) === BIL_STATE.mes); }
@@ -14008,7 +14025,7 @@ function bilFormLanc() {
 function bilWireLanc() {
   const upd = () => { const l = $("bLinha").value, secs = bilSecoes(l); $("bSec").innerHTML = secs.map(s=>`<option value="${esc(s.Secao)}">${esc(s.Secao)} — ${esc(s.Descricao||"")} (${fmtBRL(s.Valor)})</option>`).join(""); calc(); };
   const calc = () => { const t = bilTarifa($("bLinha").value, $("bSec").value, $("bData") ? $("bData").value : ""); $("bRec").textContent = fmtBRL(t * Number($("bPass").value||0)); };
-  $("bLinha").addEventListener("change", upd); $("bSec").addEventListener("change", calc); $("bPass").addEventListener("input", calc); upd();
+  $("bLinha").addEventListener("change", upd); $("bSec").addEventListener("change", calc); $("bPass").addEventListener("input", calc); if ($("bData")) $("bData").addEventListener("change", calc); upd();   /* 2ª revisão: a tarifa depende da data */
   $("bSave").onclick = bilSave;
 }
 async function bilSave() {
@@ -22783,7 +22800,7 @@ window.fornClasseSet = async (id, sel) => {
   sel.disabled = true;
   try { await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, f._id, { Tipo: novo }); f.Tipo = novo; sel.classList.toggle("vazio", !novo); sel.title = novo ? fornClasseDesc(novo) : "Sem classificação: não gera conta recorrente"; toast(`${f.Title}: ${novo || "a classificar"}`);
     if ($("capBody") && CAP_STATE.view === "lista") keepFocus(paintCAP);   /* v0.12.70: as outras contas do mesmo fornecedor na lista da CAP acompanham */ }
-  catch (e) { sel.value = antes || ""; toast("Não foi possível gravar: " + e.message + (/required|obrigat|choice|escolha|valid|válid/i.test(e.message) ? " (rode Sistema › Configuração para atualizar as opções)" : ""), 7000); }
+  catch (e) { sel.value = antes || ""; toast("Não foi possível gravar: " + e.message + (/required|obrigat|choice|escolha|not a valid|não é (um valor )?válid|valor inválido/i.test(e.message) ? " (rode Sistema › Configuração para atualizar as opções)" : ""), 7000); }
   finally { sel.disabled = false; }
 };
 
@@ -24183,6 +24200,7 @@ SETUP_TEXT.ag_mov = SETUP_TEXT.ag_mov || `Cria no site Financeiro a lista "Agên
 SETUP_TEXT.alm_oc = SETUP_TEXT.alm_oc || `Cria no site Operacional a lista "Almoxarifado — Ordens de Compra" (vazia): pedidos de compra com itens, total estimado e aprovação por administrador. Usada em Operacional › Almoxarifado › Ordens de Compra.`;
 function rolMigracaoHtml() {
   if (!session.n1 || !ROL_STATE.ready) return "";
+  if (ROL_STATE.legado && ROL_STATE.semAcessoNovo) return "";   /* 2ª revisão: sem acesso ao site Operacional, o aviso de acesso (para todos) vem no lugar */
   if (ROL_STATE.legado) return `<div class="import-help"><b>Controle de Roletas mudou para o Operacional.</b> Os lançamentos ainda estão na lista antiga <b>${esc(ROL_LEGADO.displayName)}</b> (site Financeiro). Rode Sistema › Configuração › "Executar tudo na ordem" para criar a lista nova no site Operacional; depois o botão de migração aparece aqui.</div>`;
   if (!ROL_STATE.listVelha) return "";
   const n = ROL_STATE.velhaN, mig = ROL_STATE.migracao, falta = ROL_STATE.velhaFalta;
@@ -24206,14 +24224,17 @@ window.rolMigrar = async () => {
     campos.Historico = ((f.Historico ? f.Historico + "\n" : "")) + `${lancAgora()} · ${lancQuem()} · migrado da lista do Financeiro`;
     try { await SP.create(ROL_STATE.siteNovo.id, ROL_STATE.listNova.id, campos); ok++; } catch (e) { falha++; console.warn("rolMigrar", f.Title, e); }
   }
-  if (!falha) { try { await erpParamGravar("rol_migracao", { em: todayISO(), n: ok, por: lancQuem() }); ROL_STATE.migracao = { em: todayISO(), n: ok, por: lancQuem() }; } catch (e) {} }   /* v0.12.73 (revisão): com falha, não vale como concluída (o botão continua para os que faltam) */
+  if (!falha) { const tot = velhos.length; try { await erpParamGravar("rol_migracao", { em: todayISO(), n: tot, por: lancQuem() }); ROL_STATE.migracao = { em: todayISO(), n: tot, por: lancQuem() }; } catch (e) {} }   /* 2ª revisão: n = todos os da lista antiga (já estão na nova) */   /* v0.12.73 (revisão): com falha, não vale como concluída (o botão continua para os que faltam) */
   toast(`${ok} lançamento(s) migrado(s)${falha ? ` · ${falha} falha(s)` : ""}`, 6000);
   await loadRol(true); paintRol();
 };
 { const p0 = paintRol;
   paintRol = function () {
     const r = p0.apply(this, arguments);
-    const body = $("rolBody"); if (body && !(LANC_ED && LANC_ED.k === "rol")) { const h = rolMigracaoHtml(); if (h) body.insertAdjacentHTML("afterbegin", h); }
+    const body = $("rolBody"); if (body && !(LANC_ED && LANC_ED.k === "rol")) {
+      if (!ROL_STATE.ready && ROL_STATE.erroAcesso) body.innerHTML = `<div class="cap-empty"><h3>${ROL_STATE.erroAcesso === "ambos" ? "Sem acesso aos sites Operacional e Financeiro" : "Sem acesso ao site Operacional"}</h3><p>O Controle de Roletas fica no site Operacional do SharePoint (lista "${esc(LISTS.cx_roletas.displayName)}"). Peça ao administrador a inclusão no grupo do site Operacional.</p></div>`;   /* 2ª revisão */
+      else if (ROL_STATE.ready && ROL_STATE.legado && ROL_STATE.semAcessoNovo) body.insertAdjacentHTML("afterbegin", `<div class="import-help"><b>Você está usando a lista antiga (site Financeiro).</b> O Controle de Roletas mudou para o site Operacional do SharePoint e você ainda não tem acesso a ele: peça ao administrador a inclusão no grupo do site Operacional. Depois da migração, a lista antiga deixa de receber lançamentos.</div>`);
+      const h = rolMigracaoHtml(); if (h) body.insertAdjacentHTML("afterbegin", h); }
     return r;
   };
   const r0 = renderRol;
@@ -24926,7 +24947,7 @@ window.bilTarAplicar = async () => {
   toast(`Tarifas: ${ok} alteração(ões) gravada(s)${falha ? ` · ${falha} com problema` : ""}`, 6000);
   try { await loadBil(); } catch (e) {}
   if (!falha) { closeModal(); BIL_STATE.tab = "tarifas"; paintBil(); return; }
-  paintBil(); const arq = I.arquivo; BIL_IMP = Object.assign(bilTarComparar(I.itens.map(x => ({ n: x.n, linha: x.linha, secao: x.secao, trecho: x.trecho, valor: x.valor, vig: x.vig, vigBruta: x.vigBruta }))), { arquivo: arq, mostrarIguais: I.mostrarIguais }); bilTarPrevPintar();
+  paintBil(); const arq = I.arquivo; BIL_IMP = Object.assign(bilTarComparar(I.itens.map(x => ({ n: x.n, linha: x.linha, secao: x.secao, trecho: x.trecho, valor: x.valor, vig: x.vig, vigBruta: x.vigBruta }))), { arquivo: arq, mostrarIguais: I.mostrarIguais, off: I.off ? new Set(I.off) : undefined }); bilTarPrevPintar();   /* 2ª revisão: mantém o que a pessoa desmarcou */
   const l2 = $("btiLog"); if (l2) { l2.style.display = "block"; l2.textContent = log.textContent; }
 };
 
@@ -24942,8 +24963,8 @@ boot();
      de Operacional › Frota › Veículos; a dívida, das Obrigações (parcelamentos e financiamentos);
    · o imobilizado (bens e depreciação linear mês a mês) é o módulo novo Financeiro › Imobilizado ("Financeiro — Imobilizado");
    · o plano de investimentos é a lista nova "Diretoria — Plano de investimentos", com simulação de financiamento e payback.
-   Referências públicas: vida útil e residual gerenciais do ônibus pelo método do GEIPOT (10 anos, 15%) e do micro-ônibus pela
-   planilhas tarifárias (8 anos, 10%) — padrões editáveis bem a bem; taxas fiscais da IN RFB 1.700/2017 (Anexo III); reformas que aumentam a vida útil
+   Referências: vida útil e residual gerenciais de referência para ônibus (10 anos, 15% — parâmetros próximos aos das planilhas tarifárias do
+   tipo GEIPOT, que depreciam de forma não linear) e micro-ônibus (8 anos, 10%) — padrões editáveis bem a bem; taxas fiscais da IN RFB 1.700/2017 (Anexo III); reformas que aumentam a vida útil
    (CPC 27; RIR/2018, art. 354, § 1º);
    bens de até R$ 1.200 direto na despesa (Decreto-Lei 1.598/1977, art. 15, redação da Lei 12.973/2014).
    Nada de dado real no código: só regras, rótulos e referências.
@@ -24998,7 +25019,7 @@ function cpxCtx() {
   const linkados = new Set();
   (IMOB.itens || []).forEach(b => imobCapIds(b).forEach(id => linkados.add(id)));
   const obrById = new Map(((typeof OBR_STATE !== "undefined" && OBR_STATE.items) || []).map(o => [String(o._id), o]));
-  const forn = new Map(((typeof FORN_STATE !== "undefined" && FORN_STATE.items) || []).map(f => [String(f.Title || "").trim().toLowerCase(), f]));   /* v0.12.73 (revisão): busca do fornecedor sem varrer a lista a cada conta */
+  const forn = new Map(); ((typeof FORN_STATE !== "undefined" && FORN_STATE.items) || []).forEach(f => { const k = String(f.Title || "").trim().toLowerCase(); if (!forn.has(k)) forn.set(k, f); });   /* mesmo critério do fornByName: vale o primeiro */   /* v0.12.73 (revisão): busca do fornecedor sem varrer a lista a cada conta */
   return { linkados, obrById, forn, limiar: Number(((CPX.prem || CPX_PREM_PAD).limiar)) || 5000 };
 }
 /* natureza de uma conta: a gravada na conta vale; sem ela, a regra (na ordem) */
@@ -25246,7 +25267,11 @@ function cpxBase() {
   (CPX.cx || []).forEach(x => { if (x.Tipo !== "Entrada" || !x.Data) return; const m = ymd(x.Data).slice(0, 7), v = Number(x.Valor || 0); if (!v) return; const a = ac(m); a.rec += v; add(a.recOrig, x.Origem || "Outras receitas", v); });
   (CPX.pax || []).forEach(x => { if (!x.Data) return; ac(ymd(x.Data).slice(0, 7)).pax += Number(x.Pagantes || 0) + Number(x.Gratuidade || 0); });
   const bens = (IMOB.itens || []).map(b => ({ b, c: imobCalc(b) }));
-  bens.forEach(({ b, c }) => { if (!/^\d{4}-\d{2}$/.test(c.aq)) return; const a = ac(c.aq); a.capexImob += c.valor; if (CPX_FIN_TERC.includes(b.Financiamento) && !imobCapIds(b).length) a.capexImobFin += c.valor; });
+  const capPorId = new Map((CAP_STATE.items || []).map(it => [String(it._id), it]));
+  bens.forEach(({ b, c }) => { if (!/^\d{4}-\d{2}$/.test(c.aq)) return; const a = ac(c.aq); a.capexImob += c.valor;
+    if (CPX_FIN_TERC.includes(b.Financiamento)) {   /* 2ª revisão: parte própria = contas da CAP ligadas ao bem (entrada, parcelas pagas); o resto sai nas parcelas */
+      const proprio = imobCapIds(b).reduce((s, id) => { const it = capPorId.get(String(id)); return s + (it && !isIsenta(it) ? Number(it.Valor || 0) : 0); }, 0);
+      a.capexImobFin += Math.max(0, c.valor - proprio); } });
   return { A, N, ctx, bens, ac };
 }
 function cpxSoma(B, meses) {
@@ -25264,7 +25289,7 @@ function cpxSoma(B, meses) {
 }
 let CPX_MEMO = null;
 function cpxDados() {   /* v0.12.73 (revisão): refaz as contas só quando algum dado ou filtro muda (a busca da Classificação repinta a cada letra) */
-  const k = [CAP_STATE.items, CAP_STATE.rev || 0, IMOB.itens, INV.itens, CPX.cx, CPX.pax, CPX.veic, CPX.prem, typeof OBR_STATE !== "undefined" ? OBR_STATE.items : null, FORN_STATE.items, CPX.ref, CPX.horiz, CPX.regime, todayISO(), CPX.t, CPX.fontes];
+  const k = [CAP_STATE.items, CAP_STATE.rev || 0, IMOB.itens, INV.itens, CPX.cx, CPX.pax, CPX.veic, CPX.prem, typeof OBR_STATE !== "undefined" ? OBR_STATE.items : null, FORN_STATE.items, CPX.ref, CPX.horiz, CPX.regime, todayISO(), CPX.t, CPX.fontes, !!session.n1, vcAtivo()];   /* 2ª revisão: quem olha muda a dívida visível */
   if (CPX_MEMO && CPX_MEMO.k.every((x, i) => x === k[i])) return CPX_MEMO.d;
   const d = cpxDadosAgora(); CPX_MEMO = { k, d }; return d;
 }
@@ -25287,9 +25312,10 @@ function cpxDadosAgora() {
   imob.pctDepFrota = fb > 0 ? frotaBens.reduce((s, x) => s + x.c.acum(hoje), 0) / fb : null;
   const F = cpxFrota();
   /* dívida: saldo das obrigações parceladas das carteiras de dívida (só as que a pessoa vê) */
-  let divida = null;
+  let divida = null, divRestrita = false;
   const obrLida = CPX.fontes.obr && ["ok", "vazio"].includes(CPX.fontes.obr.st);
-  try { if (obrLida && typeof OBR_STATE !== "undefined" && !OBR_STATE.items.length) divida = 0; else if (obrLida && CAP_STATE.items) { const D = obrCalcular(); divida = 0; D.obrs.forEach(o => { if (!obrVisivel(o) || o.Status === "Encerrada" || o.Tipo !== "Parcelado" || !CPX_DIVIDA_CART.includes(obrCarteira(o))) return; const R = D.res.get(String(o._id)); if (R && R.saldo > 0) divida += R.saldo; }); } } catch (e) { divida = null; }
+  try { if (obrLida && typeof OBR_STATE !== "undefined" && !OBR_STATE.items.length) divida = 0; else if (obrLida && CAP_STATE.items) { const D = obrCalcular(); divida = 0; D.obrs.forEach(o => { if (o.Status === "Encerrada" || o.Tipo !== "Parcelado" || !CPX_DIVIDA_CART.includes(obrCarteira(o))) return; const R = D.res.get(String(o._id)); if (!(R && R.saldo > 0)) return; if (!obrVisivel(o)) { divRestrita = true; return; } divida += R.saldo; }); } } catch (e) { divida = null; }
+  if (divRestrita) divida = null;   /* 2ª revisão: parte da dívida está na Gestão de Dívidas (só administradores) — um número parcial enganaria */
   /* anualização pelos meses válidos dos últimos 12 */
   const k12 = v12.length ? 12 / v12.length : null;
   const ebitdaAno = k12 ? T12.ebitda * k12 : null, finAno = k12 ? T12.fin * k12 : null;
@@ -25303,7 +25329,7 @@ function cpxDadosAgora() {
     cobert: finAno != null && finAno > 0 && ebitdaAno != null ? ebitdaAno / finAno : null,
     folga: ebitdaAno != null ? ebitdaAno - (finAno || 0) - pl.caixa12 : null
   };
-  return { ref, meses, validos, ant, pares, comparavel: pares.length > 0, parcial: pares.length > 0 && pares.length < validos.length, m12, v12, T, Tc, P, T12, serie, B, imob, F, divida, ebitdaAno, finAno, H, pl, k12 };
+  return { ref, meses, validos, ant, pares, comparavel: pares.length > 0, parcial: pares.length > 0 && pares.length < validos.length, m12, v12, T, Tc, P, T12, serie, B, imob, F, divida, divRestrita, ebitdaAno, finAno, H, pl, k12 };
 }
 /* frota: idade e substituição pela idade-limite das premissas */
 function cpxFrota() {
@@ -25331,12 +25357,13 @@ function invSim(o) {
 }
 function invFluxo(o, hoje) {   /* entrada no mês previsto; parcelas a partir do mês seguinte. Com "hoje" (v0.12.73, revisão): o que já devia ter saído e não foi executado conta a partir deste mês */
   const s = invSim(o); let m0 = /^\d{4}-\d{2}$/.test(String(o.MesPrevisto || "")) ? o.MesPrevisto : null; if (!m0 || !s.valor) return [];
-  if (hoje && m0 < hoje && !["Executado", "Cancelado"].includes(o.Status)) m0 = hoje;
+  if (hoje && invDesloca(o, hoje, s)) m0 = hoje;   /* 2ª revisão: contratado com financiamento segue o cronograma (a entrada que passou não entra) */
   const out = [{ m: m0, ent: s.ent, parc: 0 }];
   for (let k = 1; k <= s.n; k++) out.push({ m: capCompAdd(m0, k), ent: 0, parc: s.parc });
   return out;
 }
 const invAtrasado = (o, hoje) => /^\d{4}-\d{2}$/.test(String(o.MesPrevisto || "")) && o.MesPrevisto < hoje && !["Executado", "Cancelado"].includes(o.Status);
+const invDesloca = (o, hoje, s) => invAtrasado(o, hoje) && !(o.Status === "Contratado" && (s || invSim(o)).fin);
 const INV_COMPROMETIDO = ["Aprovado", "Contratado"], INV_PIPELINE = ["Ideia", "Em análise"];
 function invPlanoResumo(hoje) {
   const its = INV.itens || [], fim12 = capCompAdd(hoje, 11), fim24 = capCompAdd(hoje, 23);
@@ -25348,7 +25375,7 @@ function invPlanoResumo(hoje) {
     r.ativos++; r.vAtivos += v;
     const comp = INV_COMPROMETIDO.includes(st); if (comp) { r.nComp++; r.vComp += v; } else { r.nPipe++; r.vPipe += v; }
     const s = invSim(o); if (s.payback != null) r.paybacks.push(s.payback);
-    if (invAtrasado(o, hoje)) r.nAtras++;
+    if (comp && invDesloca(o, hoje, s)) r.nAtras++;   /* 2ª revisão: só os que entram na saída de caixa (aprovados/contratados) */
     invFluxo(o, hoje).forEach(f => { if (f.m < hoje || f.m > fim24) return; const x = r.meses.find(z => z.m === f.m); if (!x) return;
       if (comp) { x.ent += f.ent; x.parc += f.parc; if (f.m <= fim12) r.caixa12 += f.ent + f.parc; } else { x.pipe += f.ent + f.parc; if (f.m <= fim12) r.caixaPipe12 += f.ent + f.parc; } });
   });
@@ -25409,14 +25436,16 @@ function cpxBarHtml(D, comRegime) {
 function paintCpx() {
   const body = $("cpxBody"); if (!body) return;
   const tabCls = document.querySelector("#cpxTabs .tab[data-k='classif']"); if (tabCls) tabCls.style.display = cpxVe("cap") ? "" : "none";
-  if (CPX.aba === "classif" && !cpxVe("cap")) CPX.aba = "painel";
+  const cpxPodeAba = k => (k !== "classif" || cpxVe("cap")) && (session.n1 || pagNivel("capex", k) !== "nenhum");
+  if (!cpxPodeAba(CPX.aba)) { const alt = PAG_DEF.capex.map(x => x.k).find(cpxPodeAba); if (alt) CPX.aba = alt; }   /* 3ª revisão: 1ª página que a pessoa pode abrir */
   if (!pagAba("capex", CPX.aba, v => { CPX.aba = v; })) { body.innerHTML = PAG_SEM; $("cpxBar").innerHTML = ""; $("cpxActions").innerHTML = ""; return; }
   if (CPX.aba === "classif" && !cpxVe("cap")) { body.innerHTML = PAG_SEM; $("cpxBar").innerHTML = ""; return; }
   document.querySelectorAll("#cpxTabs .tab").forEach(b => b.classList.toggle("on", b.dataset.k === CPX.aba));
   if (!CPX.carregado) { body.innerHTML = `<div class="cap-empty"><h3>Carregando…</h3></div>`; return; }
   const D = cpxDados();
   CPX._D = D;
-  $("cpxActions").innerHTML = `<button class="btn" onclick="cpxAtualizar()">Atualizar</button><button class="btn" onclick="cpxExcel()" title="Resultado mês a mês, OPEX por categoria, imobilizado e plano">Baixar planilha (.xlsx)</button><button class="btn${CPX.aba === "plano" && invEdita() && INV.list ? "" : " primary"}" onclick="cpxImprimir()">🖨 Relatório (A4)</button>`;
+  const vDoc = cpxPagVe("painel") || cpxPagVe("capex") || cpxPagVe("plano"), vXls = vDoc || cpxPagVe("opex");   /* 2ª revisão: botões só para quem vê alguma página do relatório / da planilha */
+  $("cpxActions").innerHTML = `<button class="btn" onclick="cpxAtualizar()">Atualizar</button>${vXls ? `<button class="btn" onclick="cpxExcel()" title="Resultado mês a mês, OPEX por categoria, imobilizado e plano (o que você pode ver)">Baixar planilha (.xlsx)</button>` : ""}${vDoc ? `<button class="btn${CPX.aba === "plano" && invEdita() && INV.list ? "" : " primary"}" onclick="cpxImprimir()">🖨 Relatório (A4)</button>` : ""}`;
   $("cpxBar").innerHTML = ["painel", "opex", "capex", "classif"].includes(CPX.aba) ? cpxBarHtml(D, true) : "";
   const fn = { painel: cpxPainel, opex: cpxOpex, capex: cpxCapexAba, plano: cpxPlano, classif: cpxClassif, metodo: cpxMetodo }[CPX.aba] || cpxPainel;
   body.innerHTML = fn(D);
@@ -25433,7 +25462,7 @@ function cpxAvisos(D) {
   const semRec = D.validos.filter(m => !(D.B.A.get(m) && D.B.A.get(m).rec));
   if (!D.validos.length) a.push(`Nenhum mês do período tem dados: a CAP passou a valer no ERP em ${compLabel(CONFIG.capInicio || "")}. Escolha outra referência.`);
   else if (semRec.length) a.push(`Receita: sem entradas no Fluxo de Caixa em ${semRec.map(cpxMesCurto).join(", ")} — margem e EBITDA desses meses ficam incompletos.`);
-  if (D.T.nRev) a.push(`${D.T.nRev} conta(s) do período foram classificadas pela regra e pedem conferência (aba Classificação das contas).`);
+  if (D.T.nRev) a.push(cpxPagVe("classif") && cpxVe("cap") ? `${D.T.nRev} conta(s) do período foram classificadas pela regra e pedem conferência (aba Classificação das contas).` : `${D.T.nRev} conta(s) do período foram classificadas pela regra e pedem conferência por quem cuida da CAP.`);
   if (F.imob && F.imob.st === "semlista") a.push(`A lista "Financeiro — Imobilizado" ainda não existe: depreciação e CAPEX dos bens começam quando ela for criada (Sistema › Configuração) e os bens forem cadastrados em Financeiro › Imobilizado.`);
   else if (F.imob && F.imob.st === "vazio") a.push(`Nenhum bem em Financeiro › Imobilizado: depreciação, valor contábil e reinvestimento aparecem quando os bens forem cadastrados.`);
   if (F.cap && F.cap.st === "ok" && CAP_STATE.cols && !CAP_STATE.cols.has("Natureza")) a.push(`A coluna "Natureza do gasto" ainda não existe na CAP: tudo segue a regra automática até um administrador rodar Sistema › Configuração › Contas a Pagar.`);
@@ -25460,7 +25489,7 @@ function cpxPainel(D) {
     ${ind("reinv", "Reinvestimento (12 meses)", cpxX(H.reinv), CPX_REF.reinv.txt, cpxSem(H.reinv, CPX_REF.reinv), "CAPEX ÷ depreciação: acima de 1, a empresa repõe os bens no ritmo do desgaste", "capex")}
     ${ind("idade", "Idade média da frota", cpxAnos(H.idade), CPX_REF.idade.txt, cpxSem(H.idade, CPX_REF.idade), `${D.F.V.length} veículo(s) ativo(s) em Frota › Veículos`, "capex")}
     ${ind("depr", "Imobilizado depreciado", cpxPct(H.depFrota, 0), CPX_REF.depr.txt, cpxSem(H.depFrota, CPX_REF.depr), D.imob.pctDepFrota != null ? "frota: quanto da vida útil já foi consumida" : "bens em uso: quanto da vida útil já foi consumida", "capex")}
-    ${ind("div", "Dívida / EBITDA", H.divEbitda === Infinity ? "EBITDA ≤ 0" : cpxX(H.divEbitda), CPX_REF.div.txt, cpxSem(H.divEbitda, CPX_REF.div), D.divida != null ? `saldo de parcelamentos e financiamentos: ${cpxK(D.divida)}` : "precisa de acesso às Obrigações", "plano")}
+    ${ind("div", "Dívida / EBITDA", H.divEbitda === Infinity ? "EBITDA ≤ 0" : cpxX(H.divEbitda), CPX_REF.div.txt, cpxSem(H.divEbitda, CPX_REF.div), D.divRestrita ? "inclui obrigações da Gestão de Dívidas, restrita aos administradores" : D.divida != null ? `saldo de parcelamentos e financiamentos: ${cpxK(D.divida)}` : "precisa de acesso às Obrigações", "plano")}
     ${ind("cob", "Cobertura da dívida", cpxX(H.cobert), CPX_REF.cob.txt, cpxSem(H.cobert, CPX_REF.cob), "EBITDA ÷ juros e parcelas de dívidas (12 meses)", "opex")}
     ${ind("folga", "Folga para investir (12 meses)", H.folga == null ? "—" : cpxK(H.folga), CPX_REF.folga.txt, cpxSem(H.folga, CPX_REF.folga), "EBITDA − dívidas − plano aprovado/contratado, projeção pela média dos últimos 12 meses", "plano")}
     ${ind("pax", "OPEX por passageiro", H.opexPax == null ? "—" : fmtBRL(H.opexPax), "acompanhar a tendência", H.opexPax == null ? "nd" : H.recPax != null && H.recPax > 0 ? (H.opexPax <= H.recPax ? "ok" : "cr") : "nd", H.recPax != null ? `receita por passageiro: ${fmtBRL(H.recPax)}` : "Estatística de Passageiros", "opex")}
@@ -25477,11 +25506,11 @@ function cpxPainel(D) {
 function cpxDreHtml(D) {
   const T = D.T, P = D.P, C = D.Tc, pv = D.comparavel, nM = Math.max(1, D.validos.length);
   const pr = v => T.rec > 0 ? cpxPct(v / T.rec) : "—";
-  const lin = (cls, lbl, f, menor, tip) => { const v = f(T), vp = f(P), vc = f(C); return `<tr class="${cls}"${tip ? ` title="${esc(tip)}"` : ""}><td>${lbl}</td><td class="r">${esc(fmtBRL(v))}</td><td class="r mut">${pr(v)}</td><td class="r mut">${esc(fmtBRL(v / nM))}</td><td class="r mut">${pv ? esc(fmtBRL(vp)) : "—"}</td><td class="r">${pv ? cpxDelta(vc, vp, menor) : ""}</td></tr>`; };   /* v0.12.73 (revisão): sinal da variação sem Math.abs */
+  const lin = (cls, lbl, f, menor, tip) => { const v = f(T), vp = f(P), vc = f(C); return `<tr class="${cls}"${tip ? ` title="${esc(tip)}"` : ""}><td>${lbl}</td><td class="r">${esc(fmtBRL(v))}</td><td class="r mut">${pr(v)}</td><td class="r mut">${esc(fmtBRL(v / nM))}</td><td class="r mut">${pv ? esc(fmtBRL(vp)) : "—"}</td><td class="r"${pv && D.parcial ? ` title="${esc(`Nos mesmos ${D.pares.length} meses: ${fmtBRL(vc)} agora × ${fmtBRL(vp)} antes`)}"` : ""}>${pv ? cpxDelta(vc, vp, menor) : ""}</td></tr>`; };   /* v0.12.73 (revisão): sinal da variação sem Math.abs */
   const grupos = OPEX_GRUPOS.filter(g => T.grp[g.k] || P.grp[g.k]).map(g => lin("sub", `(−) ${esc(g.n)}`, X => X.grp[g.k] || 0, true)).join("");
   const comp = !pv ? "sem dados no período anterior para comparar" : `comparação com ${CPX.horiz === "ano" ? "os mesmos meses do ano anterior" : "o período imediatamente anterior"}${D.parcial ? ` — só nos ${D.pares.length} ${D.pares.length === 1 ? "mês" : "meses"} com dados nos dois períodos` : ""}`;
   return `<div class="cap-card"><div class="cap-card-h"><h3>Resultado gerencial do período</h3><span class="cap-card-s">${esc(D.validos.length ? `${compLabel(D.validos[0])} a ${compLabel(D.validos[D.validos.length - 1])}` : "sem meses com dados")} · ${esc(comp)}</span></div>
-    <div class="table-wrap"><table class="cap-table cpx-dre" id="cpxDreT"><thead><tr><th>Linha</th><th class="r">Período</th><th class="r">% da receita</th><th class="r">Média mensal</th><th class="r">Período anterior</th><th class="r">Variação</th></tr></thead><tbody>
+    <div class="table-wrap"><table class="cap-table cpx-dre" id="cpxDreT"><thead><tr><th>Linha</th><th class="r">Período</th><th class="r">% da receita</th><th class="r">Média mensal</th><th class="r">${D.parcial ? `Anterior (${D.pares.length} ${D.pares.length === 1 ? "mês" : "meses"})` : "Período anterior"}</th><th class="r"${D.parcial ? ` title="Compara os mesmos ${D.pares.length} meses nos dois períodos"` : ""}>Variação</th></tr></thead><tbody>
       ${lin("grp", "Receita operacional (entradas do Fluxo de Caixa)", X => X.rec, false)}
       ${lin("grp", "(−) OPEX", X => X.opex, true)}${grupos}
       ${lin("tot", "= EBITDA operacional", X => X.ebitda, false, "resultado da operação antes da depreciação, dos juros e das dívidas")}
@@ -25646,7 +25675,7 @@ function cpxPlano(D) {
   const cont = k => (INV.itens || []).filter(o => k === "ativos" ? !["Executado", "Cancelado"].includes(o.Status) : k === "exec" ? o.Status === "Executado" : k === "canc" ? o.Status === "Cancelado" : true).length;
   const chips = `<div class="cpx-chips">${[["ativos", "Ativos"], ["exec", "Executados"], ["canc", "Cancelados"], ["todos", "Todos"]].map(([k, l]) => `<button class="chip ${filt === k ? "on" : ""}" onclick="cpxPlFiltro('${k}')">${l} <small>${cont(k)}</small></button>`).join("")}<input type="search" id="cpxPlBusca" placeholder="Buscar investimento, área, veículo…" value="${esc(CPX.plQ)}"></div>`;
   const stCls = { "Ideia": "st-aguardando", "Em análise": "st-pendente", "Aprovado": "st-aprovado", "Contratado": "st-pago", "Executado": "st-pago", "Cancelado": "st-vencido" };
-  const rows = its.map(o => { const s = invSim(o); return `<tr onclick="invAbrir(${jsArg(o._id)})" title="Abrir"><td><div class="desc">${esc(o.Title || "—")}</div><div class="sup">${esc([o.Area, o.Responsavel, o.Veiculo ? "veículo " + o.Veiculo : ""].filter(Boolean).join(" · "))}</div></td><td>${esc(o.Categoria || "—")}<div class="sup">${esc(o.TipoInvest || "")}</div></td><td>${o.Prioridade ? `<span class="cpx-tag ${o.Prioridade === "Alta" ? "cr" : o.Prioridade === "Média" ? "at" : ""}">${esc(o.Prioridade)}</span>` : ""}</td><td class="nw">${/^\d{4}-\d{2}$/.test(o.MesPrevisto || "") ? esc(compLabel(o.MesPrevisto)) : "—"}${invAtrasado(o, hoje) ? ` <span class="cpx-tag cr" title="O mês previsto já passou e o investimento não foi executado: a saída de caixa conta a partir deste mês">atrasado</span>` : ""}</td><td class="r b">${esc(fmtBRL(s.valor))}</td><td>${esc(s.forma)}${s.fin ? `<div class="sup">${s.n}× ${esc(fmtBRL(s.parc))}</div>` : ""}</td><td class="r">${s.payback != null ? `${(s.payback).toFixed(0)} meses` : "—"}</td><td><span class="pill ${stCls[o.Status] || "st-aguardando"}"><i></i>${esc(o.Status || "Ideia")}</span></td></tr>`; }).join("");
+  const rows = its.map(o => { const s = invSim(o); return `<tr onclick="invAbrir(${jsArg(o._id)})" title="Abrir"><td><div class="desc">${esc(o.Title || "—")}</div><div class="sup">${esc([o.Area, o.Responsavel, o.Veiculo ? "veículo " + o.Veiculo : ""].filter(Boolean).join(" · "))}</div></td><td>${esc(o.Categoria || "—")}<div class="sup">${esc(o.TipoInvest || "")}</div></td><td>${o.Prioridade ? `<span class="cpx-tag ${o.Prioridade === "Alta" ? "cr" : o.Prioridade === "Média" ? "at" : ""}">${esc(o.Prioridade)}</span>` : ""}</td><td class="nw">${/^\d{4}-\d{2}$/.test(o.MesPrevisto || "") ? esc(compLabel(o.MesPrevisto)) : "—"}${invAtrasado(o, hoje) ? ` <span class="cpx-tag cr" title="${invDesloca(o, hoje, s) ? "O mês previsto já passou e o investimento não foi executado: a saída de caixa conta a partir deste mês" : "Contratado com financiamento: as parcelas seguem o cronograma (a entrada que já passou não entra na projeção)"}">atrasado</span>` : ""}</td><td class="r b">${esc(fmtBRL(s.valor))}</td><td>${esc(s.forma)}${s.fin ? `<div class="sup">${s.n}× ${esc(fmtBRL(s.parc))}</div>` : ""}</td><td class="r">${s.payback != null ? `${(s.payback).toFixed(0)} meses` : "—"}</td><td><span class="pill ${stCls[o.Status] || "st-aguardando"}"><i></i>${esc(o.Status || "Ideia")}</span></td></tr>`; }).join("");
   const tab = `<div class="cap-card"><div class="cap-card-h"><h3>Investimentos</h3><span class="cap-card-s">clique para abrir · payback = valor ÷ economia ou receita a mais por mês</span></div>${chips}
     ${rows ? `<div class="table-wrap"><table class="cap-table" id="cpxPlanoT"><thead><tr><th>Investimento</th><th>Categoria / tipo</th><th>Prioridade</th><th>Mês previsto</th><th class="r">Valor</th><th>Pagamento</th><th class="r">Payback</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="cap-muted">${(INV.itens || []).length ? "Nada neste filtro." : ed ? "Nenhum investimento no plano ainda. Use \"Novo investimento\" ou as sugestões da frota abaixo." : "Nenhum investimento no plano ainda."}</p>`}</div>`;
   const sug = D.F.V.filter(v => v.troca != null && v.troca <= D.F.ano + 2 && !v.plano);
@@ -25755,7 +25784,7 @@ function cpxClassif(D) {
   const natCel = (it, n) => {
     const pill = `<span class="cpx-nat ${CPX_NAT_INFO[n.nat].cls}">${esc(n.nat)}</span>${n.auto ? `<small class="cpx-auto">automática</small>` : ""}`;
     if (!ed) return pill;
-    return `<select class="cpx-nat-sel ${CPX_NAT_INFO[n.nat].cls}" onchange="cpxNatSalvar(${jsArg(it._id)}, this.value, this)" onclick="event.stopPropagation()" title="Natureza do gasto"><option value="" ${n.auto ? "selected" : ""}>Automática (${esc(cpxNat(Object.assign({}, it, { Natureza: "" }), D.B.ctx).nat)})</option>${CPX_NAT.map(x => `<option value="${esc(x)}" ${!n.auto && n.nat === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>`;
+    return `<select class="cpx-nat-sel ${CPX_NAT_INFO[n.nat].cls}" onchange="cpxNatSalvar(${jsArg(it._id)}, this.value, this)" onclick="event.stopPropagation()" title="Natureza do gasto"><option value="" ${CPX_NAT.includes(String(it.Natureza || "").trim()) ? "" : "selected"}>Automática (${esc(cpxNat(Object.assign({}, it, { Natureza: "" }), D.B.ctx).nat)})</option>${CPX_NAT.map(x => `<option value="${esc(x)}" ${String(it.Natureza || "").trim() === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>`;   /* 2ª revisão: a lista mostra o que está gravado (dá para voltar a Automática) */
   };
   const rows = mostra.map(it => { const n = N.get(String(it._id)) || cpxNat(it, D.B.ctx); return `<tr class="${n.auto && n.revisar ? "cpx-rev" : ""}" ondblclick="cpxContaAbrir(${jsArg(it._id)})" title="Duplo clique: abrir a conta">
     <td class="nw">${esc(cpxMesCurto(cpxMesConta(it, CPX.regime)))}</td>
@@ -25765,8 +25794,8 @@ function cpxClassif(D) {
     <td class="nw">${natCel(it, n)}</td>
     <td class="cpx-mot l">${esc(n.motivo)}${n.auto && n.revisar ? `<div class="cpx-rev-t">⚠ ${esc(n.revisar)}</div>` : ""}</td></tr>`; }).join("");
   const regra = `<details class="cpx-regra"><summary>Como a regra automática classifica</summary><ol>
-    <li>Natureza gravada na conta (aqui ou no formulário da conta na CAP) sempre vale.</li>
-    <li>Conta ligada a um bem do Imobilizado → <b>CAPEX</b>.</li>
+    <li>Conta ligada a um bem do Imobilizado → <b>CAPEX</b>: o valor entra pelo bem, mesmo que a conta tenha outra natureza gravada (o ERP avisa).</li>
+    <li>Natureza gravada na conta (aqui ou no formulário da conta na CAP) vale para as demais.</li>
     <li>Tipo de lançamento "Transferência entre contas" → <b>Fora do resultado</b>; "Parcela de dívida" → <b>Financeiro</b>.</li>
     <li>Categoria Financeiras, ou Tributárias › Parcelamentos/REFIS → <b>Financeiro</b>; categoria Consórcio → <b>CAPEX</b>.</li>
     <li>Fornecedor classificado como "Dívidas / Parcelamento" → <b>Financeiro</b>; "Investimentos / Reservas" → <b>Fora do resultado</b> (a conferir).</li>
@@ -25806,7 +25835,7 @@ function cpxMetodo(D) {
     <div class="cap-card"><div class="cap-card-h"><h3>O que o painel mostra</h3></div>
       <p><b>OPEX</b> (custeio) é o que a empresa gasta para rodar a operação e a administração todo mês: diesel, manutenção, pneus, pessoal, seguros, tributos, aluguéis e serviços. <b>CAPEX</b> (investimento) é a compra de bens que duram mais de um ano — ônibus, equipamentos, obras na garagem, sistemas — e as reformas que aumentam a vida útil de um bem. O CAPEX não entra no resultado do mês: vira <b>imobilizado</b> e é lançado aos poucos como <b>depreciação</b>, ao longo da vida útil.</p>
       <p>O <b>EBITDA operacional</b> (receita − OPEX) mostra se a operação se paga; a <b>depreciação</b> mostra o custo do desgaste dos bens; os <b>juros e dívidas</b> mostram o peso do endividamento. Comparar o CAPEX com a depreciação (<b>reinvestimento</b>) diz se a empresa está renovando os bens ou deixando a frota envelhecer.</p>
-      <p class="cpx-nota">IRPJ e CSLL pagos por DARF entram no OPEX, em Tributos e taxas; no EBITDA contábil eles ficam de fora — se quiser o EBITDA nesse padrão, marque essas contas como "Fora do resultado". Bens financiados (financiamento, leasing ou consórcio, sem contas da CAP ligadas) entram inteiros no CAPEX no mês da aquisição; na geração de caixa, o ERP desconta só a parte paga com recursos próprios — o restante sai nas parcelas, em Juros e dívidas.</p>
+      <p class="cpx-nota">IRPJ e CSLL pagos por DARF entram no OPEX, em Tributos e taxas; no EBITDA contábil eles ficam de fora — se quiser o EBITDA nesse padrão, marque essas contas como "Fora do resultado". Bens financiados (forma de pagamento financiamento, leasing ou consórcio) entram inteiros no CAPEX no mês da aquisição; na geração de caixa, o ERP desconta só a parte própria — as contas da CAP ligadas ao bem (entrada, parcelas pagas antes da entrega) — e o restante sai nas parcelas, que entram em Juros e dívidas (natureza Financeiro). Parcela de consórcio paga depois da entrega: prefira marcar como Financeiro (fica no mês em que é paga); juntar ao bem também evita contar duas vezes, mas leva o valor para o mês da aquisição — nunca as duas coisas.</p>
       <p class="cpx-nota">Regimes: <b>competência</b> soma cada conta no mês a que ela se refere (coluna Competência da CAP; vazia = mês do vencimento); <b>caixa</b> soma só as contas pagas, no mês do pagamento. Os bens do Imobilizado entram no mês da aquisição nos dois regimes. Meses antes de ${esc(compLabel(CONFIG.capInicio || ""))} (início da CAP no ERP) ficam fora das contas.</p></div>
     <div class="cap-card"><div class="cap-card-h"><h3>Grupos de OPEX</h3><span class="cap-card-s">estrutura de custos usada nas planilhas tarifárias de ônibus: variáveis (combustível, rodagem, peças), pessoal, fixos e administrativos</span></div>
       <div class="table-wrap"><table class="cap-table"><thead><tr><th>Grupo</th><th class="l">Categorias da CAP</th></tr></thead><tbody>${grupos}</tbody></table></div></div>
@@ -25880,7 +25909,8 @@ function cpxDoc() {
   if (grp.length) frases.push(`Os maiores grupos de custo foram ${grp.slice(0, 3).map(x => `${x.g.n.toLowerCase()} (${cpxPct(T.opex ? x.v / T.opex : null, 0)})`).join(", ")}.`);
   frases.push(`Os investimentos (CAPEX) somaram <b>${br(T.capex)}</b> e a depreciação <b>${br(T.dep)}</b>${H.reinv != null ? `; nos últimos 12 meses a empresa investiu ${cpxX(H.reinv)} o que depreciou` : ""}.`);
   if (H.idade != null) frases.push(`A frota tem ${F.V.length} veículo(s) ativo(s), com idade média de ${cpxAnos(H.idade)}${F.acima ? ` e ${F.acima} acima da idade-limite de ${F.lim} anos` : ""}.`);
-  if (R.ativos) frases.push(`O plano tem ${R.ativos} investimento(s) ativo(s) (${br(R.vAtivos)}), dos quais ${br(R.vComp)} aprovados ou contratados; a saída de caixa prevista para 12 meses é de ${br(R.caixa12)}${H.folga != null ? ` e a folga projetada é de ${br(H.folga)}` : ""}.`);
+  if (R.ativos && cpxPagVe("plano")) frases.push(`O plano tem ${R.ativos} investimento(s) ativo(s) (${br(R.vAtivos)}), dos quais ${br(R.vComp)} aprovados ou contratados; a saída de caixa prevista para 12 meses é de ${br(R.caixa12)}${H.folga != null ? ` e a folga projetada é de ${br(H.folga)}` : ""}.`);
+  else if (H.folga != null) frases.push(`A folga projetada para investir nos próximos 12 meses é de ${br(H.folga)}.`);   /* 2ª revisão: sem a página Plano, sem o detalhe do plano */
   const sint = `<div class="sint"><b>Situação: ${nCr ? `${nCr} indicador(es) crítico(s)` : nAt ? `${nAt} ponto(s) de atenção` : "indicadores adequados"}.</b> ${frases.join(" ")}</div>`;
   const kpis = printKpis([["Receita", cpxK(T.rec), "entradas do Fluxo de Caixa"], ["OPEX", cpxK(T.opex), `${pr(T.opex)} da receita`], ["EBITDA operacional", cpxK(T.ebitda), `margem ${cpxPct(T.margem)}`, T.ebitda < 0 ? "neg" : "pos"], ["CAPEX", cpxK(T.capex), "bens e contas CAPEX"], ["Depreciação", cpxK(T.dep), `${I.n} bem(ns) em uso`], ["Juros e dívidas", cpxK(T.fin), "natureza Financeiro"]]);
   const lin = (cls, l, v) => `<tr class="${cls}"><td>${l}</td><td class="r">${br(v)}</td><td class="r">${pr(v)}</td><td class="r">${br(v / Math.max(1, D.validos.length))}</td></tr>`;
@@ -25894,7 +25924,7 @@ function cpxDoc() {
     ${ind("Reinvestimento (12 meses)", cpxX(H.reinv), "≥ 1,0×", sem.reinv, `CAPEX ${cpxK(D.T12.capex)} ÷ depreciação ${cpxK(D.T12.dep)}`)}
     ${ind("Idade média da frota", cpxAnos(H.idade), "≤ 8 anos", sem.idade, `${F.V.length} veículo(s); ${F.acima} acima de ${F.lim} anos`)}
     ${ind("Imobilizado depreciado", cpxPct(H.depFrota, 0), "≤ 50%", sem.depr, "vida útil já consumida")}
-    ${ind("Dívida / EBITDA", H.divEbitda === Infinity ? "EBITDA ≤ 0" : cpxX(H.divEbitda), "≤ 2,5×", sem.div, D.divida != null ? `saldo de parcelamentos e financiamentos ${cpxK(D.divida)}` : "sem acesso às Obrigações")}
+    ${ind("Dívida / EBITDA", H.divEbitda === Infinity ? "EBITDA ≤ 0" : cpxX(H.divEbitda), "≤ 2,5×", sem.div, D.divRestrita ? "inclui a Gestão de Dívidas (restrita aos administradores)" : D.divida != null ? `saldo de parcelamentos e financiamentos ${cpxK(D.divida)}` : "sem acesso às Obrigações")}
     ${ind("Cobertura da dívida", cpxX(H.cobert), "≥ 1,5×", sem.cob, "EBITDA ÷ juros e parcelas (12 meses)")}
     ${ind("Folga para investir (12 meses)", H.folga == null ? "—" : cpxK(H.folga), "≥ 0", sem.folga, "EBITDA − dívidas − plano aprovado/contratado")}
     ${ind("OPEX por passageiro", H.opexPax == null ? "—" : fmtBRL(H.opexPax), "tendência", H.opexPax == null ? "nd" : H.recPax && H.opexPax <= H.recPax ? "ok" : H.recPax ? "cr" : "nd", H.recPax != null ? `receita por passageiro ${fmtBRL(H.recPax)}` : "sem passageiros no período")}
@@ -25933,21 +25963,23 @@ window.cpxExcel = async () => {
     const cab = (ws, cols) => { const r = ws.addRow(cols); r.eachCell(c => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: nav } }; c.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; }); r.height = 30; return r; };
     const moeda = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
     const tit = (ws, t, s) => { ws.addRow([t]).font = { bold: true, size: 14, color: { argb: nav } }; ws.addRow([s]).font = { italic: true, color: { argb: "FF5B6472" } }; ws.addRow([]); };
-    const vP = cpxPagVe("painel") || cpxPagVe("opex"), vC = cpxPagVe("capex"), vL = cpxPagVe("plano");   /* v0.12.73 (revisão): cada aba só sai para quem vê a página */
-    if (!vP && !vC && !vL) { toast("Sem acesso às páginas da planilha."); return; }
-    /* 1. resultado mês a mês */
-    if (vP) {
+    const vR = cpxPagVe("painel"), vO = cpxPagVe("opex"), vC = cpxPagVe("capex"), vL = cpxPagVe("plano");   /* v0.12.73 (revisão): cada aba só sai para quem vê a página */
+    if (!vR && !vO && !vC && !vL) { toast("Sem acesso às páginas da planilha."); return; }
+    /* 1. resultado mês a mês (página Painel) */
+    if (vR) {
     const w1 = wb.addWorksheet("Resultado"); tit(w1, "Resultado gerencial — CAPEX / OPEX", `12 meses até ${compLabel(D.ref)} · regime de ${CPX.regime === "caixa" ? "caixa" : "competência"} · meses sem dados ficam vazios · ERP NMB ${CONFIG.version}`);
     cab(w1, ["Linha"].concat(meses.map(cpxMesCurto), ["Total"]));
     const linha = (rot, f, negrito) => { const vs = D.serie.map(s => s.ok ? f(s.t) : null), tot = vs.reduce((a, v) => a + (v || 0), 0); const r = w1.addRow([rot].concat(vs, [tot])); r.eachCell((c, i) => { if (i > 1) c.numFmt = moeda; }); if (negrito) r.font = { bold: true }; return r; };
     linha("Receita operacional", t => t.rec, true); linha("(−) OPEX", t => t.opex, true);
     OPEX_GRUPOS.forEach(g => { if (D.serie.some(s => s.ok && s.t.grp[g.k])) linha("    " + g.n, t => t.grp[g.k] || 0); });
     linha("= EBITDA operacional", t => t.ebitda, true); linha("(−) Depreciação", t => t.dep); linha("= Resultado operacional (EBIT)", t => t.ebit, true);
-    linha("(−) Juros e dívidas", t => t.fin); linha("= Resultado após juros e dívidas", t => t.res, true); linha("Investimentos (CAPEX)", t => t.capex, true); linha("= Geração de caixa após investimentos e dívidas", t => t.livre, true);
+    linha("(−) Juros e dívidas", t => t.fin); linha("= Resultado após juros e dívidas", t => t.res, true); linha("Investimentos (CAPEX)", t => t.capex, true); if (D.serie.some(x => x.ok && x.t.capexImobFin)) linha("    dos quais bens financiados (o caixa sai nas parcelas)", t => t.capexImobFin); linha("= Geração de caixa após investimentos e dívidas", t => t.livre, true);
     linha("Passageiros", t => t.pax).eachCell((c, i) => { if (i > 1) c.numFmt = "#,##0"; });
     w1.getColumn(1).width = 46; for (let i = 2; i <= meses.length + 2; i++) w1.getColumn(i).width = 15;
     w1.views = [{ state: "frozen", xSplit: 1, ySplit: 4 }];
-    /* 2. OPEX por categoria */
+    }
+    /* 2. OPEX por categoria (página OPEX) */
+    if (vO) {
     const w2 = wb.addWorksheet("OPEX por categoria"); tit(w2, "OPEX por grupo e categoria", `12 meses até ${compLabel(D.ref)}`);
     cab(w2, ["Grupo", "Categoria"].concat(meses.map(cpxMesCurto), ["Total"]));
     const tc = {}; D.serie.forEach((s, i) => { if (!s.ok) return; const a = D.B.A.get(s.m); if (!a) return; Object.entries(a.gc || {}).forEach(([k, v]) => { (tc[k] = tc[k] || Array(meses.length).fill(0))[i] += v; }); });
@@ -26098,7 +26130,7 @@ function imobForm(b, pre) {
   const ed = imobEdita() && !vcAtivo(), dis = ed ? "" : "disabled", cat = imobCat(v.Categoria);
   const sel = (id, arr, val, vazio) => `<select id="${id}" ${dis}>${vazio ? `<option value=""></option>` : ""}${arr.map(a => `<option ${a === val ? "selected" : ""}>${esc(a)}</option>`).join("")}${val && !arr.includes(val) ? `<option selected>${esc(val)}</option>` : ""}</select>`;
   const prefs = (CPX.veic || []).map(z => String(z.Title || "").trim()).filter(Boolean);
-  const caps = imobCapIds(v), capTxt = caps.length ? caps.map(id => { const it = (CAP_STATE.items || []).find(x => String(x._id) === id); return it ? `${esc(it.Fornecedor || "")} · ${esc(it.Title || "")} · ${esc(fmtBRL(it.Valor))}` : `conta nº ${esc(id)}`; }).join("<br>") : "";
+  const caps = imobCapIds(v), capTxt = caps.length && !cpxVe("cap") ? `${caps.length} conta(s) da CAP ligada(s) a este bem (o detalhe exige acesso à CAP)` : caps.length ? caps.map(id => { const it = (CAP_STATE.items || []).find(x => String(x._id) === id); return it ? `${esc(it.Fornecedor || "")} · ${esc(it.Title || "")} · ${esc(fmtBRL(it.Valor))}` : `conta nº ${esc(id)}`; }).join("<br>") : "";
   return `<div class="modal-head"><h2>${b ? (ed ? "Editar bem" : "Bem") : "Novo bem"}</h2><button class="x" onclick="closeModal()">×</button></div>
   <div class="modal-body">${ed ? "" : `<div class="ro-aviso">Seu acesso ao Imobilizado é <b>só de leitura</b>.</div>`}<div class="form-grid">
     <div class="field full form-sec">Identificação</div>
@@ -26226,11 +26258,20 @@ window.imobImprimir = () => {
 }
 /* ---- v0.12.73 · revisão independente: acabamentos das versões 0.12.71 e 0.12.72 ---- */
 /* Escala Garagem: o que abre com duplo clique também abre com Enter (teclado) e com um toque (celular) */
-{ const pg = paintGar; paintGar = function () { const r = pg.apply(this, arguments); document.querySelectorAll("#garBody [ondblclick]").forEach(el => { if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0"); }); return r; }; }
-document.addEventListener("keydown", ev => { if (ev.key !== "Enter") return; const el = ev.target; if (!el || !el.matches || !el.matches("#garBody [ondblclick]")) return; ev.preventDefault(); el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true })); });
-document.addEventListener("click", ev => { const el = ev.target && ev.target.closest ? ev.target.closest("#garBody [ondblclick]") : null; if (!el || !window.matchMedia || !matchMedia("(hover: none) and (pointer: coarse)").matches) return; el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true })); });
+const garToque = () => !!(window.matchMedia && matchMedia("(hover: none) and (pointer: coarse)").matches);
+let GAR_TOQUE_EM = 0;
+{ const pg = paintGar; paintGar = function () { const r = pg.apply(this, arguments); const toque = garToque();
+    document.querySelectorAll("#garBody [ondblclick]").forEach(el => { if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0"); if (toque && el.title) el.title = el.title.replace(/^Duplo clique/, "Toque"); });
+    if (toque) document.querySelectorAll("#garBody .cap-card-s").forEach(el => { if (/duplo clique/.test(el.textContent)) el.textContent = el.textContent.replace(/duplo clique/g, "toque"); });   /* 2ª revisão: no celular o texto fala em toque */
+    return r; }; }
+const garFocoJanela = () => setTimeout(() => { const f = document.querySelector("#modalBack.on #modal .modal-body :is(input:not([type=hidden]), select, textarea):not([disabled])") || document.querySelector("#modalBack.on #mSave") || document.querySelector("#modalBack.on #modal .modal-foot button"); if (f) f.focus(); }, 0);   /* 1º campo da janela (não o ×) */
+document.addEventListener("keydown", ev => { if (ev.key !== "Enter") return; const el = ev.target; if (!el || !el.matches || !el.matches("#garBody [ondblclick]")) return; if ($("modalBack").classList.contains("on")) return;   /* com a janela aberta, Enter não reabre */
+  ev.preventDefault(); el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true })); garFocoJanela(); });
+document.addEventListener("click", ev => { const el = ev.target && ev.target.closest ? ev.target.closest("#garBody [ondblclick]") : null; if (!el || !garToque() || $("modalBack").classList.contains("on")) return; GAR_TOQUE_EM = Date.now(); el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true })); });
+/* o 2º toque de um "duplo toque" cai no fundo da janela recém-aberta: não fecha a janela */
+document.addEventListener("click", ev => { if (ev.target === $("modalBack") && Date.now() - GAR_TOQUE_EM < 650) { ev.stopPropagation(); ev.preventDefault(); } }, true);
 /* espelho do Almoxarifado: sem Importar e Duplicadas (são ferramentas da CAP inteira) */
-{ const pc = paintCAP; paintCAP = function () { const r = pc.apply(this, arguments); if (CAP_STATE.espelhoCC) { const a = $("capActions"); if (a) a.querySelectorAll("button").forEach(b => { if (/^(Importar|Duplicadas)\b/.test(b.textContent.trim())) b.remove(); }); } return r; }; window.paintCAP = paintCAP; }
+{ const pc = paintCAP; paintCAP = function () { const r = pc.apply(this, arguments); if (CAP_STATE.espelhoCC) { const a = $("capActions"); if (a) a.querySelectorAll("button").forEach(b => { if (/^(Importar|Duplicadas)\b/.test(b.textContent.trim())) b.remove(); }); const bd = $("capBody"); if (bd) { bd.querySelectorAll("button[onclick^='capImport'], button[onclick^='capDedup']").forEach(b => b.remove()); bd.querySelectorAll(".cap-empty p").forEach(el => { el.textContent = el.textContent.replace("Você pode cadastrar uma conta por vez ou importar várias de uma vez colando de uma planilha.", "Cadastre aqui as contas do centro de custo Operacional (a importação em lote fica em Financeiro › Contas a Pagar)."); }); } } return r; }; window.paintCAP = paintCAP; }
 /* Favoritos: Atualizar tenta de novo ler as obrigações (depois de uma falha) */
 { const rc = renderCAP; renderCAP = async function () { CAP_STATE._favObrTentou = false; CAP_STATE._favObrErro = ""; return rc.apply(this, arguments); }; window.renderCAP = renderCAP; }
 

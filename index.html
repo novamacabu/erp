@@ -23727,7 +23727,8 @@ function execPaginar(d, titulo, pais) {
     if (cabe()) continue;
     const tab = execTabelaDe(n);
     if (tab) { const resto = execPartirTabela(tab, cabe, d); if (resto) { c = nova(); fila.unshift(resto); continue; } }
-    if (c.childNodes.length === 1) { n.classList.add("excede"); c = nova(); continue; }   /* sozinho e maior que a folha: fica marcado */
+    if (n.matches(".g3") && n.children.length > 1) { const resto = execPartirGrade(n, cabe); if (resto) { c = nova(); fila.unshift(resto); continue; } }   /* grade de gráficos: os últimos vão para a folha seguinte */
+    if (c.childNodes.length === 1 || [...c.children].slice(0, -1).every(x => x.matches("h2.sec"))) { n.classList.add("excede"); c = nova(); continue; }   /* sozinho (ou só com o título) e maior que a folha: fica marcado */
     n.remove(); const leva = [n]; let u = c.lastElementChild;
     while (u && u.matches("h2.sec") && c.childNodes.length > 1) { u.remove(); leva.unshift(u); u = c.lastElementChild; }   /* título de seção não fica sozinho no pé da folha */
     c = nova(); fila.unshift(...leva);
@@ -23735,6 +23736,12 @@ function execPaginar(d, titulo, pais) {
   if (folhas.length > 1 && !folhas[folhas.length - 1].firstChild.childNodes.length) { folhas.pop().remove(); }
   folhas.forEach((f, i) => { const r = d.createElement("div"); r.className = "fl-rod"; const a = d.createElement("span"), b = d.createElement("span"); a.textContent = `Transportadora Nova Macabu · ${titulo || ""}`; b.textContent = `Página ${i + 1} de ${folhas.length}`; r.append(a, b); f.appendChild(r); });
   return folhas.length;
+}
+function execPartirGrade(g, cabe) {
+  const novo = g.cloneNode(false);
+  while (!cabe() && g.children.length > 1) novo.insertBefore(g.lastElementChild, novo.firstChild);
+  if (!cabe() || !novo.children.length) { while (novo.firstChild) g.appendChild(novo.firstChild); return null; }
+  return novo;
 }
 function execPartirTabela(tab, cabe, d) {
   const tb = tab.tBodies[0]; if (!tb || tb.rows.length < 2) return null;
@@ -23868,8 +23875,10 @@ function execFolhasHtml(doc) {
     fr.onload = async () => {
       try {
         const d = fr.contentDocument; if (!d || d.URL !== "about:srcdoc") return;   /* ignora o about:blank inicial */
-        await execEsperar(d); execPaginar(d, doc.titulo, pais);
+        await execEsperar(d); execLigar(d, {});   /* mesmas notas e botões da tela durante a paginação: quebras iguais às da tela */
+        execPaginar(d, doc.titulo, pais);
         const raiz = d.documentElement.cloneNode(true);
+        raiz.querySelectorAll(".org, .amp").forEach(e => e.remove()); raiz.querySelectorAll("[title]").forEach(e => e.removeAttribute("title"));
         raiz.querySelectorAll("[data-rota],[data-ed],[data-demo],[data-origem],[data-ph]").forEach(e => ["data-rota", "data-origem", "data-demo", "data-ed", "data-ph"].forEach(a => e.removeAttribute(a)));
         raiz.querySelectorAll(".excede").forEach(e => e.classList.remove("excede"));
         fim("<!DOCTYPE html>" + raiz.outerHTML);
@@ -23885,8 +23894,8 @@ function execLimparHtml(html) {   /* arquivo salvo lido de volta: sem scripts, e
   const d = new DOMParser().parseFromString(String(html || ""), "text/html");
   d.querySelectorAll("script, iframe, frame, object, embed, base, form, meta[http-equiv], video, audio, svg use").forEach(e => e.remove());
   d.querySelectorAll("link").forEach(e => { if (!/^https:\/\/fonts\.googleapis\.com\//.test(e.getAttribute("href") || "") || !/stylesheet/i.test(e.getAttribute("rel") || "")) e.remove(); });
-  d.querySelectorAll("*").forEach(e => [...e.attributes].forEach(a => { const n = a.name.toLowerCase(); if (n.startsWith("on") || n === "href" || n === "xlink:href" || n === "action" || n === "formaction" || n === "srcset" || (n === "src" && !/^data:image\//i.test(a.value)) || (n === "style" && /url\s*\(|expression|@import/i.test(a.value))) e.removeAttribute(a.name); }));
-  d.querySelectorAll("style").forEach(e => { e.textContent = e.textContent.replace(/@import[^;]*;?/gi, "").replace(/url\s*\(\s*(['"]?)(?!data:)[^)]*\)/gi, "none"); });
+  d.querySelectorAll("*").forEach(e => [...e.attributes].forEach(a => { const n = a.name.toLowerCase(); if (n.startsWith("on") || n === "href" || n === "background" || n === "ping" || n === "poster" || n === "xlink:href" || n === "action" || n === "formaction" || n === "srcset" || (n === "src" && !/^data:image\//i.test(a.value)) || (n === "style" && /url\s*\(|expression|@import|\\/i.test(a.value))) e.removeAttribute(a.name); }));
+  d.querySelectorAll("style").forEach(e => { e.textContent = e.textContent.replace(/\\/g, "").replace(/@import[^;]*;?/gi, "").replace(/url\s*\(\s*(['"]?)(?!data:)[^)]*\)/gi, "none"); });
   return "<!DOCTYPE html>" + d.documentElement.outerHTML;
 }
 function execImprimirHtml(html) {   /* imprime as folhas (moldura isolada: sem scripts) */
@@ -24084,7 +24093,7 @@ async function execEnviar(drive, pasta, nome, blob) {
 function execEditavel() { return !vcAtivo() && podeEditar("exec"); }   /* página aberta (exec.geral ou exec.operacoes) */
 function execPodeSalvar() { return execEditavel() && ["editar", "proprietario"].includes(permModulo("exec.docs")); }
 function execDocVe(x) { const r = EXEC_RELS[execRelDoNome(x.Relatorio)]; return execFrotaOk() || ((!r || r.aba !== "operacoes") && x.Departamento !== "Operações"); }   /* documentos da Frota: só quem tem acesso à Frota */
-function execRascunhoDe(rel, ref) { return EXEC_DOCS.itens.find(x => x.Relatorio === EXEC_RELS[rel].nome && x.Referencia === ref && x.Situacao === "Rascunho"); }
+function execRascunhoDe(rel, ref) { return EXEC_DOCS.itens.filter(x => x.Relatorio === EXEC_RELS[rel].nome && x.Referencia === ref && x.Situacao === "Rascunho").sort((a, b) => String(b._em || "").localeCompare(String(a._em || "")))[0]; }   /* o mais recente, se houver mais de um */
 function execTextosDe(x) { try { const o = JSON.parse(x.Textos || "{}"), t = o && typeof o === "object" ? (o.textos && typeof o.textos === "object" ? o.textos : o) : {}; const r = {}; Object.keys(t).forEach(k => { if (/^[a-z]{2,5}\d{0,3}$/.test(k) && typeof t[k] === "string") r[k] = execSanit(t[k]); }); return r; } catch (e) { return {}; } }
 function execQuando(iso) { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); }
 async function execSalvar(final) {
@@ -24104,10 +24113,11 @@ async function execSalvar(final) {
   }
   if (!final) {
     try {
+      let idSalvo = ras && ras._id;
       if (ras) await SP.update(EXEC_DOCS.site.id, EXEC_DOCS.list.id, ras._id, Object.assign({ Title: titulo }, base));
-      else await SP.create(EXEC_DOCS.site.id, EXEC_DOCS.list.id, Object.assign({ Title: titulo, Situacao: "Rascunho", Versao: 0 }, base));
+      else { const cr = await SP.create(EXEC_DOCS.site.id, EXEC_DOCS.list.id, Object.assign({ Title: titulo, Situacao: "Rascunho", Versao: 0 }, base)); idSalvo = cr && String(cr.id); }
       EXEC.sujo[chave] = false; toast("Rascunho salvo na aba Documentos.", 4000); await execDocsCarregar(true);
-      const novo = execRascunhoDe(rel, ref); EXEC.fonte[chave] = { tipo: "rascunho", em: execQuando((novo && novo._em) || new Date().toISOString()), por: quem, iso: (novo && novo._em) || "" }; execSalvoInfo(); execTxtBadge();
+      const novo = EXEC_DOCS.itens.find(x => x._id === String(idSalvo)) || execRascunhoDe(rel, ref); EXEC.fonte[chave] = { tipo: "rascunho", em: execQuando((novo && novo._em) || new Date().toISOString()), por: quem, iso: (novo && novo._em) || "" }; execSalvoInfo(); execTxtBadge();
     } catch (e) { toast("Não foi possível salvar o rascunho: " + e.message, 7000); }
     return;
   }
@@ -24116,7 +24126,7 @@ async function execSalvar(final) {
   if (!ok) return;
   const html = await execInstantaneo();
   if (!html) { toast("Aguarde o documento terminar de carregar e tente de novo.", 5000); return; }
-  const btn = $("execFinal"); if (btn) { btn.disabled = true; btn.textContent = "Salvando…"; }
+  const btn = $("execFinal"); if (btn) { btn.disabled = true; btn.textContent = "Salvando…"; } EXEC.salvando = true;
   try {
     const drive = await execDocsDrive(), pasta = `Relatórios do ERP/${R0.dep}/${ref}`;
     await execGarantirPasta(drive, pasta);
@@ -24125,7 +24135,7 @@ async function execSalvar(final) {
     if (ras) await SP.update(EXEC_DOCS.site.id, EXEC_DOCS.list.id, ras._id, f); else await SP.create(EXEC_DOCS.site.id, EXEC_DOCS.list.id, f);
     EXEC.sujo[chave] = false; toast(`Versão final v${v} salva na aba Documentos.`, 5000); await execDocsCarregar(true); execSalvoInfo();
   } catch (e) { toast("Não foi possível salvar a versão final: " + e.message, 8000); }
-  finally { const b = $("execFinal"); if (b) { b.disabled = false; b.textContent = "✔ Salvar versão final"; } }
+  finally { EXEC.salvando = false; const b = $("execFinal"); if (b) { b.disabled = false; b.textContent = "✔ Salvar versão final"; } }
 }
 window.execSalvarRascunho = () => execSalvar(false);
 window.execSalvarFinal = () => execSalvar(true);

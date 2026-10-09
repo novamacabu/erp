@@ -3045,6 +3045,8 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
 #execRoot .exec-badge.ed{color:#8A4B0F;border-color:#F3C9A8;background:#FFF4EC}
 #execRoot .exec-sujo{font-size:12px;font-weight:700;color:#B3271E}
 #execRoot .exec-st{display:inline-block;border-radius:10px;padding:1px 9px;font-size:11.5px;font-weight:800;color:#fff}#execRoot .exec-st.ok{background:#197A46}#execRoot .exec-st.at{background:#9A6A00}
+#execRoot .exec-cmp-bar{margin:0 0 8px}#execRoot table.exec-cmp td{font-size:12.5px;vertical-align:top;width:50%;white-space:normal}#execRoot table.exec-cmp tr.menos td:first-child{background:#FDECEA;color:#8E1616}#execRoot table.exec-cmp tr.mais td:last-child{background:#EAF6EE;color:#14532D}#execRoot table.exec-cmp tr.eq td{color:var(--muted, #6B7280)}#execRoot table.exec-cmp tr.pula td{text-align:center;color:var(--muted, #6B7280);font-style:italic}
+#execRoot .exec-origens .ok{color:#197A46}
 #execRoot .exec-docs-filtros{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px}#execRoot .exec-docs-filtros select,#execRoot .exec-docs-filtros input{min-height:34px;padding:4px 8px;font-size:13px}#execRoot .exec-docs-filtros input{flex:1 1 200px;max-width:320px}
 /* v0.12.68 · correções: Relatórios ao DETRO com "Por tipo"/"Por linha" como subquadros (sem número) e coluna "NC concluídas (todas)"; renomear o prefixo do veículo troca também em manutenções, não conformidades e multas (com confirmação). */
 /* v0.12.67 · Operacional › Frota: abas Veículos, Manutenção e Não conformidades (listas "Frota — Veículos", "Frota — Manutenção", "Frota — Não conformidades"); Relatórios ao DETRO de ponta a ponta (resumo executivo, indicadores com referência, gráficos, histórico de 6 meses, frota, vistoria, manutenção, plano de ação) — do cadastro quando há veículo; sem veículo, modelo fictício */
@@ -3199,7 +3201,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.74<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.75<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3236,7 +3238,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.74",
+  version: "v0.12.75",
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
@@ -22987,6 +22989,29 @@ SETUP_ORDER.push("frota_nc");
    ===================================================================== */
 const DETRO_ORI = { frota: 1, vistoria: 0, manut: 1, dossie: 0 };
 const DETRO_REF = { idade: 10, dispo: 90, ncVeic: 1 };   /* referências: idade média ≤ 10 anos, disponibilidade ≥ 90%, ≤ 1 NC aberta por veículo */
+LISTS.frota_sit = {
+  key: "frota_sit", displayName: "Frota — Histórico de situação", siteKey: "operacional", titleAs: "Veículo (prefixo)",
+  description: "Operacional NMB · cada mudança de situação de um veículo (em operação, em manutenção, reserva, baixado) com a data. Gravado pelo ERP ao salvar o veículo em Operacional › Frota › Veículos; usado nos relatórios de meses anteriores.",
+  columns: [
+    { name: "VeicId",      displayName: "Veículo (ID)",       text: { allowMultipleLines: false, maxLength: 40 } },
+    { name: "Situacao",    displayName: "Situação",           required: true, choice: choice(VEIC_SIT) },
+    { name: "Anterior",    displayName: "Situação anterior",  choice: choice(VEIC_SIT) },
+    { name: "Desde",       displayName: "Desde",              required: true, dateTime: dateOnly },
+    { name: "Observacoes", displayName: "Observações",        text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+SETUP_ORDER.push("frota_sit");
+SETUP_TEXT.frota_sit = `Cria no site Operacional a lista "Frota — Histórico de situação": a cada mudança de situação de um veículo (salva em Operacional › Frota › Veículos), o ERP grava a situação nova, a anterior e a data. Os relatórios de meses anteriores usam a situação daquela data.`;
+/* v0.12.75: situação do veículo numa data (histórico; sem registro, a do cadastro) */
+function frotaSitEm(v, pos) {
+  const atual = v.Situacao || "Em operação", p = ymd(pos);
+  if (!FROTA.listSit || !(FROTA.sits || []).length || p >= todayISO()) return atual;
+  const pre = String(v.Title || "").trim().toUpperCase();
+  const hs = FROTA.sits.filter(x => x.Desde && ((x.VeicId && String(x.VeicId) === String(v._id)) || String(x.Title || "").trim().toUpperCase() === pre)).sort((a, b) => ymd(a.Desde).localeCompare(ymd(b.Desde)));
+  if (!hs.length) return atual;
+  const ate = hs.filter(x => ymd(x.Desde) <= p);
+  return ate.length ? (ate[ate.length - 1].Situacao || atual) : (hs[0].Anterior || atual);
+}
 /* v0.12.74: data de posição dos relatórios da Frota — hoje; no Relatório Executivo, o último dia do mês de referência escolhido (ou hoje, no mês em curso) */
 function frotaHoje() { const h = new Date(); h.setHours(0, 0, 0, 0); if (session.modAtual !== "exec") return h; const r = execRefAtual(EXEC.aba === "geral" ? "geral" : "operacoes"), [a, m] = r.split("-").map(Number), fim = new Date(a, m, 0); return fim < h ? fim : h; }
 function frotaDetroDemo() {   /* massa fictícia no mesmo formato das listas do SharePoint */
@@ -23028,7 +23053,8 @@ function frotaDetroDados() {
   const mk = x => String(ymd(x || "")).slice(0, 7), dur = (a, b) => Math.round((b - a) / 864e5) + 1;
   const diasFora = (ms, ini, fim) => { const dias = new Set(); ms.forEach(m => { const a = dt(m.DataInicio), b = m.Situacao === "Concluída" ? (dt(m.DataFim) || a) : fim; if (!a || !b) return; const i0 = Math.max(a, ini), f0 = Math.min(b, fim); for (let t = i0; t <= f0; t += 864e5) dias.add(Math.round(t / 864e5)); }); return dias.size; };   /* dias distintos: duas ordens no mesmo dia contam um dia */
   const ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1), diasMes = hoje.getDate();
-  const V = raw.veics.filter(v => v.Situacao !== "Baixado").map(v => {
+  const sitHist = !demo && !!FROTA.listSit && (FROTA.sits || []).length > 0 && ymd(hoje) < todayISO();   /* v0.12.75: mês passado lê o histórico de situação */
+  const V = raw.veics.map(v => demo ? v : Object.assign({}, v, { Situacao: frotaSitEm(v, hoje) })).filter(v => v.Situacao !== "Baixado").map(v => {
     const pre = String(v.Title).trim();
     const ncs = raw.ncs.filter(n => String(n.Veiculo || "").trim() === pre && !(dt(n.Abertura) > hoje)).map(n => { const conc = dt(n.Conclusao), fechada = n.Situacao === "Concluída" && !(conc > hoje);   /* v0.12.74: na posição do mês de referência */
       return { item: n.Title || "—", grav: n.Gravidade || "Leve", abertura: dt(n.Abertura), prazo: dt(n.Prazo) || (dt(n.Abertura) ? new Date(dt(n.Abertura).getTime() + (NC_PRAZO[n.Gravidade] || 0) * 864e5) : null), status: fechada ? "Concluída" : "Aberta", conclusao: fechada ? conc : null }; });
@@ -23045,7 +23071,7 @@ function frotaDetroDados() {
     const ms = raw.manut.filter(x => deV(x) && mk(x.DataInicio) === k), fora = V.reduce((s, v) => s + Math.min(diasFora(v._manut, a, b), n), 0);
     hist.push({ k, label: a.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "") + "/" + String(a.getFullYear()).slice(-2), prev: ms.filter(x => x.Tipo === "Preventiva").length, corr: ms.filter(x => x.Tipo === "Corretiva").length,
       ncAb: raw.ncs.filter(x => deV(x) && mk(x.Abertura) === k).length, ncCo: raw.ncs.filter(x => deV(x) && x.Situacao === "Concluída" && mk(x.Conclusao) === k).length, dispo: V.length ? Math.round((1 - fora / (V.length * n)) * 100) : null }); }
-  return { demo, V, hist };
+  return { demo, V, hist, sitHist };
 }
 /* ---- v0.12.74 · estilo único dos gráficos dos relatórios (Relatório Executivo e relatórios ao DETRO) ----
    rótulos de dados em todos os gráficos (colunas, linhas, rosca), eixos e legendas mais legíveis, linhas de referência
@@ -23157,7 +23183,7 @@ function frotaDetroRelatorio(tipo, paisagem, opt) {   /* opt.tela (v0.12.69): de
     L.push(`<b>${ncAb.length} não conformidade(s) aberta(s)</b> (${ncGrav.length} grave(s), ${ncVenc.length} fora do prazo) — ${(ncAb.length / V.length).toFixed(1).replace(".", ",")} por veículo${ncAb.length / V.length <= DETRO_REF.ncVeic ? ", dentro da referência." : ", acima da referência de " + DETRO_REF.ncVeic + " por veículo."}`);
     L.push(`Disponibilidade média de <b>${dispoMed}%</b> em ${mesRef}${dispoMed >= DETRO_REF.dispo ? " (referência ≥ " + DETRO_REF.dispo + "%)" : ` — <b class="neg">abaixo da referência de ${DETRO_REF.dispo}%</b>`}; ${prevMes} preventiva(s) e ${corrMes} corretiva(s) no mês${prevMes ? ` (${(corrMes / prevMes).toFixed(1).replace(".", ",")} corretiva por preventiva)` : ""}.`);
     L.push(`Documentos técnicos: ${docsVenc.length ? `<b class="neg">${docsVenc.length} vencido(s)</b>` : "nenhum vencido"}${docs60.length ? `, ${docs60.length} a vencer em 60 dias` : ""}${semDoc.length ? `, ${semDoc.length} sem data registrada` : ""}. Acessibilidade: <b>${pct(acess.length, V.length)}%</b> da frota com elevador; ${lugares} lugares ofertados.`);
-    return S("Resumo executivo", `posição em ${br(hoje)}`) + `<ul class="res">${L.map(x => `<li>${x}</li>`).join("")}</ul>`; };
+    return S("Resumo executivo", `posição em ${br(hoje)}`) + `<ul class="res" data-ed="resumo">${L.map(x => `<li>${x}</li>`).join("")}</ul>`; };
   /* ---- 2. indicadores ---- */
   const indicadores = () => { const ok = "Adequado", at = "Atenção", cr = "Crítico";
     const I = [
@@ -23180,7 +23206,7 @@ function frotaDetroRelatorio(tipo, paisagem, opt) {   /* opt.tela (v0.12.69): de
     const tab = arr => `<table class="t"><thead><tr><th>Indicador</th><th class="r">Valor</th><th class="r">Referência</th><th>Observação</th><th>Situação</th></tr></thead><tbody>${arr.map(([l, v, r, o, st]) => `<tr><td>${esc(l)}</td><td class="r"><b>${esc(v)}</b></td><td class="r mut">${esc(r)}</td><td class="mut">${esc(o)}</td><td>${st ? tagSit(st === "Crítico" ? "Reprovado" : st).replace(/>Reprovado</, ">Crítico<") : ""}</td></tr>`).join("")}</tbody></table>`;
     const meio = Math.ceil(I.length / 2);
     return S("Indicadores", "valor, referência e situação") + (paisagem ? `<div class="grid2"><div>${tab(I.slice(0, meio))}</div><div>${tab(I.slice(meio))}</div></div>` : tab(I)) + `
-      <div class="filt">Referências internas da empresa para acompanhamento: idade média ≤ ${DETRO_REF.idade} anos, disponibilidade ≥ ${DETRO_REF.dispo}%, até ${DETRO_REF.ncVeic} não conformidade aberta por veículo. Adequado = dentro da referência; Atenção = fora, sem impedir a operação; Crítico = exige ação imediata.</div>`; };
+      <div class="filt" data-ed="nota-indicadores">Referências internas da empresa para acompanhamento: idade média ≤ ${DETRO_REF.idade} anos, disponibilidade ≥ ${DETRO_REF.dispo}%, até ${DETRO_REF.ncVeic} não conformidade aberta por veículo. Adequado = dentro da referência; Atenção = fora, sem impedir a operação; Crítico = exige ação imediata.</div>`; };
   /* ---- 3. gráficos ---- */
   const graficos = () => { const C = { azul: "#1E2153", verde: "#197A46", amb: "#9A6A00", verm: "#B3271E", cinza: "#8D96A3", claro: "#C9CFD8" };
     const faixas = [["0–3", 0, 3], ["4–6", 4, 6], ["7–10", 7, 10], ["11+", 11, 99]].map(([l, a, b]) => [l, comIdade.filter(v => v.idade >= a && v.idade <= b).length]);
@@ -23229,7 +23255,7 @@ function frotaDetroRelatorio(tipo, paisagem, opt) {   /* opt.tela (v0.12.69): de
   else if (tipo === "vistoria") html += resumo() + indicadores() + quebra + secVist() + plano();
   else if (tipo === "manut") html += resumo() + indicadores() + quebra + historico() + secManut() + plano();
   else html += resumo() + indicadores() + quebra + graficos() + historico() + quebra + secFrota() + quebra + secVist() + quebra + secManut() + quebra + plano();
-  html += `<div class="filt" style="margin-top:6px">Informações operacionais da frota. Não incluem custos, valores, fornecedores nem dados pessoais.${demo ? "" : " Fonte: cadastro do ERP (Frota › Veículos, Manutenção e Não conformidades)."}</div>`;
+  html += `<div class="filt" data-ed="nota-fonte" style="margin-top:6px">Informações operacionais da frota. Não incluem custos, valores, fornecedores nem dados pessoais.${demo ? "" : " Fonte: cadastro do ERP (Frota › Veículos, Manutenção e Não conformidades)."}</div>`;
   if (tipo === "dossie" || tipo === "vistoria") html += printAssin([["Responsável técnico pela frota", ""], ["Diretoria", ""]]);
   html += printRodape("Operacional · Frota · relatório ao DETRO");
   const doc = { titulo: titulos[tipo], html, paisagem: !!paisagem, fonte: paisagem ? 10 : 9, css: `
@@ -23244,17 +23270,7 @@ function frotaDetroRelatorio(tipo, paisagem, opt) {   /* opt.tela (v0.12.69): de
   if (opt && opt.tela) return doc;
   printDoc(doc); return doc;
 }
-window.frotaDetroRelatorios = () => {
-  openModal("Relatórios ao DETRO — Frota e manutenção", `
-    <div class="form-grid">
-      <div class="field full"><label>Relatório</label><select id="dtTipo"><option value="dossie">Completo (resumo, indicadores, gráficos, histórico, frota, vistoria, manutenção e plano de ação)</option><option value="frota">Relação da frota (com indicadores e gráficos)</option><option value="vistoria">Vistoria e conformidade (com indicadores e plano de ação)</option><option value="manut">Manutenção e disponibilidade (com indicadores, histórico e plano de ação)</option></select></div>
-      <div class="field"><label>Orientação da folha</label><select id="dtOri"><option value="paisagem">Paisagem (horizontal)</option><option value="retrato">Retrato (vertical)</option></select></div>
-    </div>
-    <div class="hint" style="margin-top:8px">${frotaDetroDados().demo ? `Modelo com <b>dados fictícios</b>: ainda não há veículo cadastrado em Frota › Veículos. Assim que houver, os relatórios saem do cadastro (Veículos, Manutenção e Não conformidades).` : `Sai do cadastro: <b>${(FROTA.veics || []).filter(v => v.Situacao !== "Baixado").length} veículo(s)</b> ativo(s), não conformidades e manutenções dos últimos 6 meses.`} Ficam de fora custos, valores, fornecedores e nomes de pessoas.</div>`,
-    async () => { frotaDetroRelatorio($("dtTipo").value, $("dtOri").value === "paisagem"); return true; });
-  const ori = () => { $("dtOri").value = DETRO_ORI[$("dtTipo").value] ? "paisagem" : "retrato"; };
-  $("dtTipo").addEventListener("change", ori); ori(); $("mSave").textContent = "Gerar";
-};
+/* v0.12.75: a janela "Relatórios ao DETRO" saiu — os quatro relatórios ficam no Relatório Executivo › Operações (barra Relatório/Folha) */
 const FROTA = { aba: "veic", site: null, list: undefined, listVeic: undefined, listManut: undefined, listNc: undefined, itens: [], veics: [], manut: [], ncs: [], erro: "", f: { veic: "", sit: "", q: "" } };
 function pageFrota() {
   return `<div class="page" id="frotaRoot">
@@ -23272,7 +23288,7 @@ async function frotaCarregar() {
     FROTA.list = ls.find(l => l.displayName === LISTS.frota_multas.displayName) || null;
     FROTA.itens = FROTA.list ? (await SP.items(FROTA.site.id, FROTA.list.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
     const ler = async (chave) => { const l = ls.find(x => x.displayName === LISTS[chave].displayName) || null; return [l, l ? (await SP.items(FROTA.site.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : []]; };   /* v0.12.67 */
-    [FROTA.listVeic, FROTA.veics] = await ler("frota_veic"); [FROTA.listManut, FROTA.manut] = await ler("frota_manut"); [FROTA.listNc, FROTA.ncs] = await ler("frota_nc");
+    [FROTA.listVeic, FROTA.veics] = await ler("frota_veic"); [FROTA.listManut, FROTA.manut] = await ler("frota_manut"); [FROTA.listNc, FROTA.ncs] = await ler("frota_nc"); [FROTA.listSit, FROTA.sits] = await ler("frota_sit");   /* v0.12.75: histórico de situação */
     const dl = ls.find(l => l.displayName === LISTS.dsl_abast.displayName);
     if (dl && !FROTA.veicsDsl) { try { FROTA.veicsDsl = [...new Set((await graphAll(`/sites/${FROTA.site.id}/lists/${dl.id}/items?$expand=fields($select=Veiculo)&$top=999`)).map(x => String((x.fields || {}).Veiculo || "").trim()).filter(Boolean))]; } catch (e) { FROTA.veicsDsl = []; } }
     FROTA.erro = "";
@@ -23355,8 +23371,13 @@ function frotaCadForm(opt) {   /* opt: { lista, item, titulo, html, ler(g, err),
     const g = k => ($(k).value || "").trim(), err = t => { const e = $("fcErr"); e.textContent = t; e.style.display = "block"; return false; };
     const f = opt.ler(g, err); if (!f) return false;
     let r = null; if (opt.antes) { r = await opt.antes(f); if (r && r.erro) return err(r.erro); }   /* v0.12.68: troca do prefixo nos registros ligados */
-    try { if (m) await SP.update(FROTA.site.id, FROTA[opt.lista].id, m._id, f); else await SP.create(FROTA.site.id, FROTA[opt.lista].id, f); }
+    let criado = null;
+    try { if (m) await SP.update(FROTA.site.id, FROTA[opt.lista].id, m._id, f); else criado = await SP.create(FROTA.site.id, FROTA[opt.lista].id, f); }
     catch (e) { if (r && r.desfazer) { const t = await r.desfazer(); return err(`Não foi possível gravar o veículo (${e.message}). ` + (t || "A troca do prefixo nos registros ligados foi desfeita.")); } throw e; }
+    if (opt.lista === "listVeic" && FROTA.listSit && f.Situacao !== undefined && (!m || (m.Situacao || "Em operação") !== (f.Situacao || "Em operação"))) {   /* v0.12.75: histórico de situação */
+      try { await SP.create(FROTA.site.id, FROTA.listSit.id, { Title: String(f.Title || (m && m.Title) || "").trim(), VeicId: m ? String(m._id) : String((criado && criado.id) || ""), Situacao: f.Situacao || "Em operação", Anterior: m ? (m.Situacao || "Em operação") : null, Desde: todayISO() }); }
+      catch (e) { toast("Veículo gravado; o histórico de situação não foi registrado: " + e.message, 7000); }
+    }
     toast((m ? "Atualizado" : "Registrado") + (r && r.msg ? " · " + r.msg : ""), r && r.msg ? 5000 : undefined); await frotaCarregar(); frotaPintar(); return true;
   });
   if (!ed) { const b = $("mSave"); if (b) b.style.display = "none"; }
@@ -23646,14 +23667,14 @@ function execGeralDoc() {
   /* ---- cabeçalho, selo, síntese e números-chave ---- */
   const cab = printCab("Relatório mensal de saúde operacional", `${Cap} · operação, frota, segurança, pessoas, atendimento e conformidade`, { doc: R.cod, meta: [["Destinatário", "DETRO/RJ"], ["Referência", R.mes + (R.parcial ? " (parcial)" : "")]], stamp: "Modelo · dados fictícios", stampCls: "warn" });
   const selo = `<div class="alerta" style="font-weight:800;text-align:center;letter-spacing:.06em">MODELO — DADOS FICTÍCIOS (demonstração: os blocos passam a ler o ERP conforme as origens forem ligadas)</div>`;
-  const sintese = `<div class="sint"><b>Situação geral: ${tag("Adequado")} com 3 pontos de atenção.</b> Em ${R.mes}${R.parcial ? " (mês em curso, números parciais)" : ""} a empresa realizou <b>${n(tReal)} de ${n(tProg)} viagens programadas (${p1(tReal / tProg * 100)})</b> e transportou <b>${n(tPax)} passageiros</b> (${p1(tGrat / tPax * 100)} em gratuidades), com pontualidade de ${p1(pont)} — abaixo da referência de 95% na linha Macaé ↔ Madalena. A frota de 13 veículos tem idade média de 7,4 anos, 92% das vistorias em dia (1 vence em 15 dias) e disponibilidade de 93%. Houve <b>3 infrações graves</b> (eram 5 em ${R.mesAnt}), nenhum sinistro com vítima, 11,7 reclamações por 100 mil passageiros (referência ≤ 15) e NPS +42. Pontos de atenção: pontualidade da linha Macaé ↔ Madalena, extintor vencido em 1 veículo e 1 motorista reincidente em infrações graves (termo de ciência aplicado).</div>`;
+  const sintese = `<div class="sint" data-ed="sintese"><b>Situação geral: ${tag("Adequado")} com 3 pontos de atenção.</b> Em ${R.mes}${R.parcial ? " (mês em curso, números parciais)" : ""} a empresa realizou <b>${n(tReal)} de ${n(tProg)} viagens programadas (${p1(tReal / tProg * 100)})</b> e transportou <b>${n(tPax)} passageiros</b> (${p1(tGrat / tPax * 100)} em gratuidades), com pontualidade de ${p1(pont)} — abaixo da referência de 95% na linha Macaé ↔ Madalena. A frota de 13 veículos tem idade média de 7,4 anos, 92% das vistorias em dia (1 vence em 15 dias) e disponibilidade de 93%. Houve <b>3 infrações graves</b> (eram 5 em ${R.mesAnt}), nenhum sinistro com vítima, 11,7 reclamações por 100 mil passageiros (referência ≤ 15) e NPS +42. Pontos de atenção: pontualidade da linha Macaé ↔ Madalena, extintor vencido em 1 veículo e 1 motorista reincidente em infrações graves (termo de ciência aplicado).</div>`;
   const kpi = ([l, v, sub, st, small, k]) => `<div${execOrg(k)}><div class="l">${esc(l)}</div><div class="v">${esc(v)}${small ? `<small>${esc(small)}</small>` : ""}</div><div class="s"><span>${esc(sub)}</span>${st ? tag(st) : ""}</div></div>`;
   const kpis = `<div class="k8">${D.kpis.map(kpi).join("")}</div>`;
   /* ---- 1. operação ---- */
   const secOp = S("Operação: viagens e passageiros", `${R.mes} · ${n(km)} km rodados`, "viag") + `<table class="t"><thead><tr><th>Linha</th><th class="r">Viagens programadas</th><th class="r">Realizadas</th><th class="r">Cumprimento</th><th class="r">Pontualidade</th><th class="r">Passageiros</th><th class="r">Gratuidades</th><th class="r">Ocupação média</th></tr></thead><tbody>
     ${linhas.map(([l, pr, re, po, px, gr, oc]) => `<tr${execOrg("viag")}><td><b>${esc(l)}</b></td><td class="r"${execOrg("hor")}>${n(pr)}</td><td class="r">${n(re)}</td><td class="r ${re / pr < .98 ? "neg" : ""}">${p1(re / pr * 100)}</td><td class="r ${po < 95 ? "neg" : ""}">${p1(po)}</td><td class="r"${execOrg("pax")}>${n(px)}</td><td class="r"${execOrg("pax")}>${n(gr)} <span class="mut">(${p1(gr / px * 100)})</span></td><td class="r"${execOrg("pax")}>${oc}%</td></tr>`).join("")}
     <tr class="tot"><td>Total</td><td class="r">${n(tProg)}</td><td class="r">${n(tReal)}</td><td class="r">${p1(tReal / tProg * 100)}</td><td class="r">${p1(pont)}</td><td class="r">${n(tPax)}</td><td class="r">${n(tGrat)} (${p1(tGrat / tPax * 100)})</td><td class="r">63%</td></tr></tbody></table>
-    <div class="filt">Viagens não realizadas (${D.naoReal.reduce((s, x) => s + x[1], 0)}): ${D.naoReal.map(x => `${x[0].toLowerCase()} ${x[1]}`).join(" · ")}. <span${execOrg("pax")}>Gratuidades: ${D.gratTipos.map(x => `${x[0] === "Demais" ? "demais" : x[0] === "PCD e acompanhante" ? x[0] : x[0].toLowerCase()} ${x[1]}%`).join(", ")}.</span></div>
+    <div class="filt" data-ed="nota-operacao">Viagens não realizadas (${D.naoReal.reduce((s, x) => s + x[1], 0)}): ${D.naoReal.map(x => `${x[0].toLowerCase()} ${x[1]}`).join(" · ")}. <span${execOrg("pax")}>Gratuidades: ${D.gratTipos.map(x => `${x[0] === "Demais" ? "demais" : x[0] === "PCD e acompanhante" ? x[0] : x[0].toLowerCase()} ${x[1]}%`).join(", ")}.</span></div>
     <div class="grid2" style="margin-top:5px">${img(g1, "Viagens cumpridas e pontualidade", "últimos 6 meses", "viag")}${img(g2, "Passageiros por mês", "pagantes e gratuidades, em milhares", "pax")}</div>`;
   /* ---- 2 a 5. frota, segurança, motoristas e atendimento ---- */
   const lin = ([l, v, r, o, st, k]) => `<tr${execOrg(k)}><td>${esc(l)}</td><td class="r"><b>${esc(v)}</b></td><td class="r mut">${esc(r)}</td><td class="mut">${esc(o)}</td><td>${st ? tag(st) : ""}</td></tr>`;
@@ -23665,15 +23686,331 @@ function execGeralDoc() {
   /* ---- 6. conformidade + 7. plano ---- */
   const secConf = S("Conformidade e regularidade", `em ${R.fimBr}`, "veic") + `<table class="t"><thead><tr><th>Item</th><th>Situação</th><th>Status</th></tr></thead><tbody>${D.conf.map(([a, b, c, d, k]) => `<tr${execOrg(k)}><td><b>${esc(a)}</b></td><td>${esc(b)}<div class="mut">${esc(c)}</div></td><td>${tag(d)}</td></tr>`).join("")}</tbody></table>`;
   const secPlano = S("Plano de ação", "compromissos para o próximo período", "nc") + `<table class="t"><thead><tr><th>Prioridade</th><th>Ação</th><th class="nw">Prazo</th></tr></thead><tbody>${D.plano.map(([p, a, z, r, k]) => `<tr${execOrg(k)}><td class="nw">${execTag(p)}</td><td>${esc(a)}<div class="mut">${esc(r)}</div></td><td class="nw">${esc(z)}</td></tr>`).join("")}</tbody></table>`;
-  const refs = `<div class="filt" data-rota="-" style="margin-top:6px">Referências internas de acompanhamento: viagens cumpridas ≥ 98%; pontualidade ≥ 95% (até 5 min); idade média ≤ ${DETRO_REF.idade} anos; vistoria 100%; disponibilidade ≥ ${DETRO_REF.dispo}%; até ${DETRO_REF.ncVeic} NC aberta por veículo; reclamações ≤ 15 por 100 mil passageiros; resolução no prazo ≥ 95%; NPS ≥ +30; motoristas aptos 100%. Adequado = dentro da referência; Atenção = fora, sem impedir a operação; Crítico = exige ação imediata. <b>Informações operacionais da empresa: não incluem custos, valores, fornecedores nem dados pessoais.</b> Modelo com dados fictícios.</div>`;
+  const refs = `<div class="filt" data-rota="-" data-ed="nota-referencias" style="margin-top:6px">Referências internas de acompanhamento: viagens cumpridas ≥ 98%; pontualidade ≥ 95% (até 5 min); idade média ≤ ${DETRO_REF.idade} anos; vistoria 100%; disponibilidade ≥ ${DETRO_REF.dispo}%; até ${DETRO_REF.ncVeic} NC aberta por veículo; reclamações ≤ 15 por 100 mil passageiros; resolução no prazo ≥ 95%; NPS ≥ +30; motoristas aptos 100%. Adequado = dentro da referência; Atenção = fora, sem impedir a operação; Crítico = exige ação imediata. <b>Informações operacionais da empresa: não incluem custos, valores, fornecedores nem dados pessoais.</b> Modelo com dados fictícios.</div>`;
   const html = cab + selo + sintese + kpis + secOp + secFrota + `<div data-rota="-" style="break-before:page"></div>` + secSeg + secMot + secAt + secConf + secPlano + refs + `<div data-rota="-">` + printAssin([["Responsável operacional", ""], ["Responsável técnico pela frota", ""], ["Diretoria", ""]]) + `</div>`;
-  return { titulo: "Relatório mensal de saúde operacional", html, paisagem: false, fonte: 9, css: EXEC_DOC_CSS + `
+  return { titulo: "Relatório mensal de saúde operacional", html, paisagem: false, fonte: 9, css: execGeralDocCss() };
+}
+function execGeralDocCss() { return EXEC_DOC_CSS + `
     .sint{border:.6px solid #C9CFD8;border-left:3px solid #1E2153;border-radius:3px;padding:6px 9px;margin:0 0 6px;font-size:9.5px;line-height:1.45}
     .k8{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0 0 2px}.k8>div{border:.6px solid #C9CFD8;border-radius:3px;padding:5px 8px;min-width:0}
     .k8 .l{font-size:7.5px;text-transform:uppercase;letter-spacing:.08em;color:#6B7280;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .k8 .v{font-size:15px;font-weight:800;color:#1B2230;margin-top:1px;white-space:nowrap;display:flex;align-items:baseline;gap:6px}.k8 .v small{font-size:8.5px;color:#6B7280;font-weight:700}
-    .k8 .s{font-size:8px;color:#6B7280;display:flex;justify-content:space-between;align-items:center;gap:4px;margin-top:2px;line-height:1.3}` };
+    .k8 .s{font-size:8px;color:#6B7280;display:flex;justify-content:space-between;align-items:center;gap:4px;margin-top:2px;line-height:1.3}`; }
+/* =====================================================================
+   v0.12.75 · aba Geral com as origens reais do ERP. Cada bloco lê a sua origem no mês de referência:
+   Estatística de Passageiros, Tabela de Horários (viagens programadas), Frota (veículos, manutenção, NC, multas),
+   Painel de Infrações (telemetria), SAC, Pesquisa de Satisfação, Funcionários (documentos dos motoristas) e Controle
+   de Ponto. Sem nenhuma origem com dados no mês, o relatório continua no modelo de demonstração; com pelo menos uma,
+   sai com os dados do ERP e o que ainda não tem origem aparece como "—" com o motivo (nunca número fictício).
+   ===================================================================== */
+const EXEC_INF = { site: "novamacabu.sharepoint.com,b3157f32-09da-493f-8144-219675455eb7,7cc490ec-91fd-4413-9497-1751706abff6", ar: "eadd141f-df88-47b3-97ab-5fa08888776c", ve: "7dc67837-e6b7-47d6-a2e1-d482e85424e3" };   /* mesmas listas do Painel de Infrações */
+const EXEC_SAC = { site: "novamacabu.sharepoint.com,71deb5ff-1096-4530-8b9b-864465ddf1d9,8e1d229f-68ca-4bd5-850b-88343108810e", list: "b7b55d39-e171-46c3-8e9b-c22c74bb16de" };   /* mesma lista do SAC */
+const EXEC_LIN = { mc: "Macaé ↔ Conceição de Macabu", mad: "Macaé ↔ Santa Maria Madalena", fret: "Fretamento" };
+const EXEC_ORIG_N = { pax: "Estatística de Passageiros", hor: "Tabela de Horários", frota: "Frota", inf: "Painel de Infrações", sac: "SAC", psq: "Pesquisa de Satisfação", func: "Funcionários (RH)", ponto: "Controle de Ponto" };
+const EXEC_ORIG_DE = { veic: "frota", manut: "frota", nc: "frota", multas: "frota" };   /* chave do bloco → origem */
+const EXEC_ST_TXT = { semperm: "sem acesso à origem", semacesso: "sem acesso ao site da origem", semlista: "lista da origem ainda não criada", vazio: "sem cadastro na origem", erro: "não foi possível ler a origem", dev: "origem em desenvolvimento", semmes: "sem registros no mês" };
+function execMeses6(ref) { const [a, m] = ref.split("-").map(Number); return Array.from({ length: 6 }, (_, i) => { const d = new Date(a, m - 6 + i, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }); }
+function execFimMes(k) { const [a, m] = k.split("-").map(Number); return ymd(new Date(a, m, 0)); }
+function execPosicao(k) { const f = execFimMes(k), h = todayISO(); return f < h ? f : h; }
+function execStErro(e) { return [401, 403, 404].includes(e && e.status) ? "semacesso" : "erro"; }
+const execMedia = arr => { const v = arr.filter(x => x != null && !isNaN(x)); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+const execNorm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+function execLinhaServ(s) { return s === "Madalena" ? EXEC_LIN.mad : s === "Fretamento" ? EXEC_LIN.fret : EXEC_LIN.mc; }
+function execTipoDia(iso) { const w = dLocal(iso).getDay(); return w === 0 || feriadoNome(iso) ? "Domingos e feriados" : w === 6 ? "Sábados" : "Segunda a sexta"; }
+/* ---- Estatística de Passageiros (uma linha da lista = uma viagem com contagem) ---- */
+async function execOrigPax(ks) {
+  await loadPax(EXEC.origForca); if (!PAX_STATE.list) return { st: "semlista" };
+  const M = {}; ks.forEach(k => { M[k] = { n: 0, pag: 0, grat: 0, lug: 0, lin: {}, tipo: {} }; });
+  PAX_STATE.itens.forEach(x => {
+    const d = String(x.Data || ""), o = M[d.slice(0, 7)]; if (!o) return;
+    const pag = Number(x.Pagantes || 0), grat = Number(x.Gratuidade || 0), lug = Number(x.Lugares || PAX_LUGARES);
+    const L = o.lin[execLinhaServ(x.Servico)] = o.lin[execLinhaServ(x.Servico)] || { n: 0, pag: 0, grat: 0, lug: 0 }, T = o.tipo[execTipoDia(d)] = o.tipo[execTipoDia(d)] || { n: 0, pag: 0, grat: 0, lug: 0 };
+    [o, L, T].forEach(t => { t.n++; t.pag += pag; t.grat += grat; t.lug += lug; });
+  });
+  return { st: "ok", M, temMes: M[ks[5]].n > 0 };
 }
+/* ---- Tabela de Horários: viagens programadas no mês pelo quadro vigente (dias úteis, sábados, domingos e feriados) ---- */
+async function execOrigHor(ks) {
+  await loadHor(EXEC.origForca);
+  const ativos = HOR_STATE.itens.filter(x => x.Ativo !== false && x.Bloco !== "Fretamento" && ["Segunda a sexta", "Sábados", "Domingos e feriados"].includes(x.Quadro));
+  if (!ativos.length) return { st: "vazio" };
+  const porTipo = {}; ativos.forEach(x => { const l = x.Bloco === "Madalena" ? EXEC_LIN.mad : EXEC_LIN.mc; const t = porTipo[x.Quadro] = porTipo[x.Quadro] || {}; t[l] = (t[l] || 0) + 1; });
+  const M = {}; ks.forEach(k => { const o = M[k] = { tot: 0, lin: {}, dias: { "Segunda a sexta": 0, "Sábados": 0, "Domingos e feriados": 0 } };
+    diasDoMes(k).forEach(iso => { const t = execTipoDia(iso); o.dias[t]++; Object.entries(porTipo[t] || {}).forEach(([l, n]) => { o.lin[l] = (o.lin[l] || 0) + n; o.tot += n; }); }); });
+  return { st: "ok", seed: !HOR_STATE.ready, vig: horVigencia(), porTipo, M, temMes: false };
+}
+/* ---- Frota: cadastro na posição do mês (a mesma leitura dos relatórios ao DETRO) ---- */
+async function execOrigFrota(ks) {
+  if (FROTA.listVeic === undefined || EXEC.origForca) await frotaCarregar();
+  if (FROTA.erro) return { st: "erro", msg: FROTA.erro };
+  const D = frotaDetroDados(); if (D.demo) return { st: FROTA.listVeic ? "vazio" : "semlista" };
+  const V = D.V, hoje = frotaHoje(), dias = x => x ? Math.round((x - hoje) / 864e5) : null;
+  const comIdade = V.filter(v => v.idade != null), ncAb = V.flatMap(v => v.ncs.filter(x => x.status === "Aberta").map(x => Object.assign({ prefixo: v.prefixo }, x)));
+  const docs = V.flatMap(v => [["Vistoria DETRO", v.validade], ["Cronotacógrafo", v.tacografo], ["Extintor de incêndio", v.extintor]].map(([t, x]) => ({ prefixo: v.prefixo, t, x, d: dias(x) })).concat(v.crlv != null && v.crlv < hoje.getFullYear() ? [{ prefixo: v.prefixo, t: "Licenciamento", x: null, d: -1, txt: `exercício ${v.crlv} pendente` }] : []));
+  const N = {
+    n: V.length, operando: V.filter(v => v.situacao === "Em operação").length, parados: V.filter(v => v.situacao === "Em manutenção").length,
+    idadeMed: comIdade.length ? comIdade.reduce((s, v) => s + v.idade, 0) / comIdade.length : null, maxIdade: comIdade.length ? Math.max(...comIdade.map(v => v.idade)) : null, acimaIdade: comIdade.filter(v => v.idade > DETRO_REF.idade).length,
+    acess: V.filter(v => v.elevador).length, vistOk: V.filter(v => v.validade && dias(v.validade) >= 0).length, vist30: V.filter(v => v.validade && dias(v.validade) >= 0 && dias(v.validade) <= 30),
+    aprov: V.filter(v => v.resultado === "Aprovado").length, restr: V.filter(v => v.resultado === "Aprovado com restrições").length, reprov: V.filter(v => v.resultado === "Reprovado").length, semVist: V.filter(v => !v.vistoria).length,
+    dispoMed: V.length ? Math.round(V.reduce((s, v) => s + v.dispo, 0) / V.length) : null, baixo85: V.filter(v => v.dispo < 85).length,
+    prev: V.reduce((s, v) => s + v.prevs, 0), corr: V.reduce((s, v) => s + v.corr, 0),
+    ncAb, ncGrav: ncAb.filter(x => x.grav === "Grave"), ncVenc: ncAb.filter(x => x.prazo && dias(x.prazo) < 0),
+    docs, docsVenc: docs.filter(x => x.d != null && x.d < 0), docs60: docs.filter(x => x.d != null && x.d >= 0 && x.d <= 60) };
+  const tipoDoc = t => { const a = docs.filter(x => x.t === t); return { ok: a.filter(x => x.d != null && x.d >= 0).length, venc: a.filter(x => x.d != null && x.d < 0), sem: a.filter(x => x.d == null).length, v60: a.filter(x => x.d != null && x.d >= 0 && x.d <= 60).length }; };
+  N.tac = tipoDoc("Cronotacógrafo"); N.ext = tipoDoc("Extintor de incêndio"); N.crlvPend = docs.filter(x => x.t === "Licenciamento").length;
+  const mul = {}; ks.forEach(k => { mul[k] = { n: 0, grav: {} }; });
+  (FROTA.itens || []).forEach(m => { const o = mul[String(ymd(m.DataInfracao || "")).slice(0, 7)]; if (!o || m.Situacao === "Cancelada") return; o.n++; const g = m.Gravidade || "Sem gravidade"; o.grav[g] = (o.grav[g] || 0) + 1; });
+  return { st: "ok", V, hist: D.hist, N, mul, multasLista: !!FROTA.list, temMes: true };
+}
+/* ---- Painel de Infrações (telemetria): Área Restrita e Velocidade Excedida ---- */
+async function execOrigInf(ks) {
+  const desde = ks[0] + "-01", ate = execFimMes(ks[5]), H = { headers: { Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" } };
+  const q = (lid, sel, cd) => graphAll(`/sites/${EXEC_INF.site}/lists/${lid}/items?$expand=fields($select=${sel})&$filter=fields/${cd} ge '${desde}'&$top=999`, H);
+  const [ar, ve] = await Promise.all([
+    q(EXEC_INF.ar, "Title,Matricula,Data,Velocidade,LimitedeVelocidade,Classifica_x00e7__x00e3_o,Notificado", "Data"),
+    q(EXEC_INF.ve, "Title,Matricula,InicioViola_x00e7__x00e3_o,VelocidadeM_x00e1_xima,Classifica_x00e7__x00e3_o,Notificado", "InicioViola_x00e7__x00e3_o")]);
+  const cls = c => { const t = execNorm(c); return t.startsWith("graviss") ? "Gravíssima" : t.startsWith("grav") ? "Grave" : t.startsWith("med") ? "Média" : "Leve"; };
+  const reg = (f, data, vel, lim) => ({ data: String(data || "").slice(0, 10), cls: cls(f["Classifica_x00e7__x00e3_o"]), not: f.Notificado === true || f.Notificado === "true", mat: String(f.Matricula ?? "").trim(), veic: String(f.Title || "").trim() || "—", exc: lim > 0 ? Math.max(0, Math.round(vel - lim)) : null });
+  const I = ar.map(it => { const f = it.fields || {}; return reg(f, f.Data, Number(f.Velocidade) || 0, Number(f.LimitedeVelocidade) || 0); })
+    .concat(ve.map(it => { const f = it.fields || {}; return reg(f, f["InicioViola_x00e7__x00e3_o"], Number(f["VelocidadeM_x00e1_xima"]) || 0, 85); }))
+    .filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x.data) && x.data >= desde && x.data <= ate);
+  const grave = x => x.cls === "Grave" || x.cls === "Gravíssima";
+  const M = {}; ks.forEach(k => { const a = I.filter(x => x.data.slice(0, 7) === k); M[k] = { n: a.length, g: { "Leve": 0, "Média": 0, "Grave": 0, "Gravíssima": 0 }, graves: a.filter(grave).length, not: a.filter(x => x.not).length, exc: execMedia(a.filter(grave).map(x => x.exc)), a }; a.forEach(x => M[k].g[x.cls]++); });
+  const ref = ks[5], mesesGrave = new Map(); I.filter(x => grave(x) && x.mat).forEach(x => { const s = mesesGrave.get(x.mat) || new Set(); s.add(x.data.slice(0, 7)); mesesGrave.set(x.mat, s); });
+  const reinc = [...mesesGrave.values()].filter(s => s.has(ref) && s.size >= 2).length;   /* grave no mês e em outro mês dos últimos 6 */
+  return { st: "ok", M, reinc, temMes: M[ref].n > 0 };
+}
+/* ---- SAC (lista Chamados do site SAC) ---- */
+async function execOrigSac(ks) {
+  const its = await graphAll(`/sites/${EXEC_SAC.site}/lists/${EXEC_SAC.list}/items?$expand=fields&$top=500`);
+  const pick = (f, ch) => { for (const k of ch) if (f[k] != null && f[k] !== "") return f[k]; return ""; };
+  const dia = v => { v = String(v || "").trim(); let m; if ((m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`; if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) && !/T00:00(:00)?(\.0+)?Z$/.test(v)) { const d = new Date(v); if (!isNaN(d)) return ymd(d); } return (v.match(/^\d{4}-\d{2}-\d{2}/) || [""])[0]; };
+  const cat = c => { const t = execNorm(c); return !t ? "Outros" : t.includes("reclama") ? "Reclamação" : t.includes("sugest") ? "Sugestão" : t.includes("elogi") ? "Elogio" : t.includes("objeto") || t.includes("achado") || t.includes("perdid") ? "Objetos perdidos" : t.includes("informa") ? "Informações" : "Outros"; };
+  const sev = c => { const t = execNorm(c); return t.startsWith("graviss") ? "Gravíssima" : t.startsWith("grav") ? "Grave" : t.startsWith("med") ? "Média" : t ? "Baixa" : ""; };
+  const SLA = { "Gravíssima": 1, "Grave": 2, "Média": 5, "Baixa": 7 };
+  const C = its.map(it => { const f = it.fields || {}, data = dia(pick(f, ["Data"])) || dia(pick(f, ["Created"]) || it.createdDateTime || ""), hora = String(pick(f, ["Hora"]) || "00:00").slice(0, 5);
+    const st = execNorm(pick(f, ["Status"])), status = st.startsWith("resolv") ? "Resolvido" : st.includes("atend") || st.includes("andament") ? "Em atendimento" : "Aberto";
+    const s = sev(pick(f, ["Classificacao", "Classifica_x00e7__x00e3_o"])), res = dia(pick(f, ["DataResolucao", "DataDeResolucao", "Data_x0020_de_x0020_Resolu_x00e7__x00e3_o"]));
+    const pr = pick(f, ["DataPrimeiraResposta", "Data1aResposta"]), abre = new Date(`${data}T${/^\d{2}:\d{2}$/.test(hora) ? hora : "00:00"}:00`), dpr = pr ? new Date(pr) : null;
+    const tmr = status === "Resolvido" && res ? Math.max(0, Math.round((dLocal(res) - dLocal(data)) / 864e5)) : null;
+    return { data, cat: cat(pick(f, ["Categoria"])), sev: s, sla: SLA[s] || 5, status, res, tmr, tpr: dpr && !isNaN(dpr) ? Math.max(0, (dpr - abre) / 36e5) : null, meta: s === "Grave" || s === "Gravíssima" ? 4 : 24 };
+  }).filter(c => /^\d{4}-\d{2}-\d{2}$/.test(c.data));
+  const M = {}; ks.forEach(k => { const a = C.filter(c => c.data.slice(0, 7) === k), fim = execPosicao(k), comTmr = a.filter(c => c.tmr != null), comPr = a.filter(c => c.tpr != null);
+    const abertos = C.filter(c => c.data <= fim && !(c.status === "Resolvido" && c.res && c.res <= fim));
+    M[k] = { n: a.length, cat: {}, recl: a.filter(c => c.cat === "Reclamação").length, res: a.filter(c => c.status === "Resolvido").length, sla: comTmr.length ? comTmr.filter(c => c.tmr <= c.sla).length / comTmr.length : null, nSla: comTmr.length,
+      tmr: execMedia(comTmr.map(c => c.tmr)), tpr: execMedia(comPr.map(c => c.tpr)), meta: comPr.length ? comPr.filter(c => c.tpr <= c.meta).length / comPr.length : null,
+      abertos: abertos.length, atrasados: abertos.filter(c => Math.round((dLocal(fim) - dLocal(c.data)) / 864e5) > c.sla).length, sev: {} };
+    a.forEach(c => { M[k].cat[c.cat] = (M[k].cat[c.cat] || 0) + 1; if (c.sev) M[k].sev[c.sev] = (M[k].sev[c.sev] || 0) + 1; }); });
+  return { st: "ok", M, temMes: M[ks[5]].n > 0 };
+}
+/* ---- Pesquisa de Satisfação (mesmas regras do módulo: um passageiro por período, NPS, aprovação = Excelente + Bom) ---- */
+async function execOrigPsq(ks) {
+  const site = await SP.site(CONFIG.sites[LISTS.psq_resp.siteKey]), l = (await SP.lists(site.id)).find(x => x.displayName === LISTS.psq_resp.displayName);
+  if (!l) return { st: "semlista" };
+  const its = (await SP.items(site.id, l.id)).map(it => it.fields || {}).filter(f => /^\d{4}-\d{2}-\d{2}/.test(String(f.DataResposta || "")));
+  const num = v => v === null || v === undefined || v === "" || isNaN(v) ? null : Number(v);
+  const M = {}; ks.forEach(k => {
+    const m = new Map(), sem = []; its.filter(f => String(f.DataResposta).slice(0, 7) === k).forEach(f => { if (!f.CPFHash) { sem.push(f); return; } const o = m.get(f.CPFHash);
+      if (!o || ((o.Status || "Completa") !== "Completa" && (f.Status || "Completa") === "Completa") || ((o.Status || "Completa") === (f.Status || "Completa") && String(f.DataResposta) + String(f.Hora || "") > String(o.DataResposta) + String(o.Hora || ""))) m.set(f.CPFHash, f); });
+    const rs = sem.concat([...m.values()]), nps = rs.map(f => num(f.NPS)).filter(v => v != null), p = nps.filter(v => v >= 9).length, d = nps.filter(v => v <= 6).length;
+    const blocos = PSQ_BLOCOS.map(b => { const v = rs.flatMap(f => b.itens.map((_, i) => f[b.col + (i + 1)])).filter(x => PSQ_ESCALA.includes(x)); return { n: b.n, apr: v.length ? v.filter(x => x === "Excelente" || x === "Bom").length / v.length * 100 : null }; });
+    const itens = PSQ_BLOCOS.flatMap(b => b.itens.map((it, i) => { const v = rs.map(f => f[b.col + (i + 1)]).filter(x => PSQ_ESCALA.includes(x)); return { it, b: b.n, n: v.length, ruim: v.length ? v.filter(x => x === "Ruim" || x === "Péssimo").length / v.length * 100 : 0 }; })).filter(x => x.n >= 3).sort((a, b) => b.ruim - a.ruim);
+    M[k] = { n: rs.length, nps: nps.length ? Math.round((p - d) / nps.length * 100) : null, prom: nps.length ? p / nps.length * 100 : null, detr: nps.length ? d / nps.length * 100 : null, sat: execMedia(rs.map(f => num(f.Satisfacao))), mot: execMedia(rs.map(f => num(f.NotaMotorista))), blocos, itens };
+  });
+  return { st: "ok", M, temMes: M[ks[5]].n > 0 };
+}
+/* ---- Funcionários: motoristas ativos na posição do mês e documentos obrigatórios (mesma regra do "Apto") ---- */
+async function execOrigFunc(ks) {
+  const site = await SP.site(CONFIG.sites[LISTS.rh_func.siteKey]), l = (await SP.lists(site.id)).find(x => x.displayName === LISTS.rh_func.displayName);
+  if (!l) return { st: "semlista" };
+  const fs = (await SP.items(site.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {}));
+  await rhDocsCarregar(EXEC.origForca);
+  const pos = execPosicao(ks[5]), ativoEm = f => (!f.Admissao || ymd(f.Admissao) <= pos) && !(f.DataDemissao && ymd(f.DataDemissao) <= pos) && !(String(f.Situacao || "") === "Desligado" && !f.DataDemissao);
+  const mot = fs.filter(f => rhEhMotorista(f) && ativoEm(f));
+  if (!RHF_DOCS.list) return { st: "ok", n: mot.length, docs: null, docsSt: RHF_DOCS.erro ? "erro" : "semlista", temMes: false };
+  const em30 = ymd(new Date(dLocal(pos).getTime() + 30 * 864e5));
+  const val = (f, g) => { const v = RHF_DOCS.itens.filter(d => String(d.FuncId) === f._id && rhDocTipo(d.Tipo).g === g && (!d.DataDocumento || ymd(d.DataDocumento) <= pos)).map(rhDocValidade).filter(Boolean).sort(); return v.length ? v[v.length - 1] : ""; };
+  const G = ["ASO", "CNH", "TOX", "CURSO"], docs = { aso: 0, cnh: 0, tox: 0, curso: 0, apto: 0, vence30: 0, falta: { ASO: 0, CNH: 0, TOX: 0, CURSO: 0 } };
+  mot.forEach(f => { const v = Object.fromEntries(G.map(g => [g, val(f, g)])), ok = g => v[g] && v[g] >= pos;
+    if (ok("ASO")) docs.aso++; if (ok("CNH")) docs.cnh++; if (ok("TOX")) docs.tox++; if (ok("CURSO")) docs.curso++;
+    G.forEach(g => { if (!ok(g)) docs.falta[g]++; });
+    if (G.every(ok)) docs.apto++; if (G.some(g => ok(g) && v[g] <= em30)) docs.vence30++; });
+  return { st: "ok", n: mot.length, docs, temMes: false };
+}
+/* ---- Controle de Ponto: horas extras dos motoristas por competência ---- */
+async function execOrigPonto(ks) {
+  await loadRhPonto(EXEC.origForca); if (!RH_PONTO_STATE.ready) return { st: "semlista" };
+  const M = {}; ks.forEach(k => { const rs = pontoRecs(k.replace("-", "")).filter(r => /motorista/i.test(r.cargo)), he = rs.map(r => r.he / 60);
+    M[k] = { n: rs.length, med: execMedia(he), max: he.length ? Math.max(...he) : null, acima20: he.filter(h => h > 20).length, acima40: he.filter(h => h > 40).length, faixas: [[0, 10], [10, 20], [20, 40], [40, 1e9]].map(([a, b]) => he.filter(h => h >= a && h < b).length) }; });
+  return { st: "ok", M, temMes: M[ks[5]].n > 0 };
+}
+/* carrega as origens do mês (em paralelo; cada uma só para quem tem acesso a ela) */
+async function execOrigens(ref, forca) {
+  EXEC.orig = EXEC.orig || {};
+  if (!forca && EXEC.orig[ref]) return EXEC.orig[ref];
+  const ks = execMeses6(ref), R = execRef(ref), O = { ref, ks, R }, pode = id => !!session.n1 || window.permModuloSo(id) !== "nenhum";
+  const pag = (m, p) => !!session.n1 || pagNivel(m, p) !== "nenhum";
+  const run = async (k, ok, fn) => { if (!ok) { O[k] = { st: "semperm" }; return; } try { O[k] = await fn(ks); } catch (e) { O[k] = { st: execStErro(e), msg: e.message }; } };
+  EXEC.origForca = !!forca;
+  try {
+    await Promise.all([run("pax", pode("pax"), execOrigPax), run("hor", pode("horarios"), execOrigHor), run("frota", execFrotaOk(), execOrigFrota), run("inf", pode("infracoes"), execOrigInf),
+      run("sac", pode("sac"), execOrigSac), run("psq", pode("pesquisa"), execOrigPsq), run("func", pag("rh_db", "funcs"), execOrigFunc), run("ponto", pag("rh_rel", "ponto"), execOrigPonto)]);
+  } finally { EXEC.origForca = false; }
+  O.real = ["pax", "inf", "sac", "psq", "ponto"].some(k => O[k].st === "ok" && O[k].temMes) || O.frota.st === "ok";   /* alguma origem operacional com dados: relatório com os dados do ERP */
+  O.oks = Object.keys(EXEC_ORIG_N).filter(k => O[k].st === "ok");
+  EXEC.orig[ref] = O; return O;
+}
+function execOrigTxt(O, k) { const o = O[k] || {}; return o.st === "ok" ? (o.temMes === false && ["pax", "inf", "sac", "psq", "ponto"].includes(k) ? EXEC_ST_TXT.semmes : "") : (EXEC_ST_TXT[o.st] || EXEC_ST_TXT.erro); }
+/* documento da aba Geral com os dados do ERP (v0.12.75) */
+function execGeralDocReal(O) {
+  const R = O.R, ref = R.k, ks = O.ks, ant = ks[4], C = EXEC_COR, n = execN, p1 = execP1, tag = execTag;
+  const ok = k => O[k] && O[k].st === "ok", sem = k => execOrigTxt(O, EXEC_ORIG_DE[k] || k) || EXEC_ST_TXT.semmes, dec = x => x == null ? "—" : x.toFixed(1).replace(".", ",");
+  const pc = (a, b) => b ? Math.round(a / b * 100) : null, pct = x => x == null ? "—" : Math.round(x) + "%";
+  const varTxt = (a, b, rot) => b ? `${a >= b ? "▲" : "▼"} ${Math.abs(Math.round((a - b) / b * 100))}% sobre ${rot}` : "";
+  const rows = [], conf = [], plano = [], estados = [];
+  const ROW = (l, v, r, o, st, k) => { rows.push([l, v, r, o, st, k]); if (st) estados.push(st); return [l, v, r, o, st, k]; };
+  const ND = (l, k, r, o) => ROW(l, "—", r || "—", o || sem(k), null, k);
+  let ns = 0; const S = (t, s, k) => printSec(t, s, ++ns, execOrg(k));
+  const img = (src, t, s, k) => `<div class="gr"${execOrg(k)}><h3>${esc(t)}${s ? `<span>${esc(s)}</span>` : ""}</h3>${src ? `<img src="${src}" alt="${esc(t)}">` : '<p class="mut">—</p>'}</div>`;
+  const leg = { legend: { display: true, position: "top", align: "end", labels: { boxWidth: 8, boxHeight: 8, font: { size: 8 }, padding: 6, filter: it => it.text && it.text !== "undefined" } } };
+  const eixo = { ticks: { font: { size: 8 } } }, M = R.meses, Cap = R.mes.charAt(0).toUpperCase() + R.mes.slice(1);
+  const lin = ([l, v, r, o, st, k]) => `<tr${execOrg(k)}><td>${esc(l)}</td><td class="r"><b>${esc(v)}</b></td><td class="r mut">${esc(r)}</td><td class="mut">${esc(o)}</td><td>${st ? tag(st) : ""}</td></tr>`;
+  const tabInd = rs => `<table class="t"><thead><tr><th>Indicador</th><th class="r">Valor</th><th class="r">Referência</th><th>Observação</th><th>Situação</th></tr></thead><tbody>${rs.map(lin).join("")}</tbody></table>`;
+  const comGraf = (tab, graf) => graf ? `<div class="grid2 g21"><div>${tab}</div><div>${graf}</div></div>` : tab;
+  /* ---- números do mês ---- */
+  const P = ok("pax") ? O.pax.M[ref] : null, Pa = ok("pax") ? O.pax.M[ant] : null, Hh = ok("hor") ? O.hor.M[ref] : null;
+  const F = ok("frota") ? O.frota.N : null, I = ok("inf") ? O.inf.M[ref] : null, Ia = ok("inf") ? O.inf.M[ant] : null, MU = ok("frota") && O.frota.multasLista ? O.frota.mul[ref] : null;
+  const SC = ok("sac") ? O.sac.M[ref] : null, PS = ok("psq") ? O.psq.M[ref] : null, FU = ok("func") ? O.func : null, PO = ok("ponto") ? O.ponto.M[ref] : null;
+  const paxTot = P ? P.pag + P.grat : 0, ocup = P && P.lug ? (P.pag + P.grat) / P.lug * 100 : null;
+  const reclPor100 = SC && P && paxTot ? SC.recl / paxTot * 1e5 : null;
+  /* ---- 1. operação ---- */
+  const linhas = [EXEC_LIN.mc, EXEC_LIN.mad, EXEC_LIN.fret].filter(l => (Hh && Hh.lin[l]) || (P && P.lin[l]));
+  const tl = l => { const a = P && P.lin[l] || { n: 0, pag: 0, grat: 0, lug: 0 }, pr = Hh ? Hh.lin[l] || 0 : null; return [l, pr, a.n, a.pag + a.grat, a.pag, a.grat, a.lug ? (a.pag + a.grat) / a.lug * 100 : null]; };
+  const tdPr = v => v == null ? "—" : n(v);
+  const opTab = linhas.length ? `<table class="t"><thead><tr><th>Linha</th><th class="r">Viagens programadas</th><th class="r">Viagens com contagem</th><th class="r">Passageiros</th><th class="r">Pagantes</th><th class="r">Gratuidades</th><th class="r">Ocupação média</th></tr></thead><tbody>
+      ${linhas.map(l => { const [, pr, nv, tot, pag, grat, oc] = tl(l); return `<tr${execOrg("pax")}><td><b>${esc(l)}</b></td><td class="r"${execOrg("hor")}>${tdPr(pr)}</td><td class="r">${P ? n(nv) : "—"}</td><td class="r">${P ? n(tot) : "—"}</td><td class="r">${P ? n(pag) : "—"}</td><td class="r">${P ? `${n(grat)} <span class="mut">(${tot ? p1(grat / tot * 100) : "—"})</span>` : "—"}</td><td class="r ${oc != null && oc < PAX_META * 100 ? "neg" : ""}">${oc == null ? "—" : Math.round(oc) + "%"}</td></tr>`; }).join("")}
+      <tr class="tot"><td>Total</td><td class="r">${Hh ? n(Hh.tot) : "—"}</td><td class="r">${P ? n(P.n) : "—"}</td><td class="r">${P ? n(paxTot) : "—"}</td><td class="r">${P ? n(P.pag) : "—"}</td><td class="r">${P ? `${n(P.grat)} (${paxTot ? p1(P.grat / paxTot * 100) : "—"})` : "—"}</td><td class="r">${ocup == null ? "—" : Math.round(ocup) + "%"}</td></tr></tbody></table>` : `<p class="mut">Sem dados de viagens e passageiros: ${esc(sem("pax"))}.</p>`;
+  const g1 = ok("pax") ? frotaDetroChart({ type: "bar", data: { labels: M, datasets: [{ label: "Pagantes", data: ks.map(k => O.pax.M[k].pag), backgroundColor: C.azul, stack: "a" }, { label: "Gratuidades", data: ks.map(k => O.pax.M[k].grat), backgroundColor: C.lar, stack: "a" }] }, options: { plugins: leg, scales: { x: { stacked: true, ticks: { font: { size: 8 } } }, y: { stacked: true, beginAtZero: true, ticks: { font: { size: 8 } } } } } }, 345, 165) : "";
+  const g2 = ok("pax") ? frotaDetroChart({ type: "line", data: { labels: M, datasets: [{ label: "Ocupação média", data: ks.map(k => { const o = O.pax.M[k]; return o.lug ? Math.round((o.pag + o.grat) / o.lug * 1000) / 10 : null; }), borderColor: C.azul, backgroundColor: C.azul, tension: .3, pointRadius: 2.5 }, { label: `Referência ${PAX_META * 100}%`, data: ks.map(() => PAX_META * 100), borderColor: C.cinza, borderDash: [4, 4], pointRadius: 0 }] }, options: { plugins: leg, scales: { x: eixo, y: { min: 0, max: 100, ticks: { font: { size: 8 }, callback: x => x + "%" } } } } }, 345, 165) : "";
+  const secOp = S("Operação: viagens e passageiros", `${R.mes}${R.parcial ? " (parcial)" : ""}`, "pax") + opTab
+    + `<div class="filt">${Hh ? `Viagens programadas pelo quadro de horários vigente${O.hor.vig ? ` (desde ${execBr(dLocal(O.hor.vig))})` : ""}${O.hor.seed ? ", quadro público de referência (a lista do ERP ainda não foi criada)" : ""}: ${Hh.dias["Segunda a sexta"]} dia(s) útil(eis), ${Hh.dias["Sábados"]} sábado(s), ${Hh.dias["Domingos e feriados"]} domingo(s) e feriado(s); restrições de dia anotadas na observação do horário não são descontadas. ` : `Viagens programadas: ${esc(sem("hor"))}. `}Viagens com contagem = viagens com passageiros registrados na Estatística de Passageiros. Cumprimento, pontualidade, km e viagens não realizadas por motivo dependem do Controle de Viagens (em desenvolvimento).</div>`
+    + (g1 ? `<div class="grid2" style="margin-top:5px">${img(g1, "Passageiros por mês", "pagantes e gratuidades", "pax")}${img(g2, "Ocupação média", `passageiros ÷ lugares ofertados · referência ${PAX_META * 100}%`, "pax")}</div>` : "");
+  /* ---- 2. frota ---- */
+  let secFrota;
+  if (F) {
+    const fr = [ROW("Idade média da frota", F.idadeMed == null ? "—" : `${dec(F.idadeMed)} anos`, `≤ ${DETRO_REF.idade} anos`, F.maxIdade == null ? "sem ano de fabricação" : `mais antigo: ${F.maxIdade} anos; ${F.acimaIdade} acima de ${DETRO_REF.idade}`, F.idadeMed == null ? null : F.idadeMed <= DETRO_REF.idade ? "Adequado" : "Atenção", "veic"),
+      ROW("Acessibilidade (elevador)", `${pc(F.acess, F.n)}%`, "100%", `${F.acess} de ${F.n} veículos`, F.acess === F.n ? "Adequado" : "Atenção", "veic"),
+      ROW("Vistoria DETRO em dia", `${pc(F.vistOk, F.n)}%`, "100%", `${F.vistOk} de ${F.n}; ${F.aprov} aprovado(s), ${F.restr} com restrições${F.reprov ? `, ${F.reprov} reprovado(s)` : ""}${F.semVist ? `, ${F.semVist} sem vistoria` : ""}`, F.vistOk < F.n || F.reprov ? "Crítico" : F.restr ? "Atenção" : "Adequado", "veic"),
+      ROW("Disponibilidade média", F.dispoMed == null ? "—" : `${F.dispoMed}%`, `≥ ${DETRO_REF.dispo}%`, F.baixo85 ? `${F.baixo85} veículo(s) abaixo de 85%` : "nenhum veículo abaixo de 85%", F.dispoMed == null ? null : F.dispoMed >= DETRO_REF.dispo ? "Adequado" : F.dispoMed >= 80 ? "Atenção" : "Crítico", "manut"),
+      ROW("Preventivas / corretivas", `${F.prev} / ${F.corr}`, "corr. ≤ prev.", F.prev ? `${dec(F.corr / F.prev)} corretiva por preventiva` : "sem preventiva no mês", F.corr <= F.prev ? "Adequado" : "Atenção", "manut"),
+      ROW("Não conformidades abertas", String(F.ncAb.length), `≤ ${DETRO_REF.ncVeic} por veículo`, `${F.ncGrav.length} grave(s); ${F.ncVenc.length} fora do prazo`, F.ncGrav.length || F.ncVenc.length ? "Crítico" : F.ncAb.length / Math.max(1, F.n) <= DETRO_REF.ncVeic ? "Adequado" : "Atenção", "nc"),
+      ROW("Documentos técnicos vencidos", String(F.docsVenc.length), "0", `${F.docs60.length} vencem em 60 dias`, F.docsVenc.length ? "Crítico" : F.docs60.length ? "Atenção" : "Adequado", "veic")];
+    const h = O.frota.hist, g3 = frotaDetroChart({ type: "bar", data: { labels: h.map(x => x.label), datasets: [{ label: "Disponibilidade", data: h.map(x => x.dispo), backgroundColor: h.map(x => x.dispo != null && x.dispo >= DETRO_REF.dispo ? C.verde : C.amb) }, { label: `Referência ${DETRO_REF.dispo}%`, type: "line", data: h.map(() => DETRO_REF.dispo), borderColor: C.cinza, borderDash: [4, 4], pointRadius: 0 }] }, options: { plugins: leg, scales: { x: eixo, y: { min: Math.max(0, Math.min(80, ...h.map(x => x.dispo == null ? 100 : x.dispo)) - 10), max: 100, ticks: { font: { size: 8 }, callback: x => x + "%" } } } } }, 345, 225);
+    secFrota = S("Frota e manutenção", `${F.n} veículo(s) ativo(s): ${F.operando} em operação, ${F.parados} em manutenção, ${F.n - F.operando - F.parados} de reserva`, "veic") + comGraf(tabInd(fr), img(g3, "Disponibilidade da frota", `dias operáveis ÷ dias do mês · referência ${DETRO_REF.dispo}%`, "manut"));
+  } else secFrota = S("Frota e manutenção", "", "veic") + tabInd([ND("Frota ativa e documentos", "veic"), ND("Disponibilidade e manutenção", "manut", `≥ ${DETRO_REF.dispo}%`), ND("Não conformidades abertas", "nc")]);
+  /* ---- 3. segurança ---- */
+  const seg = [];
+  if (I) {
+    seg.push(ROW("Infrações de velocidade", n(I.n), "queda", Ia && Ia.n ? varTxt(I.n, Ia.n, R.mesAnt) : "telemetria do mês", Ia && Ia.n && I.n > Ia.n ? "Atenção" : "Adequado", "inf"));
+    seg.push(ROW("Graves e gravíssimas", n(I.graves), "0", `${I.g["Gravíssima"]} gravíssima(s)${Ia ? `; eram ${Ia.graves} em ${R.mesAnt}` : ""}${I.exc != null ? `; excesso médio ${Math.round(I.exc)} km/h` : ""}`, I.g["Gravíssima"] ? "Crítico" : I.graves ? "Atenção" : "Adequado", "inf"));
+    seg.push(ROW("Motoristas reincidentes", n(O.inf.reinc), "0", "graves no mês e em outro mês dos últimos 6", O.inf.reinc ? "Atenção" : "Adequado", "inf"));
+    seg.push(ROW("Notificação ao motorista", I.n ? `${pc(I.not, I.n)}%` : "—", "100%", `${I.not} de ${I.n} notificada(s)`, !I.n ? null : I.not === I.n ? "Adequado" : "Atenção", "inf"));
+  } else seg.push(ND("Infrações de velocidade (telemetria)", "inf"));
+  if (MU) seg.push(ROW("Multas de trânsito recebidas", n(MU.n), "—", Object.entries(MU.grav).map(([g, q]) => `${q} ${g.toLowerCase()}`).join(", ") || "nenhuma no mês", null, "multas"));
+  else seg.push(ND("Multas de trânsito recebidas", "multas", "—", ok("frota") ? EXEC_ST_TXT.semlista : sem("frota")));
+  seg.push(ROW("Sinistros", "—", "0 com vítima", "Ocorrências e sinistros: origem em desenvolvimento", null, "sin"));
+  const g4 = ok("inf") ? frotaDetroChart({ type: "bar", data: { labels: M, datasets: [["Leve", C.claro], ["Média", C.amb], ["Grave", C.verm], ["Gravíssima", "#6B1410"]].map(([g, cor]) => ({ label: g, data: ks.map(k => O.inf.M[k].g[g]), backgroundColor: cor, stack: "a" })) }, options: { plugins: leg, scales: { x: { stacked: true, ticks: { font: { size: 8 } } }, y: { stacked: true, beginAtZero: true, ticks: { font: { size: 8 }, precision: 0 } } } } }, 345, 210) : "";
+  const secSeg = S("Segurança viária", "infrações de velocidade (telemetria), multas e sinistros", "inf") + comGraf(tabInd(seg), g4 ? img(g4, "Infrações por gravidade", "últimos 6 meses", "inf") : "");
+  /* ---- 4. motoristas ---- */
+  const mot = [];
+  if (FU) {
+    mot.push(ROW("Motoristas ativos", n(FU.n), "—", `na posição de ${execBr(dLocal(execPosicao(ref)))}`, null, "func"));
+    if (FU.docs && FU.n) {
+      const D = FU.docs, st = x => x === FU.n ? "Adequado" : "Atenção";
+      mot.push(ROW("Aptos pela documentação", `${pc(D.apto, FU.n)}%`, "100%", `${D.apto} de ${FU.n}${D.vence30 ? `; ${D.vence30} com documento vencendo em 30 dias` : ""}`, D.apto === FU.n ? "Adequado" : "Crítico", "func"));
+      mot.push(ROW("CNH válida", `${pc(D.cnh, FU.n)}%`, "100%", `${D.cnh} de ${FU.n}`, st(D.cnh), "func"));
+      mot.push(ROW("Exame toxicológico em dia", `${pc(D.tox, FU.n)}%`, "100%", `${D.tox} de ${FU.n}`, st(D.tox), "func"));
+      mot.push(ROW("Curso de transporte coletivo válido", `${pc(D.curso, FU.n)}%`, "100%", `${D.curso} de ${FU.n}`, st(D.curso), "func"));
+      mot.push(ROW("ASO em dia", `${pc(D.aso, FU.n)}%`, "100%", `${D.aso} de ${FU.n}`, st(D.aso), "func"));
+    } else if (FU.n) mot.push(ROW("Documentos obrigatórios", "—", "100%", FU.docsSt === "erro" ? EXEC_ST_TXT.erro : "lista de documentos do RH ainda não criada", null, "func"));
+  } else mot.push(ND("Motoristas ativos e documentação", "func", "100%"));
+  if (PO) mot.push(ROW("Horas extras no mês (média por motorista)", PO.med == null ? "—" : `${dec(PO.med)} h`, "≤ 20 h", `${PO.n} motorista(s) no ponto; maior individual ${PO.max == null ? "—" : dec(PO.max) + " h"}; ${PO.acima20} acima de 20 h`, PO.med == null ? null : PO.acima40 ? "Crítico" : PO.med <= 20 && !PO.acima20 ? "Adequado" : "Atenção", "ponto"));
+  else mot.push(ND("Horas extras no mês", "ponto", "≤ 20 h"));
+  mot.push(ROW("Treinamento no mês", "—", "—", "Treinamentos: origem em desenvolvimento", null, "trein"));
+  const secMot = S("Motoristas e jornada", FU ? `${FU.n} motorista(s) ativo(s)` : "", "func") + tabInd(mot);
+  /* ---- 5. atendimento ---- */
+  const at = [];
+  if (SC) {
+    at.push(ROW("Chamados no SAC", n(SC.n), "—", Object.entries(SC.cat).sort((a, b) => b[1] - a[1]).map(([c, q]) => `${q} ${(q > 1 ? { "Reclamação": "reclamações", "Sugestão": "sugestões", "Elogio": "elogios" }[c] : "") || c.toLowerCase()}`).join(", ") || "nenhum no mês", null, "sac"));
+    at.push(reclPor100 != null ? ROW("Reclamações por 100 mil passageiros", dec(reclPor100), "≤ 15", `${SC.recl} reclamação(ões) para ${n(paxTot)} passageiros`, reclPor100 <= 15 ? "Adequado" : "Atenção", "sac") : ROW("Reclamações no mês", n(SC.recl), "—", ok("pax") ? "sem passageiros registrados no mês" : `por 100 mil passageiros: ${sem("pax")}`, null, "sac"));
+    at.push(ROW("Resolvidos no prazo", SC.sla == null ? "—" : `${Math.round(SC.sla * 100)}%`, "≥ 95%", `${SC.res} resolvido(s); ${SC.abertos} aberto(s) no fim do mês, ${SC.atrasados} fora do prazo${SC.tmr != null ? `; resolução em ${dec(SC.tmr)} dia(s)` : ""}`, SC.sla == null ? (SC.atrasados ? "Atenção" : null) : SC.sla >= .95 && !SC.atrasados ? "Adequado" : SC.atrasados ? "Crítico" : "Atenção", "sac"));
+    if (SC.tpr != null) at.push(ROW("1ª resposta (média)", `${dec(SC.tpr)} h`, "4 h graves · 24 h demais", `${Math.round((SC.meta || 0) * 100)}% dentro da meta`, (SC.meta || 0) >= .9 ? "Adequado" : "Atenção", "sac"));
+  } else at.push(ND("Chamados e reclamações no SAC", "sac"));
+  if (PS) {
+    at.push(ROW("Pesquisa: respostas válidas", n(PS.n), "—", PS.itens.some(x => x.ruim > 0) ? `itens mais criticados: ${PS.itens.filter(x => x.ruim > 0).slice(0, 3).map(x => `${x.it.toLowerCase()} (${Math.round(x.ruim)}% ruim)`).join(", ")}` : "um passageiro por mês", null, "psq"));
+    at.push(ROW("NPS · satisfação geral", `${PS.nps == null ? "—" : (PS.nps > 0 ? "+" : "") + PS.nps} · ${dec(PS.sat)}`, "≥ +30 · ≥ 7", PS.nps == null ? "sem notas no mês" : `${Math.round(PS.prom)}% promotores, ${Math.round(PS.detr)}% detratores${PS.mot != null ? `; nota do motorista ${dec(PS.mot)}` : ""}`, PS.nps == null ? null : PS.nps >= 30 && (PS.sat == null || PS.sat >= 7) ? "Adequado" : "Atenção", "psq"));
+  } else at.push(ND("Pesquisa de satisfação (NPS)", "psq", "≥ +30"));
+  const g5 = PS && PS.blocos.some(b => b.apr != null) ? frotaDetroChart({ type: "bar", data: { labels: PS.blocos.map(b => b.n), datasets: [{ label: "Aprovação (Excelente + Bom)", data: PS.blocos.map(b => b.apr == null ? null : Math.round(b.apr)), backgroundColor: PS.blocos.map(b => b.apr >= 80 ? C.verde : C.amb) }] }, options: { indexAxis: "y", plugins: leg, scales: { x: { min: 0, max: 100, ticks: { font: { size: 8 }, callback: x => x + "%" } }, y: { ticks: { font: { size: 8 }, autoSkip: false } } } } }, 345, 120) : "";
+  const npsH = ok("psq") ? ks.map(k => O.psq.M[k].nps) : [];
+  const g6 = npsH.some(v => v != null) ? frotaDetroChart({ type: "line", data: { labels: M, datasets: [{ label: "NPS", data: npsH, borderColor: C.azul, backgroundColor: C.azul, tension: .3, pointRadius: 2.5, spanGaps: true }, { label: "Referência +30", data: M.map(() => 30), borderColor: C.cinza, borderDash: [4, 4], pointRadius: 0 }] }, options: { plugins: leg, scales: { x: eixo, y: { min: Math.min(0, ...npsH.filter(v => v != null)), max: 100, ticks: { font: { size: 8 } } } } } }, 345, 105) : "";
+  const secAt = S("Atendimento ao passageiro", "SAC e pesquisa de satisfação", "sac") + comGraf(tabInd(at), g5 || g6 ? `${g5 ? img(g5, "Aprovação por bloco", "% Excelente + Bom", "psq") : ""}${g5 && g6 ? '<div style="height:6px"></div>' : ""}${g6 ? img(g6, "NPS", "últimos 6 meses · referência +30", "psq") : ""}` : "");
+  /* ---- 6. conformidade ---- */
+  const CF = (a, b, c, d, k) => { conf.push([a, b, c, d, k]); if (d) estados.push(d); };
+  if (F) {
+    CF("Vistoria DETRO", `${F.vistOk} de ${F.n} em dia`, F.vist30.length ? `${F.vist30.map(v => v.prefixo).join(", ")} vence(m) em 30 dias` : "nenhuma vence em 30 dias", F.vistOk < F.n ? "Crítico" : F.vist30.length ? "Atenção" : "Adequado", "veic");
+    CF("Licenciamento anual (CRLV)", `${F.n - F.crlvPend} de ${F.n}`, F.crlvPend ? `${F.crlvPend} pendente(s) do exercício anterior` : `exercício ${dLocal(execPosicao(ref)).getFullYear()} em dia`, F.crlvPend ? "Crítico" : "Adequado", "veic");
+    CF("Cronotacógrafos aferidos", `${F.tac.ok} de ${F.n}`, `${F.tac.venc.length} vencido(s); ${F.tac.v60} vence(m) em 60 dias${F.tac.sem ? `; ${F.tac.sem} sem data` : ""}`, F.tac.venc.length ? "Crítico" : F.tac.sem || F.tac.v60 ? "Atenção" : "Adequado", "veic");
+    CF("Extintores de incêndio", `${F.ext.ok} de ${F.n}`, F.ext.venc.length ? `${F.ext.venc.map(x => x.prefixo).join(", ")} vencido(s)` : `${F.ext.v60} vence(m) em 60 dias${F.ext.sem ? `; ${F.ext.sem} sem data` : ""}`, F.ext.venc.length ? "Crítico" : F.ext.sem || F.ext.v60 ? "Atenção" : "Adequado", "veic");
+  } else CF("Vistoria, licenciamento, cronotacógrafo e extintores", "—", sem("frota"), null, "veic");
+  CF("Adesivos e informações obrigatórias", "—", "Vistoria (checklist): origem em desenvolvimento", null, "vist");
+  CF("Quadro de horários vigente", ok("hor") ? (O.hor.seed ? "quadro público" : "publicado") : "—", ok("hor") ? (O.hor.vig ? `em vigor desde ${execBr(dLocal(O.hor.vig))}` : "sem data de vigência") : sem("hor"), ok("hor") ? (O.hor.seed ? "Atenção" : "Adequado") : null, "hor");
+  CF("Canais de atendimento (SAC)", SC ? "ativo" : "—", SC ? `${SC.n} chamado(s) no mês` : sem("sac"), SC ? "Adequado" : null, "sac");
+  CF("Seguro de responsabilidade civil", "—", "Seguros: origem em desenvolvimento", null, "seg");
+  const secConf = S("Conformidade e regularidade", `em ${execBr(dLocal(execPosicao(ref)))}`, "veic") + `<table class="t"><thead><tr><th>Item</th><th>Situação</th><th>Status</th></tr></thead><tbody>${conf.map(([a, b, c, d, k]) => `<tr${execOrg(k)}><td><b>${esc(a)}</b></td><td>${esc(b)}<div class="mut">${esc(c)}</div></td><td>${d ? tag(d) : ""}</td></tr>`).join("")}</tbody></table>`;
+  /* ---- 7. plano de ação (gerado das pendências) ---- */
+  const PL = (p, a, z, r, k) => plano.push([p, a, z, r, k]);
+  if (F) {
+    F.docsVenc.slice(0, 6).forEach(x => PL("Imediata", `${x.t} do ${x.prefixo}: ${x.txt || "vencido"} — regularizar`, R.mais(10), "Frota", "veic"));
+    F.ncGrav.slice(0, 4).forEach(x => PL("Imediata", `Corrigir a não conformidade grave do ${x.prefixo}: ${x.item}`, R.mais(5), "Manutenção", "nc"));
+    if (F.ncVenc.length) PL("Curto prazo", `Concluir ${F.ncVenc.length} não conformidade(s) fora do prazo`, R.mais(15), "Manutenção", "nc");
+    F.vist30.slice(0, 4).forEach(v => PL("Curto prazo", `Vistoria DETRO do ${v.prefixo} (válida até ${execBr(v.validade)})`, execBr(v.validade), "Frota", "veic"));
+    if (F.baixo85) PL("Curto prazo", `Avaliar a causa das paradas: ${F.baixo85} veículo(s) com disponibilidade abaixo de 85%`, R.mais(20), "Manutenção", "manut");
+  }
+  if (I && O.inf.reinc) PL("Curto prazo", `Reciclagem em direção defensiva e acompanhamento de ${O.inf.reinc} motorista(s) reincidente(s) em infrações graves`, R.mais(30), "RH / Operação", "inf");
+  if (I && I.n && I.not < I.n) PL("Curto prazo", `Notificar ${I.n - I.not} infração(ões) ainda sem notificação ao motorista`, R.mais(5), "Operação", "inf");
+  if (SC && SC.atrasados) PL("Imediata", `Responder ${SC.atrasados} chamado(s) do SAC fora do prazo`, R.mais(3), "Atendimento", "sac");
+  if (FU && FU.docs && FU.docs.apto < FU.n) PL("Curto prazo", `Regularizar a documentação de ${FU.n - FU.docs.apto} motorista(s) (ASO, CNH, toxicológico ou curso)`, R.mais(30), "RH", "func");
+  if (PO && PO.acima20) PL("Programada", `Rever escalas: ${PO.acima20} motorista(s) com mais de 20 h extras no mês`, R.mais(30), "Operação / RH", "ponto");
+  const ordP = { "Imediata": 0, "Curto prazo": 1, "Programada": 2 }; plano.sort((a, b) => ordP[a[0]] - ordP[b[0]]);
+  const secPlano = S("Plano de ação", "gerado das pendências do mês", "nc") + `<table class="t"><thead><tr><th>Prioridade</th><th>Ação</th><th class="nw">Prazo</th></tr></thead><tbody>${plano.map(([p, a, z, r, k]) => `<tr${execOrg(k)}><td class="nw">${execTag(p)}</td><td>${esc(a)}<div class="mut">${esc(r)}</div></td><td class="nw">${esc(z)}</td></tr>`).join("") || `<tr><td colspan="3">Nenhuma pendência nas origens ligadas.</td></tr>`}</tbody></table>`;
+  /* ---- síntese e números-chave ---- */
+  const cri = estados.filter(x => x === "Crítico").length, atn = estados.filter(x => x === "Atenção").length, geral = cri ? "Crítico" : atn ? "Atenção" : "Adequado";
+  const frases = [];
+  if (P) frases.push(`Em ${R.mes}${R.parcial ? " (mês em curso, números parciais)" : ""} a empresa transportou <b>${n(paxTot)} passageiros</b> (${paxTot ? p1(P.grat / paxTot * 100) : "—"} em gratuidades) em ${n(P.n)} viagens com contagem${Hh ? ` de ${n(Hh.tot)} programadas no quadro` : ""}, com ocupação média de ${ocup == null ? "—" : Math.round(ocup) + "%"}${Pa && (Pa.pag + Pa.grat) ? ` (${varTxt(paxTot, Pa.pag + Pa.grat, R.mesAnt)})` : ""}.`);
+  if (F) frases.push(`A frota de ${F.n} veículo(s) tem idade média de ${dec(F.idadeMed)} anos, ${pc(F.vistOk, F.n)}% das vistorias em dia e disponibilidade de ${F.dispoMed}%${F.docsVenc.length ? `; ${F.docsVenc.length} documento(s) técnico(s) vencido(s)` : ""}.`);
+  if (I) frases.push(`Houve <b>${n(I.n)} infração(ões) de velocidade</b>, ${I.graves} grave(s) ou gravíssima(s)${Ia ? ` (eram ${Ia.graves} em ${R.mesAnt})` : ""}${O.inf.reinc ? `, com ${O.inf.reinc} motorista(s) reincidente(s)` : ""}.`);
+  if (SC || PS) frases.push([SC ? `O SAC recebeu ${n(SC.n)} chamado(s)${reclPor100 != null ? ` (${dec(reclPor100)} reclamações por 100 mil passageiros)` : ""}${SC.sla != null ? `, ${Math.round(SC.sla * 100)}% resolvidos no prazo` : ""}` : "", PS && PS.nps != null ? `a pesquisa teve NPS ${PS.nps > 0 ? "+" : ""}${PS.nps} em ${PS.n} resposta(s)` : ""].filter(Boolean).join("; ") + ".");
+  if (FU && FU.docs && FU.n) frases.push(`${FU.docs.apto} de ${FU.n} motorista(s) estão aptos pela documentação${PO && PO.med != null ? `; média de ${dec(PO.med)} h extras no mês` : ""}.`);
+  const faltam = Object.keys(EXEC_ORIG_N).filter(k => !ok(k) || (O[k].temMes === false && ["pax", "inf", "sac", "psq", "ponto"].includes(k)));
+  const sintese = `<div class="sint"><b>Situação geral: ${tag(geral)}${cri + atn ? ` com ${cri + atn} ponto(s) de atenção` : ""}.</b> ${frases.join(" ") || "Sem dados no mês nas origens ligadas."}${plano.length ? ` Prioridades: ${plano.slice(0, 3).map(x => x[1].charAt(0).toLowerCase() + x[1].slice(1)).join("; ")}.` : ""}</div>`;
+  const K = (l, v, sub, st, small, k) => { return `<div${execOrg(k)}><div class="l">${esc(l)}</div><div class="v">${esc(v)}${small ? `<small>${esc(small)}</small>` : ""}</div><div class="s"><span>${esc(sub)}</span>${st ? tag(st) : ""}</div></div>`; };
+  const kpis = `<div class="k8">
+    ${Hh ? K("Viagens programadas", n(Hh.tot), P ? `${n(P.n)} com contagem de passageiros` : "quadro de horários vigente", null, "", "hor") : K("Viagens programadas", "—", sem("hor"), null, "", "hor")}
+    ${P ? K("Passageiros transportados", n(paxTot), `${Pa && (Pa.pag + Pa.grat) ? varTxt(paxTot, Pa.pag + Pa.grat, R.mesAnt) + " · " : ""}${paxTot ? p1(P.grat / paxTot * 100) : "—"} gratuidades`, null, "", "pax") : K("Passageiros transportados", "—", sem("pax"), null, "", "pax")}
+    ${P ? K("Ocupação média", ocup == null ? "—" : Math.round(ocup) + "%", `passageiros ÷ lugares · ref. ≥ ${PAX_META * 100}%`, ocup == null ? null : ocup >= PAX_META * 100 ? "Adequado" : "Atenção", "", "pax") : K("Ocupação média", "—", sem("pax"), null, "", "pax")}
+    ${F ? K("Frota ativa · idade média", String(F.n), `ref. ≤ ${DETRO_REF.idade} anos · ${F.acimaIdade} acima`, F.idadeMed == null ? null : F.idadeMed <= DETRO_REF.idade ? "Adequado" : "Atenção", F.idadeMed == null ? "" : `${dec(F.idadeMed)} anos`, "veic") : K("Frota ativa", "—", sem("frota"), null, "", "veic")}
+    ${F ? K("Vistoria DETRO em dia", `${pc(F.vistOk, F.n)}%`, `${F.vistOk} de ${F.n} · ${F.vist30.length} vence(m) em 30 d`, F.vistOk < F.n ? "Crítico" : F.vist30.length ? "Atenção" : "Adequado", "", "veic") : K("Vistoria DETRO em dia", "—", sem("frota"), null, "", "veic")}
+    ${F ? K("Disponibilidade da frota", F.dispoMed == null ? "—" : `${F.dispoMed}%`, `ref. ≥ ${DETRO_REF.dispo}% · ${F.baixo85} abaixo de 85%`, F.dispoMed == null ? null : F.dispoMed >= DETRO_REF.dispo ? "Adequado" : "Atenção", "", "manut") : K("Disponibilidade da frota", "—", sem("frota"), null, "", "manut")}
+    ${I ? K("Infrações graves", n(I.graves), `${n(I.n)} infração(ões) · ${O.inf.reinc} reincidente(s)${MU ? ` · ${MU.n} multa(s)` : ""}`, I.g["Gravíssima"] ? "Crítico" : I.graves ? "Atenção" : "Adequado", "", "inf") : K("Infrações graves", "—", sem("inf"), null, "", "inf")}
+    ${SC || PS ? K(reclPor100 != null ? "Reclamações · NPS" : "Chamados no SAC · NPS", reclPor100 != null ? dec(reclPor100) : SC ? n(SC.n) : "—", `${reclPor100 != null ? "por 100 mil passageiros · ref. ≤ 15" : SC ? `${SC.recl} reclamação(ões)` : sem("sac")}${PS && PS.nps != null ? ` · NPS ${PS.nps > 0 ? "+" : ""}${PS.nps}` : ""}`, reclPor100 != null ? (reclPor100 <= 15 ? "Adequado" : "Atenção") : null, SC && SC.sla != null ? `SLA ${Math.round(SC.sla * 100)}%` : "", "sac") : K("Reclamações · NPS", "—", sem("sac"), null, "", "sac")}
+  </div>`;
+  const parcial = faltam.length > 0;
+  const cab = printCab("Relatório mensal de saúde operacional", `${Cap} · operação, frota, segurança, pessoas, atendimento e conformidade`, { doc: R.cod, meta: [["Destinatário", "DETRO/RJ"], ["Referência", R.mes + (R.parcial ? " (parcial)" : "")]], stamp: parcial ? "Dados do ERP · parcial" : "Dados do ERP", stampCls: parcial ? "neutro" : "ok" });
+  const refs = `<div class="filt" data-rota="-" data-ed="nota-referencias" style="margin-top:6px">Referências internas de acompanhamento: ocupação ≥ ${PAX_META * 100}%; idade média ≤ ${DETRO_REF.idade} anos; vistoria 100%; disponibilidade ≥ ${DETRO_REF.dispo}%; até ${DETRO_REF.ncVeic} NC aberta por veículo; reclamações ≤ 15 por 100 mil passageiros; resolução no prazo ≥ 95%; NPS ≥ +30; motoristas aptos 100%; horas extras ≤ 20 h por motorista. Adequado = dentro da referência; Atenção = fora, sem impedir a operação; Crítico = exige ação imediata. <b>Informações operacionais da empresa: não incluem custos, valores, fornecedores nem dados pessoais.</b> Dados do ERP: ${O.oks.map(k => EXEC_ORIG_N[k]).join(", ") || "nenhuma origem"}${faltam.length ? `. Sem dados no mês ou ainda sem origem: ${faltam.map(k => `${EXEC_ORIG_N[k]} (${execOrigTxt(O, k) || EXEC_ST_TXT.semmes})`).join("; ")}; Controle de Viagens, Ocorrências e sinistros, Treinamentos, Vistoria (checklist) e Seguros em desenvolvimento` : "; Controle de Viagens, Ocorrências e sinistros, Treinamentos, Vistoria (checklist) e Seguros em desenvolvimento"}.</div>`;
+  const html = cab + sintese.replace('<div class="sint">', '<div class="sint" data-ed="sintese">') + kpis + secOp.replace('<div class="filt">', '<div class="filt" data-ed="nota-operacao">') + secFrota + `<div data-rota="-" style="break-before:page"></div>` + secSeg + secMot + secAt + secConf + secPlano + refs + `<div data-rota="-">` + printAssin([["Responsável operacional", ""], ["Responsável técnico pela frota", ""], ["Diretoria", ""]]) + `</div>`;
+  return { titulo: "Relatório mensal de saúde operacional", html, paisagem: false, fonte: 9, css: execGeralDocCss(), real: true, rows, conf, plano };
+}
+
 
 /* =====================================================================
    v0.12.74 · páginas A4 na tela: o documento é paginado em folhas de 210 × 297 mm (margens do impresso), com rodapé
@@ -23696,11 +24033,24 @@ function execFolhaCss(pais) { return `
     [data-rota]:not([data-rota="-"]) { cursor: pointer; } tr[data-rota]:not([data-rota="-"]):hover td, .k8 > div[data-rota]:hover, .gr[data-rota]:hover { background: #F3F5F9; }
     .gr h3 > span { margin-left: auto; } .gr h3 .amp { margin-left: 6px; border: .8px solid #C9CFD8; background: #fff; color: #1E2153; border-radius: 3px; font-size: 10px; line-height: 13px; padding: 0 4px; cursor: pointer; }
     .gr h3 .amp:hover { background: #1E2153; color: #fff; }
+    h2.sec .det { margin-left: 6px; font: 700 8.5px "Manrope", Arial, sans-serif; letter-spacing: 0; text-transform: none; color: #fff; background: #1E2153; border: 0; border-radius: 10px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
+    h2.sec .det:hover, h2.sec .det:focus-visible { background: #F1612F; outline: none; }
+    [data-demo][tabindex]:focus-visible { outline: 2px solid #F1612F; outline-offset: 1px; }
     [data-ed][contenteditable="true"] { outline: 1px dashed #AAB2BF; outline-offset: 2px; cursor: text; }
     [data-ed][contenteditable="true"]:hover { background: #FFFBEA; }
     [data-ed][contenteditable="true"]:focus { outline: 1.5px solid #F1612F; background: #FFFDF6; }
     [data-ed]:empty::before { content: attr(data-ph); color: #8D96A3; font-style: italic; }
   }`; }
+/* v0.12.75: modo leitura — texto corrido, sem folhas, letra maior (padrão no celular) */
+const EXEC_LEITURA_CSS = `
+  @media screen {
+    html, body { background: #fff !important; } body { padding: 12px 14px 20px !important; zoom: 1.3; }
+    .grid2, .grid2.g21, .g3 { grid-template-columns: 1fr !important; } .g3 .g-l { grid-column: auto !important; }
+    .k8 { grid-template-columns: 1fr 1fr !important; } .doc-cab { grid-template-columns: auto 1fr !important; } .doc-meta { grid-column: 1 / -1; border-left: 0 !important; padding-left: 0 !important; }
+    table.t { display: block; overflow-x: auto; } div[style*="break-before"] { border-top: 1px dashed #C9CFD8; margin: 14px 0; }
+  }`;
+function execLeitura() { return EXEC.leitura == null ? window.innerWidth < 760 : !!EXEC.leitura; }
+window.execLeituraTrocar = () => { EXEC.leitura = !execLeitura(); renderExec(); };
 function execEhQuebra(n) { return n.nodeType === 1 && n.matches('div[style*="break-before"]') && !n.textContent.trim() && !n.children.length; }
 function execTabelaDe(n) {   /* tabela que pode ser partida entre folhas: a própria ou a última de um bloco "título + tabela" */
   if (n.nodeType !== 1) return null;
@@ -23768,7 +24118,7 @@ function execSanit(html) {
 function execTxtVazio(h) { return !String(h || "").replace(/<[^>]*>/g, "").replace(/&nbsp;|\s/g, ""); }
 function execMarcar(doc, T, editavel) {
   const p = new DOMParser().parseFromString(`<!DOCTYPE html><html><body>${doc.html}</body></html>`, "text/html"), b = p.body, cont = {};
-  b.querySelectorAll(".sint, ul.res, .filt").forEach(e => { const t = e.matches(".sint") ? "sint" : e.matches("ul.res") ? "res" : "nota"; cont[t] = (cont[t] || 0) + 1; e.setAttribute("data-ed", t + cont[t]); });
+  b.querySelectorAll(".sint, ul.res, .filt").forEach(e => { if (e.dataset.ed) return; const t = e.matches(".sint") ? "sint" : e.matches("ul.res") ? "res" : "nota"; cont[t] = (cont[t] || 0) + 1; e.setAttribute("data-ed", t + cont[t]); });   /* v0.12.75: a chave vem do modelo (data-ed); o número de ordem só para blocos sem chave */
   T = T || {};
   if (editavel || !execTxtVazio(T.obs)) {
     const blk = p.createElement("div"); blk.className = "obs-blk blq"; blk.setAttribute("data-rota", "-");
@@ -23782,7 +24132,7 @@ function execMarcar(doc, T, editavel) {
 }
 const EXEC_LS = "erp.exec.textos";
 function execLsChave() { return EXEC_LS + "." + ((typeof account !== "undefined" && account && account.username) || "anon"); }
-function execTextosLer() { try { const o = JSON.parse(sessionStorage.getItem(execLsChave()) || "{}"); if (o && typeof o === "object" && !Array.isArray(o)) EXEC.textos = o; } catch (e) {} }
+function execTextosLer() { try { const o = JSON.parse(sessionStorage.getItem(execLsChave()) || "{}"); if (o && typeof o === "object" && !Array.isArray(o)) { Object.keys(o).forEach(c => { o[c] = execTextosMigrar(c.split("|")[0], o[c]); }); EXEC.textos = o; } } catch (e) {} }
 function execTextosGravar() { try { sessionStorage.setItem(execLsChave(), JSON.stringify(EXEC.textos)); } catch (e) {} }
 function execChave() { return `${execRelAtual()}|${execRefAtual(EXEC.aba)}`; }
 /* ---- tela ---- */
@@ -23806,6 +24156,7 @@ function execAlvo(el, raiz) {   /* origem mais próxima: o próprio elemento ou 
 }
 function execAjustar() {
   const fr = $("execFrame"), wrap = fr && fr.parentElement; if (!fr || !wrap || !fr.contentDocument || !fr.contentDocument.documentElement) return;
+  if (EXEC.leituraAtiva) { const cw0 = wrap.parentElement.clientWidth || 360; fr.style.width = cw0 + "px"; fr.style.transform = "none"; const h0 = fr.contentDocument.documentElement.scrollHeight || 1200; fr.style.height = h0 + "px"; wrap.style.height = h0 + "px"; wrap.style.width = cw0 + "px"; wrap.style.margin = "10px auto 0"; return; }   /* modo leitura: largura da tela, sem escala */
   const cw = wrap.parentElement.clientWidth || EXEC.W, sc = Math.min(1.5, cw / EXEC.W), h = fr.contentDocument.documentElement.scrollHeight || 1200;   /* amplia até 1,5× para a letra do A4 ficar legível; reduz no celular */
   fr.style.width = EXEC.W + "px"; fr.style.height = h + "px"; fr.style.transform = `scale(${Math.round(sc * 1000) / 1000})`; fr.style.transformOrigin = "0 0";
   wrap.style.height = Math.ceil(h * sc) + "px"; wrap.style.width = Math.min(cw, Math.ceil(EXEC.W * sc)) + "px"; wrap.style.margin = "10px auto 0";
@@ -23819,8 +24170,8 @@ async function execEsperar(d) {   /* fontes e imagens prontas antes de medir as 
 function execMostrar(host, doc, opt) {
   opt = opt || {};
   if (!doc) { host.innerHTML = `<div class="cap-empty"><h3>Sem dados para o relatório</h3></div>`; EXEC.pronto = Promise.resolve(); return; }
-  const pais = !!doc.paisagem; EXEC.W = (pais ? 1123 : 794) + 40; EXEC.pagSujo = false;
-  const html = printDocHtml(Object.assign({}, doc, { css: (doc.css || "") + execFolhaCss(pais) }));
+  const pais = !!doc.paisagem, leit = execLeitura(); EXEC.W = (pais ? 1123 : 794) + 40; EXEC.pagSujo = false; EXEC.leituraAtiva = leit;
+  const html = printDocHtml(Object.assign({}, doc, { css: (doc.css || "") + execFolhaCss(pais) + (leit ? EXEC_LEITURA_CSS : "") }));
   host.innerHTML = `<div class="exec-doc"><iframe id="execFrame" sandbox="allow-same-origin" title="${esc(doc.titulo || "Relatório")}"></iframe></div>`;
   const fr = $("execFrame"), tk = ++EXEC.tk; let fim; EXEC.pronto = new Promise(r => { fim = r; });
   fr.onload = async () => {
@@ -23829,7 +24180,7 @@ function execMostrar(host, doc, opt) {
       const d = fr.contentDocument; if (tk !== EXEC.tk) return;
       await execEsperar(d); if (tk !== EXEC.tk || !fr.isConnected) return;
       execLigar(d, opt);   /* antes de paginar: as notas de origem e o ⛶ ocupam espaço na tela */
-      EXEC.folhas = execPaginar(d, doc.titulo, pais);
+      EXEC.folhas = leit ? 0 : execPaginar(d, doc.titulo, pais);
       execAjustar(); if (opt.scroll != null) window.scrollTo(0, opt.scroll);
       setTimeout(execAjustar, 500);
     } finally { if (tk === EXEC.tk) fim(); }
@@ -23843,8 +24194,14 @@ function execLigar(d, opt) {
   d.querySelectorAll(".gr").forEach(g => { const im = g.querySelector("img"), h3 = g.querySelector("h3"), src = im && im.getAttribute("src"); if (!h3 || !src || !GR_IMGS.has(src)) return;
     const t = (h3.firstChild && h3.firstChild.nodeType === 3 ? h3.firstChild.textContent : h3.textContent).trim();
     const b = d.createElement("button"); b.type = "button"; b.className = "amp"; b.title = "Ampliar o gráfico (com rótulos)"; b.textContent = "⛶"; b.addEventListener("click", ev => { ev.stopPropagation(); grAmpliar(src, t); }); b.addEventListener("dblclick", ev => ev.stopPropagation()); h3.appendChild(b); });
+  if (opt.demo) {   /* v0.12.75: "Detalhar" no título da seção e Enter/espaço nos itens com demonstrativo (teclado e celular) */
+    d.querySelectorAll("h2.sec[data-demo]").forEach(h => { if (h.dataset.rota === "-") return; const b = d.createElement("button"); b.type = "button"; b.className = "det"; b.textContent = "🔍 Detalhar"; b.title = "Abrir o demonstrativo desta seção";
+      b.addEventListener("click", ev => { ev.stopPropagation(); execDemoAbrir(h.dataset.demo, h.dataset.origem, h.dataset.rota); }); b.addEventListener("dblclick", ev => ev.stopPropagation()); h.appendChild(b); });
+    d.querySelectorAll("tr[data-demo], .k8 > div[data-demo], .gr[data-demo]").forEach(e => { if (!e.hasAttribute("tabindex")) e.setAttribute("tabindex", "0"); });
+    d.addEventListener("keydown", ev => { if (ev.key !== "Enter" && ev.key !== " ") return; const t = ev.target; if (!t || !t.matches || !t.matches("[data-demo][tabindex]")) return; ev.preventDefault(); execDemoAbrir(t.dataset.demo, t.dataset.origem, t.dataset.rota); });
+  }
   d.addEventListener("dblclick", ev => {
-    const t = ev.target; if (!t || !t.closest || t.closest('.org, .amp, [contenteditable="true"]')) return;
+    const t = ev.target; if (!t || !t.closest || t.closest('.org, .amp, .det, [contenteditable="true"]')) return;
     const a = execAlvo(t, d.body); if (!a) return;
     if (opt.demo && a.dataset.demo) execDemoAbrir(a.dataset.demo, a.dataset.origem, a.dataset.rota); else execIr(a.dataset.rota, a.dataset.origem);
   });
@@ -23875,10 +24232,10 @@ function execFolhasHtml(doc) {
     fr.onload = async () => {
       try {
         const d = fr.contentDocument; if (!d || d.URL !== "about:srcdoc") return;   /* ignora o about:blank inicial */
-        await execEsperar(d); execLigar(d, {});   /* mesmas notas e botões da tela durante a paginação: quebras iguais às da tela */
+        await execEsperar(d); execLigar(d, { demo: !EXEC.demo });   /* mesmas notas e botões da tela durante a paginação: quebras iguais às da tela */
         execPaginar(d, doc.titulo, pais);
         const raiz = d.documentElement.cloneNode(true);
-        raiz.querySelectorAll(".org, .amp").forEach(e => e.remove()); raiz.querySelectorAll("[title]").forEach(e => e.removeAttribute("title"));
+        raiz.querySelectorAll(".org, .amp, .det").forEach(e => e.remove()); raiz.querySelectorAll("[title],[tabindex]").forEach(e => { e.removeAttribute("title"); e.removeAttribute("tabindex"); });
         raiz.querySelectorAll("[data-rota],[data-ed],[data-demo],[data-origem],[data-ph]").forEach(e => ["data-rota", "data-origem", "data-demo", "data-ed", "data-ph"].forEach(a => e.removeAttribute(a)));
         raiz.querySelectorAll(".excede").forEach(e => e.classList.remove("excede"));
         fim("<!DOCTYPE html>" + raiz.outerHTML);
@@ -23898,6 +24255,47 @@ function execLimparHtml(html) {   /* arquivo salvo lido de volta: sem scripts, e
   d.querySelectorAll("style").forEach(e => { e.textContent = e.textContent.replace(/\\/g, "").replace(/(-webkit-)?image-set\s*\([^)]*\)/gi, "none").replace(/@import[^;]*;?/gi, "").replace(/url\s*\(\s*(['"]?)(?!data:)[^)]*\)/gi, "none"); });
   return "<!DOCTYPE html>" + d.documentElement.outerHTML;
 }
+/* v0.12.75: PDF das folhas A4 (cada folha vira uma imagem da página) — para baixar e para a versão final */
+ERP_LIBS.html2canvas = { url: "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js", global: "html2canvas" };
+async function execPdfDeHtml(html) {
+  const [h2c] = await Promise.all([erpLib("html2canvas", "Preparando o PDF…"), erpLib("jspdf", "Preparando o PDF…")]);
+  const pais = /size:\s*A4\s+landscape/.test(html), w = (pais ? 1123 : 794) + 40;
+  const fr = document.createElement("iframe"); fr.setAttribute("aria-hidden", "true"); fr.tabIndex = -1;
+  fr.style.cssText = `position:fixed;left:-30000px;top:0;width:${w}px;height:1200px;border:0;pointer-events:none`;
+  document.body.appendChild(fr);
+  try {
+    await new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("tempo esgotado ao montar as folhas")), 20000); fr.onload = () => { if (fr.contentDocument && fr.contentDocument.URL === "about:srcdoc") { clearTimeout(t); res(); } }; fr.srcdoc = execLimparHtml(html); });
+    const d = fr.contentDocument; await execEsperar(d);
+    d.querySelectorAll(".folha").forEach(f => { f.style.boxShadow = "none"; f.style.margin = "0 auto"; });
+    const folhas = [...d.querySelectorAll(".folha")]; if (!folhas.length) throw new Error("documento sem folhas");
+    const { jsPDF } = window.jspdf, pdf = new jsPDF({ orientation: pais ? "landscape" : "portrait", unit: "mm", format: "a4", compress: true });
+    for (let i = 0; i < folhas.length; i++) {
+      const cv = await h2c(folhas[i], { scale: 2, backgroundColor: "#ffffff", logging: false, windowWidth: w, useCORS: true });
+      if (i) pdf.addPage("a4", pais ? "landscape" : "portrait");
+      pdf.addImage(cv.toDataURL("image/jpeg", .9), "JPEG", 0, 0, pais ? 297 : 210, pais ? 210 : 297, undefined, "FAST");
+    }
+    return pdf.output("blob");
+  } finally { fr.remove(); }
+}
+function execBaixarBlob(blob, nome) { const url = URL.createObjectURL(blob), a = document.createElement("a"); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000); }
+function execArqNome() { const ref = execRefAtual(EXEC.aba); return EXEC.demo && EXEC.demoSpec ? `demonstrativo-${String(EXEC.demoSpec.key).replace(/[^a-z0-9]+/gi, "-")}-${ref}` : `${(EXEC_RELS[execRelAtual()] || { arq: "relatorio" }).arq}-${ref}`; }
+window.execBaixarPdf = async () => {
+  const b = $("execPdf"), t0 = b ? b.textContent : ""; if (b) { b.disabled = true; b.textContent = "Gerando o PDF…"; }
+  try { await execPronto(); const html = await execInstantaneo(); if (!html) throw new Error("o documento ainda está carregando"); execBaixarBlob(await execPdfDeHtml(html), execArqNome() + ".pdf"); }
+  catch (e) { toast("Não foi possível gerar o PDF: " + e.message, 7000); }
+  finally { const b2 = $("execPdf"); if (b2) { b2.disabled = false; b2.textContent = t0 || "⬇ Baixar PDF"; } }
+};
+window.execVerPdf = async id => {
+  const x = EXEC_DOCS.itens.find(i => i._id === String(id || EXEC.ver)); if (!x) return;
+  const b = $("execVerPdf"); if (b) { b.disabled = true; b.textContent = "Preparando…"; }
+  try {
+    let blob = null;
+    if (x.ArquivoPdfId) { const a = await execArquivoDoc(x, "ArquivoPdfId", ".pdf"); blob = (await docBaixar({ d: a.d, id: a.id })).blob; }
+    else blob = await execPdfDeHtml(EXEC.verHtml || "");
+    execBaixarBlob(blob, `${(EXEC_RELS[execRelDoNome(x.Relatorio)] || { arq: "relatorio" }).arq}-${x.Referencia || ""}-v${x.Versao || ""}.pdf`);
+  } catch (e) { toast("Não foi possível obter o PDF: " + e.message, 7000); }
+  finally { const b2 = $("execVerPdf"); if (b2) { b2.disabled = false; b2.textContent = "⬇ PDF"; } }
+};
 function execImprimirHtml(html) {   /* imprime as folhas (moldura isolada: sem scripts) */
   if (!html) { toast("Aguarde o documento terminar de carregar."); return; }
   let fr = $("execPrintFrame");
@@ -23959,6 +24357,7 @@ async function execDemoSpec(key) {
     const { demo, B } = execFrotaBlocos(k);
     return { key, titulo: `Demonstrativo · ${EXEC_DEMO_T[k] || origem}`, sub: `${origem} · posição em ${execBr(frotaHoje())}`, cod: `DEM-FROTA-${k.toUpperCase()}-${R.k.replace("-", "")}`, demo, blocos: B, rota, origem, R };
   }
+  if (EXEC.doc && EXEC.doc.real && EXEC.origAtual) return execDemoSpecReal(key, EXEC.origAtual);
   const k = key, D = execGeralDados(R), M = R.meses, r = EXEC_ROTAS[k] || ["-", ""], B = [];
   const kp = D.kpis.filter(x => x[5] === k).map(x => [x[0], x[1] + (x[4] ? ` · ${x[4]}` : ""), "", x[2], x[3]]);
   const ind = kp.concat(Object.values(D.ind).flat().filter(x => x[5] === k).map(x => x.slice(0, 5)));
@@ -23990,6 +24389,83 @@ async function execDemoSpec(key) {
     if (!FROTA.erro) { const f = execFrotaBlocos(k); f.B.forEach(b => { b.t += f.demo ? " (Frota · modelo fictício)" : " (Frota · cadastro)"; B.push(b); }); }
   }
   return { key, titulo: `Demonstrativo · ${EXEC_DEMO_T[k] || r[1]}`, sub: `${r[1]} · ${R.mes}${R.parcial ? " (parcial)" : ""}`, cod: `DEM-${k.toUpperCase()}-${R.k.replace("-", "")}`, demo, blocos: B, rota: r[0], origem: r[1], R };
+}
+/* demonstrativos da aba Geral com os dados do ERP (v0.12.75) */
+async function execDemoSpecReal(k, O) {
+  const R = O.R, ref = R.k, ks = O.ks, r = EXEC_ROTAS[k] || ["-", ""], B = [], ok = x => O[x] && O[x].st === "ok", Mn = R.meses;
+  const doc = EXEC.doc && EXEC.doc.real ? EXEC.doc : null, pc = (a, b) => b ? execPc(a / b * 100, 0) : null;
+  const nota = (t, txt) => B.push({ t, cols: [["Observação"]], rows: [[txt]] });
+  const semO = x => execOrigTxt(O, x) || EXEC_ST_TXT.semmes;
+  if (doc) {
+    const ind = doc.rows.filter(x => x[5] === k).map(x => x.slice(0, 5));
+    if (ind.length) B.push({ t: "Indicadores do relatório", s: "como aparecem no relatório do mês", cols: [["Indicador"], ["Valor", "r"], ["Referência", "r"], ["Observação"], ["Situação", "tag"]], rows: ind });
+  }
+  if (k === "pax" || k === "viag" || k === "hor") {
+    const P = ok("pax") ? O.pax.M[ref] : null, H = ok("hor") ? O.hor.M[ref] : null;
+    const ls = [EXEC_LIN.mc, EXEC_LIN.mad, EXEC_LIN.fret].filter(l => (H && H.lin[l]) || (P && P.lin[l]));
+    if (ls.length) B.push({ t: "Viagens e passageiros por linha", s: R.mes, cols: [["Linha"], ["Programadas", "r"], ["Com contagem", "r"], ["Passageiros", "r"], ["Pagantes", "r"], ["Gratuidades", "r"], ["Ocupação", "r"]],
+      rows: ls.map(l => { const a = P && P.lin[l]; return [l, H ? H.lin[l] || 0 : null, a ? a.n : null, a ? a.pag + a.grat : null, a ? a.pag : null, a ? a.grat : null, a && a.lug ? execPc((a.pag + a.grat) / a.lug * 100, 0) : null]; }),
+      tot: ["Total", H ? H.tot : null, P ? P.n : null, P ? P.pag + P.grat : null, P ? P.pag : null, P ? P.grat : null, P && P.lug ? execPc((P.pag + P.grat) / P.lug * 100, 0) : null] });
+    if (H) B.push({ t: "Viagens programadas por tipo de dia", s: `quadro vigente${O.hor.vig ? ` desde ${execBr(dLocal(O.hor.vig))}` : ""}${O.hor.seed ? " · quadro público de referência" : ""}`, cols: [["Tipo de dia"], ["Dias no mês", "r"], ["Viagens por dia", "r"], ["Viagens no mês", "r"]],
+      rows: ["Segunda a sexta", "Sábados", "Domingos e feriados"].map(t => { const pd = Object.values(O.hor.porTipo[t] || {}).reduce((s, x) => s + x, 0); return [t, H.dias[t], pd, pd * H.dias[t]]; }), tot: ["Total", Object.values(H.dias).reduce((s, x) => s + x, 0), null, H.tot] });
+    if (P) B.push({ t: "Passageiros por tipo de dia", cols: [["Tipo de dia"], ["Viagens com contagem", "r"], ["Passageiros", "r"], ["Média por viagem", "r"]],
+      rows: ["Segunda a sexta", "Sábados", "Domingos e feriados"].map(t => { const a = P.tipo[t] || { n: 0, pag: 0, grat: 0 }; return [t, a.n, a.pag + a.grat, a.n ? String(Math.round((a.pag + a.grat) / a.n * 10) / 10).replace(".", ",") : null]; }) });
+    if (ok("pax")) B.push({ t: "Histórico dos últimos 6 meses", cols: [["Mês"], ["Viagens com contagem", "r"], ["Pagantes", "r"], ["Gratuidades", "r"], ["Total", "r"], ["Ocupação", "r"]], rows: ks.map((m, i) => { const a = O.pax.M[m]; return [Mn[i], a.n, a.pag, a.grat, a.pag + a.grat, a.lug ? execPc((a.pag + a.grat) / a.lug * 100, 0) : null]; }) });
+    if (!P && !H) nota("Sem dados", `Estatística de Passageiros: ${semO("pax")}; Tabela de Horários: ${semO("hor")}.`);
+    if (k === "viag") nota("Controle de Viagens", "Cumprimento, pontualidade, km rodados e viagens não realizadas por motivo dependem do Controle de Viagens, ainda em desenvolvimento.");
+  }
+  if (["veic", "manut", "nc", "multas"].includes(k)) {
+    if (ok("frota")) execFrotaBlocos(k).B.forEach(b => B.push(b));
+    else nota("Frota", `Sem dados da Frota: ${semO("frota")}.`);
+  }
+  if (k === "inf") {
+    if (ok("inf")) {
+      const I = O.inf.M[ref];
+      B.push({ t: "Infrações por gravidade — últimos 6 meses", cols: [["Mês"], ["Leve", "r"], ["Média", "r"], ["Grave", "r"], ["Gravíssima", "r"], ["Total", "r"], ["Notificadas", "r"]], rows: ks.map((m, i) => { const a = O.inf.M[m]; return [Mn[i], a.g["Leve"], a.g["Média"], a.g["Grave"], a.g["Gravíssima"], a.n, a.n ? execPc(a.not / a.n * 100, 0) : null]; }) });
+      const pv = {}; I.a.forEach(x => { const o = pv[x.veic] = pv[x.veic] || { n: 0, g: 0 }; o.n++; if (x.cls === "Grave" || x.cls === "Gravíssima") o.g++; });
+      B.push({ t: "Infrações por veículo no mês", s: "os 10 com mais registros · sem nomes", cols: [["Veículo", "nw"], ["Infrações", "r"], ["Graves e gravíssimas", "r"]], rows: Object.entries(pv).sort((a, b) => b[1].g - a[1].g || b[1].n - a[1].n).slice(0, 10).map(([v, o]) => [v, o.n, o.g]), vazio: "Nenhuma infração no mês." });
+    } else nota("Painel de Infrações", `Sem dados da telemetria: ${semO("inf")}.`);
+  }
+  if (k === "sin") nota("Ocorrências e sinistros", "Origem em desenvolvimento: o registro de ocorrências e sinistros ainda não existe no ERP.");
+  if (k === "func") {
+    if (ok("func") && O.func.docs && O.func.n) { const D = O.func.docs, N = O.func.n;
+      B.push({ t: "Documentos obrigatórios dos motoristas", s: `${N} motorista(s) ativo(s) em ${execBr(dLocal(execPosicao(ref)))} · sem nomes`, cols: [["Documento"], ["Em dia", "r"], ["%", "r"], ["Faltando ou vencido", "r"]],
+        rows: [["ASO (12 meses)", D.aso, pc(D.aso, N), D.falta.ASO], ["CNH", D.cnh, pc(D.cnh, N), D.falta.CNH], ["Exame toxicológico (30 meses)", D.tox, pc(D.tox, N), D.falta.TOX], ["Curso de transporte coletivo (60 meses)", D.curso, pc(D.curso, N), D.falta.CURSO]],
+        tot: ["Aptos (todos em dia)", D.apto, pc(D.apto, N), N - D.apto] });
+      if (D.vence30) nota("Atenção", `${D.vence30} motorista(s) com algum documento vencendo nos próximos 30 dias (detalhe em Recursos Humanos › Funcionários).`);
+    } else nota("Funcionários", ok("func") ? (O.func.n ? "Lista de documentos do RH ainda não criada." : "Nenhum motorista ativo no cadastro.") : `Sem dados do RH: ${semO("func")}.`);
+  }
+  if (k === "ponto") {
+    if (ok("ponto")) { const P = O.ponto.M[ref];
+      B.push({ t: "Horas extras dos motoristas no mês", s: `${P.n} motorista(s) no ponto · sem nomes`, cols: [["Faixa"], ["Motoristas", "r"]], rows: [["até 10 h", P.faixas[0]], ["de 10 a 20 h", P.faixas[1]], ["de 20 a 40 h", P.faixas[2]], ["acima de 40 h", P.faixas[3]]] });
+      B.push({ t: "Histórico dos últimos 6 meses", cols: [["Mês"], ["Motoristas", "r"], ["Média (h)", "r"], ["Maior (h)", "r"], ["Acima de 20 h", "r"]], rows: ks.map((m, i) => { const a = O.ponto.M[m]; return [Mn[i], a.n, a.med == null ? null : String(Math.round(a.med * 10) / 10).replace(".", ","), a.max == null ? null : String(Math.round(a.max * 10) / 10).replace(".", ","), a.acima20]; }) });
+    } else nota("Controle de Ponto", `Sem dados do ponto: ${semO("ponto")}.`);
+  }
+  if (k === "trein") nota("Treinamentos", "Origem em desenvolvimento: o registro de treinamentos ainda não existe no ERP.");
+  if (k === "sac") {
+    if (ok("sac")) { const S = O.sac.M[ref];
+      B.push({ t: "Chamados do mês por categoria", cols: [["Categoria"], ["Chamados", "r"]], rows: Object.entries(S.cat).sort((a, b) => b[1] - a[1]), tot: ["Total", S.n], vazio: "Nenhum chamado no mês." });
+      B.push({ t: "Por classificação e prazo", s: "prazo de resolução: gravíssima 1 dia, grave 2, média 5, baixa 7", cols: [["Classificação"], ["Chamados", "r"]], rows: ["Gravíssima", "Grave", "Média", "Baixa"].map(g => [g, S.sev[g] || 0]) });
+      B.push({ t: "Histórico dos últimos 6 meses", cols: [["Mês"], ["Chamados", "r"], ["Reclamações", "r"], ["No prazo", "r"], ["1ª resposta (h)", "r"], ["Abertos no fim do mês", "r"]], rows: ks.map((m, i) => { const a = O.sac.M[m]; return [Mn[i], a.n, a.recl, a.sla == null ? null : execPc(a.sla * 100, 0), a.tpr == null ? null : String(Math.round(a.tpr * 10) / 10).replace(".", ","), a.abertos]; }) });
+    } else nota("SAC", `Sem dados do SAC: ${semO("sac")}.`);
+  }
+  if (k === "psq") {
+    if (ok("psq")) { const P = O.psq.M[ref];
+      B.push({ t: "Aprovação por bloco", s: "% Excelente + Bom · um passageiro por mês", cols: [["Bloco"], ["Aprovação", "r"], ["Situação", "tag"]], rows: P.blocos.map(b => [b.n, b.apr == null ? null : execPc(b.apr, 0), b.apr == null ? "" : b.apr >= 80 ? "Adequado" : "Atenção"]) });
+      B.push({ t: "Itens mais criticados", s: "% Ruim + Péssimo", cols: [["Item"], ["Bloco"], ["Respostas", "r"], ["Ruim + Péssimo", "r"]], rows: P.itens.filter(x => x.ruim > 0).slice(0, 8).map(x => [x.it, x.b, x.n, execPc(x.ruim, 0)]), vazio: "Nenhum item com avaliação Ruim ou Péssimo no mês." });
+      B.push({ t: "Histórico dos últimos 6 meses", cols: [["Mês"], ["Respostas", "r"], ["NPS", "r"], ["Satisfação", "r"], ["Nota do motorista", "r"]], rows: ks.map((m, i) => { const a = O.psq.M[m]; const d1 = v => v == null ? null : String(Math.round(v * 10) / 10).replace(".", ","); return [Mn[i], a.n, a.nps == null ? null : (a.nps > 0 ? "+" : "") + a.nps, d1(a.sat), d1(a.mot)]; }) });
+    } else nota("Pesquisa de Satisfação", `Sem dados da pesquisa: ${semO("psq")}.`);
+  }
+  if (k === "tar") nota("Tabela de Tarifas", "As tarifas vigentes estão em Operacional › Tabela de Tarifas.");
+  if (k === "vist") nota("Vistoria (checklist)", "Origem em desenvolvimento: o checklist de vistoria ainda não existe no ERP.");
+  if (k === "seg") nota("Seguros", "Origem em desenvolvimento: o cadastro de seguros ainda não existe no ERP.");
+  if (doc) {
+    const conf = doc.conf.filter(x => x[4] === k);
+    if (conf.length) B.push({ t: "Conformidade e regularidade", s: `em ${execBr(dLocal(execPosicao(ref)))}`, cols: [["Item"], ["Situação"], ["Detalhe"], ["Status", "tag"]], rows: conf.map(x => x.slice(0, 4)) });
+    const pl = doc.plano.filter(x => x[4] === k);
+    if (pl.length) B.push({ t: "Plano de ação ligado a esta origem", cols: [["Prioridade", "tag"], ["Ação"], ["Responsável"], ["Prazo", "nw"]], rows: pl.map(x => [x[0], x[1], x[3], x[2]]) });
+  }
+  return { key: k, titulo: `Demonstrativo · ${EXEC_DEMO_T[k] || r[1]}`, sub: `${r[1]} · ${R.mes}${R.parcial ? " (parcial)" : ""}`, cod: `DEM-${k.toUpperCase()}-${R.k.replace("-", "")}`, demo: false, blocos: B, rota: r[0], origem: r[1], R };
 }
 function execDemoDoc(sp) {
   const at = sp.rota && sp.rota !== "-" ? ` data-rota="${esc(sp.rota)}" data-origem="${esc(sp.origem)}"` : "";
@@ -24028,7 +24504,7 @@ async function execDemoPintar() {
   let sp; try { sp = await execDemoSpec(EXEC.demo.key); } catch (e) { if (tk === EXEC.rtk) body.innerHTML = `<div class="cap-empty"><h3>Não foi possível montar o demonstrativo</h3><p>${esc(e.message)}</p></div>`; return; }
   if (tk !== EXEC.rtk || !$("execBody")) return;
   EXEC.demoSpec = sp;
-  $("execActions").innerHTML = `<button class="btn" id="execDemoVoltar" onclick="execDemoVoltar()">← Voltar ao relatório</button>${sp.rota && sp.rota !== "-" ? `<button class="btn" onclick="execDemoOrigem()" title="${esc(sp.origem)}">${sp.rota === "dev" ? "⏳ Origem em desenvolvimento" : "↗ Abrir a origem no ERP"}</button>` : ""}<button class="btn" onclick="execDemoXlsx()">⬇ Planilha (.xlsx)</button><button class="btn primary" id="execImprimir" onclick="execImprimir()">🖨 Imprimir / PDF</button>`;
+  $("execActions").innerHTML = `<button class="btn" id="execDemoVoltar" onclick="execDemoVoltar()">← Voltar ao relatório</button>${sp.rota && sp.rota !== "-" ? `<button class="btn" onclick="execDemoOrigem()" title="${esc(sp.origem)}">${sp.rota === "dev" ? "⏳ Origem em desenvolvimento" : "↗ Abrir a origem no ERP"}</button>` : ""}<button class="btn" onclick="execDemoXlsx()">⬇ Planilha (.xlsx)</button><button class="btn" id="execPdf" onclick="execBaixarPdf()">⬇ PDF</button><button class="btn" onclick="execLeituraTrocar()">${execLeitura() ? "📄 Folhas A4" : "📱 Modo leitura"}</button><button class="btn primary" id="execImprimir" onclick="execImprimir()">🖨 Imprimir</button>`;
   $("execInfo").innerHTML = `<div class="exec-info"><span class="exec-badge">Demonstrativo · ${esc(sp.origem)}</span><span class="exec-badge">Referência: ${esc(sp.R.mes)}${sp.R.parcial ? " (parcial)" : ""}</span>${sp.demo ? `<span class="exec-badge warn">Modelo · dados fictícios</span>` : ""}<span class="exec-dica">Duplo clique numa seção abre a origem no ERP</span></div>`;
   body.innerHTML = `<div id="execPag"></div>`;
   EXEC.demoDoc = execDemoDoc(sp);
@@ -24053,6 +24529,8 @@ LISTS.di_docs = {
     { name: "ArquivoId",    displayName: "Arquivo (ID)",            text: { allowMultipleLines: false, maxLength: 120 } },
     { name: "ArquivoDrive", displayName: "Biblioteca (ID)",         text: { allowMultipleLines: false, maxLength: 200 } },
     { name: "ArquivoUrl",   displayName: "Arquivo (link)",          text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "ArquivoPdfId", displayName: "PDF (ID)",                text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "ArquivoPdfUrl", displayName: "PDF (link)",             text: { allowMultipleLines: true, textType: "plain" } },
     { name: "Autor",        displayName: "Salvo por",               text: { allowMultipleLines: false, maxLength: 120 } },
     { name: "Observacoes",  displayName: "Observações",             text: { allowMultipleLines: true, textType: "plain" } }
   ]
@@ -24084,7 +24562,7 @@ async function execGarantirPasta(drive, pasta) {
 }
 async function execEnviar(drive, pasta, nome, blob) {
   const base = `/drives/${drive.id}/root:/${docEncode(pasta)}/${encodeURIComponent(nome)}`;
-  if (blob.size < 3900000) return graph(`${base}:/content?@microsoft.graph.conflictBehavior=rename`, { method: "PUT", body: blob, headers: { "Content-Type": "text/html" } });
+  if (blob.size < 3900000) return graph(`${base}:/content?@microsoft.graph.conflictBehavior=rename`, { method: "PUT", body: blob, headers: { "Content-Type": blob.type || "application/octet-stream" } });
   const ses = await graph(`${base}:/createUploadSession`, { method: "POST", body: { item: { "@microsoft.graph.conflictBehavior": "rename" } } });
   const CH = 16 * 327680; let pos = 0, fim = null;
   while (pos < blob.size) { const ate = Math.min(pos + CH, blob.size); const r = await fetch(ses.uploadUrl, { method: "PUT", headers: { "Content-Range": `bytes ${pos}-${ate - 1}/${blob.size}` }, body: blob.slice(pos, ate) }); if (!r.ok) throw new Error(`O envio foi interrompido (${r.status}). Tente de novo.`); if (r.status === 200 || r.status === 201) fim = await r.json(); pos = ate; }
@@ -24094,7 +24572,13 @@ function execEditavel() { return !vcAtivo() && podeEditar("exec"); }   /* págin
 function execPodeSalvar() { return execEditavel() && ["editar", "proprietario"].includes(permModulo("exec.docs")); }
 function execDocVe(x) { const r = EXEC_RELS[execRelDoNome(x.Relatorio)]; return execFrotaOk() || ((!r || r.aba !== "operacoes") && x.Departamento !== "Operações"); }   /* documentos da Frota: só quem tem acesso à Frota */
 function execRascunhoDe(rel, ref) { return EXEC_DOCS.itens.filter(x => x.Relatorio === EXEC_RELS[rel].nome && x.Referencia === ref && x.Situacao === "Rascunho").sort((a, b) => String(b._em || "").localeCompare(String(a._em || "")))[0]; }   /* o mais recente, se houver mais de um */
-function execTextosDe(x) { try { const o = JSON.parse(x.Textos || "{}"), t = o && typeof o === "object" ? (o.textos && typeof o.textos === "object" ? o.textos : o) : {}; const r = {}; Object.keys(t).forEach(k => { if (/^[a-z]{2,5}\d{0,3}$/.test(k) && typeof t[k] === "string") r[k] = execSanit(t[k]); }); return r; } catch (e) { return {}; } }
+function execTextosDe(x) { try { const o = JSON.parse(x.Textos || "{}"), t = o && typeof o === "object" ? (o.textos && typeof o.textos === "object" ? o.textos : o) : {}; const r = {}; Object.keys(t).forEach(k => { if (/^[a-z][a-z0-9-]{1,30}$/.test(k) && typeof t[k] === "string") r[k] = execSanit(t[k]); }); return execTextosMigrar(execRelDoNome(x.Relatorio), r); } catch (e) { return {}; } }
+/* v0.12.75: chaves antigas (posição: sint1, nota1…) → chaves estáveis do modelo */
+function execTextosMigrar(rel, T) {
+  const mapa = rel === "geral" ? { sint1: "sintese", nota1: "nota-operacao", nota2: "nota-referencias" } : { res1: "resumo", nota1: "nota-indicadores", nota2: "nota-fonte" }, r = {};
+  Object.keys(T || {}).forEach(k => { const n = mapa[k] || k; if (r[n] === undefined || !mapa[k]) r[n] = T[k]; });
+  return r;
+}
 function execQuando(iso) { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); }
 async function execSalvar(final) {
   if (!execPodeSalvar()) { toast("Seu acesso não permite salvar documentos do Relatório Executivo (página Documentos).", 6000); return; }
@@ -24131,9 +24615,11 @@ async function execSalvar(final) {
     const drive = await execDocsDrive(), pasta = `Relatórios do ERP/${R0.dep}/${ref}`;
     await execGarantirPasta(drive, pasta);
     const arq = await execEnviar(drive, pasta, `${R0.arq}-${ref}-v${v}.html`, new Blob([html], { type: "text/html" }));
-    const f = Object.assign({ Title: `${titulo} · v${v}`, Situacao: "Final", Versao: v, ArquivoId: String(arq.id || ""), ArquivoDrive: String((arq.parentReference && arq.parentReference.driveId) || drive.id), ArquivoUrl: arq.webUrl || "" }, base);
+    let pdf = null, avisoPdf = "";   /* v0.12.75: a versão final também em PDF */
+    try { if (btn) btn.textContent = "Gerando o PDF…"; pdf = await execEnviar(drive, pasta, `${R0.arq}-${ref}-v${v}.pdf`, await execPdfDeHtml(html)); } catch (e) { avisoPdf = " (sem o PDF: " + e.message + ")"; }
+    const f = Object.assign({ Title: `${titulo} · v${v}`, Situacao: "Final", Versao: v, ArquivoId: String(arq.id || ""), ArquivoDrive: String((arq.parentReference && arq.parentReference.driveId) || drive.id), ArquivoUrl: arq.webUrl || "", ArquivoPdfId: pdf ? String(pdf.id || "") : null, ArquivoPdfUrl: pdf ? pdf.webUrl || "" : null }, base);
     if (ras) await SP.update(EXEC_DOCS.site.id, EXEC_DOCS.list.id, ras._id, f); else await SP.create(EXEC_DOCS.site.id, EXEC_DOCS.list.id, f);
-    EXEC.sujo[chave] = false; toast(`Versão final v${v} salva na aba Documentos.`, 5000); await execDocsCarregar(true); execSalvoInfo();
+    EXEC.sujo[chave] = false; toast(`Versão final v${v} salva na aba Documentos${avisoPdf}.`, avisoPdf ? 8000 : 5000); await execDocsCarregar(true); execSalvoInfo();
   } catch (e) { toast("Não foi possível salvar a versão final: " + e.message, 8000); }
   finally { EXEC.salvando = false; const b = $("execFinal"); if (b) { b.disabled = false; b.textContent = "✔ Salvar versão final"; } }
 }
@@ -24165,10 +24651,51 @@ window.execDocExcluir = async id => {
   try {
     await graph(`/sites/${EXEC_DOCS.site.id}/lists/${EXEC_DOCS.list.id}/items/${x._id}`, { method: "DELETE" });
     let aviso = "";
-    if (x.ArquivoId) { try { const a = await execArquivoDoc(x); await graph(`/drives/${a.d}/items/${encodeURIComponent(a.id)}`, { method: "DELETE" }); } catch (e) { if (e.status !== 404) aviso = " O arquivo ficou na biblioteca: " + e.message; } }
+    for (const [c, e2] of [["ArquivoId", ".html"], ["ArquivoPdfId", ".pdf"]]) if (x[c]) { try { const a = await execArquivoDoc(x, c, e2); await graph(`/drives/${a.d}/items/${encodeURIComponent(a.id)}`, { method: "DELETE" }); } catch (e) { if (e.status !== 404) aviso = " O arquivo ficou na biblioteca: " + e.message; } }
     toast("Documento excluído." + aviso, aviso ? 8000 : 3200); await execDocsCarregar(true); execDocsLista();
   } catch (e) { toast("Não foi possível excluir: " + e.message, 7000); }
 };
+window.execCmpSel = el => { EXEC.cmpSel = EXEC.cmpSel || new Set(); if (el.checked) EXEC.cmpSel.add(el.value); else EXEC.cmpSel.delete(el.value); const b = $("execCmpBtn"); if (b) { b.disabled = EXEC.cmpSel.size !== 2; b.textContent = EXEC.cmpSel.size === 2 ? "⇄ Comparar as 2 versões" : `⇄ Comparar (marque 2 versões finais${EXEC.cmpSel.size ? ` · ${EXEC.cmpSel.size} marcada` : ""})`; } };
+window.execComparar = () => { if (!EXEC.cmpSel || EXEC.cmpSel.size !== 2) return; EXEC.comp = [...EXEC.cmpSel]; renderExec(); window.scrollTo(0, 0); };
+window.execCompVoltar = () => { EXEC.comp = null; renderExec(); };
+/* linhas de texto de um documento salvo (para comparar): títulos, parágrafos e cada linha de tabela */
+function execLinhasDoc(html) {
+  const d = new DOMParser().parseFromString(String(html || ""), "text/html"), L = [], t = s => String(s || "").replace(/\s+/g, " ").trim();
+  const conts = d.querySelectorAll(".fl-cont"); (conts.length ? [...conts] : [d.body]).forEach(c => [...c.children].forEach(function vai(e) {
+    if (e.matches("table")) { e.querySelectorAll("tr").forEach(tr => { const x = [...tr.children].map(td => t(td.textContent)).filter(Boolean).join(" · "); if (x) L.push(x); }); return; }
+    if (e.matches(".grid2, .g3, .k8, .blq, .obs-blk, div[data-rota]") && e.children.length) { [...e.children].forEach(vai); return; }
+    const x = t(e.textContent); if (x) L.push(x);
+  }));
+  return L.filter(x => !/^Emissão|^Documento ·|Impresso em/.test(x));
+}
+function execDiff(a, b) {   /* maior subsequência comum → operações =, −, + */
+  const n = a.length, m = b.length, T = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) T[i][j] = a[i] === b[j] ? T[i + 1][j + 1] + 1 : Math.max(T[i + 1][j], T[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n && j < m) { if (a[i] === b[j]) { out.push(["=", a[i]]); i++; j++; } else if (T[i + 1][j] >= T[i][j + 1]) out.push(["-", a[i++]]); else out.push(["+", b[j++]]); }
+  while (i < n) out.push(["-", a[i++]]); while (j < m) out.push(["+", b[j++]]);
+  return out;
+}
+async function execCompararPintar(tk) {
+  const body = $("execBody"), xs = EXEC.comp.map(id => EXEC_DOCS.itens.find(i => i._id === String(id))).filter(Boolean).filter(execDocVe);
+  $("execActions").innerHTML = `<button class="btn" onclick="execCompVoltar()">← Voltar à lista</button>`;
+  if (xs.length !== 2) { body.innerHTML = `<div class="cap-empty"><h3>Escolha duas versões finais para comparar</h3></div>`; return; }
+  xs.sort((a, b) => String(a.Referencia).localeCompare(String(b.Referencia)) || (Number(a.Versao) || 0) - (Number(b.Versao) || 0) || String(a._em).localeCompare(String(b._em)));
+  const nome = x => `v${x.Versao || "?"} · ${x.Referencia || ""}`;
+  $("execInfo").innerHTML = `<div class="exec-info"><span class="exec-badge">Antes: ${esc(nome(xs[0]))}</span><span class="exec-badge ok">Depois: ${esc(nome(xs[1]))}</span><span class="exec-dica">${esc(xs[0].Relatorio === xs[1].Relatorio ? xs[0].Relatorio : `${xs[0].Relatorio} × ${xs[1].Relatorio}`)} · comparação do texto das folhas (números, tabelas e textos)</span></div>`;
+  body.innerHTML = `<div class="cap-empty"><h3>Comparando…</h3></div>`;
+  try {
+    const txt = async x => { const a = await execArquivoDoc(x); return execLinhasDoc(await (await docBaixar({ d: a.d, id: a.id })).blob.text()); };
+    const [A, B] = await Promise.all(xs.map(txt)); if (tk !== EXEC.rtk || !$("execBody")) return;
+    const ops = execDiff(A.slice(0, 1500), B.slice(0, 1500)), nMenos = ops.filter(o => o[0] === "-").length, nMais = ops.filter(o => o[0] === "+").length;
+    let html = "", iguais = [];
+    const solta = () => { if (!iguais.length) return; html += iguais.length > 4 ? iguais.slice(0, 2).map(x => `<tr class="eq"><td colspan="2">${esc(x)}</td></tr>`).join("") + `<tr class="pula"><td colspan="2">… ${iguais.length - 3} linha(s) iguais …</td></tr><tr class="eq"><td colspan="2">${esc(iguais[iguais.length - 1])}</td></tr>` : iguais.map(x => `<tr class="eq"><td colspan="2">${esc(x)}</td></tr>`).join(""); iguais = []; };
+    ops.forEach(([o, x]) => { if (o === "=") { iguais.push(x); return; } solta(); html += o === "-" ? `<tr class="menos"><td>${esc(x)}</td><td></td></tr>` : `<tr class="mais"><td></td><td>${esc(x)}</td></tr>`; });
+    solta();
+    body.innerHTML = `<div class="cap-card"><div class="cap-card-h"><h3>${nMenos + nMais ? `${nMenos} linha(s) só na ${esc(nome(xs[0]))} · ${nMais} linha(s) só na ${esc(nome(xs[1]))}` : "As duas versões têm o mesmo texto"}</h3><span class="cap-card-s">vermelho = saiu ou mudou · verde = entrou ou mudou</span></div>
+      <div class="table-wrap"><table class="cap-table exec-cmp" id="execCmpT"><thead><tr><th>${esc(nome(xs[0]))}</th><th>${esc(nome(xs[1]))}</th></tr></thead><tbody>${html}</tbody></table></div></div>`;
+  } catch (e) { if (tk === EXEC.rtk && $("execBody")) body.innerHTML = `<div class="cap-empty"><h3>Não foi possível comparar</h3><p>${esc(e.message)}</p></div>`; }
+}
 window.execDocsAtualizar = async () => { EXEC.ver = null; await execDocsCarregar(true); renderExec(); };
 window.execVerVoltar = () => { EXEC.ver = null; renderExec(); };
 window.execVerImprimir = () => execImprimirHtml(EXEC.verHtml || "");
@@ -24182,7 +24709,8 @@ function execDocsLista() {
   const mesL = r => { const m = String(r || "").match(/^(\d{4})-(\d{2})$/); return m ? `${EXEC_MESES[Number(m[2]) - 1]} de ${m[1]}` : esc(r || "—"); };
   const sel = (k, arr, todos) => `<select onchange="execDocsFiltro('${k}', this.value)" aria-label="${todos}"><option value="">${todos}</option>${arr.map(a => `<option ${f[k] === a ? "selected" : ""}>${esc(a)}</option>`).join("")}</select>`;
   box.innerHTML = `<div class="exec-docs-filtros">${sel("dep", ["Geral", "Operações"].filter(d => d !== "Operações" || execFrotaOk()), "Todos os departamentos")}${sel("sit", ["Rascunho", "Final"], "Rascunhos e finais")}${sel("ano", anos, "Todos os anos")}<input type="search" id="execDocsBusca" placeholder="Buscar relatório, autor…" value="${esc(f.q || "")}"><span class="sup">${its.length} de ${vis.length} documento(s)</span></div>
-    ${its.length ? `<div class="table-wrap"><table class="cap-table" id="execDocsT"><thead><tr><th>Referência</th><th>Relatório</th><th>Departamento</th><th>Situação</th><th class="r">Versão</th><th>Salvo por</th><th>Em</th><th></th></tr></thead><tbody>${its.map(x => `<tr><td class="nw">${mesL(x.Referencia)}</td><td>${esc(x.Relatorio || "—")}<div class="sup">${esc(x.Title || "")}</div></td><td>${esc(x.Departamento || "—")}</td><td><span class="exec-st ${x.Situacao === "Final" ? "ok" : "at"}">${esc(x.Situacao || "—")}</span></td><td class="r">${x.Situacao === "Final" ? "v" + esc(String(x.Versao || "")) : "—"}</td><td>${esc(x.Autor || x._por || "—")}</td><td class="nw">${esc(execQuando(x._em))}</td><td class="nw"><button class="btn sm" onclick="execDocAbrir(${jsArg(x._id)})">${x.Situacao === "Final" ? "Ver" : "Abrir"}</button>${podeExc ? ` <button class="btn sm ghost" onclick="execDocExcluir(${jsArg(x._id)})" title="Excluir">Excluir</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
+    ${vis.some(x => x.Situacao === "Final") ? `<div class="exec-cmp-bar"><button class="btn sm" id="execCmpBtn" onclick="execComparar()" ${(EXEC.cmpSel || new Set()).size === 2 ? "" : "disabled"}>${(EXEC.cmpSel || new Set()).size === 2 ? "⇄ Comparar as 2 versões" : "⇄ Comparar (marque 2 versões finais)"}</button></div>` : ""}
+    ${its.length ? `<div class="table-wrap"><table class="cap-table" id="execDocsT"><thead><tr><th class="c" title="Marque 2 versões finais para comparar">⇄</th><th>Referência</th><th>Relatório</th><th>Departamento</th><th>Situação</th><th class="r">Versão</th><th>Salvo por</th><th>Em</th><th></th></tr></thead><tbody>${its.map(x => `<tr><td class="c">${x.Situacao === "Final" ? `<input type="checkbox" class="exec-cmp-ck" value="${esc(x._id)}" ${(EXEC.cmpSel || new Set()).has(x._id) ? "checked" : ""} onchange="execCmpSel(this)" aria-label="Comparar esta versão">` : ""}</td><td class="nw">${mesL(x.Referencia)}</td><td>${esc(x.Relatorio || "—")}<div class="sup">${esc(x.Title || "")}</div></td><td>${esc(x.Departamento || "—")}</td><td><span class="exec-st ${x.Situacao === "Final" ? "ok" : "at"}">${esc(x.Situacao || "—")}</span></td><td class="r">${x.Situacao === "Final" ? "v" + esc(String(x.Versao || "")) : "—"}</td><td>${esc(x.Autor || x._por || "—")}</td><td class="nw">${esc(execQuando(x._em))}</td><td class="nw"><button class="btn sm" onclick="execDocAbrir(${jsArg(x._id)})">${x.Situacao === "Final" ? "Ver" : "Abrir"}</button>${podeExc ? ` <button class="btn sm ghost" onclick="execDocExcluir(${jsArg(x._id)})" title="Excluir">Excluir</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
       : `<p class="cap-muted">${vis.length ? "Nada neste filtro." : "Nenhum documento salvo ainda. Nas abas Geral e Operações, use 💾 Salvar rascunho ou ✔ Salvar versão final."}</p>`}`;
   const b = $("execDocsBusca"); if (b) b.addEventListener("input", ev => { EXEC.df.q = ev.target.value; keepFocus(execDocsLista); });
 }
@@ -24195,23 +24723,25 @@ async function execDocsPintar() {
   if (tk !== EXEC.rtk || !$("execBody")) return;
   if (EXEC_DOCS.erro) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível ler os documentos</h3><p>${esc(EXEC_DOCS.erro)}</p></div>`; return; }
   if (!EXEC_DOCS.list) { body.innerHTML = `<div class="cap-empty"><h3>A lista "${esc(LISTS.di_docs.displayName)}" ainda não existe</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração</a> (item "${esc(LISTS.di_docs.displayName)}").` : "Peça a um administrador para rodar a Configuração."}</p></div>`; return; }
+  if (EXEC.comp) { await execCompararPintar(tk); return; }
   const x = EXEC.ver && EXEC_DOCS.itens.find(i => i._id === String(EXEC.ver));
   if (EXEC.ver && x && execDocVe(x)) { await execVerFinal(x, tk); return; }
   EXEC.ver = null;
   body.innerHTML = `<div class="cap-card"><div class="cap-card-h"><h3>Documentos salvos</h3><span class="cap-card-s">rascunhos e versões finais do Relatório Executivo, de todos os departamentos</span></div><div id="execDocsLista"></div></div>`;
   execDocsLista();
 }
-async function execArquivoDoc(x) {   /* o arquivo da versão final só vale se estiver na pasta "Relatórios do ERP" da biblioteca do site Diretoria */
+async function execArquivoDoc(x, campo, ext) {   /* o arquivo da versão final só vale se estiver na pasta "Relatórios do ERP" da biblioteca do site Diretoria */
+  campo = campo || "ArquivoId"; ext = ext || ".html";
   const drv = await execDocsDrive(), erro = () => new Error("O arquivo desta versão não está na pasta dos relatórios da biblioteca do site Diretoria.");
-  if (x.ArquivoDrive !== drv.id || !docIdOk(x.ArquivoId)) throw erro();
-  const m = await graph(`/drives/${drv.id}/items/${encodeURIComponent(x.ArquivoId)}?$select=id,name,parentReference,file`);
+  if (x.ArquivoDrive !== drv.id || !docIdOk(x[campo])) throw erro();
+  const m = await graph(`/drives/${drv.id}/items/${encodeURIComponent(x[campo])}?$select=id,name,parentReference,file`);
   let pai = ""; try { pai = decodeURIComponent(String((m.parentReference && m.parentReference.path) || "")); } catch (e) { pai = String((m.parentReference && m.parentReference.path) || ""); }
-  if (!/\/root:\/Relatórios do ERP(\/|$)/.test(pai) || !/\.html$/i.test(m.name || "")) throw erro();
+  if (!/\/root:\/Relatórios do ERP(\/|$)/.test(pai) || !(m.name || "").toLowerCase().endsWith(ext)) throw erro();
   return { d: drv.id, id: String(m.id) };
 }
 async function execVerFinal(x, tk) {
   const body = $("execBody");
-  $("execActions").innerHTML = `<button class="btn" onclick="execVerVoltar()">← Voltar à lista</button><button class="btn primary" id="execVerImprimir" onclick="execVerImprimir()">🖨 Imprimir / PDF</button>${session.n1 && /^https:\/\//.test(x.ArquivoUrl || "") ? `<a class="btn" href="${esc(x.ArquivoUrl)}" target="_blank" rel="noopener">Abrir no SharePoint</a>` : ""}`;
+  $("execActions").innerHTML = `<button class="btn" onclick="execVerVoltar()">← Voltar à lista</button><button class="btn" id="execVerPdf" onclick="execVerPdf()">⬇ PDF</button><button class="btn primary" id="execVerImprimir" onclick="execVerImprimir()">🖨 Imprimir</button>${session.n1 && /^https:\/\//.test(x.ArquivoUrl || "") ? `<a class="btn" href="${esc(x.ArquivoUrl)}" target="_blank" rel="noopener">Abrir no SharePoint</a>` : ""}`;
   $("execInfo").innerHTML = `<div class="exec-info"><span class="exec-badge ok">Versão final v${esc(String(x.Versao || ""))}</span><span class="exec-badge">${esc(x.Relatorio || "")}</span><span class="exec-badge">Referência: ${esc(x.Referencia || "")}</span><span class="exec-dica">Salva por ${esc(x.Autor || x._por || "—")} em ${esc(execQuando(x._em))} · documento congelado</span></div>`;
   body.innerHTML = `<div class="cap-empty"><h3>Abrindo a versão final…</h3></div>`;
   try {
@@ -24219,7 +24749,7 @@ async function execVerFinal(x, tk) {
     const { blob } = await docBaixar({ d: a.d, id: a.id });
     const html = execLimparHtml(await blob.text());
     if (tk !== EXEC.rtk || !$("execBody")) return;
-    EXEC.verHtml = html; EXEC.W = (/size:\s*A4\s+landscape/.test(html) ? 1123 : 794) + 40;
+    EXEC.verHtml = html; EXEC.W = (/size:\s*A4\s+landscape/.test(html) ? 1123 : 794) + 40; EXEC.leituraAtiva = false;
     body.innerHTML = `<div class="exec-doc"><iframe id="execFrame" sandbox="allow-same-origin" title="${esc(x.Title || "Documento")}"></iframe></div>`;
     const fr = $("execFrame"); fr.onload = () => { execAjustar(); setTimeout(execAjustar, 500); }; fr.srcdoc = html;
   } catch (e) { if (tk === EXEC.rtk && $("execBody")) body.innerHTML = `<div class="cap-empty"><h3>Não foi possível abrir a versão final</h3><p>${esc(e.message)}</p></div>`; }
@@ -24245,7 +24775,7 @@ function pageExec() {
     <div id="execBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
   </div>`;
 }
-window.execAba = a => { EXEC.aba = a; EXEC.demo = null; EXEC.ver = null; renderExec(); };
+window.execAba = a => { EXEC.aba = a; EXEC.demo = null; EXEC.ver = null; EXEC.comp = null; renderExec(); };
 function execFrotaOk() { return !!session.n1 || window.permModuloSo("frota") !== "nenhum"; }   /* a aba Operações mostra o cadastro da Frota: exige acesso ao módulo Frota */
 function execBarra(aba) {   /* mês e ano de referência (e, na Operações, o relatório e a folha) — acima das páginas */
   const ref = execRefAtual(aba), [a, m] = ref.split("-"), atual = execMesAtual(), anoAt = Number(atual.slice(0, 4)), anos = [];
@@ -24253,25 +24783,28 @@ function execBarra(aba) {   /* mês e ano de referência (e, na Operações, o r
   let h = `<div class="exec-ref" role="group" aria-label="Referência do relatório"><label>Mês <select id="execMes" onchange="execRefMudar()">${EXEC_MESES.map((nm, i) => { const v = String(i + 1).padStart(2, "0"); return `<option value="${v}" ${v === m ? "selected" : ""} ${`${a}-${v}` > atual ? "disabled" : ""}>${nm}</option>`; }).join("")}</select></label><label>Ano <select id="execAno" onchange="execRefMudar()">${anos.map(y => `<option ${String(y) === a ? "selected" : ""}>${y}</option>`).join("")}</select></label>`;
   if (EXEC.ref && EXEC.ref !== execRefPad(aba)) h += `<button class="btn sm ghost" onclick="execRefPadrao()">${aba === "operacoes" ? "Mês atual" : "Último mês fechado"}</button>`;
   if (aba === "operacoes") h += `<label>Relatório <select id="execOpTipo" onchange="execOpMudar()">${Object.values(EXEC_RELS).filter(r => r.tipo).map(r => `<option value="${r.tipo}" ${r.tipo === EXEC.opTipo ? "selected" : ""}>${esc(r.nome.replace(/^Operações — | \(DETRO\/RJ\)$/g, ""))}</option>`).join("")}</select></label><label>Folha <select id="execOpPais" onchange="execOpMudar()"><option value="0" ${execOpPais() ? "" : "selected"}>Retrato</option><option value="1" ${execOpPais() ? "selected" : ""}>Paisagem</option></select></label>`;
+  h += `<button class="btn sm ghost" id="execLeituraBtn" onclick="execLeituraTrocar()" title="${execLeitura() ? "Mostrar as folhas A4, como sai no PDF" : "Texto corrido, sem folhas, com letra maior (bom no celular)"}">${execLeitura() ? "📄 Ver em folhas A4" : "📱 Modo leitura"}</button>`;
   return h + `</div>`;
 }
 function execOpPais() { return EXEC.opPais == null ? !!DETRO_ORI[EXEC.opTipo] : !!EXEC.opPais; }
 window.execRefMudar = () => { let r = `${$("execAno").value}-${$("execMes").value}`; if (r > execMesAtual()) r = execMesAtual(); EXEC.ref = r; EXEC.demo = null; renderExec(); };
+window.execAtualizar = () => { EXEC.forcaOrig = true; EXEC.orig = {}; renderExec(); };
 window.execRefPadrao = () => { EXEC.ref = null; EXEC.demo = null; renderExec(); };
 window.execOpMudar = () => { const t = $("execOpTipo").value, mudouTipo = t !== EXEC.opTipo; EXEC.opTipo = t; EXEC.opPais = mudouTipo ? null : $("execOpPais").value === "1"; renderExec(); };
 function execPintarRel(scroll) {
   const aba = EXEC.aba, chave = execChave(), T = EXEC.textos[chave] || {}, ed = execEditavel(), salva = execPodeSalvar(), fonte = EXEC.fonte[chave];
   const temTxt = Object.keys(T).length > 0;
-  $("execActions").innerHTML = (aba === "operacoes" ? `<button class="btn" onclick="renderExec()">Atualizar</button>` : "") + (salva ? `<button class="btn" id="execRascunho" onclick="execSalvarRascunho()">💾 Salvar rascunho</button><button class="btn" id="execFinal" onclick="execSalvarFinal()">✔ Salvar versão final</button>` : "") + `<button class="btn primary" id="execImprimir" onclick="execImprimir()">🖨 Gerar PDF (A4)</button>`;
+  $("execActions").innerHTML = `<button class="btn" onclick="execAtualizar()" title="Lê de novo as origens">Atualizar</button>` + (salva ? `<button class="btn" id="execRascunho" onclick="execSalvarRascunho()">💾 Salvar rascunho</button><button class="btn" id="execFinal" onclick="execSalvarFinal()">✔ Salvar versão final</button>` : "") + `<button class="btn" id="execPdf" onclick="execBaixarPdf()" title="Baixa o arquivo PDF das folhas A4">⬇ Baixar PDF</button><button class="btn primary" id="execImprimir" onclick="execImprimir()" title="Abre a impressão (imprimir ou salvar como PDF)">🖨 Imprimir (A4)</button>`;
   const D = aba === "operacoes" ? EXEC.frotaInfo : null, R = execRef(execRefAtual(aba));
-  const badges = aba === "geral" ? `<span class="exec-badge warn">Demonstração · dados fictícios</span>` : D && D.demo ? `<span class="exec-badge warn">Modelo · dados fictícios (sem veículo cadastrado em Frota › Veículos)</span>` : `<span class="exec-badge ok">Cadastro da frota · ${D ? D.V.length : 0} veículo(s) ativo(s)</span>`;
-  const pos = aba === "operacoes" ? `<span class="exec-badge">Posição em ${execBr(frotaHoje())}${R.k < execMesAtual() ? " · situação dos veículos: cadastro atual" : ""}</span>` : `<span class="exec-badge">Referência: ${esc(R.mes)}${R.parcial ? " (parcial)" : ""}</span>`;
+  const O = aba === "geral" ? EXEC.origAtual : null, real = !!(EXEC.doc && EXEC.doc.real);
+  const badges = aba === "geral" ? (real ? `<span class="exec-badge ok" title="${esc(Object.keys(EXEC_ORIG_N).map(k => `${EXEC_ORIG_N[k]}: ${execOrigTxt(O, k) || "dados do ERP"}`).join(" · "))}">Dados do ERP · ${O.oks.length} de ${Object.keys(EXEC_ORIG_N).length} origens</span>` : `<span class="exec-badge warn">Demonstração · dados fictícios${O ? " (nenhuma origem com dados no mês)" : ""}</span>`) : D && D.demo ? `<span class="exec-badge warn">Modelo · dados fictícios (sem veículo cadastrado em Frota › Veículos)</span>` : `<span class="exec-badge ok">Cadastro da frota · ${D ? D.V.length : 0} veículo(s) ativo(s)</span>`;
+  const pos = aba === "operacoes" ? `<span class="exec-badge">Posição em ${execBr(frotaHoje())}${R.k < execMesAtual() ? (D && D.sitHist ? " · situação dos veículos: histórico de situação" : " · situação dos veículos: cadastro atual (sem histórico)") : ""}</span>` : `<span class="exec-badge">Referência: ${esc(R.mes)}${R.parcial ? " (parcial)" : ""}</span>`;
   const txt = execTxtHtml();
   const dica = `<span class="exec-dica">Duplo clique numa seção, linha, número ou gráfico abre o demonstrativo · ↗ abre a origem no ERP · ⛶ amplia o gráfico${ed ? " · textos com contorno tracejado são editáveis" : ""} · ⏳ marca o que ainda está em desenvolvimento</span>`;
   $("execInfo").innerHTML = execBarra(aba) + `<div class="exec-info">${badges}${pos}${txt}<span id="execSalvoInfo" class="exec-sujo"></span>${dica}</div>`;
   execSalvoInfo();
   const body = $("execBody");
-  body.innerHTML = `<div id="execPag"></div>` + (aba === "geral" ? `<div class="exec-origens"><b>Origem dos dados</b> · já no ERP: Frota (veículos, manutenção, não conformidades, multas), Painel de Infrações, Funcionários e Controle de Ponto, SAC, Pesquisa de Satisfação, Estatística de Passageiros, Tabelas de Horários e Tarifas · <span class="dev">em desenvolvimento: Controle de Viagens (viagens realizadas, pontualidade, km), Ocorrências e sinistros, Treinamentos, Vistoria (checklist), Seguros</span>.</div>` : "");
+  body.innerHTML = `<div id="execPag"></div>` + (aba === "geral" ? `<div class="exec-origens"><b>Origem dos dados</b> · ${O ? Object.keys(EXEC_ORIG_N).map(k => `${esc(EXEC_ORIG_N[k])}: <span class="${execOrigTxt(O, k) ? "dev" : "ok"}">${esc(execOrigTxt(O, k) || "dados do ERP")}</span>`).join(" · ") : ""} · <span class="dev">em desenvolvimento: Controle de Viagens (viagens realizadas, pontualidade, km), Ocorrências e sinistros, Treinamentos, Vistoria (checklist), Seguros</span>.${real ? "" : " Enquanto nenhuma origem tiver dados no mês, a aba mostra o modelo com dados fictícios."}</div>` : "");
   execMostrar($("execPag"), execMarcar(EXEC.doc, T, ed), { editavel: ed, chave, demo: true, scroll });
 }
 async function renderExec(scroll) {
@@ -24296,7 +24829,12 @@ async function renderExec(scroll) {
     const c = execChave(), ras = EXEC_DOCS.list ? execRascunhoDe(execRelAtual(), execRefAtual(EXEC.aba)) : null;
     if (ras && EXEC.textos[c] === undefined) { EXEC.textos[c] = execTextosDe(ras); EXEC.fonte[c] = { tipo: "rascunho", em: execQuando(ras._em), por: ras.Autor || ras._por || "", iso: ras._em || "" }; execTextosGravar(); }
   }
-  if (EXEC.aba === "geral") { EXEC.doc = execGeralDoc(); EXEC.frotaInfo = null; execPintarRel(scroll); return; }
+  if (EXEC.aba === "geral") {
+    $("execBody").innerHTML = `<div class="cap-empty"><h3>Lendo as origens do mês…</h3><p>Passageiros, horários, frota, infrações, SAC, pesquisa, RH e ponto</p></div>`;
+    const O = await execOrigens(execRefAtual("geral"), EXEC.forcaOrig); EXEC.forcaOrig = false;
+    if (tk !== EXEC.rtk || EXEC.aba !== "geral" || !$("execBody")) return;
+    EXEC.origAtual = O; EXEC.doc = O.real ? execGeralDocReal(O) : execGeralDoc(); EXEC.frotaInfo = null; execPintarRel(scroll); return;
+  }
   await frotaCarregar();
   if (tk !== EXEC.rtk || EXEC.aba !== "operacoes" || !$("execBody")) return;
   if (FROTA.erro) { $("execInfo").innerHTML = execBarra("operacoes"); $("execActions").innerHTML = `<button class="btn" onclick="renderExec()">Atualizar</button>`; $("execBody").innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar a frota</h3><p>${esc(FROTA.erro)}</p></div>`; return; }
@@ -24311,7 +24849,7 @@ async function renderExec(scroll) {
     if (hash !== "#/diretoria/relatorio-executivo") return r6.apply(this, arguments);
     const m = MODULES.find(x => x.id === "exec"); if (!canSee(m)) { location.hash = "#/inicio"; return; }
     session.modAtual = "exec"; session.pagAtual = ""; document.body.classList.remove("nav-open"); document.body.classList.add("wide");
-    EXEC.demo = null; EXEC.ver = null;
+    EXEC.demo = null; EXEC.ver = null; EXEC.comp = null;
     $("main").innerHTML = pageExec(); renderExec(); navAtivo("exec"); window.scrollTo(0, 0);
   };
 }

@@ -23769,7 +23769,7 @@ async function execOrigInf(ks) {
   const desde = ks[0] + "-01", ate = execFimMes(ks[5]), H = { headers: { Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" } };
   const q = (lid, sel, cd, fim) => graphAll(`/sites/${EXEC_INF.site}/lists/${lid}/items?$expand=fields($select=${sel})&$filter=fields/${cd} ge '${desde}' and fields/${cd} le '${fim}'&$top=999`, H);
   const [ar, ve] = await Promise.all([
-    q(EXEC_INF.ar, "Title,Matricula,Data,Velocidade,LimitedeVelocidade,Classifica_x00e7__x00e3_o,Notificado", "Data", ate),
+    q(EXEC_INF.ar, "Title,Matricula,Data,Velocidade,LimitedeVelocidade,Classifica_x00e7__x00e3_o,Notificado", "Data", ate + "T23:59:59Z"),
     q(EXEC_INF.ve, "Title,Matricula,InicioViola_x00e7__x00e3_o,VelocidadeM_x00e1_xima,Classifica_x00e7__x00e3_o,Notificado", "InicioViola_x00e7__x00e3_o", ate + "T23:59:59Z")]);
   const cls = c => { const t = execNorm(c); return t.startsWith("graviss") ? "Gravíssima" : t.startsWith("grav") ? "Grave" : t.startsWith("med") ? "Média" : "Leve"; };
   const reg = (f, data, vel, lim) => ({ data: String(data || "").slice(0, 10), cls: cls(f["Classifica_x00e7__x00e3_o"]), not: f.Notificado === true || f.Notificado === "true", mat: String(f.Matricula ?? "").trim(), veic: String(f.Title || "").trim() || "—", exc: lim > 0 ? Math.max(0, Math.round(vel - lim)) : null });
@@ -23826,7 +23826,8 @@ async function execOrigPsq(ks) {
 /* ---- Funcionários: motoristas ativos na posição do mês e documentos obrigatórios (mesma regra do "Apto") ---- */
 async function execOrigFunc(ks) {
   if (!EXEC.raw.func) { const site = await SP.site(CONFIG.sites[LISTS.rh_func.siteKey]), l = (await SP.lists(site.id)).find(x => x.displayName === LISTS.rh_func.displayName);
-    EXEC.raw.func = l ? (await SP.items(site.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : null; await rhDocsCarregar(EXEC.origForca); }
+    EXEC.raw.func = l ? (await SP.items(site.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : null; }
+  await rhDocsCarregar(EXEC.origForca && !EXEC.raw.funcDocs); EXEC.raw.funcDocs = true;
   if (!EXEC.raw.func) return { st: "semlista" };
   const fs = EXEC.raw.func;
   const pos = execPosicao(ks[5]), ativoEm = f => (!f.Admissao || ymd(f.Admissao) <= pos) && !(f.DataDemissao && ymd(f.DataDemissao) <= pos) && !(String(f.Situacao || "") === "Desligado" && !f.DataDemissao);
@@ -23854,6 +23855,7 @@ function execQuem() { return vcAtivo() ? "vc:" + JSON.stringify((VIEW_AS && VIEW
 async function execOrigens(ref, forca) {
   EXEC.orig = EXEC.orig || {}; EXEC.origP = EXEC.origP || {};
   const ck = `${ref}|${execQuem()}`;
+  if (forca && EXEC.origP[ck]) { try { await EXEC.origP[ck]; } catch (e) {} }
   if (forca) { delete EXEC.orig[ck]; EXEC.raw = {}; }
   if (EXEC.orig[ck]) return EXEC.orig[ck];
   if (EXEC.origP[ck]) return EXEC.origP[ck];
@@ -23870,7 +23872,7 @@ async function execOrigensLer(ref, ck, forca) {
   } finally { EXEC.origForca = false; }
   O.real = ["pax", "inf", "sac", "psq", "ponto"].some(k => O[k].st === "ok" && O[k].temMes) || O.frota.st === "ok";   /* alguma origem operacional com dados: relatório com os dados do ERP */
   O.oks = Object.keys(EXEC_ORIG_N).filter(k => O[k].st === "ok");
-  if (!Object.keys(EXEC_ORIG_N).some(k => O[k].st === "erro")) EXEC.orig[ck] = O;   /* erro passageiro não fica guardado */
+  if (!Object.keys(EXEC_ORIG_N).some(k => O[k].st === "erro") && !(O.func && O.func.docsSt === "erro")) EXEC.orig[ck] = O;   /* erro passageiro não fica guardado */
   return O;
 }
 function execOrigTxt(O, k) { const o = O[k] || {}; return o.st === "ok" ? (o.temMes === false && ["pax", "inf", "sac", "psq", "ponto"].includes(k) ? EXEC_ST_TXT.semmes : "") : (EXEC_ST_TXT[o.st] || EXEC_ST_TXT.erro); }
@@ -24145,8 +24147,8 @@ function execMarcar(doc, T, editavel) {
 }
 const EXEC_LS = "erp.exec.textos";
 function execLsChave() { return EXEC_LS + "." + ((typeof account !== "undefined" && account && account.username) || "anon"); }
-function execTextosLer() { try { const o = JSON.parse(sessionStorage.getItem(execLsChave()) || "{}"); if (o && typeof o === "object" && !Array.isArray(o)) { Object.keys(o).forEach(c => { o[c] = execTextosMigrar(c.split("|")[0], o[c]); }); EXEC.textos = o; } } catch (e) {} }
-function execTextosGravar() { try { sessionStorage.setItem(execLsChave(), JSON.stringify(EXEC.textos)); } catch (e) {} }
+function execTextosLer() { try { const o = JSON.parse(sessionStorage.getItem(execLsChave()) || "{}"); if (o && typeof o === "object" && !Array.isArray(o)) { const modo = o.__modo && typeof o.__modo === "object" ? o.__modo : {}; delete o.__modo; Object.keys(o).forEach(c => { o[c] = execTextosMigrar(c.split("|")[0], o[c]); if (!modo[c] && c.startsWith("geral|")) modo[c] = "modelo"; }); EXEC.textos = o; EXEC.textosModo = modo; } } catch (e) {} }   /* sem modo (v0.12.74): escrito sobre o modelo */
+function execTextosGravar() { try { sessionStorage.setItem(execLsChave(), JSON.stringify(Object.assign({}, EXEC.textos, { __modo: EXEC.textosModo }))); } catch (e) {} }
 function execChave() { return `${execRelAtual()}|${execRefAtual(EXEC.aba)}`; }
 /* ---- tela ---- */
 function execIr(rota, origem) {
@@ -24224,7 +24226,7 @@ function execLigar(d, opt) {
   d.addEventListener("input", ev => { const e = ev.target && ev.target.closest && ev.target.closest("[data-ed]"); if (!e) return;
     if (EXEC.textosModo[opt.chave] && (EXEC.textosModo[opt.chave] === "erp") !== !!(EXEC.doc && EXEC.doc.real)) { EXEC.textos[opt.chave] = execTextosEfetivos(opt.chave); }   /* começou a editar: os textos do modelo saem */
     EXEC.textosModo[opt.chave] = EXEC.doc && EXEC.doc.real ? "erp" : "modelo";
-    const T = EXEC.textos[opt.chave] = EXEC.textos[opt.chave] || {}; T[e.dataset.ed] = execSanit(e.innerHTML); EXEC.sujo[opt.chave] = true; EXEC.pagSujo = mudou = true; execTextosGravar(); execSalvoInfo(); execTxtBadge(); });
+    const T = EXEC.textos[opt.chave] = EXEC.textos[opt.chave] || {}; T[e.dataset.ed] = execSanit(e.innerHTML);   /* (gravado na sessão logo abaixo, com o modo) */ EXEC.sujo[opt.chave] = true; EXEC.pagSujo = mudou = true; execTextosGravar(); execSalvoInfo(); execTxtBadge(); });
   d.addEventListener("focusout", () => setTimeout(() => { if (!mudou) return; const a = d.activeElement; if (a && a.closest && a.closest("[data-ed]")) return; mudou = false; execRepaginar(); }, 0));
   d.defaultView.addEventListener("blur", () => setTimeout(() => { if (mudou && EXEC.pagSujo && !EXEC.salvando) { mudou = false; execRepaginar(); } }, 400));   /* foco foi para fora do documento: refaz as folhas */
 }
@@ -24285,7 +24287,7 @@ async function execPdfDeHtml(html) {
     const folhas = [...d.querySelectorAll(".folha")]; if (!folhas.length) throw new Error("documento sem folhas");
     const { jsPDF } = window.jspdf, pdf = new jsPDF({ orientation: pais ? "landscape" : "portrait", unit: "mm", format: "a4", compress: true });
     for (let i = 0; i < folhas.length; i++) {
-      const cv = await h2c(folhas[i], { scale: 2, backgroundColor: "#ffffff", logging: false, windowWidth: w, useCORS: true });
+      const cv = await Promise.race([h2c(folhas[i], { scale: 2, backgroundColor: "#ffffff", logging: false, windowWidth: w, useCORS: true }), new Promise((_, rej) => setTimeout(() => rej(new Error("o navegador não terminou de desenhar a folha; use 🖨 Imprimir › Salvar como PDF")), 45000))]);
       if (i) pdf.addPage("a4", pais ? "landscape" : "portrait");
       pdf.addImage(cv.toDataURL("image/jpeg", .9), "JPEG", 0, 0, pais ? 297 : 210, pais ? 210 : 297, undefined, "FAST");
     }
@@ -24604,7 +24606,7 @@ async function execSalvar(final) {
   await execDocsCarregar(true);
   if (!EXEC_DOCS.list) { toast(EXEC_DOCS.erro || `A lista "${LISTS.di_docs.displayName}" ainda não existe: um administrador cria em Sistema › Configuração.`, 7000); return; }
   const rel = execRelAtual(), R0 = EXEC_RELS[rel], ref = execRefAtual(EXEC.aba), chave = execChave(), R = execRef(ref);
-  const T = EXEC.textos[chave] || {}, pais = !!(EXEC.doc && EXEC.doc.paisagem);
+  const T = execTextosEfetivos(chave), pais = !!(EXEC.doc && EXEC.doc.paisagem);   /* textos do modelo fictício não vão para um documento com dados do ERP */
   const textos = JSON.stringify({ v: 2, modo: EXEC.doc && EXEC.doc.real ? "erp" : "modelo", textos: T });
   if (textos.length > 60000) { toast("Os textos editados passaram do limite (60 mil caracteres). Encurte as observações.", 7000); return; }
   const ras = execRascunhoDe(rel, ref), quem = vcQuemEmite(), titulo = `${EXEC.doc ? EXEC.doc.titulo : R0.nome} — ${R.mes}`;
@@ -24636,10 +24638,10 @@ async function execSalvar(final) {
     const arq = await execEnviar(drive, pasta, `${R0.arq}-${ref}-v${v}.html`, new Blob([html], { type: "text/html" }));
     let pdf = null, avisoPdf = "";   /* v0.12.75: a versão final também em PDF */
     if (!(EXEC_DOCS.cols && EXEC_DOCS.cols.has("Folha"))) { /* lista antiga sem colunas recentes */ ["Folha"].forEach(c => { delete base[c]; }); }
-    try { if (btn) btn.textContent = "Gerando o PDF…"; pdf = await execEnviar(drive, pasta, `${R0.arq}-${ref}-v${v}.pdf`, await execPdfDeHtml(html)); } catch (e) { avisoPdf = " (sem o PDF: " + e.message + ")"; }
+    if (EXEC_DOCS.cols && EXEC_DOCS.cols.has("ArquivoPdfId")) { try { if (btn) btn.textContent = "Gerando o PDF…"; pdf = await execEnviar(drive, pasta, `${R0.arq}-${ref}-v${v}.pdf`, await execPdfDeHtml(html)); } catch (e) { avisoPdf = " (sem o PDF: " + e.message + ")"; } }
+    else avisoPdf = " (sem o PDF: rode a Configuração para a lista ganhar as colunas do PDF)";
     const f = Object.assign({ Title: `${titulo} · v${v}`, Situacao: "Final", Versao: v, ArquivoId: String(arq.id || ""), ArquivoDrive: String((arq.parentReference && arq.parentReference.driveId) || drive.id), ArquivoUrl: arq.webUrl || "" }, base);
-    if (pdf && EXEC_DOCS.cols && EXEC_DOCS.cols.has("ArquivoPdfId")) { f.ArquivoPdfId = String(pdf.id || ""); if (EXEC_DOCS.cols.has("ArquivoPdfUrl")) f.ArquivoPdfUrl = pdf.webUrl || ""; }
-    else if (pdf) avisoPdf = " (o PDF ficou na biblioteca; rode a Configuração para a lista guardar o link)";
+    if (pdf) { f.ArquivoPdfId = String(pdf.id || ""); if (EXEC_DOCS.cols.has("ArquivoPdfUrl")) f.ArquivoPdfUrl = pdf.webUrl || ""; }
     if (ras) await SP.update(EXEC_DOCS.site.id, EXEC_DOCS.list.id, ras._id, f); else await SP.create(EXEC_DOCS.site.id, EXEC_DOCS.list.id, f);
     EXEC.sujo[chave] = false; toast(`Versão final v${v} salva na aba Documentos${avisoPdf}.`, avisoPdf ? 8000 : 5000); await execDocsCarregar(true); execSalvoInfo();
   } catch (e) { toast("Não foi possível salvar a versão final: " + e.message, 8000); }

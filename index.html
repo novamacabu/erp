@@ -6621,7 +6621,7 @@ async function capSave(existing) {
       btn.textContent = `Enviando ${fila.length} arquivo(s)…`;
       try {
         const it = Object.assign({ _id: String(criada.id) }, fields); const anexos = []; const drive = await docDrive(); let falha = 0;
-        for (const x of fila) { try { const dest = docDestinoConta(it, x.tipo, x.file); const item = await docEnviar(dest.pasta, dest.nome, x.file); anexos.push(docMeta(item, x.tipo, x.file, drive)); } catch (e) { falha++; console.warn("anexo", e); } }
+        for (const x of fila) { try { anexos.push(await capEnviarUm(it, x.tipo, x.file, null, drive));   /* v0.12.79: Rio Card vai para a pasta dos reparos */ } catch (e) { falha++; console.warn("anexo", e); } }
         if (anexos.length) await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, criada.id, { Anexos: JSON.stringify(anexos) });
         if (falha) toast(`${falha} arquivo(s) não puderam ser enviados — abra a conta e anexe de novo.`, 7000);
       } catch (e) { toast("Conta cadastrada, mas os documentos não foram anexados: " + e.message + " — abra a conta e anexe de novo.", 8000); }
@@ -6673,7 +6673,7 @@ window.capPagar = (id) => {
       if (files.length) {
         b.textContent = "Enviando comprovante…";
         const alvo = Object.assign({}, it, fields), anexos = anexosDe(it), drive = await docDrive();
-        for (const f of files) { const dest = docDestinoConta(alvo, "Comprovante", f); const item = await docEnviar(dest.pasta, dest.nome, f); anexos.push(docMeta(item, "Comprovante", f, drive)); }
+        for (const f of files) anexos.push(await capEnviarUm(alvo, "Comprovante", f, null, drive));   /* v0.12.79: Rio Card vai para a pasta dos reparos */
         fields.Anexos = JSON.stringify(anexos);
         $("pgArq").value = ""; it.Anexos = fields.Anexos;   /* enviado: se a gravação falhar e o usuário tentar de novo, não reenvia */
       }
@@ -28022,7 +28022,7 @@ async function rcEnviarArquivos(r, tipo, files, rcs) {
   const drive = await rcDrive(), out = [];
   const ano = String(r.DataAbertura || todayISO()).slice(0, 4);
   for (const f of files) {
-    const nome = `${todayISO()}_${docSlug(r.Title)}_${docSlug(tipo)}${docExt(f.name) || ".pdf"}`;
+    const nome = `${todayISO()}_${docNomeSeguro(r.Title)}_${docNomeSeguro(tipo).replace(/\s+/g, "-")}${docExt(f.name) || ".pdf"}`;
     const item = await docEnviar(`${RC_PASTA}/${ano}/${docNomeSeguro(r.Title)}`, nome, f, null, drive);
     const m = docMeta(item, tipo, f, drive); if (rcs && rcs.length > 1) m.rcs = rcs; else m.rc = r.Title;
     out.push(m);
@@ -28564,8 +28564,41 @@ async function rcSyncDaCap(it, removidos, capEditou) {
     return r;
   };
 }
+/* v0.12.79: arquivos das contas do fornecedor Rio Card vão para a mesma pasta dos reparos (site Operacional, "Rio Card - Reparos"),
+   que é liberada uma vez para o grupo do Financeiro — assim ninguém precisa de acesso ao site inteiro */
+/* um arquivo de conta da CAP: fornecedor Rio Card → pasta "Rio Card - Reparos" (site Operacional); os demais → pasta do fornecedor (site Financeiro) */
+async function capEnviarUm(it, tipo, f, onProg, driveFin) {
+  if (!rcEhFornRC(it && it.Fornecedor)) { const dest = docDestinoConta(it, tipo, f); const item = await docEnviar(dest.pasta, dest.nome, f, onProg); return docMeta(item, tipo, f, driveFin || await docDrive()); }
+  let drive;
+  try { drive = await rcDrive(); } catch (e) { const er = new Error(`sem acesso à pasta "${RC_PASTA}" do site Operacional (${e.message})`); er.status = e.status; throw er; }
+  const base = ymd(tipo === "Comprovante" ? (it.DataPagamento || todayISO()) : (it.Vencimento || todayISO())), nf = rcNF(it.NumeroNF);
+  const sub = docNomeSeguro(nf ? `CAP NF ${nf}` : `CAP ${it._id}`);
+  const nome = `${base}_${docSlug(it.Fornecedor)}_${docNomeSeguro(tipo).replace(/\s+/g, "-")}${nf ? "_" + nf : ""}${it.Parcela ? "_" + String(it.Parcela).replace(/\D+/g, "-").replace(/^-|-$/g, "") : ""}${docExt(f.name) || ".pdf"}`;
+  const item = await docEnviar(`${RC_PASTA}/${base.slice(0, 4)}/${sub}`, nome, f, onProg, drive);
+  return docMeta(item, tipo, f, drive);
+}
+async function rcCapDocEnviar(it, tipo, files, wrapId, html, rewire) {
+  const anexos = anexosDe(it);
+  const slot = document.querySelector(`#capDocs .doc-slot[data-tipo="${CSS.escape(tipo)}"] .doc-fila`);
+  let ok = 0;
+  try {
+    for (const f of files) {
+      if (slot) slot.textContent = `Enviando ${f.name}…`;
+      anexos.push(await capEnviarUm(it, tipo, f, p => { if (slot) slot.textContent = `Enviando ${f.name}… ${Math.round(p * 100)}%`; })); ok++;
+    }
+  } catch (e) { toast("Não foi possível anexar: " + e.message, 8000); }
+  if (ok) {
+    try { await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, { Anexos: JSON.stringify(anexos) }); it.Anexos = JSON.stringify(anexos); CAP_STATE.rev = (CAP_STATE.rev || 0) + 1; toast(`${ok} arquivo(s) anexado(s)`); }
+    catch (e) { toast("Arquivo enviado para a pasta, mas a conta não foi atualizada: " + e.message, 7000); }
+  }
+  const w = $(wrapId); if (w) { w.innerHTML = html(); rewire(); }
+}
 { const e0 = capDocEnviar;
-  capDocEnviar = async function (it) { const r = await e0.apply(this, arguments); if (capEhReparo(it)) await rcSyncDaCap(it); return r; };
+  capDocEnviar = async function (it) {
+    const r = rcEhFornRC(it && it.Fornecedor) ? await rcCapDocEnviar.apply(this, arguments) : await e0.apply(this, arguments);
+    if (capEhReparo(it)) await rcSyncDaCap(it);
+    return r;
+  };
 }
 { const d0 = capDocRemover;
   capDocRemover = async function (it, id) { const antes = anexosDe(it).some(a => a.id === id); const r = await d0.apply(this, arguments); if (antes && capEhReparo(it) && !anexosDe(it).some(a => a.id === id)) await rcSyncDaCap(it, [id]); return r; };

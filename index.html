@@ -23716,11 +23716,13 @@ function execPaginar(d, titulo, pais) {
   let c = nova();
   const cs = d.defaultView.getComputedStyle(folhas[0]), lim = folhas[0].clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
   const cabe = () => c.getBoundingClientRect().height <= lim + .5;
-  const fila = itens.slice(); let guarda = 0;
+  const fila = itens.slice(); let guarda = 0, ultH2 = null;
   while (fila.length && guarda++ < 5000) {
     let n = fila.shift();
     if (n.nodeType === 3) { const s = d.createElement("div"); s.textContent = n.textContent; n = s; }
     if (execEhQuebra(n)) { if (c.childNodes.length) c = nova(); continue; }
+    if (n.matches("h2.sec")) ultH2 = n.dataset.rota ? n : null;
+    else if (ultH2 && !n.dataset.rota && !c.querySelector(":scope > h2.sec")) { ["rota", "origem", "demo"].forEach(k => { if (ultH2.dataset[k]) n.dataset[k] = ultH2.dataset[k]; }); }   /* bloco que começa a folha sem o título: leva a origem da seção */
     c.appendChild(n);
     if (cabe()) continue;
     const tab = execTabelaDe(n);
@@ -23810,13 +23812,14 @@ async function execEsperar(d) {   /* fontes e imagens prontas antes de medir as 
 function execMostrar(host, doc, opt) {
   opt = opt || {};
   if (!doc) { host.innerHTML = `<div class="cap-empty"><h3>Sem dados para o relatório</h3></div>`; EXEC.pronto = Promise.resolve(); return; }
-  const pais = !!doc.paisagem; EXEC.W = (pais ? 1123 : 794) + 40;
+  const pais = !!doc.paisagem; EXEC.W = (pais ? 1123 : 794) + 40; EXEC.pagSujo = false;
   const html = printDocHtml(Object.assign({}, doc, { css: (doc.css || "") + execFolhaCss(pais) }));
   host.innerHTML = `<div class="exec-doc"><iframe id="execFrame" sandbox="allow-same-origin" title="${esc(doc.titulo || "Relatório")}"></iframe></div>`;
   const fr = $("execFrame"), tk = ++EXEC.tk; let fim; EXEC.pronto = new Promise(r => { fim = r; });
   fr.onload = async () => {
+    if (!fr.contentDocument || fr.contentDocument.URL !== "about:srcdoc") return;   /* ignora o about:blank inicial */
     try {
-      const d = fr.contentDocument; if (!d || tk !== EXEC.tk) return;
+      const d = fr.contentDocument; if (tk !== EXEC.tk) return;
       await execEsperar(d); if (tk !== EXEC.tk || !fr.isConnected) return;
       execLigar(d, opt);   /* antes de paginar: as notas de origem e o ⛶ ocupam espaço na tela */
       EXEC.folhas = execPaginar(d, doc.titulo, pais);
@@ -23834,7 +23837,7 @@ function execLigar(d, opt) {
     const t = (h3.firstChild && h3.firstChild.nodeType === 3 ? h3.firstChild.textContent : h3.textContent).trim();
     const b = d.createElement("button"); b.type = "button"; b.className = "amp"; b.title = "Ampliar o gráfico (com rótulos)"; b.textContent = "⛶"; b.addEventListener("click", ev => { ev.stopPropagation(); grAmpliar(src, t); }); b.addEventListener("dblclick", ev => ev.stopPropagation()); h3.appendChild(b); });
   d.addEventListener("dblclick", ev => {
-    const t = ev.target; if (!t || !t.closest || t.closest(".org, .amp, [data-ed]")) return;
+    const t = ev.target; if (!t || !t.closest || t.closest('.org, .amp, [contenteditable="true"]')) return;
     const a = execAlvo(t, d.body); if (!a) return;
     if (opt.demo && a.dataset.demo) execDemoAbrir(a.dataset.demo, a.dataset.origem, a.dataset.rota); else execIr(a.dataset.rota, a.dataset.origem);
   });
@@ -23842,38 +23845,60 @@ function execLigar(d, opt) {
   d.querySelectorAll("[data-ed]").forEach(e => { e.setAttribute("contenteditable", "true"); e.setAttribute("spellcheck", "true"); e.title = "Texto editável: clique para alterar (vai para o PDF e para o documento salvo)"; });
   let mudou = false;
   d.addEventListener("input", ev => { const e = ev.target && ev.target.closest && ev.target.closest("[data-ed]"); if (!e) return;
-    const T = EXEC.textos[opt.chave] = EXEC.textos[opt.chave] || {}; T[e.dataset.ed] = execSanit(e.innerHTML); EXEC.sujo[opt.chave] = true; mudou = true; execTextosGravar(); execSalvoInfo(); });
+    const T = EXEC.textos[opt.chave] = EXEC.textos[opt.chave] || {}; T[e.dataset.ed] = execSanit(e.innerHTML); EXEC.sujo[opt.chave] = true; EXEC.pagSujo = mudou = true; execTextosGravar(); execSalvoInfo(); execTxtBadge(); });
   d.addEventListener("focusout", () => setTimeout(() => { if (!mudou) return; const a = d.activeElement; if (a && a.closest && a.closest("[data-ed]")) return; mudou = false; execRepaginar(); }, 0));
+  d.defaultView.addEventListener("blur", () => setTimeout(() => { if (mudou && EXEC.pagSujo && !EXEC.salvando) { mudou = false; execRepaginar(); } }, 400));   /* foco foi para fora do documento: refaz as folhas */
 }
-function execRepaginar() { if (!EXEC.doc || EXEC.demo || EXEC.aba === "docs") return; execPintarRel(window.scrollY); }
-/* documento final: as folhas como estão na tela, sem os controles da tela */
-function execInstantaneo() {
-  const fr = $("execFrame"), d = fr && fr.contentDocument; if (!d || !d.querySelector(".folha")) return "";
-  const raiz = d.documentElement.cloneNode(true);
-  raiz.querySelectorAll(".org, .amp").forEach(e => e.remove());
-  raiz.querySelectorAll(".obs-blk").forEach(b => { const e = b.querySelector("[data-ed]"); if (!e || !e.textContent.trim()) b.remove(); });
-  raiz.querySelectorAll("[contenteditable],[spellcheck],[data-rota],[data-ed],[data-demo],[data-origem],[title]").forEach(e => ["contenteditable", "spellcheck", "data-rota", "data-origem", "data-demo", "data-ed", "data-ph", "title"].forEach(a => e.removeAttribute(a)));
-  raiz.querySelectorAll(".excede").forEach(e => e.classList.remove("excede"));
-  const fs = [...raiz.querySelectorAll(".folha")].filter(f => { const c = f.querySelector(".fl-cont"); if (c && !c.children.length) { f.remove(); return false; } return true; });
-  fs.forEach((f, i) => { const s = f.querySelector(".fl-rod span:last-child"); if (s) s.textContent = `Página ${i + 1} de ${fs.length}`; });
-  return "<!DOCTYPE html>" + raiz.outerHTML;
+/* refaz só as folhas (o texto editado entra limpo); botões e barra ficam */
+function execRepaginar() { if (!EXEC.doc || EXEC.demo || EXEC.aba === "docs" || !$("execPag")) return; const c = execChave(); execMostrar($("execPag"), execMarcar(EXEC.doc, EXEC.textos[c] || {}, execEditavel()), { editavel: execEditavel(), chave: c, demo: true, scroll: window.scrollY }); }
+/* documento para o PDF e a versão final: as mesmas folhas, montadas numa moldura escondida a partir do documento e dos
+   textos guardados (limpos) — sem controles da tela e sem o quadro de observações em branco */
+function execDocImpressao() {
+  if (EXEC.demo) return EXEC.demoDoc || null;
+  if (!EXEC.doc || EXEC.aba === "docs") return null;
+  return execMarcar(EXEC.doc, EXEC.textos[execChave()] || {}, false);
 }
-function execLimparHtml(html) {   /* arquivo salvo lido de volta: sem scripts, eventos nem conteúdo ativo */
+function execFolhasHtml(doc) {
+  return new Promise(res => {
+    if (!doc) { res(""); return; }
+    const pais = !!doc.paisagem, fr = document.createElement("iframe"); let feito = false;
+    fr.setAttribute("sandbox", "allow-same-origin"); fr.setAttribute("aria-hidden", "true"); fr.tabIndex = -1;
+    fr.style.cssText = `position:fixed;left:-30000px;top:0;width:${(pais ? 1123 : 794) + 40}px;height:1200px;border:0;visibility:hidden;pointer-events:none`;
+    const fim = h => { if (feito) return; feito = true; fr.remove(); res(h); };
+    fr.onload = async () => {
+      try {
+        const d = fr.contentDocument; if (!d || d.URL !== "about:srcdoc") return;   /* ignora o about:blank inicial */
+        await execEsperar(d); execPaginar(d, doc.titulo, pais);
+        const raiz = d.documentElement.cloneNode(true);
+        raiz.querySelectorAll("[data-rota],[data-ed],[data-demo],[data-origem],[data-ph]").forEach(e => ["data-rota", "data-origem", "data-demo", "data-ed", "data-ph"].forEach(a => e.removeAttribute(a)));
+        raiz.querySelectorAll(".excede").forEach(e => e.classList.remove("excede"));
+        fim("<!DOCTYPE html>" + raiz.outerHTML);
+      } catch (e) { fim(""); }
+    };
+    document.body.appendChild(fr);
+    fr.srcdoc = printDocHtml(Object.assign({}, doc, { css: (doc.css || "") + execFolhaCss(pais) }));
+    setTimeout(() => fim(""), 20000);
+  });
+}
+async function execInstantaneo() { return execFolhasHtml(execDocImpressao()); }
+function execLimparHtml(html) {   /* arquivo salvo lido de volta: sem scripts, eventos, links nem conteúdo externo (só a fonte do Google) */
   const d = new DOMParser().parseFromString(String(html || ""), "text/html");
-  d.querySelectorAll("script, iframe, object, embed, base, form, meta[http-equiv]").forEach(e => e.remove());
-  d.querySelectorAll("*").forEach(e => [...e.attributes].forEach(a => { if (/^on/i.test(a.name) || (/^(href|src|xlink:href|action|formaction)$/i.test(a.name) && /^\s*(javascript|vbscript|data:text\/html)/i.test(a.value))) e.removeAttribute(a.name); }));
+  d.querySelectorAll("script, iframe, frame, object, embed, base, form, meta[http-equiv], video, audio, svg use").forEach(e => e.remove());
+  d.querySelectorAll("link").forEach(e => { if (!/^https:\/\/fonts\.googleapis\.com\//.test(e.getAttribute("href") || "") || !/stylesheet/i.test(e.getAttribute("rel") || "")) e.remove(); });
+  d.querySelectorAll("*").forEach(e => [...e.attributes].forEach(a => { const n = a.name.toLowerCase(); if (n.startsWith("on") || n === "href" || n === "xlink:href" || n === "action" || n === "formaction" || n === "srcset" || (n === "src" && !/^data:image\//i.test(a.value)) || (n === "style" && /url\s*\(|expression|@import/i.test(a.value))) e.removeAttribute(a.name); }));
+  d.querySelectorAll("style").forEach(e => { e.textContent = e.textContent.replace(/@import[^;]*;?/gi, "").replace(/url\s*\(\s*(['"]?)(?!data:)[^)]*\)/gi, "none"); });
   return "<!DOCTYPE html>" + d.documentElement.outerHTML;
 }
 function execImprimirHtml(html) {   /* imprime as folhas (moldura isolada: sem scripts) */
   if (!html) { toast("Aguarde o documento terminar de carregar."); return; }
   let fr = $("execPrintFrame");
   if (!fr) { fr = document.createElement("iframe"); fr.id = "execPrintFrame"; fr.setAttribute("sandbox", "allow-same-origin allow-modals"); fr.setAttribute("aria-hidden", "true"); fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0"; document.body.appendChild(fr); }
-  fr.onload = async () => { try { const d = fr.contentDocument; if (d) await execEsperar(d); fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { toast("Não foi possível abrir a impressão: " + e.message, 6000); } };
+  fr.onload = async () => { try { const d = fr.contentDocument; if (!d || d.URL !== "about:srcdoc") return; await execEsperar(d); fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { toast("Não foi possível abrir a impressão: " + e.message, 6000); } };
   fr.srcdoc = html;
   return html;
 }
 async function execPronto() { await Promise.race([EXEC.pronto, new Promise(r => setTimeout(r, 6000))]); }
-window.execImprimir = async () => { await execPronto(); execImprimirHtml(execInstantaneo()); };
+window.execImprimir = async () => { const b = $("execImprimir"); if (b) b.disabled = true; try { await execPronto(); execImprimirHtml(await execInstantaneo()); } finally { const b2 = $("execImprimir"); if (b2) b2.disabled = false; } };
 
 /* =====================================================================
    v0.12.74 · demonstrativos: duplo clique numa seção, linha, número ou gráfico abre, na mesma aba, a página com o detalhe
@@ -23894,9 +23919,9 @@ function execFrotaBlocos(k) {   /* detalhe da Frota (cadastro real ou modelo), n
   const dias = x => x ? Math.round((x - hoje) / 864e5) : null, sim = b => b ? "Sim" : "Não";
   if (k === "veic") {
     B.push({ t: "Relação da frota", s: `${V.length} veículo(s) ativo(s)`, cols: [["Prefixo", "nw"], ["Placa", "nw"], ["Tipo / modelo"], ["Ano", "r"], ["Idade", "r"], ["Sentados", "r"], ["Em pé", "r"], ["Elevador"], ["Ar-cond."], ["Linha principal"], ["Situação", "tag"]],
-      rows: V.map(v => [v.prefixo, v.placa, v.tipo + (v.carroceria ? ` · ${v.carroceria}` : ""), v.ano, v.idade == null ? null : `${v.idade} ano(s)`, v.sentados, v.empe || null, sim(v.elevador), sim(v.ar), v.linha, v.situacao]) });
+      rows: V.map(v => [v.prefixo, v.placa, v.tipo + (v.carroceria ? ` · ${v.carroceria}` : ""), v.ano == null ? null : String(v.ano), v.idade == null ? null : `${v.idade} ano(s)`, v.sentados, v.empe || null, sim(v.elevador), sim(v.ar), v.linha, v.situacao]) });
     B.push({ t: "Vistoria e documentos técnicos", s: `posição em ${execBr(hoje)}`, cols: [["Prefixo", "nw"], ["Última vistoria", "nw"], ["Válida até", "nw"], ["Resultado", "tag"], ["NC abertas", "r"], ["Cronotacógrafo", "nw"], ["Extintor", "nw"], ["Licenciamento", "r"]],
-      rows: V.map(v => { const dv = dias(v.validade); return [v.prefixo, execBr(v.vistoria), execBr(v.validade) + (dv == null ? "" : dv < 0 ? " · vencida" : dv <= 60 ? ` · vence em ${dv} d` : ""), v.resultado, v.ncs.filter(x => x.status === "Aberta").length || null, execBr(v.tacografo) + (v.tacografo && dias(v.tacografo) < 0 ? " · vencido" : ""), execBr(v.extintor) + (v.extintor && dias(v.extintor) < 0 ? " · vencido" : ""), v.crlv]; }) });
+      rows: V.map(v => { const dv = dias(v.validade); return [v.prefixo, execBr(v.vistoria), execBr(v.validade) + (dv == null ? "" : dv < 0 ? " · vencida" : dv <= 60 ? ` · vence em ${dv} d` : ""), v.resultado, v.ncs.filter(x => x.status === "Aberta").length || null, execBr(v.tacografo) + (v.tacografo && dias(v.tacografo) < 0 ? " · vencido" : ""), execBr(v.extintor) + (v.extintor && dias(v.extintor) < 0 ? " · vencido" : ""), v.crlv == null ? null : String(v.crlv)]; }) });
   }
   if (k === "manut") {
     B.push({ t: "Disponibilidade e manutenção por veículo", s: `mês de ${mes.slice(5)}/${mes.slice(0, 4)}`, cols: [["Prefixo", "nw"], ["Situação", "tag"], ["Preventivas", "r"], ["Corretivas", "r"], ["Disponibilidade", "r"], ["Próxima preventiva"]],
@@ -23985,7 +24010,7 @@ async function execDemoXlsx() {
 }
 window.execDemoXlsx = execDemoXlsx;
 function execDemoAbrir(key, origem, rota) { EXEC.demo = { key, origem, rota, aba: EXEC.aba, scroll: window.scrollY }; renderExec(); window.scrollTo(0, 0); }
-window.execDemoVoltar = () => { const sc = EXEC.demo && EXEC.demo.scroll; EXEC.demo = null; EXEC.demoSpec = null; renderExec(sc); };
+window.execDemoVoltar = () => { const sc = EXEC.demo && EXEC.demo.scroll; EXEC.demo = null; EXEC.demoSpec = null; EXEC.demoDoc = null; renderExec(sc); };
 window.execDemoOrigem = () => { const s = EXEC.demoSpec; if (s) execIr(s.rota, s.origem); };
 async function execDemoPintar() {
   const tk = EXEC.rtk, body = $("execBody");
@@ -23997,7 +24022,8 @@ async function execDemoPintar() {
   $("execActions").innerHTML = `<button class="btn" id="execDemoVoltar" onclick="execDemoVoltar()">← Voltar ao relatório</button>${sp.rota && sp.rota !== "-" ? `<button class="btn" onclick="execDemoOrigem()" title="${esc(sp.origem)}">${sp.rota === "dev" ? "⏳ Origem em desenvolvimento" : "↗ Abrir a origem no ERP"}</button>` : ""}<button class="btn" onclick="execDemoXlsx()">⬇ Planilha (.xlsx)</button><button class="btn primary" id="execImprimir" onclick="execImprimir()">🖨 Imprimir / PDF</button>`;
   $("execInfo").innerHTML = `<div class="exec-info"><span class="exec-badge">Demonstrativo · ${esc(sp.origem)}</span><span class="exec-badge">Referência: ${esc(sp.R.mes)}${sp.R.parcial ? " (parcial)" : ""}</span>${sp.demo ? `<span class="exec-badge warn">Modelo · dados fictícios</span>` : ""}<span class="exec-dica">Duplo clique numa seção abre a origem no ERP</span></div>`;
   body.innerHTML = `<div id="execPag"></div>`;
-  execMostrar($("execPag"), execDemoDoc(sp), { editavel: false, demo: false });
+  EXEC.demoDoc = execDemoDoc(sp);
+  execMostrar($("execPag"), EXEC.demoDoc, { editavel: false, demo: false });
 }
 
 /* =====================================================================
@@ -24032,7 +24058,7 @@ async function execDocsCarregar(forca) {
     const l = (await SP.lists(EXEC_DOCS.site.id)).find(x => x.displayName === LISTS.di_docs.displayName) || null;
     EXEC_DOCS.itens = l ? (await SP.items(EXEC_DOCS.site.id, l.id)).map(it => Object.assign({ _id: String(it.id), _em: it.lastModifiedDateTime || "", _por: (it.lastModifiedBy && it.lastModifiedBy.user && it.lastModifiedBy.user.displayName) || "" }, it.fields || {})) : [];
     EXEC_DOCS.list = l; EXEC_DOCS.erro = "";
-  } catch (e) { EXEC_DOCS.list = null; EXEC_DOCS.itens = []; EXEC_DOCS.erro = semAcesso(e) ? "Sem acesso ao site Diretoria no SharePoint (peça a inclusão no grupo do site)." : e.message; }
+  } catch (e) { EXEC_DOCS.list = null; EXEC_DOCS.itens = []; EXEC_DOCS.erro = [401, 403, 404].includes(e && e.status) ? "Sem acesso ao site Diretoria no SharePoint (peça a inclusão no grupo do site)." : e.message; }
 }
 async function execDocsDrive() { if (!EXEC_DOCS.drive) { if (!EXEC_DOCS.site) EXEC_DOCS.site = await SP.site(CONFIG.sites[LISTS.di_docs.siteKey]); EXEC_DOCS.drive = await graph(`/sites/${EXEC_DOCS.site.id}/drive?$select=id,name,webUrl`); } return EXEC_DOCS.drive; }
 async function execGarantirPasta(drive, pasta) {
@@ -24057,7 +24083,7 @@ async function execEnviar(drive, pasta, nome, blob) {
 }
 function execEditavel() { return !vcAtivo() && podeEditar("exec"); }   /* página aberta (exec.geral ou exec.operacoes) */
 function execPodeSalvar() { return execEditavel() && ["editar", "proprietario"].includes(permModulo("exec.docs")); }
-function execDocVe(x) { const r = EXEC_RELS[execRelDoNome(x.Relatorio)]; return !r || r.aba !== "operacoes" || execFrotaOk(); }   /* documentos da Frota: só quem tem acesso à Frota */
+function execDocVe(x) { const r = EXEC_RELS[execRelDoNome(x.Relatorio)]; return execFrotaOk() || ((!r || r.aba !== "operacoes") && x.Departamento !== "Operações"); }   /* documentos da Frota: só quem tem acesso à Frota */
 function execRascunhoDe(rel, ref) { return EXEC_DOCS.itens.find(x => x.Relatorio === EXEC_RELS[rel].nome && x.Referencia === ref && x.Situacao === "Rascunho"); }
 function execTextosDe(x) { try { const o = JSON.parse(x.Textos || "{}"), t = o && typeof o === "object" ? (o.textos && typeof o.textos === "object" ? o.textos : o) : {}; const r = {}; Object.keys(t).forEach(k => { if (/^[a-z]{2,5}\d{0,3}$/.test(k) && typeof t[k] === "string") r[k] = execSanit(t[k]); }); return r; } catch (e) { return {}; } }
 function execQuando(iso) { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); }
@@ -24071,19 +24097,24 @@ async function execSalvar(final) {
   if (textos.length > 60000) { toast("Os textos editados passaram do limite (60 mil caracteres). Encurte as observações.", 7000); return; }
   const ras = execRascunhoDe(rel, ref), quem = vcQuemEmite(), titulo = `${EXEC.doc ? EXEC.doc.titulo : R0.nome} — ${R.mes}`;
   const base = { Relatorio: R0.nome, Departamento: R0.dep, Referencia: ref, Folha: pais ? "Paisagem" : "Retrato", Textos: textos, Autor: quem };
+  const fo = EXEC.fonte[chave];
+  if (ras && (!fo || (fo.iso || "") !== (ras._em || ""))) {   /* rascunho salvo por outra pessoa (ou noutra aba) depois que este texto foi aberto */
+    const ok = await erpConfirmar({ titulo: "Já existe um rascunho deste mês", html: `<p>O rascunho de <b>${esc(titulo)}</b> foi salvo por <b>${esc(ras.Autor || ras._por || "—")}</b> em ${esc(execQuando(ras._em))}.</p><p class="sup">${final ? "A versão final leva os textos que estão na tela agora." : "Salvar agora substitui os textos desse rascunho pelos que estão na tela."} Para continuar do rascunho salvo, abra-o na aba Documentos.</p>`, sim: final ? "Continuar" : "Substituir" });
+    if (!ok) return;
+  }
   if (!final) {
     try {
       if (ras) await SP.update(EXEC_DOCS.site.id, EXEC_DOCS.list.id, ras._id, Object.assign({ Title: titulo }, base));
       else await SP.create(EXEC_DOCS.site.id, EXEC_DOCS.list.id, Object.assign({ Title: titulo, Situacao: "Rascunho", Versao: 0 }, base));
-      EXEC.sujo[chave] = false; EXEC.fonte[chave] = { tipo: "rascunho", em: execQuando(new Date().toISOString()), por: quem };
-      toast("Rascunho salvo na aba Documentos.", 4000); await execDocsCarregar(true); execSalvoInfo();
+      EXEC.sujo[chave] = false; toast("Rascunho salvo na aba Documentos.", 4000); await execDocsCarregar(true);
+      const novo = execRascunhoDe(rel, ref); EXEC.fonte[chave] = { tipo: "rascunho", em: execQuando((novo && novo._em) || new Date().toISOString()), por: quem, iso: (novo && novo._em) || "" }; execSalvoInfo(); execTxtBadge();
     } catch (e) { toast("Não foi possível salvar o rascunho: " + e.message, 7000); }
     return;
   }
   const v = Math.max(0, ...EXEC_DOCS.itens.filter(x => x.Relatorio === R0.nome && x.Referencia === ref && x.Situacao === "Final").map(x => Number(x.Versao) || 0)) + 1;
   const ok = await erpConfirmar({ titulo: "Salvar a versão final", html: `<p>Salvar <b>${esc(titulo)}</b> como <b>versão final v${v}</b>?</p><p class="sup">As folhas ficam congeladas como estão agora (números e textos) num arquivo da biblioteca do site Diretoria, e aparecem na aba Documentos.${ras ? " O rascunho deste mês vira esta versão final." : ""}</p>`, sim: `Salvar v${v}` });
   if (!ok) return;
-  await execPronto(); const html = execInstantaneo();
+  const html = await execInstantaneo();
   if (!html) { toast("Aguarde o documento terminar de carregar e tente de novo.", 5000); return; }
   const btn = $("execFinal"); if (btn) { btn.disabled = true; btn.textContent = "Salvando…"; }
   try {
@@ -24099,6 +24130,11 @@ async function execSalvar(final) {
 window.execSalvarRascunho = () => execSalvar(false);
 window.execSalvarFinal = () => execSalvar(true);
 function execSalvoInfo() { const el = $("execSalvoInfo"); if (!el) return; el.textContent = EXEC.sujo[execChave()] ? "• textos alterados, ainda não salvos" : ""; }
+function execTxtHtml() {   /* selo dos textos editados (e de onde vieram) + restaurar */
+  const c = execChave(), T = EXEC.textos[c] || {}, fonte = EXEC.fonte[c], temTxt = Object.keys(T).length > 0;
+  return temTxt || fonte ? `<span class="exec-badge ed" id="execTxtBadge">✎ Textos editados${fonte ? ` · rascunho de ${esc(fonte.em)}${fonte.por ? ` (${esc(fonte.por)})` : ""}` : ""}</span>${execEditavel() && temTxt ? `<button class="btn sm ghost" id="execTxtRestaurar" onclick="execTextosRestaurar()">Restaurar textos automáticos</button>` : ""}` : "";
+}
+function execTxtBadge() { const s = $("execSalvoInfo"); if (!s) return; document.querySelectorAll("#execTxtBadge, #execTxtRestaurar").forEach(e => e.remove()); s.insertAdjacentHTML("beforebegin", execTxtHtml()); }
 window.execTextosRestaurar = async () => {
   if (!(await erpConfirmar({ titulo: "Restaurar textos automáticos", texto: "Voltar a síntese, o resumo, as notas e as observações deste relatório ao texto automático? O rascunho salvo na aba Documentos não muda até você salvar de novo.", sim: "Restaurar" }))) return;
   const c = execChave(); EXEC.textos[c] = {}; delete EXEC.fonte[c]; EXEC.sujo[c] = true; execTextosGravar(); execPintarRel(window.scrollY);
@@ -24109,16 +24145,18 @@ window.execDocAbrir = id => {
   if (x.Situacao === "Final") { EXEC.ver = x._id; renderExec(); return; }
   const rel = execRelDoNome(x.Relatorio), r = EXEC_RELS[rel]; if (!r) { toast("Relatório desconhecido neste rascunho."); return; }
   EXEC.ref = /^\d{4}-\d{2}$/.test(x.Referencia || "") ? x.Referencia : null; if (r.tipo) EXEC.opTipo = r.tipo; EXEC.opPais = x.Folha === "Paisagem";
-  EXEC.aba = r.aba; const c = execChave(); EXEC.textos[c] = execTextosDe(x); EXEC.fonte[c] = { tipo: "rascunho", em: execQuando(x._em), por: x.Autor || x._por || "" }; EXEC.sujo[c] = false; execTextosGravar();
+  EXEC.aba = r.aba; const c = execChave(); EXEC.textos[c] = execTextosDe(x); EXEC.fonte[c] = { tipo: "rascunho", em: execQuando(x._em), por: x.Autor || x._por || "", iso: x._em || "" }; EXEC.sujo[c] = false; execTextosGravar();
   EXEC.demo = null; renderExec(); window.scrollTo(0, 0);
 };
 window.execDocExcluir = async id => {
   const x = EXEC_DOCS.itens.find(i => i._id === String(id)); if (!x) return;
   if (!(await erpConfirmar({ titulo: "Excluir documento", html: `<p>Excluir <b>${esc(x.Title || x.Relatorio)}</b>${x.Situacao === "Final" ? ` (versão final v${esc(String(x.Versao || ""))}, com o arquivo)` : " (rascunho)"}?</p><p class="sup">A exclusão não pode ser desfeita.</p>`, sim: "Excluir", perigo: true }))) return;
+  if (!podeExcluir("exec.docs") || vcAtivo()) { toast("Só o proprietário da página Documentos exclui documentos.", 5000); return; }
   try {
-    if (x.ArquivoId) { const drv = await execDocsDrive(); if (x.ArquivoDrive === drv.id && docIdOk(x.ArquivoId)) { try { await graph(`/drives/${drv.id}/items/${encodeURIComponent(x.ArquivoId)}`, { method: "DELETE" }); } catch (e) { if (e.status !== 404) throw e; } } }
     await graph(`/sites/${EXEC_DOCS.site.id}/lists/${EXEC_DOCS.list.id}/items/${x._id}`, { method: "DELETE" });
-    toast("Documento excluído."); await execDocsCarregar(true); execDocsLista();
+    let aviso = "";
+    if (x.ArquivoId) { try { const a = await execArquivoDoc(x); await graph(`/drives/${a.d}/items/${encodeURIComponent(a.id)}`, { method: "DELETE" }); } catch (e) { if (e.status !== 404) aviso = " O arquivo ficou na biblioteca: " + e.message; } }
+    toast("Documento excluído." + aviso, aviso ? 8000 : 3200); await execDocsCarregar(true); execDocsLista();
   } catch (e) { toast("Não foi possível excluir: " + e.message, 7000); }
 };
 window.execDocsAtualizar = async () => { EXEC.ver = null; await execDocsCarregar(true); renderExec(); };
@@ -24153,15 +24191,22 @@ async function execDocsPintar() {
   body.innerHTML = `<div class="cap-card"><div class="cap-card-h"><h3>Documentos salvos</h3><span class="cap-card-s">rascunhos e versões finais do Relatório Executivo, de todos os departamentos</span></div><div id="execDocsLista"></div></div>`;
   execDocsLista();
 }
+async function execArquivoDoc(x) {   /* o arquivo da versão final só vale se estiver na pasta "Relatórios do ERP" da biblioteca do site Diretoria */
+  const drv = await execDocsDrive(), erro = () => new Error("O arquivo desta versão não está na pasta dos relatórios da biblioteca do site Diretoria.");
+  if (x.ArquivoDrive !== drv.id || !docIdOk(x.ArquivoId)) throw erro();
+  const m = await graph(`/drives/${drv.id}/items/${encodeURIComponent(x.ArquivoId)}?$select=id,name,parentReference,file`);
+  let pai = ""; try { pai = decodeURIComponent(String((m.parentReference && m.parentReference.path) || "")); } catch (e) { pai = String((m.parentReference && m.parentReference.path) || ""); }
+  if (!/\/root:\/Relatórios do ERP(\/|$)/.test(pai) || !/\.html$/i.test(m.name || "")) throw erro();
+  return { d: drv.id, id: String(m.id) };
+}
 async function execVerFinal(x, tk) {
   const body = $("execBody");
   $("execActions").innerHTML = `<button class="btn" onclick="execVerVoltar()">← Voltar à lista</button><button class="btn primary" id="execVerImprimir" onclick="execVerImprimir()">🖨 Imprimir / PDF</button>${session.n1 && /^https:\/\//.test(x.ArquivoUrl || "") ? `<a class="btn" href="${esc(x.ArquivoUrl)}" target="_blank" rel="noopener">Abrir no SharePoint</a>` : ""}`;
   $("execInfo").innerHTML = `<div class="exec-info"><span class="exec-badge ok">Versão final v${esc(String(x.Versao || ""))}</span><span class="exec-badge">${esc(x.Relatorio || "")}</span><span class="exec-badge">Referência: ${esc(x.Referencia || "")}</span><span class="exec-dica">Salva por ${esc(x.Autor || x._por || "—")} em ${esc(execQuando(x._em))} · documento congelado</span></div>`;
   body.innerHTML = `<div class="cap-empty"><h3>Abrindo a versão final…</h3></div>`;
   try {
-    const drv = await execDocsDrive();
-    if (x.ArquivoDrive !== drv.id || !docIdOk(x.ArquivoId)) throw new Error("O arquivo desta versão não está na biblioteca do site Diretoria.");
-    const { blob } = await docBaixar({ d: drv.id, id: x.ArquivoId });
+    const a = await execArquivoDoc(x);
+    const { blob } = await docBaixar({ d: a.d, id: a.id });
     const html = execLimparHtml(await blob.text());
     if (tk !== EXEC.rtk || !$("execBody")) return;
     EXEC.verHtml = html; EXEC.W = (/size:\s*A4\s+landscape/.test(html) ? 1123 : 794) + 40;
@@ -24211,7 +24256,7 @@ function execPintarRel(scroll) {
   const D = aba === "operacoes" ? EXEC.frotaInfo : null, R = execRef(execRefAtual(aba));
   const badges = aba === "geral" ? `<span class="exec-badge warn">Demonstração · dados fictícios</span>` : D && D.demo ? `<span class="exec-badge warn">Modelo · dados fictícios (sem veículo cadastrado em Frota › Veículos)</span>` : `<span class="exec-badge ok">Cadastro da frota · ${D ? D.V.length : 0} veículo(s) ativo(s)</span>`;
   const pos = aba === "operacoes" ? `<span class="exec-badge">Posição em ${execBr(frotaHoje())}${R.k < execMesAtual() ? " · situação dos veículos: cadastro atual" : ""}</span>` : `<span class="exec-badge">Referência: ${esc(R.mes)}${R.parcial ? " (parcial)" : ""}</span>`;
-  const txt = temTxt || fonte ? `<span class="exec-badge ed">✎ Textos editados${fonte ? ` · rascunho de ${esc(fonte.em)}${fonte.por ? ` (${esc(fonte.por)})` : ""}` : ""}</span>${ed && temTxt ? `<button class="btn sm ghost" onclick="execTextosRestaurar()">Restaurar textos automáticos</button>` : ""}` : "";
+  const txt = execTxtHtml();
   const dica = `<span class="exec-dica">Duplo clique numa seção, linha, número ou gráfico abre o demonstrativo · ↗ abre a origem no ERP · ⛶ amplia o gráfico${ed ? " · textos com contorno tracejado são editáveis" : ""} · ⏳ marca o que ainda está em desenvolvimento</span>`;
   $("execInfo").innerHTML = execBarra(aba) + `<div class="exec-info">${badges}${pos}${txt}<span id="execSalvoInfo" class="exec-sujo"></span>${dica}</div>`;
   execSalvoInfo();
@@ -24235,10 +24280,11 @@ async function renderExec(scroll) {
   body.innerHTML = `<div class="cap-empty"><h3>${EXEC.aba === "operacoes" ? "Carregando a frota…" : "Montando o relatório…"}</h3></div>`;
   if (EXEC.aba === "operacoes") { $("execInfo").innerHTML = ""; $("execActions").innerHTML = ""; }
   /* rascunho salvo do mesmo relatório e mês: quem edita continua dele (uma vez por sessão) */
-  if (execEditavel()) {
-    await execDocsCarregar(); if (tk !== EXEC.rtk || !$("execBody")) return;
+  if (execEditavel() && (session.n1 || pagNivel("exec", "docs") !== "nenhum")) {
+    try { await execDocsCarregar(); } catch (e) {}   /* falha nos documentos nunca impede o relatório */
+    if (tk !== EXEC.rtk || !$("execBody")) return;
     const c = execChave(), ras = EXEC_DOCS.list ? execRascunhoDe(execRelAtual(), execRefAtual(EXEC.aba)) : null;
-    if (ras && EXEC.textos[c] === undefined) { EXEC.textos[c] = execTextosDe(ras); EXEC.fonte[c] = { tipo: "rascunho", em: execQuando(ras._em), por: ras.Autor || ras._por || "" }; execTextosGravar(); }
+    if (ras && EXEC.textos[c] === undefined) { EXEC.textos[c] = execTextosDe(ras); EXEC.fonte[c] = { tipo: "rascunho", em: execQuando(ras._em), por: ras.Autor || ras._por || "", iso: ras._em || "" }; execTextosGravar(); }
   }
   if (EXEC.aba === "geral") { EXEC.doc = execGeralDoc(); EXEC.frotaInfo = null; execPintarRel(scroll); return; }
   await frotaCarregar();

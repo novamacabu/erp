@@ -23832,7 +23832,7 @@ async function execOrigFunc(ks) {
   const fs = EXEC.raw.func;
   const pos = execPosicao(ks[5]), ativoEm = f => (!f.Admissao || ymd(f.Admissao) <= pos) && !(f.DataDemissao && ymd(f.DataDemissao) <= pos) && !(String(f.Situacao || "") === "Desligado" && !f.DataDemissao);
   const mot = fs.filter(f => rhEhMotorista(f) && ativoEm(f));
-  if (!RHF_DOCS.list) return { st: "ok", n: mot.length, docs: null, docsSt: RHF_DOCS.erro ? "erro" : "semlista", temMes: false };
+  if (!RHF_DOCS.list || RHF_DOCS.erro) return { st: "ok", n: mot.length, docs: null, docsSt: RHF_DOCS.erro ? "erro" : "semlista", temMes: false };   /* erro ao ler os documentos: sem aptidão (não "0% aptos") */
   const em30 = ymd(new Date(dLocal(pos).getTime() + 30 * 864e5));
   const val = (f, g) => { const v = RHF_DOCS.itens.filter(d => String(d.FuncId) === f._id && rhDocTipo(d.Tipo).g === g && (!d.DataDocumento || ymd(d.DataDocumento) <= pos)).map(rhDocValidade).filter(Boolean).sort(); return v.length ? v[v.length - 1] : ""; };
   const G = ["ASO", "CNH", "TOX", "CURSO"], docs = { aso: 0, cnh: 0, tox: 0, curso: 0, apto: 0, vence30: 0, falta: { ASO: 0, CNH: 0, TOX: 0, CURSO: 0 } };

@@ -3434,7 +3434,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
 .mapa-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .mapa-acts .btn svg { width: 16px; height: 16px; vertical-align: -3px; margin-right: 4px; }
 .mapa-st { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; }
-.mapa-flut { position: fixed; right: 16px; bottom: 16px; width: min(720px, calc(100vw - 32px)); height: min(460px, calc(100vh - 100px)); z-index: 900; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(16, 24, 40, .25); display: flex; flex-direction: column; overflow: hidden; resize: both; min-width: 280px; min-height: 160px; }
+.mapa-flut { position: fixed; right: 16px; bottom: 16px; width: min(720px, calc(100vw - 32px)); height: min(460px, calc(100vh - 100px)); z-index: 45; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(16, 24, 40, .25); display: flex; flex-direction: column; overflow: hidden; resize: both; min-width: 280px; min-height: 160px; }
 .mapa-flut-h { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; background: var(--navy); color: #fff; cursor: move; user-select: none; touch-action: none; font-size: 13px; }
 .mapa-flut-h b { display: inline-flex; align-items: center; gap: 6px; }
 .mapa-flut-h svg { width: 15px; height: 15px; color: #fff; }
@@ -8709,7 +8709,7 @@ function paintPb() {
   const nAt = PB_STATE.itens.filter(x => x.Status === "Ativada").length;
   const nBl = PB_STATE.itens.filter(x => x.Status === "Bloqueada").length;
   const nAg = PB_STATE.itens.filter(x => x.Status === "Aguardando ativação").length;
-  const nSemResp = PB_STATE.itens.filter(x => !x.Responsavel && !x.ResponsavelLookupId).length;
+  const nSemResp = PB_STATE.itens.filter(x => !pbInativa(x) && !x.Responsavel && !x.ResponsavelLookupId).length;   /* v0.12.82: só as ativas */
   const kpis = `<div class="cap-kpis cap-kpis-6">
     ${kpi("Máquinas", PB_STATE.itens.length, "no cadastro")}
     ${kpi("Ativadas", nAt, "em operação", "pago")}
@@ -8756,7 +8756,11 @@ function paintPb() {
 window.pbForm = (id) => {
   if (!podeEditar("equip") && id === undefined) { toast("Seu acesso a Equipamentos é só de leitura."); return; }
   const x = id ? PB_STATE.itens.find(i => i._id === String(id)) : null, v = x || { Modelo: "Moderninha Smart 2", Status: "Aguardando ativação", Compartilhada: false, Local: "", UsuarioPagbank: "Nova Macabu" };
-  const funcOpts = `<option value="">(sem responsável)</option>` + PB_STATE.funcs.map(f => `<option value="${esc(f._id)}" ${String(v.ResponsavelLookupId || "") === String(f._id) ? "selected" : ""}>${esc(f.Title)}${f.Cargo ? " · " + esc(f.Cargo) : ""}</option>`).join("");
+  /* v0.12.82: alocação antiga com nome de pessoa e sem responsável: sugere a pessoa no Responsável */
+  const nrm = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  const sugResp = !v.ResponsavelLookupId && v.UsuarioPagbank && !["Nova Macabu", "PagBank"].includes(v.UsuarioPagbank) ? PB_STATE.funcs.find(f => nrm(f.Title) === nrm(v.UsuarioPagbank)) : null;
+  const respSel = String(v.ResponsavelLookupId || (sugResp ? sugResp._id : ""));
+  const funcOpts = `<option value="">(sem responsável)</option>` + PB_STATE.funcs.map(f => `<option value="${esc(f._id)}" ${respSel === String(f._id) ? "selected" : ""}>${esc(f.Title)}${f.Cargo ? " · " + esc(f.Cargo) : ""}</option>`).join("");
   const locOpts = ["Caixa matriz", "Agência Macaé", "Agência Conceição", "Sub agência", "Em rota", "Escritório", "Depósito", "Outro"].map(o => `<option value="${esc(o)}" ${(v.Local || "Caixa matriz") === o ? "selected" : ""}>${o}</option>`).join("");   /* v0.12.48: sem "(sem local)" */
   const modelos = ["Moderninha Pro", "Moderninha Smart 2", "Moderninha Smart", "Moderninha X", "Minizinha Chip 3", "Outra"];
   const statusOps = ["Ativada", "Aguardando ativação", "Bloqueada", "Devolvida", "Em manutenção"];
@@ -8794,6 +8798,7 @@ window.pbForm = (id) => {
     const histNovo = hist.slice();
     const nvComent = g("pbComentNovo");
     if (nvComent) histNovo.push({ data: todayISO(), autor: (session.me && session.me.displayName) || "—", texto: nvComent });
+    if (uAnt && g("pbUser") !== uAnt) histNovo.push({ data: todayISO(), autor: (session.me && session.me.displayName) || "—", texto: `Alocação anterior: ${uAnt} (a Alocação passou a ser só Nova Macabu ou PagBank; a pessoa fica no Responsável).` });
     const f = {
       Title: g("pbSerie"), Modelo: g("pbModelo"), CodigoID: g("pbId") || null, CNPJTitular: g("pbCnpj") || null,
       Status: g("pbStatus"), GarantiaAte: v.GarantiaAte || null, Local: g("pbLocal") || null,   /* v0.12.48: garantia e compartilhada saíram do formulário; o valor gravado é mantido */
@@ -21353,7 +21358,7 @@ RHDB_READ.funcs = () => {
     if (RHDB_STATE.list && RHF_STATE.colsDe !== RHDB_STATE.list.id) { try { const cs = await graphAll(`/sites/${RHDB_STATE.site.id}/lists/${RHDB_STATE.list.id}/columns?$select=name`); RHF_STATE.cols = new Set(cs.map(c => c.name)); RHF_STATE.colsDe = RHDB_STATE.list.id; } catch (e) { RHF_STATE.cols = null; RHF_STATE.colsDe = null; }
       if (RHDB_STATE.subId === "funcs" && rhfColsFaltam().length) paintRhDbSub("funcs");   /* o aviso das colunas que faltam já na 1ª visita */ }
   };
-  const RHF_NOVAS = ["CPF", "DataNascimento", "Departamento", "DataDemissao", "PIS", "Telefone", "CNPJ", "Foto"];   /* v0.12.82: Foto */
+  const RHF_NOVAS = ["CPF", "DataNascimento", "Departamento", "DataDemissao", "PIS", "Telefone", "CNPJ"];
   const c0 = SP.create, u0 = SP.update;
   const filtra = (listId, fields) => { if (RHF_STATE.colsDe && listId === RHF_STATE.colsDe && RHF_STATE.cols && fields) {   /* só a lista "RH — Funcionários" de onde as colunas foram lidas */ const f = Object.assign({}, fields); let tirou = []; RHF_NOVAS.forEach(k => { if (k in f && !RHF_STATE.cols.has(k)) { if (f[k] != null) tirou.push(k); delete f[k]; } }); if (tirou.length && !RHF_STATE.avisou) { RHF_STATE.avisou = true; setTimeout(() => toast(`A lista "RH — Funcionários" ainda não tem a(s) coluna(s) ${tirou.map(k => RHF_ROTULO[k] || k).join(", ")}: ${session.n1 ? "rode" : "peça a um administrador para rodar"} Sistema › Configuração › "Executar tudo na ordem" e grave de novo.`, 9000), 1500); } return f; } return fields; };
   window.rhfColsFaltam = () => RHF_STATE.cols ? RHF_NOVAS.filter(k => !RHF_STATE.cols.has(k)) : [];
@@ -29473,7 +29478,7 @@ function itnEl(e, parent, L, o) {
     case "rodovia":
       itnS("rect", { width: e.w, height: e.h, rx: 6, fill: "#1E7A46", stroke: "#fff", "stroke-width": 2.5, filter: "url(#itnSh)" }, gi);
       itnTx(e.w / 2, e.h / 2 + .5, e.txt || "", { size: Math.min(18, e.h * .52), bold: true, fill: "#fff", ls: .5 }, gi); break;
-    case "foto": { itnFotoDesenhar(e, gi); break; }
+    case "foto": { itnFotoDesenhar(e, gi, o); break; }
     case "texto":
       itnS("rect", { width: e.w, height: e.h, fill: "transparent" }, gi);
       itnTx(0, e.h / 2, e.txt || "", { size: e.size || 15, bold: !!e.bold, fill: ITN_TXT_COR[e.cor] || ITN_COR.graf, anchor: "start", halo: true }, gi); break;
@@ -29942,8 +29947,70 @@ function erpChartsLimpar() { try { if (!window.Chart || !Chart.instances) return
 
 /* ===================== v0.12.82 ===================== */
 /* ---------- Foto do funcionário: guardada em "RH — Funcionários" (coluna Foto) como JPEG pequeno; editável só em RH › Funcionários ---------- */
-LISTS.rh_func.columns.push({ name: "Foto", displayName: "Foto", text: { allowMultipleLines: true, textType: "plain" } });
-const ERP_FOTO_LADO = 112, ERP_FOTO_MAX = 60000;
+LISTS.rh_func_foto = {
+  key: "rh_func_foto", displayName: "RH — Funcionários · Fotos", siteKey: "rh", titleAs: "Funcionário",
+  description: "Recursos Humanos NMB · foto de perfil de cada colaborador (JPEG pequeno), separada de \"RH — Funcionários\" para não pesar nas outras telas. Editável só em RH › Funcionários.",
+  columns: [
+    { name: "FuncId", displayName: "Id em RH — Funcionários", required: true, text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Foto", displayName: "Foto", text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+SETUP_ORDER.push("rh_func_foto");
+SETUP_TEXT.rh_func_foto = `Cria no site RH a lista "RH — Funcionários · Fotos": a foto de perfil de cada colaborador (imagem pequena, cerca de 5 KB), que aparece nas Máquinas PagBank e nas listas de pessoas. Fica separada de "RH — Funcionários" para as outras telas não carregarem as fotos. Herda as permissões do site RH.`;
+const ERP_FOTO_LADO = 112, ERP_FOTO_MAX = 25000;
+const RH_FOTO = { site: null, list: undefined, map: new Map(), carregando: null, erro: "" };
+async function rhFotoCarregar(force) {
+  if (RH_FOTO.carregando) return RH_FOTO.carregando;
+  if (!force && RH_FOTO.list !== undefined && !RH_FOTO.erro) return;
+  RH_FOTO.carregando = (async () => {
+    try {
+      if (!RH_FOTO.site) RH_FOTO.site = await SP.site(CONFIG.sites[LISTS.rh_func_foto.siteKey]);
+      RH_FOTO.list = (await SP.lists(RH_FOTO.site.id)).find(l => l.displayName === LISTS.rh_func_foto.displayName) || null;
+      const m = new Map();
+      if (RH_FOTO.list) (await SP.items(RH_FOTO.site.id, RH_FOTO.list.id)).slice().sort((a, b) => Number(a.id) - Number(b.id)).forEach(it => { const f = it.fields || {}, k = String(f.FuncId == null ? "" : f.FuncId).trim(); if (k) m.set(k, { _id: String(it.id), Foto: f.Foto || "" }); });
+      RH_FOTO.map = m; RH_FOTO.erro = "";
+    } catch (e) { RH_FOTO.erro = e.message || String(e); }
+  })().finally(() => { RH_FOTO.carregando = null; });
+  return RH_FOTO.carregando;
+}
+function rhFotoMesclar(lista) { (lista || []).forEach(f => { const r = RH_FOTO.map.get(String(f._id)); if (r && erpFotoOk(r.Foto)) f.Foto = r.Foto; else delete f.Foto; }); }
+async function rhFotoGravar(funcId, nome, foto) {
+  await rhFotoCarregar(true);
+  if (RH_FOTO.erro) throw new Error(RH_FOTO.erro);
+  if (!RH_FOTO.list) throw new Error(`a lista "${LISTS.rh_func_foto.displayName}" ainda não existe (Sistema › Configuração)`);
+  const r = RH_FOTO.map.get(String(funcId));
+  if (r && foto) await SP.update(RH_FOTO.site.id, RH_FOTO.list.id, r._id, { Foto: foto, Title: nome || String(funcId) });
+  else if (r) await SP.update(RH_FOTO.site.id, RH_FOTO.list.id, r._id, { Foto: null });   /* remover = esvaziar (excluir linha é só do proprietário) */
+  else if (foto) await SP.create(RH_FOTO.site.id, RH_FOTO.list.id, { Title: nome || String(funcId), FuncId: String(funcId), Foto: foto });
+  await rhFotoCarregar(true);
+}
+/* a foto não vai para "RH — Funcionários": sai do formulário e é gravada na lista de fotos */
+{ const c2 = SP.create, u2 = SP.update;
+  const ehF = listId => { const L = String(listId); return !!((RH_PES.funcListId && L === String(RH_PES.funcListId)) || (RHDB_STATE.list && RHDB_STATE.list.displayName === LISTS.rh_func.displayName && L === String(RHDB_STATE.list.id))); };
+  const tira = f => { if (!f || !("Foto" in f)) return [f, undefined]; const g = Object.assign({}, f), foto = g.Foto; delete g.Foto; return [g, foto || ""]; };
+  const avisa = e => setTimeout(() => toast("O cadastro foi gravado, mas a foto não: " + e.message, 8000), 700);
+  SP.create = async (siteId, listId, fields) => {
+    if (!ehF(listId)) return c2(siteId, listId, fields);
+    const [g, foto] = tira(fields), r = await c2(siteId, listId, g);
+    if (foto && r && r.id) { try { await rhFotoGravar(r.id, g.Title, foto); } catch (e) { avisa(e); } }
+    return r;
+  };
+  SP.update = async (siteId, listId, itemId, fields) => {
+    if (!ehF(listId)) return u2(siteId, listId, itemId, fields);
+    const [g, foto] = tira(fields), x = (RHDB_STATE.itens || []).find(i => String(i._id) === String(itemId));
+    const r = g && Object.keys(g).length ? await u2(siteId, listId, itemId, g) : null;
+    if (foto !== undefined && foto !== ((RH_FOTO.map.get(String(itemId)) || {}).Foto || "")) { try { await rhFotoGravar(itemId, (g && g.Title) || (x && x.Title), foto); } catch (e) { avisa(e); } }
+    return r;
+  };
+}
+{ const r0 = renderRhDbSub;
+  renderRhDbSub = async function (sub) {
+    const r = await r0.apply(this, arguments);
+    if (sub === "funcs" && RHDB_STATE.ready) { await rhFotoCarregar(true); rhFotoMesclar(RHDB_STATE.itens); if (RHDB_STATE.subId === "funcs") { if ($("rhFuncRoot")) rhFuncPintar(); else if ($("rhdbBody")) paintRhDbSub("funcs"); } }
+    return r;
+  };
+}
+{ const l0 = loadPb; loadPb = async function () { const r = await l0.apply(this, arguments); if (PB_STATE.funcs.length) { await rhFotoCarregar(true); rhFotoMesclar(PB_STATE.funcs); } return r; }; }
 function erpFotoOk(s) { return typeof s === "string" && s.length < ERP_FOTO_MAX && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(s); }
 function erpIniciais(n) { const p = String(n || "").trim().split(/\s+/).filter(w => w.length > 2 || /^[A-ZÁ-Ú]/.test(w)); return ((p[0] || "")[0] || "") + (p.length > 1 ? (p[p.length - 1][0] || "") : ""); }
 function erpAvatar(f, tam) {
@@ -29987,14 +30054,14 @@ window.rhfFotoEscolher = async inp => {
   const file = (inp.files || [])[0]; if (!file) return;
   try {
     const d = await erpFotoReduzir(file);
-    $("rdFuFoto").value = d; $("modal").dataset.sujo = "1";
+    $("rdFuFoto").value = d; $("rdFuFoto").dataset.mudou = "1"; $("modal").dataset.sujo = "1";
     $("rdFuFotoPrev").innerHTML = erpAvatar({ Title: ($("rdFuN") || {}).value || "", Foto: d }, 72);
   } catch (e) { toast(e.message, 6000); }
   inp.value = "";
 };
-window.rhfFotoTirar = () => { const h = $("rdFuFoto"); if (!h) return; h.value = ""; $("modal").dataset.sujo = "1"; $("rdFuFotoPrev").innerHTML = erpAvatar({ Title: ($("rdFuN") || {}).value || "" }, 72); };
+window.rhfFotoTirar = () => { const h = $("rdFuFoto"); if (!h) return; h.value = ""; h.dataset.mudou = "1"; $("modal").dataset.sujo = "1"; $("rdFuFotoPrev").innerHTML = erpAvatar({ Title: ($("rdFuN") || {}).value || "" }, 72); };
 { const f0 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = v => f0(v).replace('<div class="form-grid">', `<div class="form-grid">${rhfFotoCampo(v)}`); }
-{ const r0 = RHDB_READ.funcs; RHDB_READ.funcs = () => { const o = r0(); const el = $("rdFuFoto"); if (el) o.Foto = erpFotoOk(el.value) ? el.value : null; return o; }; }
+{ const r0 = RHDB_READ.funcs; RHDB_READ.funcs = () => { const o = r0(); const el = $("rdFuFoto"); if (el && el.dataset.mudou === "1") o.Foto = erpFotoOk(el.value) ? el.value : null; return o; }; }   /* só manda a foto quando ela foi escolhida ou removida */
 { const c = RHDB_COLS.funcs.find(k => k[0] === "Title"); if (c) c[2] = (v, x) => `<span class="rhf-nome">${erpAvatar(x, 28)}<span>${esc(v == null ? "" : String(v))}</span></span>`; }
 { const p0 = rhFuncPintar; rhFuncPintar = function () { const r = p0.apply(this, arguments); const topo = document.querySelector("#rhFuncTopo .rhf-topo"); const f = RHDB_STATE.itens.find(x => String(x._id) === RHF_PAG.id); if (topo && f && !topo.querySelector(".rhf-topo-av")) topo.insertAdjacentHTML("afterbegin", `<span class="rhf-topo-av">${erpAvatar(f, 56)}</span>`); return r; }; }
 
@@ -30014,14 +30081,18 @@ const RHC = { funcs: null };
 const rhNorm = t => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 async function rhcFuncsLer() {
   const site = await SP.site(CONFIG.sites[LISTS.rh_func.siteKey]); const l = (await SP.lists(site.id)).find(x => x.displayName === LISTS.rh_func.displayName);
-  RHC.funcs = l ? (await SP.items(site.id, l.id, "($select=Title,Cargo,Situacao)")).map(it => it.fields || {}) : [];
+  if (!l) throw new Error(`a lista "${LISTS.rh_func.displayName}" não foi encontrada`);
+  RHC.funcs = (await SP.items(site.id, l.id, "($select=Title,Cargo,Situacao)")).map(it => it.fields || {});
 }
 function rhcContagem() { const m = new Map(); (RHC.funcs || []).filter(f => f.Situacao !== "Desligado").forEach(f => { const k = rhNorm(f.Cargo); if (k) m.set(k, { n: ((m.get(k) || {}).n || 0) + 1, nome: (m.get(k) || {}).nome || String(f.Cargo).trim() }); }); return m; }
-RHDB_COLS.cargos = [["Title", "Função"], ["CBO", "CBO"], ["Faixa", "Faixa"], ["_n", "Funcionários", (v, x) => { if (!RHC.funcs) return `<span class="sup">…</span>`; const c = rhcContagem().get(rhNorm(x.Title)); return c ? String(c.n) : `<span class="sup">nenhum</span>`; }],
+RHDB_COLS.cargos = [["Title", "Função"], ["CBO", "CBO"], ["Faixa", "Faixa"], ["SalarioBase", "Salário-base", v => fmtBRL(v || 0)], ["_n", "Funcionários", (v, x) => { if (!RHC.funcs) return `<span class="sup">…</span>`; const c = rhcContagem().get(rhNorm(x.Title)); return c ? String(c.n) : `<span class="sup">nenhum</span>`; }],
   ["Ativo", "Status", v => v !== false ? `<span class="rh-st"><i class="sem-dot sem-ok"></i>Ativa</span>` : `<span class="rh-st"><i class="sem-dot sem-na"></i>Inativa</span>`]];
 window.rhcSincronizar = async () => {
   if (!podeEditar("rh_db")) { toast("Seu acesso ao Banco de Dados do RH é só de leitura."); return; }
+  const alvo = { site: RHDB_STATE.site, list: RHDB_STATE.list };
   try { await rhcFuncsLer(); } catch (e) { toast("Não foi possível ler os funcionários: " + e.message, 6000); return; }
+  if (RHDB_STATE.subId !== "cargos" || !RHDB_STATE.list || !alvo.list || RHDB_STATE.list.id !== alvo.list.id) { toast("A página mudou enquanto os funcionários eram lidos — nada foi alterado."); return; }
+  if (!(RHC.funcs || []).some(f => f.Situacao !== "Desligado" && String(f.Cargo || "").trim())) { toast("Nenhum funcionário com função foi lido — nada foi alterado.", 6000); return; }
   const cont = rhcContagem(), ja = new Map(RHDB_STATE.itens.map(x => [rhNorm(x.Title), x]));
   const novas = [...cont.entries()].filter(([k]) => !ja.has(k)).map(([, c]) => c.nome).sort((a, b) => a.localeCompare(b, "pt-BR"));
   const reativar = [...cont.keys()].map(k => ja.get(k)).filter(x => x && x.Ativo === false);
@@ -30035,9 +30106,9 @@ window.rhcSincronizar = async () => {
     <div class="err-msg" id="rhcErr" style="display:none"></div>`, async () => {
     const inat = $("rhcInat") && $("rhcInat").checked;
     try {
-      for (const n of novas) await SP.create(RHDB_STATE.site.id, RHDB_STATE.list.id, { Title: n, Ativo: true });
-      for (const x of reativar) await SP.update(RHDB_STATE.site.id, RHDB_STATE.list.id, x._id, { Ativo: true });
-      if (inat) for (const x of semUso) await SP.update(RHDB_STATE.site.id, RHDB_STATE.list.id, x._id, { Ativo: false });
+      for (const n of novas) await SP.create(alvo.site.id, alvo.list.id, { Title: n, Ativo: true });
+      for (const x of reativar) await SP.update(alvo.site.id, alvo.list.id, x._id, { Ativo: true });
+      if (inat) for (const x of semUso) await SP.update(alvo.site.id, alvo.list.id, x._id, { Ativo: false });
     } catch (e) { const el = $("rhcErr"); el.textContent = "Erro: " + e.message; el.style.display = "block"; await renderRhDbSub("cargos"); return false; }
     toast(`Funções atualizadas: ${novas.length} incluída(s)${reativar.length ? `, ${reativar.length} reativada(s)` : ""}${inat && semUso.length ? `, ${semUso.length} inativada(s)` : ""}.`, 6000);
     await renderRhDbSub("cargos"); return true;
@@ -30056,10 +30127,10 @@ window.rhEvtCompletar = async () => {
   const f = rhEvtFaltam(); if (!f.length) { toast("Todos os eventos do ponto já estão cadastrados."); return; }
   const usados = new Set(RHDB_STATE.itens.map(x => String(x.Codigo || "")));
   if (!(await erpConfirmar({ titulo: "Completar eventos do ponto", texto: `Incluir ${f.length} evento(s): ${f.map(e => e.Title).join(", ")}?`, sim: "Incluir" }))) return;
-  let ok = 0;
-  try { for (const e of f) { let c = Number(e.Codigo); while (usados.has(String(c))) c++; usados.add(String(c)); await SP.create(RHDB_STATE.site.id, RHDB_STATE.list.id, Object.assign({}, e, { Codigo: String(c) })); ok++; } }
-  catch (e) { toast("Erro: " + e.message, 6000); }
-  toast(`${ok} evento(s) incluído(s).`); await renderRhDbSub("eventos");
+  let ok = 0, erro = ""; const alvo = { site: RHDB_STATE.site, list: RHDB_STATE.list };
+  try { for (const e of f) { let c = Number(e.Codigo); while (usados.has(String(c))) c++; usados.add(String(c)); await SP.create(alvo.site.id, alvo.list.id, Object.assign({}, e, { Codigo: String(c) })); ok++; } }
+  catch (e) { erro = e.message; }
+  toast(`${ok} evento(s) incluído(s)${erro ? ` · erro: ${erro}` : ""}.`, erro ? 8000 : 3000); if (RHDB_STATE.subId === "eventos") await renderRhDbSub("eventos");
 };
 /* ---------- Feriados: Atualizar (internet + tabela) e "Todos os Feriados" (anos anteriores arquivados) ---------- */
 const FER = { vis: "atual" };
@@ -30101,17 +30172,18 @@ async function ferNacionaisInternet(ano) {
 }
 window.ferAtualizar = async () => {
   if (!podeEditar("rh_db")) { toast("Seu acesso ao Banco de Dados do RH é só de leitura."); return; }
-  const Y = new Date().getFullYear(), anos = [Y, Y + 1];
+  const Y = new Date().getFullYear(), anos = [Y, Y + 1], alvo = { site: RHDB_STATE.site, list: RHDB_STATE.list };
   toast("Buscando os feriados de " + anos.join(" e ") + "…");
   const net = {}; let fonte = "BrasilAPI (internet)";
   for (const a of anos) { try { net[a] = await ferNacionaisInternet(a); } catch (e) { net[a] = null; fonte = "cálculo do ERP (a BrasilAPI não respondeu)"; } }
+  if (RHDB_STATE.subId !== "feriados" || !RHDB_STATE.list || !alvo.list || RHDB_STATE.list.id !== alvo.list.id) { toast("A página mudou enquanto os feriados eram buscados — nada foi alterado."); return; }
   const propostos = anos.flatMap(a => ferCalcular(a, net[a]));
   /* nacionais que a BrasilAPI confirma levam a fonte */
   propostos.forEach(p => { if (p.Esfera === "Nacional" && net[p.Data.slice(0, 4)] && net[p.Data.slice(0, 4)].some(h => h.date === p.Data) && !p.Observacoes) p.Observacoes = "Confirmado pela BrasilAPI"; });
   const ex = RHDB_STATE.itens.map(x => ({ x, d: ymd(x.Data || ""), e: x.Esfera || "", n: rhNorm(x.Title) }));
   const novos = [], corrigir = [], usados = new Set(), faltam = [];
   propostos.forEach(p => {   /* 1º: o que já está cadastrado na data certa */
-    const o = ex.find(o => !usados.has(o) && o.d === p.Data && (o.e === p.Esfera || o.n === rhNorm(p.Title)));
+    const o = ex.find(o => !usados.has(o) && o.d === p.Data && (o.e === p.Esfera || o.n === rhNorm(p.Title) || (p._ch && p._ch.test(o.n))));
     if (o) usados.add(o); else faltam.push(p);
   });
   faltam.forEach(p => {   /* 2º: o mesmo feriado cadastrado com outra data no ano (cada registro corrige um só) */
@@ -30128,8 +30200,8 @@ window.ferAtualizar = async () => {
     const selN = [...document.querySelectorAll(".ferN:checked")].map(i => novos[Number(i.dataset.i)]), selC = [...document.querySelectorAll(".ferC:checked")].map(i => corrigir[Number(i.dataset.i)]);
     let ok = 0;
     try {
-      for (const p of selN) { await SP.create(RHDB_STATE.site.id, RHDB_STATE.list.id, { Title: p.Title, Data: p.Data, Esfera: p.Esfera, Observacoes: p.Observacoes }); ok++; }
-      for (const c of selC) { await SP.update(RHDB_STATE.site.id, RHDB_STATE.list.id, c.o.x._id, { Data: c.p.Data, Observacoes: c.p.Observacoes || c.o.x.Observacoes || null }); ok++; }
+      for (const p of selN) { await SP.create(alvo.site.id, alvo.list.id, { Title: p.Title, Data: p.Data, Esfera: p.Esfera, Observacoes: p.Observacoes }); ok++; }
+      for (const c of selC) { await SP.update(alvo.site.id, alvo.list.id, c.o.x._id, { Data: c.p.Data, Observacoes: c.o.x.Observacoes || c.p.Observacoes || null }); ok++; }
     } catch (e) { const el = $("ferErr"); el.textContent = `Erro depois de ${ok} gravação(ões): ${e.message}`; el.style.display = "block"; await renderRhDbSub("feriados"); return false; }
     toast(`${selN.length} feriado(s) incluído(s)${selC.length ? `, ${selC.length} data(s) corrigida(s)` : ""}.`, 6000); await renderRhDbSub("feriados"); return true;
   });
@@ -30147,7 +30219,7 @@ function ferPintar() {
   const Y = new Date().getFullYear(), ed = !!podeEditar("rh_db"), exc = !!podeExcluir("rh_db");
   const ano = x => Number(ymd(x.Data || "").slice(0, 4)) || 0;
   const ord = (a, b) => ymd(a.Data || "").localeCompare(ymd(b.Data || "")) || String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR");
-  const todos = RHDB_STATE.itens.slice().sort(ord), atuais = todos.filter(x => ano(x) >= Y), arq = todos.filter(x => ano(x) < Y);
+  const todos = RHDB_STATE.itens.slice().sort(ord), atuais = todos.filter(x => ano(x) >= Y && ano(x) <= Y + 1), arq = todos.filter(x => ano(x) < Y);
   const dia = x => { const d = dLocal(ymd(x.Data || "")); return isNaN(d) ? "" : DIAS_SEMANA[d.getDay()]; };
   const tab = (lst, lixo) => {
     let ultAno = null;
@@ -30196,7 +30268,8 @@ function erpMenusArrumar() {
   if (!grupos.length) return;
   const vis = erpMenuVis();
   grupos.forEach(t => {
-    if (!t.classList.contains("areas") && !t.dataset.ordenado) {   /* departamentos da página inicial seguem a ordem do menu */
+    const fav = t.previousElementSibling && t.previousElementSibling.classList.contains("home-sec");   /* Favoritos ficam na ordem em que foram marcados */
+    if (!t.classList.contains("areas") && !fav && !t.dataset.ordenado) {   /* departamentos da página inicial seguem a ordem do menu */
       const nome = el => (el.querySelector("h3") || el).textContent.replace(/[↗★☆]/g, "").trim();
       [...t.children].sort((a, b) => nome(a).localeCompare(nome(b), "pt-BR", { sensitivity: "base" })).forEach(el => t.appendChild(el));
       t.dataset.ordenado = "1";
@@ -30214,7 +30287,7 @@ function erpMenusArrumar() {
 { const rM = route;
   route = function () { const out = rM.apply(this, arguments); setTimeout(erpMenusArrumar, 0); setTimeout(erpMenusArrumar, 400); return out; };
 }
-{ const n0 = renderNav; renderNav = function () { const r = n0.apply(this, arguments); const p = document.querySelector("#nav .nav-ord-bar p"); if (p) p.innerHTML = p.innerHTML.replace("Departamentos entre si; módulos dentro do próprio departamento.", "Ordene os departamentos; os módulos de cada um ficam em ordem alfabética."); return r; }; }
+{ const n0 = renderNav; renderNav = function () { const r = n0.apply(this, arguments); document.querySelectorAll("#nav .nav-it[draggable]").forEach(e => e.removeAttribute("draggable")); const p = document.querySelector("#nav .nav-ord-bar p"); if (p) p.innerHTML = p.innerHTML.replace("Departamentos entre si; módulos dentro do próprio departamento.", "Ordene os departamentos; os módulos de cada um ficam em ordem alfabética."); return r; }; }
 
 /* ---------- Operacional › Mapa Operacional (GlobalBus) ----------
    O GlobalBus permite ser aberto dentro de outra página, mas o cookie de sessão dele é SameSite=Lax: dentro do ERP (outro site)
@@ -30222,12 +30295,12 @@ function erpMenusArrumar() {
    ERP. O painel flutuante (dentro do ERP, acompanha a navegação) serve para um link do GlobalBus que não peça login. */
 const MAPA = { win: null, url: null, lido: false, k: "erp.mapaop" };
 const MAPA_HOST = /^https:\/\/([a-z0-9-]+\.)*systemsatx\.com\.br\//i;
-function mapaPref() { try { return Object.assign({ auto: true }, JSON.parse(localStorage.getItem(MAPA.k) || "{}")); } catch (e) { return { auto: true }; } }
+function mapaPref() { const auto = window.innerWidth > 760; try { return Object.assign({ auto }, JSON.parse(localStorage.getItem(MAPA.k) || "{}")); } catch (e) { return { auto }; } }
 function mapaPrefSet(o) { try { localStorage.setItem(MAPA.k, JSON.stringify(Object.assign(mapaPref(), o))); } catch (e) {} }
 function mapaUrl() { return MAPA.url && MAPA_HOST.test(MAPA.url) ? MAPA.url : CONFIG.globalbusUrl; }
 function mapaJanelaAberta() { try { return !!(MAPA.win && !MAPA.win.closed); } catch (e) { return false; } }
-window.mapaAbrirJanela = (recarregar) => {
-  const url = mapaUrl();
+window.mapaAbrirJanela = (recarregar, depois) => {
+  const url = depois ? "about:blank" : mapaUrl();
   if (mapaJanelaAberta() && !recarregar) { try { MAPA.win.focus(); } catch (e) {} mapaStatus(); return true; }
   const w = Math.min(1440, screen.availWidth - 40), h = Math.min(900, screen.availHeight - 60);
   let win = null;
@@ -30235,7 +30308,7 @@ window.mapaAbrirJanela = (recarregar) => {
   if (!win) { MAPA.bloq = true; mapaStatus(); return false; }
   MAPA.bloq = false;
   let vazia = false; try { vazia = !win.location.href || win.location.href === "about:blank"; } catch (e) { vazia = false; }   /* já está no GlobalBus (outro site): só traz para a frente, sem perder o login */
-  if (vazia || recarregar) { try { win.location.href = url; } catch (e) {} }
+  if ((vazia || recarregar) && url !== "about:blank") { try { win.location.href = url; } catch (e) {} }
   try { win.focus(); } catch (e) {}
   MAPA.win = win; mapaStatus(); return true;
 };
@@ -30274,8 +30347,9 @@ function pageMapaOp() {
 async function renderMapaOp() {
   /* abre a janela já no clique do menu (o navegador só deixa abrir janela logo depois de um clique) */
   const pref = mapaPref();
-  if (pref.auto && !mapaJanelaAberta()) mapaAbrirJanela();
+  const abriu = pref.auto && !mapaJanelaAberta() && mapaAbrirJanela(false, true);   /* janela em branco já no clique; o endereço vem depois de ler o parâmetro */
   if (!MAPA.lido) { const r = await erpParamLer("mapaop.url"); if (r !== undefined) { MAPA.lido = true; MAPA.url = r && typeof r.valor === "string" ? r.valor : null; } }
+  if (abriu && mapaJanelaAberta()) { let vazia = false; try { vazia = !MAPA.win.location.href || MAPA.win.location.href === "about:blank"; } catch (e) {} if (vazia) { try { MAPA.win.location.href = mapaUrl(); } catch (e) {} } }
   const body = $("mapaBody"); if (!body || session.modAtual !== "mapa_op") return;
   const adm = !!session.n1 && !(typeof vcAtivo === "function" && vcAtivo());
   body.innerHTML = `<div class="mapa-acts"><button class="btn primary" onclick="mapaAbrirJanela()">${ICONS.mapa} Abrir o mapa</button><button class="btn ghost" id="mapaBtnFechar" onclick="mapaFecharJanela()" hidden>Fechar a janela</button><button class="btn ghost" onclick="mapaPainel(true)" title="Painel dentro do ERP, que acompanha a navegação">Painel dentro do ERP (experimental)</button>
@@ -30304,7 +30378,8 @@ setInterval(() => { if (session && session.modAtual === "mapa_op") mapaStatus();
    a impressão esperam as fotos carregarem. */
 const ITN_FOTO = { cache: new Map(), pend: new Map(), erro: new Set(), drive: null };
 function itnBlobDataUrl(blob) { return new Promise((ok, falha) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = () => falha(fr.error || new Error("leitura")); fr.readAsDataURL(blob); }); }
-function itnFotoDesenhar(e, g) {
+function itnFotoDesenhar(e, g, o) {
+  if (!e.arq && o && (o.ver || o.exp)) return;   /* moldura vazia só no editor */
   const pad = 4, legH = e.leg ? 24 : 0, iw = Math.max(10, e.w - pad * 2), ih = Math.max(10, e.h - pad * 2 - legH);
   itnS("rect", { width: e.w, height: e.h, rx: 8, fill: "#fff", stroke: "#C9D0DD", "stroke-width": 1.5, filter: "url(#itnSh)" }, g);
   const url = e.arq ? ITN_FOTO.cache.get(e.arq) : null;
@@ -30332,7 +30407,7 @@ function itnFotoCarregar(arq) {
 function itnFotoRedesenhar() {
   if (session.modAtual !== "itin") return;
   if (ITN.modo === "editar" && $("itnBoard") && ITN.L) itnDesenhar($("itnBoard"), ITN.L, { sel: ITN.sel, grade: ITN.grade });
-  else if (ITN.modo !== "editar" && $("itnRoot")) paintItin();
+  else if (ITN.modo !== "editar" && $("itnRoot")) erpDeb("itnFoto", () => { if (session.modAtual === "itin" && ITN.modo !== "editar") paintItin(); }, 250);
 }
 async function itnFotosProntas(L) { await Promise.all((L && L.els || []).filter(e => e.t === "foto" && e.arq).map(e => itnFotoCarregar(e.arq))); }
 function itnFotoReduzir(file) {

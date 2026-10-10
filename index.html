@@ -3522,6 +3522,19 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
 tr.dre-aj td{background:#FFF8E6}
 .cap-table.dre-cres,.cap-table.dre-pe{min-width:0}.dre-pe td.r{white-space:nowrap}
 @media (max-width:640px){.dre-plano-bar input{min-width:0;flex:1 1 100%}.dre-sel{max-width:210px}}
+/* v0.12.86 · Higienização */
+.hig-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}@media (max-width:1100px){.hig-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}@media (max-width:640px){.hig-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.hig-fds-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}@media (max-width:1100px){.hig-fds-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:640px){.hig-fds-grid{grid-template-columns:1fr}}
+.hig-fds{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--surface)}.hig-fds.prox{border-color:var(--orange,#F0541B);box-shadow:0 0 0 1px var(--orange,#F0541B) inset}
+.hig-fds-h{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:6px}
+.hig-fds-v{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:6px 0;border-top:1px dashed var(--line)}.hig-fds-v>span:first-child{display:inline-flex;align-items:center;gap:6px}.hig-fds-v.atr b{color:var(--err)}
+.hig-fds-a{margin-left:auto;display:inline-flex;gap:4px}.hig-falta{margin-top:6px;font-size:12px;font-weight:700;color:#9A6A00}
+.hig-crono th,.hig-crono td{white-space:nowrap}.hig-crono th.hig-mes{text-align:center;text-transform:capitalize}.hig-crono th.hig-sab{text-align:center;min-width:30px;padding:4px}.hig-crono th.hig-sab.prox{color:var(--orange,#F0541B)}
+.hig-crono td.hig-c{text-align:center;padding:4px;cursor:default;border-left:1px solid var(--line)}.hig-crono td.hig-c[onclick]{cursor:pointer}.hig-crono td.hig-c[onclick]:hover{background:var(--soft)}
+.hig-crono td.plan{color:var(--navy);font-weight:800}.hig-crono td.plan.atr{color:var(--err);background:#FCEDEC}.hig-crono td.real{color:#197A46;font-weight:800;background:#EAF6EF}
+.hig-crono .lnk{all:unset;cursor:pointer;font-weight:800;color:var(--navy)}.hig-crono .lnk:hover{text-decoration:underline}
+.hig-duo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:var(--gap,16px)}.hig-duo>.cap-card:only-child{grid-column:1/-1}@media (max-width:980px){.hig-duo{grid-template-columns:1fr}}
+.hig-its{display:flex;gap:16px;flex-wrap:wrap}.hig-fix{display:flex;align-items:center;gap:8px;margin:4px 0}li.hig-em{font-size:12.5px}
 </style>
 </head>
 <body>
@@ -31870,6 +31883,346 @@ window.frotaRefPadronizar = async () => {
   }
   toast(`${ok} registro(s) padronizado(s)${falha ? `; ${falha} com erro` : ""}.`, 5000);
   await frotaCarregar(); frotaPintar();
+};
+
+
+/* =====================================================================
+   v0.12.86 · Operacional › Frota › Higienização — cortinas e forros dos bancos (pedido de 10/10, 18:54)
+   Janela de 60 a 90 dias desde a última lavagem confirmada (planeja por volta de 75), 2 ônibus por fim de semana
+   (empareia), jogo reserva com rodízio, datas fixadas à mão, confirmação com peças (perda e danificadas → NC),
+   cronograma, cartão na página do veículo, vida do ônibus e alerta na Geral.
+   ===================================================================== */
+LISTS.frota_hig = {
+  key: "frota_hig", displayName: "Frota — Higienização", siteKey: "operacional", titleAs: "Lavagem",
+  description: "Operacional NMB · lavagens de cortinas e forros dos bancos por veículo (realizadas e datas fixadas) e rodízio do jogo reserva. Editada em Operacional › Frota › Higienização.",
+  columns: [
+    { name: "Veiculo",     displayName: "Veículo",              required: true, text: { allowMultipleLines: false, maxLength: 30 } },
+    { name: "VeicId",      displayName: "Veículo (ID)",         text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Item",        displayName: "Item",                 required: true, choice: choice(["Cortinas", "Forros", "Todos"]) },
+    { name: "Situacao",    displayName: "Situação",             required: true, choice: choice(["Realizada", "Fixada"]) },
+    { name: "Data",        displayName: "Data",                 required: true, dateTime: dateOnly },
+    { name: "Responsavel", displayName: "Responsável",          text: { allowMultipleLines: false, maxLength: 100 } },
+    { name: "Modalidade",  displayName: "Modalidade",           choice: choice(["Troca por jogo reserva", "Lavagem e reinstalação"]) },
+    { name: "Retiradas",   displayName: "Peças retiradas",      number: { decimalPlaces: "none", displayAs: "number" } },
+    { name: "Devolvidas",  displayName: "Peças devolvidas",     number: { decimalPlaces: "none", displayAs: "number" } },
+    { name: "Danificadas", displayName: "Peças danificadas",    number: { decimalPlaces: "none", displayAs: "number" } },
+    { name: "JogoPronto",  displayName: "Jogo retirado pronto em", dateTime: dateOnly },
+    { name: "Custo",       displayName: "Custo (R$)",           number: money },
+    { name: "Observacoes", displayName: "Observações",          text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+SETUP_ORDER.push("frota_hig");
+SETUP_TEXT.frota_hig = `Cria no site Operacional a lista "Frota — Higienização" (lavagens de cortinas e forros por veículo, datas fixadas e rodízio do jogo reserva) e as colunas "Cortinas (qtd.)" e "Forros (qtd.)" em "Frota — Veículos". Usada em Operacional › Frota › Higienização.`;
+LISTS.frota_veic.columns.push(
+  { name: "QtdCortinas", displayName: "Cortinas (qtd.)", number: { decimalPlaces: "none", displayAs: "number", minimum: 0, maximum: 400 } },
+  { name: "QtdForros",   displayName: "Forros (qtd.)",   number: { decimalPlaces: "none", displayAs: "number", minimum: 0, maximum: 200 } });
+PAG_DEF.frota.push({ k: "hig", n: "Higienização", aba: "frotaAba('hig')" });
+const HIG_PAD = { min: 60, max: 90, alvo: 75, cap: 2, cortinas: 50, jogos: { Cortinas: 2, Forros: 1 }, horiz: 26 };
+const HIG = { list: undefined, itens: [], cfg: null, vista: "crono", q: "" };
+const HIG_ITENS = ["Cortinas", "Forros"];
+function higCfg() {
+  const c = Object.assign({}, HIG_PAD, HIG.cfg || {}); c.jogos = Object.assign({}, HIG_PAD.jogos, (HIG.cfg && HIG.cfg.jogos) || {});
+  const n = (v, d, lo, hi) => { v = Number(v); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : d; };
+  c.min = n(c.min, 60, 7, 365); c.max = n(c.max, 90, c.min, 400); c.alvo = n(c.alvo, Math.round((c.min + c.max) / 2), c.min, c.max); c.cap = n(c.cap, 2, 1, 13); c.cortinas = n(c.cortinas, 50, 0, 400); c.horiz = n(c.horiz, 26, 8, 52);
+  HIG_ITENS.forEach(k => { c.jogos[k] = n(c.jogos[k], 0, 0, 13); });
+  return c;
+}
+const higVe = () => frotaVe("hig"), higEd = () => frotaEd("hig") && !!HIG.list;
+const higHoje = () => ymd(new Date());
+const higAdd = (iso, n) => { const d = dLocal(iso); d.setDate(d.getDate() + n); return ymd(d); };
+const higSab = iso => { const d = dLocal(iso), w = d.getDay(); d.setDate(d.getDate() + (w === 6 ? 0 : w === 0 ? -1 : 6 - w)); return ymd(d); };   /* sábado do fim de semana (domingo volta ao sábado) */
+const higDias = (a, b) => Math.round((dLocal(b) - dLocal(a)) / 864e5);
+const higFds = sab => { const d = dLocal(sab), e = new Date(d); e.setDate(e.getDate() + 1); const f = x => x.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }); return `${f(d)}–${f(e)}`; };
+function higQtd(v, item) { const c = higCfg(); if (item === "Cortinas") { const q = Number(v.QtdCortinas); return Number.isFinite(q) && v.QtdCortinas !== null && v.QtdCortinas !== undefined && v.QtdCortinas !== "" ? q : c.cortinas; } const q = Number(v.QtdForros); return Number.isFinite(q) ? q : 0; }
+function higItensDe(v) { return HIG_ITENS.filter(i => higQtd(v, i) > 0); }
+function higDe(v) { const p = frotaNorm(v.Title); return (HIG.itens || []).filter(x => String(x.VeicId || "") === String(v._id) || (!x.VeicId && frotaNorm(x.Veiculo) === p)); }
+function higUltima(v, item) { return higDe(v).filter(x => x.Situacao === "Realizada" && x.Item === item && x.Data).map(x => ymd(x.Data)).sort().pop() || ""; }
+const higFrota = () => frotaFrota().filter(v => higItensDe(v).length).sort(frotaOrdem);
+/* situação de um veículo hoje: janela da próxima lavagem pela mais antiga das últimas */
+function higSit(v) {
+  const c = higCfg(), hoje = higHoje(), its = higItensDe(v), ult = {}; its.forEach(i => { ult[i] = higUltima(v, i); });
+  const datas = its.map(i => ult[i]).filter(Boolean).sort(), semHist = its.some(i => !ult[i]), falta = its.filter(i => !ult[i]);
+  const base = datas[0] || "";   /* revisão: com um item sem histórico (ex.: forros novos), o outro continua contando */
+  const ini = base && !semHist ? higAdd(base, c.min) : hoje, alvo = base && !semHist ? higAdd(base, c.alvo) : hoje, fim = base ? higAdd(base, c.max) : hoje;
+  const st = !its.length ? "na" : base && hoje > higAdd(base, c.max) ? "atrasada" : semHist ? "sem" : hoje >= ini ? "janela" : "ok";
+  return { its, ult, base, ini, alvo, fim, st, semHist, falta };
+}
+const HIG_ST = { ok: ["Em dia", "ok"], janela: ["Janela aberta", "aviso"], atrasada: ["Atrasada", "erro"], sem: ["Sem histórico", "aviso"], na: ["Sem itens", "na"] };
+/* ---- planejador: 2 ônibus por fim de semana, quem vence antes primeiro, empareia, respeita as datas fixadas ---- */
+function higPlanejar() {
+  const c = higCfg(), s0 = higSab(higHoje()), slots = []; for (let i = 0; i < c.horiz; i++) slots.push(higAdd(s0, i * 7));
+  const fimH = slots[slots.length - 1], carga = new Map(slots.map(s => [s, []])), V = higFrota();
+  const fixos = new Map(); V.forEach(v => fixos.set(v._id, higDe(v).filter(x => x.Situacao === "Fixada" && x.Data && higSab(ymd(x.Data)) >= s0).map(x => ({ sab: higSab(ymd(x.Data)), id: x._id })).sort((a, b) => a.sab.localeCompare(b.sab))));
+  V.forEach(v => (fixos.get(v._id) || []).forEach(f => { if (carga.has(f.sab)) carga.get(f.sab).push({ v, fixo: true, fixId: f.id, atraso: false, ini: f.sab, fim: f.sab }); }));
+  const fila = V.map(v => { const S = higSit(v); return { v, ini: S.semHist ? s0 : S.ini, alvo: S.semHist ? s0 : S.alvo, fim: S.semHist ? (S.base && S.fim < s0 ? S.fim : s0) : S.fim, sem: S.semHist && !S.base, n: 0 }; });
+  const proxFixo = (u, depois) => (fixos.get(u.v._id) || []).find(f => f.sab >= depois && !f.usado);
+  for (let guard = 0; guard < 2000 && fila.length; guard++) {
+    fila.sort((a, b) => a.fim.localeCompare(b.fim) || a.alvo.localeCompare(b.alvo) || frotaOrdem(a.v, b.v));
+    const u = fila.shift();
+    const ini = u.ini < s0 ? s0 : higSab(u.ini) < u.ini ? higAdd(higSab(u.ini), 7) : higSab(u.ini);
+    if (ini > fimH) continue;
+    /* data fixada dentro (ou antes do fim) da janela: vale ela */
+    const fx = proxFixo(u, s0);
+    let sab = null, fixo = false;
+    if (fx && fx.sab <= higAdd(u.fim, c.max)) { fx.usado = true; sab = fx.sab; fixo = true; }
+    else {
+      const livres = slots.filter(s => s >= ini && carga.get(s).length < c.cap && !carga.get(s).some(x => x.v._id === u.v._id));
+      const dentro = livres.filter(s => s <= (u.fim < ini ? ini : u.fim));
+      /* o mais perto do alvo (~75 dias); um fim de semana que já tem ônibus ganha 10 dias de vantagem, para emparelhar */
+      const nota = x => Math.abs(higDias(u.alvo < ini ? ini : u.alvo, x)) + (carga.get(x).length > 0 ? 0 : 10);
+      sab = dentro.slice().sort((x, y) => nota(x) - nota(y) || x.localeCompare(y))[0] || livres[0] || null;
+    }
+    if (!sab) continue;
+    if (!fixo) carga.get(sab).push({ v: u.v, fixo: false, atraso: sab > u.fim && !u.sem, ini: u.ini, fim: u.fim, sem: u.sem, ciclo: u.n + 1 });
+    else { const e = carga.get(sab).find(x => x.v._id === u.v._id && x.fixo); if (e) Object.assign(e, { ini: u.ini, fim: u.fim, atraso: sab > u.fim && !u.sem, ciclo: u.n + 1 }); }
+    fila.push({ v: u.v, ini: higAdd(sab, c.min), alvo: higAdd(sab, c.alvo), fim: higAdd(sab, c.max), sem: false, n: u.n + 1 });
+  }
+  return { slots, carga, c };
+}
+const higPecas = (v, its) => (its || higItensDe(v)).reduce((t, i) => t + higQtd(v, i), 0);
+function higJogos() {
+  const c = higCfg(), out = {};
+  HIG_ITENS.forEach(i => { const em = (HIG.itens || []).filter(x => x.Situacao === "Realizada" && x.Item === i && x.Modalidade === "Troca por jogo reserva" && !x.JogoPronto); out[i] = { total: c.jogos[i], em, prontos: Math.max(0, c.jogos[i] - em.length) }; });
+  return out;
+}
+/* ---- carga ---- */
+{ const c0 = frotaCarregar;
+  frotaCarregar = async function () {
+    const r = await c0.apply(this, arguments);
+    try {
+      if (FROTA.site) {
+        const ls = await SP.lists(FROTA.site.id);
+        HIG.list = ls.find(l => l.displayName === LISTS.frota_hig.displayName) || null;
+        HIG.itens = HIG.list ? (await SP.items(FROTA.site.id, HIG.list.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+      }
+    } catch (e) { HIG.itens = HIG.itens || []; HIG.erro = String((e && e.message) || e); }
+    try { const p = await erpParamLer("frota.hig"); HIG.cfg = p && p.valor && typeof p.valor === "object" ? p.valor : HIG.cfg; } catch (e) {}
+    return r;
+  };
+}
+/* ---- aba ---- */
+{ const p0 = pageFrota;
+  pageFrota = function () { return p0.apply(this, arguments).replace(/(<div class="cap-views" id="frotaTabs">[\s\S]*?)(<\/div>)/, `$1<button class="tab" data-k="hig" onclick="frotaAba('hig')">Higienização</button>$2`); };
+}
+{ const f0 = frotaPintar;
+  frotaPintar = function () {
+    if (FROTA.aba !== "hig") return f0.apply(this, arguments);
+    const body = $("frotaBody"); if (!body) return;
+    if (!pagAba("frota", FROTA.aba, v => { FROTA.aba = v; })) { body.innerHTML = PAG_SEM; return; }
+    if (FROTA.aba !== "hig") return frotaPintar();
+    document.querySelectorAll("#frotaTabs .tab").forEach(b => b.classList.toggle("on", b.dataset.k === "hig"));
+    higPintar(body);
+    if ($("fvRoot")) frotaVeicPintar();
+  };
+}
+function higPintar(body) {
+  const acts = $("frotaActions"), adm = !!session.n1 && !vcAtivo(), ed = higEd();
+  if (acts) acts.innerHTML = `<button class="btn" onclick="renderFrota()">Atualizar</button>${adm ? `<button class="btn ghost" onclick="higConfig()">⚙ Configurar</button>` : ""}<button class="btn" onclick="higImprimir()">🖨 Cronograma</button>${ed ? `<button class="btn primary" onclick="higConfirmar()">✓ Confirmar lavagem</button>` : ""}`;
+  if (FROTA.erro) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(FROTA.erro)}</p></div>`; return; }
+  if (HIG.list === null) { body.innerHTML = `<div class="cap-empty"><h3>A lista "${esc(LISTS.frota_hig.displayName)}" ainda não existe</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração</a> para criá-la.` : "Peça a um administrador para criá-la em Sistema › Configuração."}</p></div>`; return; }
+  const c = higCfg(), P = higPlanejar(), V = higFrota(), hoje = higHoje();
+  const S = V.map(v => [v, higSit(v)]), cont = k => S.filter(x => x[1].st === k).length;
+  const prox = P.slots.find(s => P.carga.get(s).length), J = higJogos();
+  const kpi = (l, val, sub, cls) => `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(l)}</div><div class="val">${val}</div><div class="sub">${esc(sub)}</div></div>`;
+  const kpis = `<div class="cap-kpis hig-kpis">${kpi("Ônibus no plano", V.length, `${V.reduce((t, v) => t + higPecas(v), 0)} peças no total`)}${kpi("Em dia", cont("ok"), `janela de ${c.min} a ${c.max} dias`, cont("ok") === V.length && V.length ? "pago" : "")}
+    ${kpi("Janela aberta", cont("janela") + cont("sem"), cont("sem") ? `${cont("sem")} sem histórico` : "podem ser lavados", cont("janela") + cont("sem") ? "hoje" : "")}${kpi("Atrasadas", cont("atrasada"), `passaram de ${c.max} dias`, cont("atrasada") ? "venc" : "pago")}
+    ${kpi("Próximo fim de semana", prox ? higFds(prox) : "—", prox ? `${P.carga.get(prox).map(x => x.v.Title).join(" e ")} · ${P.carga.get(prox).reduce((t, x) => t + higPecas(x.v), 0)} peças` : "nada planejado")}
+    ${kpi("Jogos reserva", HIG_ITENS.filter(i => J[i].total).map(i => `${J[i].prontos}/${J[i].total}`).join(" · ") || "0", HIG_ITENS.filter(i => J[i].total).map(i => `${i.toLowerCase()}: ${J[i].prontos} pronto(s)`).join(" · ") || "configure em ⚙", HIG_ITENS.some(i => J[i].total && !J[i].prontos) ? "hoje" : "")}</div>`;
+  /* próximos fins de semana */
+  const fdsCard = s => { const L = P.carga.get(s), pecas = L.reduce((t, x) => t + higPecas(x.v), 0), cort = L.filter(x => higQtd(x.v, "Cortinas") > 0).length, falta = s === prox && J.Cortinas.total && cort > J.Cortinas.prontos;
+    return `<div class="hig-fds${s === prox ? " prox" : ""}"><div class="hig-fds-h"><b>${esc(higFds(s))}</b><span class="sup">${L.length}/${c.cap} ônibus · ${pecas} peças</span></div>
+      ${L.length ? L.map(x => `<div class="hig-fds-v ${x.atraso ? "atr" : ""}"><span>${frotaDot(x.atraso ? "erro" : x.sem ? "aviso" : "ok")}<b>${esc(x.v.Title)}</b>${x.fixo ? ` <span class="fv-tag" title="Data fixada">📌 fixada</span>` : ""}${x.sem ? ` <span class="sup">sem histórico</span>` : x.atraso ? ` <span class="sup">fora da janela (até ${esc(fmtDate(x.fim))})</span>` : ""}</span><span class="sup">${esc(higItensDe(x.v).map(i => `${higQtd(x.v, i)} ${i.toLowerCase()}`).join(" + "))}</span>${ed ? `<span class="hig-fds-a"><button class="btn mini" onclick="higConfirmar('${esc(x.v._id)}','${s}')">✓ Confirmar</button><button class="btn mini ghost" onclick="higFixar('${esc(x.v._id)}','${s}')">📌</button></span>` : ""}</div>`).join("") : `<div class="sup" style="padding:6px 0">livre</div>`}
+      ${falta ? `<div class="hig-falta">Só ${J.Cortinas.prontos} jogo(s) reserva de cortinas pronto(s) para ${cort} ônibus</div>` : ""}</div>`; };
+  const proxHtml = `<div class="cap-card"><div class="cap-card-h"><h3>Próximos fins de semana</h3><span class="cap-card-s">até ${c.cap} ônibus por fim de semana · confirmar a lavagem reorganiza o plano</span></div><div class="hig-fds-grid">${P.slots.slice(0, 6).map(fdsCard).join("")}</div></div>`;
+  /* cronograma: ônibus × fins de semana */
+  const cols = P.slots.slice(0, 16), meses = [];
+  cols.forEach(s => { const m = s.slice(0, 7); const u = meses[meses.length - 1]; if (u && u.m === m) u.n++; else meses.push({ m, n: 1 }); });
+  const mesNome = m => dLocal(m + "-01").toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
+  const celula = (v, s) => { const e = P.carga.get(s).find(x => x.v._id === v._id), real = higDe(v).filter(x => x.Situacao === "Realizada" && x.Data && higSab(ymd(x.Data)) === s);
+    if (real.length) return `<td class="hig-c real" title="Lavado em ${esc(fmtDate(ymd(real[0].Data)))}">✓</td>`;
+    if (!e) return `<td class="hig-c"${ed ? ` onclick="higFixar('${esc(v._id)}','${s}')" title="Fixar ${esc(v.Title)} em ${esc(higFds(s))}"` : ""}></td>`;
+    return `<td class="hig-c plan ${e.fixo ? "fixo" : ""} ${e.atraso ? "atr" : ""}" title="${esc(`${v.Title} · ${higFds(s)}${e.fixo ? " · fixada" : ""}${e.atraso ? " · fora da janela" : ""}`)}"${ed ? ` onclick="higConfirmar('${esc(v._id)}','${s}')"` : ""}>${e.fixo ? "📌" : "●"}</td>`; };
+  const linha = ([v, St]) => `<tr><th><button class="lnk" onclick="frotaAbrirVeic('${esc(v._id)}')">${esc(v.Title)}</button><div class="sup">${esc(higItensDe(v).map(i => `${higQtd(v, i)} ${i.toLowerCase()}`).join(" + "))}</div></th>
+    <td class="nw">${frotaDot(HIG_ST[St.st][1])}${esc(HIG_ST[St.st][0])}<div class="sup">${St.base ? `última ${esc(fmtDate(St.base))}` : "nunca lavado no ERP"}${St.base && St.falta.length ? ` · ${esc(St.falta.join(", ").toLowerCase())} sem histórico` : ""}</div></td>${cols.map(s => celula(v, s)).join("")}</tr>`;
+  const crono = `<div class="cap-card"><div class="cap-card-h"><h3>Cronograma</h3><span class="cap-card-s">● planejado · 📌 fixado · ✓ lavado · vermelho = fora da janela${ed ? " · clique numa casa vazia para fixar, num ● para confirmar" : ""}</span></div>
+    <div class="table-wrap"><table class="cap-table hig-crono"><thead><tr><th rowspan="2">Ônibus</th><th rowspan="2">Situação</th>${meses.map(m => `<th colspan="${m.n}" class="hig-mes">${esc(mesNome(m.m))}</th>`).join("")}</tr><tr>${cols.map(s => `<th class="hig-sab${s === prox ? " prox" : ""}">${esc(s.slice(8, 10))}</th>`).join("")}</tr></thead>
+    <tbody>${S.map(linha).join("") || `<tr><td colspan="${cols.length + 2}" class="mut">Nenhum ônibus com cortinas ou forros cadastrados.</td></tr>`}</tbody></table></div></div>`;
+  /* jogos reserva e histórico */
+  const jogos = HIG_ITENS.some(i => J[i].total) ? `<div class="cap-card"><div class="cap-card-h"><h3>Rodízio do jogo reserva</h3><span class="cap-card-s">na troca, o ônibus recebe o jogo limpo e o retirado é lavado durante a semana</span></div><ul class="fv-docs">${HIG_ITENS.filter(i => J[i].total).map(i => `<li>${frotaDot(J[i].prontos ? "ok" : "aviso")}<span>${esc(i)}: ${J[i].prontos} de ${J[i].total} pronto(s)</span><b>${J[i].em.length} em lavagem</b></li>${J[i].em.map(x => `<li class="hig-em"><span>· jogo retirado de <b>${esc(x.Veiculo || "")}</b> em ${esc(fmtDate(ymd(x.Data)))}</span>${ed ? `<button class="btn mini" onclick="higJogoPronto('${esc(x._id)}')">Marcar pronto</button>` : ""}</li>`).join("")}`).join("")}</ul></div>` : "";
+  const hist = (HIG.itens || []).filter(x => x.Situacao === "Realizada").sort((a, b) => ymd(b.Data || "").localeCompare(ymd(a.Data || "")) || Number(b._id) - Number(a._id)).slice(0, 60);
+  const podeExc = !vcAtivo() && (session.n1 || pagNivel("frota", "hig") === "proprietario");
+  const histHtml = `<div class="cap-card"><div class="cap-card-h"><h3>Lavagens realizadas</h3><span class="cap-card-s">${hist.length ? `últimas ${hist.length}` : "nenhuma ainda"}</span></div>${hist.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Data</th><th>Ônibus</th><th>Item</th><th>Modalidade</th><th class="right">Retiradas</th><th class="right">Devolvidas</th><th class="right">Danificadas</th><th>Responsável</th>${podeExc ? "<th></th>" : ""}</tr></thead><tbody>
+    ${hist.map(x => { const perda = Number(x.Retiradas || 0) - Number(x.Devolvidas || 0); return `<tr><td class="nw">${esc(fmtDate(ymd(x.Data)))}</td><td><b>${esc(x.Veiculo || "")}</b></td><td>${esc(x.Item || "")}</td><td>${esc(x.Modalidade || "—")}</td><td class="right">${x.Retiradas ?? "—"}</td><td class="right">${x.Devolvidas ?? "—"}${perda > 0 ? ` <span class="venc-txt" title="peças que não voltaram">(−${perda})</span>` : ""}</td><td class="right">${Number(x.Danificadas || 0) ? `<span class="warn-txt">${esc(String(x.Danificadas))}</span>` : "0"}</td><td>${esc(x.Responsavel || "")}</td>${podeExc ? `<td><button class="btn mini ghost danger" onclick="higExcluir('${esc(x._id)}')">Excluir</button></td>` : ""}</tr>`; }).join("")}</tbody></table></div>` : ""}</div>`;
+  body.innerHTML = kpis + proxHtml + crono + `<div class="hig-duo">${jogos}${histHtml}</div>` + `<p class="cpx-nota">Regra: a próxima lavagem fica entre ${c.min} e ${c.max} dias depois da última confirmada (alvo ${c.alvo}). Cortinas e forros do mesmo ônibus vão juntos. Sem histórico, o ERP escalona ${c.cap} ônibus por fim de semana a partir do próximo. As quantidades de cada ônibus ficam em Editar cadastro (padrão: ${c.cortinas} cortinas; forros só nos ônibus com bancos executivos).</p>`;
+}
+/* ---- confirmar lavagem ---- */
+window.higConfirmar = (vid, sab) => {
+  if (!higEd()) { toast("Sem permissão para registrar lavagens."); return; }
+  const V = higFrota(), v0 = vid ? frotaVeicPorId(vid) : null, c = higCfg(), J = higJogos(), hoje = higHoje();
+  const dataPad = sab && sab <= hoje ? sab : hoje;
+  const optV = V.map(v => `<option value="${esc(v._id)}" ${v0 && v._id === v0._id ? "selected" : ""}>${esc(v.Title)}</option>`).join("");
+  openModal("Confirmar lavagem", `<div class="form-grid">
+    <div class="field"><label>Ônibus<span class="req">*</span></label><select id="hgV" onchange="higConfQtd()">${v0 ? "" : `<option value="">Selecione…</option>`}${optV}</select></div>
+    <div class="field"><label>Data da lavagem<span class="req">*</span></label><input type="date" id="hgD" value="${esc(dataPad)}" max="${esc(hoje)}"></div>
+    <div class="field full"><label>Itens lavados</label><div class="hig-its">${HIG_ITENS.map(i => `<label class="chk"><input type="checkbox" id="hgI_${i}" onchange="higConfQtd()"> ${i}</label>`).join("")}</div></div>
+    <div class="field"><label>Modalidade</label><select id="hgM"><option ${c.jogos.Cortinas ? "selected" : ""}>Troca por jogo reserva</option><option ${c.jogos.Cortinas ? "" : "selected"}>Lavagem e reinstalação</option></select><div class="sup">${HIG_ITENS.filter(i => J[i].total).map(i => `${i}: ${J[i].prontos} jogo(s) pronto(s)`).join(" · ") || "sem jogo reserva configurado"}</div></div>
+    <div class="field"><label>Responsável</label><input id="hgR" maxlength="100" value="${esc((session.me && session.me.displayName) || "")}"></div>
+    <div class="field"><label>Peças retiradas</label><input type="number" min="0" id="hgRet"></div>
+    <div class="field"><label>Peças devolvidas</label><input type="number" min="0" id="hgDev"></div>
+    <div class="field"><label>Peças danificadas</label><input type="number" min="0" id="hgDan" value="0"></div>
+    <div class="field"><label>Custo (R$, opcional)</label><input type="number" min="0" step="0.01" id="hgC" placeholder="sabão, amaciante…"></div>
+    <div class="field full"><label class="chk"><input type="checkbox" id="hgNc" ${frotaEd("nc") && FROTA.listNc ? "checked" : "disabled"}> Abrir não conformidade para substituir as peças danificadas${frotaEd("nc") && FROTA.listNc ? "" : " (exige editar Não conformidades)"}</label></div>
+    <div class="field full"><label>Observações</label><textarea id="hgO" rows="2"></textarea></div>
+    <div class="field full"><div id="hgErr" class="form-err" style="display:none"></div></div></div>`, () => higConfSalvar());
+  higConfQtd(true);
+};
+window.higConfQtd = ini => {
+  const v = frotaVeicPorId(($("hgV") || {}).value); if (!v) return;
+  if (ini === true || !HIG_ITENS.some(i => $("hgI_" + i) && $("hgI_" + i).dataset.toque)) HIG_ITENS.forEach(i => { const el = $("hgI_" + i); if (el) { el.checked = higQtd(v, i) > 0; el.disabled = !(higQtd(v, i) > 0); } });
+  const n = HIG_ITENS.filter(i => $("hgI_" + i) && $("hgI_" + i).checked).reduce((t, i) => t + higQtd(v, i), 0);
+  $("hgRet").value = n; $("hgDev").value = n;
+};
+let HIG_SALVANDO = false;
+async function higConfSalvar() {
+  if (HIG_SALVANDO) return false;
+  const err = m => { const e = $("hgErr"); e.textContent = m; e.style.display = "block"; return false; };
+  const v = frotaVeicPorId($("hgV").value); if (!v) return err("Escolha o ônibus.");
+  const d = $("hgD").value, hoje = higHoje(); if (!d) return err("Informe a data da lavagem."); if (d > hoje) return err("A data não pode ser no futuro.");
+  const its = HIG_ITENS.filter(i => $("hgI_" + i).checked); if (!its.length) return err("Marque pelo menos um item.");
+  const num = id => { const x = $(id).value; return x === "" ? null : Math.max(0, Math.round(Number(x))); };
+  const ret = num("hgRet"), dev = num("hgDev"), dan = num("hgDan") || 0, custo = $("hgC").value === "" ? null : Math.max(0, Number($("hgC").value));
+  if (ret != null && dev != null && dev > ret) return err("Devolvidas não pode ser maior que retiradas.");
+  const mod = $("hgM").value, resp = ($("hgR").value || "").trim().slice(0, 100) || null, obs = ($("hgO").value || "").trim() || null;
+  HIG_SALVANDO = true;
+  try {
+    /* as peças são repartidas por item na proporção das quantidades */
+    const tot = its.reduce((t, i) => t + higQtd(v, i), 0) || 1;
+    const parte = (x, i, k) => x == null ? null : k === its.length - 1 ? x - its.slice(0, -1).reduce((t, j) => t + Math.round(x * higQtd(v, j) / tot), 0) : Math.round(x * higQtd(v, i) / tot);
+    for (let k = 0; k < its.length; k++) {
+      const i = its[k];
+      await SP.create(FROTA.site.id, HIG.list.id, { Title: `${i} · ${v.Title} · ${d}`, Veiculo: v.Title, VeicId: String(v._id), Item: i, Situacao: "Realizada", Data: d, Responsavel: resp, Modalidade: mod, Retiradas: parte(ret, i, k), Devolvidas: parte(dev, i, k), Danificadas: parte(dan, i, k), Custo: k === 0 ? custo : null, Observacoes: obs });
+    }
+    /* datas fixadas deste ciclo saem (a lavagem já aconteceu) */
+    const c = higCfg();
+    for (const f of higDe(v).filter(x => x.Situacao === "Fixada" && x.Data && ymd(x.Data) < higAdd(d, c.min))) { try { await graph(`/sites/${FROTA.site.id}/lists/${HIG.list.id}/items/${f._id}`, { method: "DELETE" }); } catch (e) {} }
+    if (dan > 0 && $("hgNc").checked && frotaEd("nc") && FROTA.listNc) {
+      const pz = higAdd(d, 15);
+      await SP.create(FROTA.site.id, FROTA.listNc.id, { Title: `Substituir ${dan} peça(s) danificada(s) na lavagem (${its.join(" e ").toLowerCase()})`.slice(0, 250), Veiculo: v.Title, Gravidade: "Leve", Abertura: d, Prazo: pz, Situacao: "Aberta", Observacoes: `Aberta pela Higienização em ${fmtDate(d)}.` });
+    }
+    toast("Lavagem registrada; o plano foi reorganizado");
+    await frotaCarregar(); frotaPintar();
+    return true;
+  } catch (e) { return err("Não foi possível gravar: " + e.message); }
+  finally { HIG_SALVANDO = false; }
+}
+/* ---- fixar / desfixar ---- */
+window.higFixar = async (vid, sab) => {
+  if (!higEd()) return;
+  const v = frotaVeicPorId(vid); if (!v) return;
+  const P = higPlanejar(), fix = higDe(v).filter(x => x.Situacao === "Fixada" && x.Data && higSab(ymd(x.Data)) >= P.slots[0]);
+  const ops = P.slots.map(s => { const n = P.carga.get(s).filter(x => x.v._id !== vid).length; return `<option value="${s}" ${s === sab ? "selected" : ""}>${esc(higFds(s))}${n ? ` · ${n} ônibus` : ""}${n >= P.c.cap ? " (cheio)" : ""}</option>`; }).join("");
+  openModal(`Fixar data · ${v.Title}`, `<p class="sup">O planejador respeita a data fixada e reorganiza os outros ônibus em volta dela.</p><div class="form-grid"><div class="field full"><label>Fim de semana</label><select id="hfS">${ops}</select></div>
+    ${fix.length ? `<div class="field full"><label>Datas já fixadas</label>${fix.map(f => `<div class="hig-fix">📌 ${esc(higFds(higSab(ymd(f.Data))))} <button class="btn mini ghost" onclick="higDesfixar('${esc(f._id)}')">Desfixar</button></div>`).join("")}</div>` : ""}
+    <div class="field full"><div id="hfErr" class="form-err" style="display:none"></div></div></div>`, async () => {
+    const s = $("hfS").value; if (!s) return false;
+    if (fix.some(f => higSab(ymd(f.Data)) === s)) { closeModal(); return true; }
+    try { await SP.create(FROTA.site.id, HIG.list.id, { Title: `Fixada · ${v.Title} · ${s}`, Veiculo: v.Title, VeicId: String(v._id), Item: "Todos", Situacao: "Fixada", Data: s }); toast("Data fixada"); await frotaCarregar(); frotaPintar(); return true; }
+    catch (e) { const er = $("hfErr"); er.textContent = "Não foi possível gravar: " + e.message; er.style.display = "block"; return false; }
+  });
+};
+window.higDesfixar = async id => {
+  if (!higEd()) return;
+  try { await graph(`/sites/${FROTA.site.id}/lists/${HIG.list.id}/items/${id}`, { method: "DELETE" }); closeModal(); toast("Data liberada"); await frotaCarregar(); frotaPintar(); } catch (e) { toast("Erro: " + e.message, 6000); }
+};
+window.higJogoPronto = async id => {
+  if (!higEd()) return;
+  try { await SP.update(FROTA.site.id, HIG.list.id, id, { JogoPronto: higHoje() }); toast("Jogo pronto para a próxima troca"); await frotaCarregar(); frotaPintar(); } catch (e) { toast("Erro: " + e.message, 6000); }
+};
+window.higExcluir = async id => {
+  if (vcAtivo() || !(session.n1 || pagNivel("frota", "hig") === "proprietario")) return;
+  const x = (HIG.itens || []).find(i => i._id === String(id)); if (!x) return;
+  if (!(await erpConfirmar({ titulo: "Excluir lavagem", texto: `Excluir a lavagem de ${x.Item} do ${x.Veiculo} em ${fmtDate(ymd(x.Data))}? O plano volta a contar pela lavagem anterior.`, sim: "Excluir", perigo: true }))) return;
+  try { await graph(`/sites/${FROTA.site.id}/lists/${HIG.list.id}/items/${id}`, { method: "DELETE" }); toast("Excluída"); await frotaCarregar(); frotaPintar(); } catch (e) { toast("Erro: " + e.message, 6000); }
+};
+/* ---- configuração (administrador) ---- */
+window.higConfig = () => {
+  if (!session.n1 || vcAtivo()) return;
+  const c = higCfg();
+  openModal("Higienização · configuração", `<div class="form-grid">
+    <div class="field"><label>Mínimo (dias)</label><input type="number" id="hcMin" min="7" value="${c.min}"></div>
+    <div class="field"><label>Máximo (dias)</label><input type="number" id="hcMax" min="7" value="${c.max}"></div>
+    <div class="field"><label>Alvo (dias)</label><input type="number" id="hcAlvo" min="7" value="${c.alvo}"></div>
+    <div class="field"><label>Ônibus por fim de semana</label><input type="number" id="hcCap" min="1" max="13" value="${c.cap}"></div>
+    <div class="field"><label>Cortinas por ônibus (padrão)</label><input type="number" id="hcCor" min="0" value="${c.cortinas}"></div>
+    <div class="field"><label>Horizonte (fins de semana)</label><input type="number" id="hcH" min="8" max="52" value="${c.horiz}"></div>
+    <div class="field"><label>Jogos reserva de cortinas</label><input type="number" id="hcJC" min="0" max="13" value="${c.jogos.Cortinas}"></div>
+    <div class="field"><label>Jogos reserva de forros</label><input type="number" id="hcJF" min="0" max="13" value="${c.jogos.Forros}"></div>
+    <div class="field full"><div id="hcErr" class="form-err" style="display:none"></div></div></div>`, async () => {
+    const n = id => Number($(id).value), err = m => { const e = $("hcErr"); e.textContent = m; e.style.display = "block"; return false; };
+    const v = { min: n("hcMin"), max: n("hcMax"), alvo: n("hcAlvo"), cap: n("hcCap"), cortinas: n("hcCor"), horiz: n("hcH"), jogos: { Cortinas: n("hcJC"), Forros: n("hcJF") } };
+    if (!(v.min > 0 && v.max >= v.min && v.alvo >= v.min && v.alvo <= v.max)) return err("Use mínimo ≤ alvo ≤ máximo.");
+    try { await erpParamGravar("frota.hig", v); HIG.cfg = v; toast("Configuração salva"); frotaPintar(); return true; } catch (e) { return err("Não foi possível salvar: " + e.message); }
+  });
+};
+/* ---- cadastro do veículo: quantidades ---- */
+{ const cf0 = frotaCadForm;
+  frotaCadForm = function (opt) {
+    if (opt.lista !== "listVeic") return cf0.apply(this, arguments);
+    const v = opt.item || {}, h0 = opt.html, l0 = opt.ler, alvo = `<div class="field full"><label>Observações</label><textarea id="vcO"`;
+    opt.html = dis => h0(dis).replace(alvo, `<div class="field full form-sec">Higienização</div>
+      <div class="field"><label>Cortinas (qtd.)</label>${fcNum("vcQc", v.QtdCortinas, dis)}<div class="sup">vazio = padrão (${higCfg().cortinas})</div></div>
+      <div class="field"><label>Forros dos bancos (qtd.)</label>${fcNum("vcQf", v.QtdForros, dis)}<div class="sup">só nos ônibus com bancos executivos</div></div>` + alvo);
+    opt.ler = (g, err) => { const f = l0(g, err); if (!f) return f; const q = id => { const x = g(id); return x === "" ? null : Math.max(0, Math.round(Number(x))); }; return Object.assign(f, { QtdCortinas: q("vcQc"), QtdForros: q("vcQf") }); };
+    return cf0.call(this, opt);
+  };
+}
+/* ---- página do veículo: cartão, vida e alerta ---- */
+{ const s0 = frotaSaude;
+  frotaSaude = function (v) {
+    const S = s0.apply(this, arguments);
+    if (higVe() && HIG.list && higItensDe(v).length && !v.Arquivado && v.Situacao !== "Baixado") {
+      const H = higSit(v); S.hig = H;
+      if (H.st === "atrasada") S.al.push(["aviso", `Higienização atrasada (última em ${fmtDate(H.base)})`]);
+      else if (H.st === "sem") S.al.push(["info", "Higienização sem histórico"]);
+      S.nivel = S.al.some(a => a[0] === "erro") ? "erro" : S.al.some(a => a[0] === "aviso") ? "aviso" : "ok";
+    }
+    return S;
+  };
+}
+{ const v0 = frotaVida;
+  frotaVida = function (v) {
+    const ev = v0.apply(this, arguments);
+    if (higVe()) higDe(v).filter(x => x.Situacao === "Realizada" && x.Data).forEach(x => ev.push({ k: "hig", d: ymd(x.Data), t: `Higienização: ${x.Item || ""}`, s: [x.Modalidade, x.Responsavel, x.Danificadas ? `${x.Danificadas} danificada(s)` : ""].filter(Boolean).join(" · "), st: "ok" }));
+    return ev.sort((a, b) => b.d.localeCompare(a.d));
+  };
+  FROTA_VIDA_K.hig = "Higienização";
+}
+{ const p0 = frotaVeicPintar;
+  frotaVeicPintar = function () {
+    const r = p0.apply(this, arguments);
+    const v = frotaVeicPorId(FV.id), grid = document.querySelector("#fvBody .fv-saude");
+    if (v && grid && higVe() && HIG.list) {
+      const its = higItensDe(v), H = higSit(v), P = higPlanejar(), prox = P.slots.find(s => P.carga.get(s).some(x => x.v._id === v._id));
+      const st = HIG_ST[H.st];
+      grid.insertAdjacentHTML("beforeend", `<div class="cap-card fv-hig"><div class="cap-card-h"><h3>${frotaDot(st[1])} Higienização</h3><span class="grow"></span>${higEd() && its.length ? `<button class="btn mini" onclick="higConfirmar('${esc(v._id)}')">✓ Confirmar</button>` : ""}</div>
+        ${its.length ? `<ul class="fv-docs">${its.map(i => `<li>${frotaDot(H.ult[i] ? (higHoje() > higAdd(H.ult[i], higCfg().max) ? "erro" : "ok") : "aviso")}<span>${esc(i)} (${higQtd(v, i)})</span><b>${H.ult[i] ? esc(fmtDate(H.ult[i])) : "—"}</b></li>`).join("")}
+          <li>${frotaDot(st[1])}<span>Próxima</span><b>${prox ? esc(higFds(prox)) : "—"}</b></li></ul><div class="sup" style="padding:0 16px 10px">${esc(st[0])}${H.base ? ` · janela ${esc(fmtDate(H.ini))} a ${esc(fmtDate(H.fim))}` : ""} · <a href="#/operacional/frota" onclick="FROTA.aba='hig'">ver cronograma</a></div>`
+        : `<div class="sup" style="padding:12px 16px">Sem cortinas nem forros no cadastro.${frotaEd("veic") ? " Informe as quantidades em Editar cadastro." : ""}</div>`}</div>`);
+    }
+    return r;
+  };
+}
+/* ---- impressão do cronograma (A4 paisagem) ---- */
+window.higImprimir = () => {
+  try {
+    const P = higPlanejar(), c = P.c, V = higFrota(), cols = P.slots.slice(0, 16);
+    const cel = (v, s) => { const e = P.carga.get(s).find(x => x.v._id === v._id); return `<td class="c${e ? (e.atraso ? " atr" : " pl") : ""}">${e ? (e.fixo ? "F" : "●") : ""}</td>`; };
+    const html = printCab("Cronograma de <b>Higienização</b>", `cortinas e forros · janela de ${c.min} a ${c.max} dias · até ${c.cap} ônibus por fim de semana`, { doc: `HIG-${higHoje().replace(/-/g, "")}`, meta: [["Ônibus", String(V.length)]] })
+      + printSec("Próximos fins de semana", "", 1) + `<table class="t"><thead><tr><th>Fim de semana</th><th>Ônibus</th><th class="r">Peças</th><th>Conferência</th></tr></thead><tbody>${P.slots.slice(0, 8).map(s => { const L = P.carga.get(s); return `<tr><td class="nw"><b>${esc(higFds(s))}</b></td><td>${L.map(x => esc(x.v.Title) + (x.fixo ? " (fixada)" : "")).join(" e ") || "—"}</td><td class="r">${L.reduce((t, x) => t + higPecas(x.v), 0) || ""}</td><td>${L.length ? "retiradas ____ devolvidas ____" : ""}</td></tr>`; }).join("")}</tbody></table>`
+      + printSec("Cronograma", "● planejado · F fixado · vermelho = fora da janela", 2) + `<table class="t hc"><thead><tr><th>Ônibus</th><th>Última</th>${cols.map(s => `<th class="r">${esc(s.slice(8, 10) + "/" + s.slice(5, 7))}</th>`).join("")}</tr></thead><tbody>${V.map(v => { const H = higSit(v); return `<tr><td><b>${esc(v.Title)}</b></td><td class="nw">${H.base ? esc(fmtDate(H.base)) : "—"}</td>${cols.map(s => cel(v, s)).join("")}</tr>`; }).join("")}</tbody></table>`
+      + printAssin([["Operacional", ""]]) + printRodape("Operacional › Frota › Higienização");
+    printDoc({ titulo: "Cronograma de Higienização", html, paisagem: true, fonte: 9.5, css: `table.hc td.c{text-align:center;width:22px}table.hc td.pl{color:#1E2153;font-weight:800}table.hc td.atr{color:#B3271E;font-weight:800}` });
+  } catch (e) { toast("Não foi possível montar o cronograma: " + e.message, 6000); }
 };
 
 </script>

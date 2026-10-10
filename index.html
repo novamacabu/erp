@@ -3582,7 +3582,7 @@ tr.dre-aj td{background:#FFF8E6}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.85<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.86<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3619,7 +3619,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.85",
+  version: "v0.12.86",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -12704,7 +12704,7 @@ atualizar("graph");
 /* =====================================================================
    MÓDULO CONTROLE DE DIESEL — v0.11 (migrado do repo controle-diesel; JSONBin → SharePoint)
    ===================================================================== */
-const DSL_HTML = '<header>\n  <div class="brand">\n    <span class="hdr-logo" aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;background:#fff"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#173F53" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.8c3.2 3.9 6 7.3 6 10.7a6 6 0 0 1-12 0c0-3.4 2.8-6.8 6-10.7z"/><path d="M9.2 14.2a2.8 2.8 0 0 0 2.6 2.6"/></svg></span>\n    <div>\n      <h1>Controle de Diesel</h1>\n      <span class="sub">Garagem de Conceição de Macabu · Nova Macabu</span>\n    </div>\n  </div>\n  <div class="hdr-actions">\n    <span class="user-chip" id="userChip" style="display:none"></span>\n    <span class="sync-chip" id="syncChip">—</span>\n    <span class="pill" id="statusPill">—</span>\n    <button class="hdr-btn" id="btnXLSX" type="button" title="Exporta a previsão com cores + abas de recebimentos, abastecimentos e resumo por veículo">\n      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>\n      Exportar Excel\n    </button>\n    <button class="hdr-btn ghosted" id="btnPrint" type="button">Imprimir</button>\n    <button class="hdr-btn ghosted" id="dsl-logout" type="button" title="Encerrar sessão">Sair</button>\n  </div>\n</header>\n<div class="dsl-main">\n\n  <!-- KPIs -->\n  <div class="kpis" id="kpis"></div>\n  <div id="sugestao"></div>\n  <datalist id="dlVeiculo"></datalist>\n  <datalist id="dlMotorista"></datalist>\n  <datalist id="dlFrentista"></datalist>\n  <datalist id="dlLinha"></datalist>\n\n  <!-- Parâmetros -->\n  <section class="card">\n    <h2>Parâmetros do tanque e da previsão</h2>\n    <div class="body">\n      <div class="grid">\n        <label class="f">Capacidade máx. (L)<input type="number" id="cfgCapacidade" min="0" step="100"></label>\n        <label class="f">Limite de reposição (L)<input type="number" id="cfgLimite" min="0" step="100"></label>\n        <label class="f">Estoque mínimo (L)<input type="number" id="cfgMinimo" min="0" step="100"></label>\n        <label class="f">Consumo médio diário (L)<input type="number" id="cfgConsumo" min="0" step="10"></label>\n        <label class="f">Estoque inicial (L)<input type="number" id="cfgEstoque" min="0" step="0.01"></label>\n        <label class="f">Data do estoque inicial<input type="date" id="cfgData"></label>\n        <label class="f">Bomba inicial (leitura)<input type="number" id="cfgBomba" min="0" step="0.001"></label>\n        <label class="f">Horizonte da previsão (dias)<input type="number" id="cfgHorizonte" min="7" max="60" step="1"></label>\n      </div>\n      <div class="actions">\n        <button class="primary" id="btnSalvarCfg">Salvar parâmetros</button>\n      </div>\n      <p class="note">O consumo médio diário é usado nos dias sem lançamentos reais. Nos dias com abastecimentos registrados, a previsão usa o volume real.</p>\n    </div>\n  </section>\n\n  <!-- Fita de previsão -->\n  <section class="card">\n    <h2>Previsão de estoque — programação diária <span style="font-weight:400;text-transform:none;letter-spacing:0">valores em litros · células claras são editáveis</span></h2>\n    <div class="ribbon-wrap"><table class="ribbon" id="ribbon"></table></div>\n    <p class="legend-note" style="padding-top:10px">Edite direto na tabela: <b>Inicial</b> (1º dia), <b>Recebimento</b> (programa a entrega do dia), <b>Consumo</b> (sobrescreve o real/médio — apague para voltar ao automático, célula tracejada indica valor manual) e <b>Ajuste de estoque</b> (± litros para acertar diferenças de contagem). Inicial e Final dos dias seguintes recalculam em cadeia. Célula azul = estoque acima da capacidade do tanque (risco de transbordo).</p>\n  </section>\n\n  <!-- Gráfico -->\n  <section class="card">\n    <h2>Estoque previsto × Máx / Limite / Mín</h2>\n    <div class="chart-box"><canvas id="chart"></canvas></div>\n    <p class="legend-note">Linha cinza: estoque final com um ponto por dia — sólida no realizado, tracejada na projeção (que nunca fica abaixo de zero) · <b>Toque num ponto</b> para fixar o valor dele no gráfico; toque de novo para remover · Linha vertical pontilhada marca HOJE · Barras: recebimentos programados (verde claro) e confirmados (verde escuro) · Linhas de referência: <b>Máx</b> (verde), <b>Limite</b> (laranja tracejada) e <b>Mín</b> (vermelha) · Botão ⛶ no canto expande o gráfico.</p>\n  </section>\n\n  <!-- Recebimentos programados -->\n  <section class="card">\n    <h2>Recebimentos de diesel (draft / programação) <span class="pill">entra no tanque</span></h2>\n    <div class="body" style="padding:0">\n      <div class="form-row">\n        <label class="f">Data<input type="date" id="rcData"></label>\n        <label class="f">Volume (L)<input type="number" id="rcVolume" min="0" step="100"></label>\n        <label class="f">Referência<input type="text" id="rcRef" placeholder="ex.: NF 278"></label>\n        <label class="f">&nbsp;<button class="primary" id="btnAddReceb">Adicionar recebimento</button></label>\n      </div>\n      <div class="ribbon-wrap">\n      <table class="reg" id="tblReceb">\n        <thead><tr><th>Data</th><th>Volume (L)</th><th>Referência / NF</th><th>Por</th><th>Status</th><th>Ação</th><th></th></tr></thead>\n        <tbody></tbody>\n      </table>\n      </div>\n      \n    </div>\n  </section>\n\n  <!-- Abastecimentos da frota -->\n  <section class="card">\n    <h2>Abastecimentos da frota <span class="pill" style="background:#F6DFC8;color:#A34B12">sai do tanque</span>\n      <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">\n        <select id="filtroMes" class="hsel" title="Filtrar por mês"></select>\n        <button class="ghost mini" id="btnListaFull" type="button">Ver lista completa ⤢</button>\n      </span>\n    </h2>\n    <div class="body" style="padding:0">\n      <div class="form-row">\n        <label class="f">Data<input type="date" id="abData"></label>\n        <label class="f">Hora<input type="time" id="abHora"></label>\n        <label class="f">Veículo<input type="text" id="abVeiculo" list="dlVeiculo" placeholder="221.003"></label>\n        <label class="f">Linha<input type="text" id="abLinha" list="dlLinha" placeholder="1.000"></label>\n        <label class="f">Motorista<input type="text" id="abMotorista" list="dlMotorista"></label>\n        <label class="f">Hodômetro<input type="number" id="abHodometro" min="0" step="1"></label>\n        <label class="f">Volume (L)<input type="number" id="abVolume" min="0" step="0.01"></label>\n        <label class="f">Frentista<input type="text" id="abFrentista" list="dlFrentista" placeholder="Nome do frentista"></label>\n        <label class="f">&nbsp;<button class="primary" id="btnAddAbast">Registrar abastecimento</button></label>\n      </div>\n      <div class="ribbon-wrap vscroll" id="wrapAbast">\n      <table class="reg" id="tblAbast">\n        <thead><tr>\n          <th>Data</th><th>Hora</th><th>Veículo</th><th>Linha</th><th>Motorista</th>\n          <th>Hodômetro</th><th>Volume (L)</th><th>Frentista</th><th>Por</th>\n          <th>Bomba inicial</th><th>Bomba final</th><th>Tanque inicial</th><th>Tanque final</th><th></th>\n        </tr></thead>\n        <tbody></tbody>\n        <tfoot></tfoot>\n      </table>\n      </div>\n      \n      <p class="note" style="padding:0 16px 14px">Bomba e tanque (inicial/final) são calculados automaticamente em cadeia, como na planilha atual — a bomba acumula o volume e o tanque desconta. Veículo, motorista e frentista sugerem nomes já usados.</p>\n    </div>\n  </section>\n\n  <!-- Resumo por veículo -->\n  <section class="card">\n    <h2>Resumo por veículo <span style="font-weight:400;text-transform:none;letter-spacing:0">consumo e rendimento no período filtrado</span></h2>\n    <div class="body" style="padding:0">\n      <div class="ribbon-wrap">\n      <table class="reg" id="tblVeic">\n        <thead><tr><th>Veículo</th><th>Abastecimentos</th><th>Total (L)</th><th>Média por abast. (L)</th><th>Km rodados</th><th>Km/L aprox.</th></tr></thead>\n        <tbody></tbody>\n      </table>\n      </div>\n      <p class="note" style="padding:10px 16px 14px">Km rodados = diferença entre o maior e o menor hodômetro registrado do veículo no período. Km/L é aproximado (considera todo o volume abastecido no intervalo).</p>\n    </div>\n  </section>\n\n  <!-- Dashboard -->\n  <section class="card">\n    <h2>Dashboard <span style="font-weight:400;text-transform:none;letter-spacing:0">análise dos abastecimentos</span>\n      <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">\n        <select id="dashMes" class="hsel" title="Filtrar mês"></select>\n        <select id="dashVeic" class="hsel" title="Filtrar veículo"></select>\n      </span>\n    </h2>\n    <div class="body">\n      <div class="kpis" id="dashKpis" style="margin-bottom:14px"></div>\n      <div class="dash-grid">\n        <div class="dash-box"><h3>Litros abastecidos por dia</h3><div class="dash-canvas"><canvas id="chDia"></canvas><div class="dash-empty" id="emDia" style="display:none">Sem dados no filtro</div></div></div>\n        <div class="dash-box"><h3>Top veículos (L)</h3><div class="dash-canvas"><canvas id="chVeic"></canvas><div class="dash-empty" id="emVeic" style="display:none">Sem dados no filtro</div></div></div>\n        <div class="dash-box"><h3>Litros por linha</h3><div class="dash-canvas"><canvas id="chLinha"></canvas><div class="dash-empty" id="emLinha" style="display:none">Sem dados no filtro</div></div></div>\n      </div>\n      <p class="note">Os filtros de mês e veículo cruzam todos os visuais.</p>\n    </div>\n  </section>\n\n</div>\n<!-- Página: lista completa de abastecimentos -->\n<div id="paginaLista">\n  <div class="pl-bar">\n    <button class="hdr-btn ghosted" id="btnVoltarLista" type="button">← Voltar</button>\n    <div><h1>Abastecimentos da frota</h1><span class="sub">lista completa · edite clicando nas células</span></div>\n    <select id="filtroMesFull" class="hsel" style="margin-left:auto"></select>\n  </div>\n  <div class="pl-body">\n    <div class="ribbon-wrap" style="max-height:100%;">\n      <table class="reg" id="tblAbastFull">\n        <thead><tr>\n          <th>Data</th><th>Hora</th><th>Veículo</th><th>Linha</th><th>Motorista</th>\n          <th>Hodômetro</th><th>Volume (L)</th><th>Frentista</th><th>Por</th>\n          <th>Bomba inicial</th><th>Bomba final</th><th>Tanque inicial</th><th>Tanque final</th><th></th>\n        </tr></thead>\n        <tbody></tbody>\n        <tfoot></tfoot>\n      </table>\n    </div>\n  </div>\n</div>\n<footer style="max-width:1240px;margin:0 auto;padding:0 18px;font-size:.75rem;color:var(--muted);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">\n  <span>Controle de Diesel · Nova Macabu — salvamento automático local + sincronização no SharePoint.</span>\n  <span>Exportação Excel: aba Previsão com cores + Recebimentos, Abastecimentos e Resumo por Veículo.</span>\n</footer>\n<div class="login-screen" id="login-screen"><input id="login-user"><input id="login-pass"><button id="login-btn"></button><div id="login-err"></div></div>';
+const DSL_HTML = '<header>\n  <div class="brand">\n    <span class="hdr-logo" aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;background:#fff"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#173F53" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.8c3.2 3.9 6 7.3 6 10.7a6 6 0 0 1-12 0c0-3.4 2.8-6.8 6-10.7z"/><path d="M9.2 14.2a2.8 2.8 0 0 0 2.6 2.6"/></svg></span>\n    <div>\n      <h1>Controle de Diesel</h1>\n      <span class="sub">Garagem de Conceição de Macabu · Nova Macabu</span>\n    </div>\n  </div>\n  <div class="hdr-actions">\n    <span class="user-chip" id="userChip" style="display:none"></span>\n    <span class="sync-chip" id="syncChip">—</span>\n    <span class="pill" id="statusPill">—</span>\n    <button class="hdr-btn" id="btnXLSX" type="button" title="Exporta a previsão com cores + abas de recebimentos, abastecimentos e resumo por veículo">\n      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>\n      Exportar Excel\n    </button>\n    <button class="hdr-btn ghosted" id="btnPrint" type="button">Imprimir</button>\n    <button class="hdr-btn ghosted" id="dsl-logout" type="button" title="Encerrar sessão">Sair</button>\n  </div>\n</header>\n<div class="dsl-main">\n\n  <!-- KPIs -->\n  <div class="kpis" id="kpis"></div>\n  <div id="sugestao"></div>\n  <datalist id="dlVeiculo"></datalist>\n  <datalist id="dlMotorista"></datalist>\n  <datalist id="dlFrentista"></datalist>\n  <datalist id="dlLinha"></datalist>\n\n  <!-- Parâmetros -->\n  <section class="card">\n    <h2>Parâmetros do tanque e da previsão</h2>\n    <div class="body">\n      <div class="grid">\n        <label class="f">Capacidade máx. (L)<input type="number" id="cfgCapacidade" min="0" step="100"></label>\n        <label class="f">Limite de reposição (L)<input type="number" id="cfgLimite" min="0" step="100"></label>\n        <label class="f">Estoque mínimo (L)<input type="number" id="cfgMinimo" min="0" step="100"></label>\n        <label class="f">Consumo médio diário (L)<input type="number" id="cfgConsumo" min="0" step="10"></label>\n        <label class="f">Estoque inicial (L)<input type="number" id="cfgEstoque" min="0" step="0.01"></label>\n        <label class="f">Data do estoque inicial<input type="date" id="cfgData"></label>\n        <label class="f">Bomba inicial (leitura)<input type="number" id="cfgBomba" min="0" step="0.001"></label>\n        <label class="f">Horizonte da previsão (dias)<input type="number" id="cfgHorizonte" min="7" max="60" step="1"></label>\n      </div>\n      <div class="actions">\n        <button class="primary" id="btnSalvarCfg">Salvar parâmetros</button>\n      </div>\n      <p class="note">O consumo médio diário é usado nos dias sem lançamentos reais. Nos dias com abastecimentos registrados, a previsão usa o volume real.</p>\n    </div>\n  </section>\n\n  <!-- Fita de previsão -->\n  <section class="card">\n    <h2>Previsão de estoque — programação diária <span style="font-weight:400;text-transform:none;letter-spacing:0">valores em litros · células claras são editáveis</span></h2>\n    <div class="ribbon-wrap"><table class="ribbon" id="ribbon"></table></div>\n    <p class="legend-note" style="padding-top:10px">Edite direto na tabela: <b>Inicial</b> (1º dia), <b>Recebimento</b> (programa a entrega do dia), <b>Consumo</b> (sobrescreve o real/médio — apague para voltar ao automático, célula tracejada indica valor manual) e <b>Ajuste de estoque</b> (± litros para acertar diferenças de contagem). Inicial e Final dos dias seguintes recalculam em cadeia. Célula azul = estoque acima da capacidade do tanque (risco de transbordo).</p>\n  </section>\n\n  <!-- Gráfico -->\n  <section class="card">\n    <h2>Estoque previsto × Máx / Limite / Mín</h2>\n    <div class="chart-box"><canvas id="chart"></canvas></div>\n    <p class="legend-note">Linha cinza: estoque final com um ponto por dia — sólida no realizado, tracejada na projeção (que nunca fica abaixo de zero) · <b>Toque num ponto</b> para fixar o valor dele no gráfico; toque de novo para remover · Linha vertical pontilhada marca HOJE · Barras: recebimentos programados (verde claro) e confirmados (verde escuro) · Linhas de referência: <b>Máx</b> (verde), <b>Limite</b> (laranja tracejada) e <b>Mín</b> (vermelha) · Botão ⛶ no canto expande o gráfico.</p>\n  </section>\n\n  <!-- Recebimentos programados -->\n  <section class="card">\n    <h2>Recebimentos de diesel (draft / programação) <span class="pill">entra no tanque</span></h2>\n    <div class="body" style="padding:0">\n      <div class="form-row">\n        <label class="f">Data<input type="date" id="rcData"></label>\n        <label class="f">Volume (L)<input type="number" id="rcVolume" min="0" step="100"></label>\n        <label class="f">Referência<input type="text" id="rcRef" placeholder="ex.: NF 278"></label>\n        <label class="f">&nbsp;<button class="primary" id="btnAddReceb">Adicionar recebimento</button></label>\n      </div>\n      <div class="ribbon-wrap">\n      <table class="reg" id="tblReceb">\n        <thead><tr><th>Data</th><th>Volume (L)</th><th>Referência / NF</th><th>Por</th><th>Status</th><th>Ação</th><th></th></tr></thead>\n        <tbody></tbody>\n      </table>\n      </div>\n      \n    </div>\n  </section>\n\n  <!-- Abastecimentos da frota -->\n  <section class="card">\n    <h2>Abastecimentos da frota <span class="pill" style="background:#F6DFC8;color:#A34B12">sai do tanque</span>\n      <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">\n        <select id="filtroMes" class="hsel" title="Filtrar por mês"></select>\n        <button class="ghost mini" id="btnListaFull" type="button">Ver lista completa ⤢</button>\n      </span>\n    </h2>\n    <div class="body" style="padding:0">\n      <div class="form-row">\n        <label class="f">Data<input type="date" id="abData"></label>\n        <label class="f">Hora<input type="time" id="abHora"></label>\n        <label class="f">Veículo<select id="abVeiculo"><option value="">Selecione o veículo…</option></select></label>\n        <label class="f">Linha<input type="text" id="abLinha" list="dlLinha" placeholder="1.000"></label>\n        <label class="f">Motorista<input type="text" id="abMotorista" list="dlMotorista"></label>\n        <label class="f">Hodômetro<input type="number" id="abHodometro" min="0" step="1"></label>\n        <label class="f">Volume (L)<input type="number" id="abVolume" min="0" step="0.01"></label>\n        <label class="f">Frentista<input type="text" id="abFrentista" list="dlFrentista" placeholder="Nome do frentista"></label>\n        <label class="f">&nbsp;<button class="primary" id="btnAddAbast">Registrar abastecimento</button></label>\n      </div>\n      <div class="ribbon-wrap vscroll" id="wrapAbast">\n      <table class="reg" id="tblAbast">\n        <thead><tr>\n          <th>Data</th><th>Hora</th><th>Veículo</th><th>Linha</th><th>Motorista</th>\n          <th>Hodômetro</th><th>Volume (L)</th><th>Frentista</th><th>Por</th>\n          <th>Bomba inicial</th><th>Bomba final</th><th>Tanque inicial</th><th>Tanque final</th><th></th>\n        </tr></thead>\n        <tbody></tbody>\n        <tfoot></tfoot>\n      </table>\n      </div>\n      \n      <p class="note" style="padding:0 16px 14px">Bomba e tanque (inicial/final) são calculados automaticamente em cadeia, como na planilha atual — a bomba acumula o volume e o tanque desconta. Veículo, motorista e frentista sugerem nomes já usados.</p>\n    </div>\n  </section>\n\n  <!-- Resumo por veículo -->\n  <section class="card">\n    <h2>Resumo por veículo <span style="font-weight:400;text-transform:none;letter-spacing:0">consumo e rendimento no período filtrado</span></h2>\n    <div class="body" style="padding:0">\n      <div class="ribbon-wrap">\n      <table class="reg" id="tblVeic">\n        <thead><tr><th>Veículo</th><th>Abastecimentos</th><th>Total (L)</th><th>Média por abast. (L)</th><th>Km rodados</th><th>Km/L aprox.</th></tr></thead>\n        <tbody></tbody>\n      </table>\n      </div>\n      <p class="note" style="padding:10px 16px 14px">Km rodados = diferença entre o maior e o menor hodômetro registrado do veículo no período. Km/L é aproximado (considera todo o volume abastecido no intervalo).</p>\n    </div>\n  </section>\n\n  <!-- Dashboard -->\n  <section class="card">\n    <h2>Dashboard <span style="font-weight:400;text-transform:none;letter-spacing:0">análise dos abastecimentos</span>\n      <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">\n        <select id="dashMes" class="hsel" title="Filtrar mês"></select>\n        <select id="dashVeic" class="hsel" title="Filtrar veículo"></select>\n      </span>\n    </h2>\n    <div class="body">\n      <div class="kpis" id="dashKpis" style="margin-bottom:14px"></div>\n      <div class="dash-grid">\n        <div class="dash-box"><h3>Litros abastecidos por dia</h3><div class="dash-canvas"><canvas id="chDia"></canvas><div class="dash-empty" id="emDia" style="display:none">Sem dados no filtro</div></div></div>\n        <div class="dash-box"><h3>Top veículos (L)</h3><div class="dash-canvas"><canvas id="chVeic"></canvas><div class="dash-empty" id="emVeic" style="display:none">Sem dados no filtro</div></div></div>\n        <div class="dash-box"><h3>Litros por linha</h3><div class="dash-canvas"><canvas id="chLinha"></canvas><div class="dash-empty" id="emLinha" style="display:none">Sem dados no filtro</div></div></div>\n      </div>\n      <p class="note">Os filtros de mês e veículo cruzam todos os visuais.</p>\n    </div>\n  </section>\n\n</div>\n<!-- Página: lista completa de abastecimentos -->\n<div id="paginaLista">\n  <div class="pl-bar">\n    <button class="hdr-btn ghosted" id="btnVoltarLista" type="button">← Voltar</button>\n    <div><h1>Abastecimentos da frota</h1><span class="sub">lista completa · edite clicando nas células</span></div>\n    <select id="filtroMesFull" class="hsel" style="margin-left:auto"></select>\n  </div>\n  <div class="pl-body">\n    <div class="ribbon-wrap" style="max-height:100%;">\n      <table class="reg" id="tblAbastFull">\n        <thead><tr>\n          <th>Data</th><th>Hora</th><th>Veículo</th><th>Linha</th><th>Motorista</th>\n          <th>Hodômetro</th><th>Volume (L)</th><th>Frentista</th><th>Por</th>\n          <th>Bomba inicial</th><th>Bomba final</th><th>Tanque inicial</th><th>Tanque final</th><th></th>\n        </tr></thead>\n        <tbody></tbody>\n        <tfoot></tfoot>\n      </table>\n    </div>\n  </div>\n</div>\n<footer style="max-width:1240px;margin:0 auto;padding:0 18px;font-size:.75rem;color:var(--muted);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">\n  <span>Controle de Diesel · Nova Macabu — salvamento automático local + sincronização no SharePoint.</span>\n  <span>Exportação Excel: aba Previsão com cores + Recebimentos, Abastecimentos e Resumo por Veículo.</span>\n</footer>\n<div class="login-screen" id="login-screen"><input id="login-user"><input id="login-pass"><button id="login-btn"></button><div id="login-err"></div></div>';
 function pageDiesel() { return `<div id="dsl-root">${DSL_HTML}</div>`; }
 function initDiesel(){
 
@@ -13347,6 +13347,7 @@ function renderDatalists(){
     .map(v=>`<option value="${esc(v)}">`).join("");};
   const va=alive(state.abastecimentos);
   fill("dlVeiculo",va.map(a=>a.veiculo));
+  if(window.dslVeicSel)window.dslVeicSel();   /* v0.12.86: veículo só dos cadastrados em Frota */
   fill("dlMotorista",va.map(a=>a.motorista));
   fill("dlFrentista",va.map(a=>a.frentista));
   fill("dlLinha",va.map(a=>a.linha));
@@ -13394,19 +13395,20 @@ $("btnAddAbast").addEventListener("click",()=>{
 });
 /* ---- edição direta na linha: clique na célula, edite, Enter/sair salva, Esc cancela ---- */
 function iniciarEdicaoCelula(td){
-  if(td.querySelector("input"))return;
+  if(td.querySelector("input,select"))return;
   const id=td.dataset.id, field=td.dataset.field, type=td.dataset.type||"text";
   const arr=td.dataset.tbl==="r"?state.recebimentos:state.abastecimentos;
   const reg=arr.find(x=>x.id===id);
   if(!reg)return;
-  const inp=document.createElement("input");
-  inp.type=type; inp.value=td.dataset.raw||""; inp.className="cellin inline";
+  const comSel=field==="veiculo"&&window.frotaRefsLista&&frotaRefsLista().length>0;   /* v0.12.86: veículo escolhido da Frota */
+  const inp=document.createElement(comSel?"select":"input");
+  if(comSel){inp.innerHTML=frotaRefOpcoes(td.dataset.raw||"","",true);}else{inp.type=type; inp.value=td.dataset.raw||"";} inp.className="cellin inline";
   if(field==="veiculo")inp.setAttribute("list","dlVeiculo");
   if(field==="motorista")inp.setAttribute("list","dlMotorista");
   if(field==="frentista")inp.setAttribute("list","dlFrentista");
   if(field==="linha")inp.setAttribute("list","dlLinha");
   td.textContent=""; td.appendChild(inp);
-  inp.focus(); try{if(type!=="date"&&type!=="time")inp.select();}catch(e){}
+  inp.focus(); try{if(!comSel&&type!=="date"&&type!=="time")inp.select();}catch(e){}
   let fim=false;
   const cancelar=()=>{if(fim)return;fim=true;renderAll();};
   const confirmar=()=>{
@@ -13431,7 +13433,8 @@ function iniciarEdicaoCelula(td){
     if(ev.key==="Enter"){ev.preventDefault();confirmar();}
     if(ev.key==="Escape"){ev.preventDefault();cancelar();}
   });
-  inp.addEventListener("blur",confirmar);
+  if(comSel){inp.addEventListener("change",confirmar);const fora=e=>{if(td.contains(e.target))return;document.removeEventListener("mousedown",fora,true);if(!fim)cancelar();};setTimeout(()=>document.addEventListener("mousedown",fora,true),0);}   /* abrir a lista do select não fecha o editor: grava ao escolher; clique fora cancela */
+  else inp.addEventListener("blur",confirmar);
 }
 document.addEventListener("click",e=>{
   if(!__dslAtual())return;
@@ -13459,7 +13462,7 @@ function argb(hex){return "FF"+hex.replace("#","").toUpperCase();}
 function veicResumo(rows){
   const map={};
   for(const r of rows){
-    const v=r.veiculo||"(sem veículo)";
+    const v=(window.frotaRefCanon&&frotaRefCanon(r.veiculo))||r.veiculo||"(sem veículo)";   /* v0.12.86: prefixo antigo soma no veículo do cadastro */
     if(!map[v]) map[v]={n:0,vol:0,hods:[]};
     map[v].n++; map[v].vol+=Number(r.volume)||0;
     if(r.hodometro) map[v].hods.push(Number(r.hodometro));
@@ -14558,7 +14561,7 @@ function bilFormLanc() {
       <div class="field"><label>Linha<span class="req">*</span></label><select id="bLinha">${linhas.map(l=>`<option value="${esc(l.Title)}">${esc(l.Title)} — ${esc(l.Nome)}</option>`).join("")}</select></div>
       <div class="field"><label>Sentido</label><select id="bSent"><option>Ida</option><option>Volta</option></select></div>
       <div class="field"><label>Horário</label><input id="bHora" placeholder="05:20"></div>
-      <div class="field"><label>Carro</label><input id="bCarro" placeholder="221004"></div>
+      <div class="field"><label>Carro</label>${frotaRefSelect("bCarro", "", "", "221004")}</div>
       <div class="field"><label>Motorista</label><input id="bMot"></div>
       <div class="field"><label>Origem</label><select id="bOrig">${BIL_ORIGENS.map(o=>`<option>${esc(o)}</option>`).join("")}</select></div>
       <div class="field"><label>Seção<span class="req">*</span></label><select id="bSec"></select></div>
@@ -24088,7 +24091,7 @@ window.frotaCadExcluir = async (lista, id) => {
 const fcSel = (id, ops, val, dis, vazio) => `<select id="${id}" ${dis}>${vazio ? `<option value=""></option>` : ""}${ops.concat(val && !ops.includes(val) ? [val] : []).map(o => `<option ${o === val ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
 const fcDate = (id, val, dis) => `<input type="date" id="${id}" value="${esc(val ? ymd(val) : "")}" ${dis}>`;
 const fcNum = (id, val, dis, step) => `<input type="number" min="0" step="${step || 1}" id="${id}" value="${esc(val ?? "")}" ${dis}>`;
-const fcVeic = (id, val, dis) => `<input id="${id}" list="${id}L" value="${esc(val || "")}" placeholder="Prefixo" autocomplete="off" ${dis}><datalist id="${id}L">${frotaVeiculos().map(x => `<option value="${esc(x)}">`).join("")}</datalist>`;
+const fcVeic = (id, val, dis) => frotaRefSelect(id, val, dis, "Prefixo");   /* v0.12.86: só veículos cadastrados em Frota › Veículos */
 window.veicForm = id => {
   const m = id ? FROTA.veics.find(x => x._id === String(id)) : null, v = m || { Situacao: "Em operação", Elevador: "Sim", ArCond: "Não" };
   frotaCadForm({ lista: "listVeic", item: m, titulo: m ? `Veículo · ${m.Title || ""}` : "Novo veículo", html: dis => `<div class="form-grid">
@@ -24182,7 +24185,7 @@ window.multaForm = id => {
   $("modal").className = "modal wide";
   openModal(m ? `Multa · ${m.Veiculo || ""} · ${fmtDate(m.DataInfracao)}` : "Nova multa", `<div class="form-grid">
       <div class="field full form-sec">Veículo e infração</div>
-      <div class="field"><label>Veículo<span class="req">*</span></label><input id="mtV" list="mtVL" value="${esc(v.Veiculo || "")}" placeholder="Prefixo (ex.: 221003)" autocomplete="off" ${dis}><datalist id="mtVL">${frotaVeiculos().map(x => `<option value="${esc(x)}">`).join("")}</datalist></div>
+      <div class="field"><label>Veículo<span class="req">*</span></label>${frotaRefSelect("mtV", v.Veiculo, dis, "Prefixo")}</div>
       <div class="field"><label>Placa</label><input id="mtP" value="${esc(v.Placa || "")}" placeholder="ABC1D23" autocomplete="off" ${dis}></div>
       <div class="field"><label>Data da infração<span class="req">*</span></label><input type="date" id="mtD" value="${esc(v.DataInfracao ? ymd(v.DataInfracao) : "")}" ${dis}></div>
       <div class="field"><label>Hora</label><input type="time" id="mtH" value="${esc(v.Hora || "")}" ${dis}></div>
@@ -27611,7 +27614,7 @@ function invForm(x, pre) {
     <div class="field"><label>Categoria do bem</label>${sel("ivCat", IMOB_CATS.map(c => c.n), v.Categoria, true)}</div>
     <div class="field"><label>Tipo de investimento</label>${sel("ivTipo", INV_TIPOS, v.TipoInvest, true)}</div>
     <div class="field"><label>Área solicitante</label>${sel("ivArea", CENTROS_CUSTO, v.Area, true)}</div>
-    <div class="field"><label>Veículo a substituir</label><input id="ivVeic" list="ivVeicL" value="${esc(v.Veiculo || "")}" placeholder="Prefixo (opcional)" ${dis}><datalist id="ivVeicL">${prefs.map(p => `<option value="${esc(p)}">`).join("")}</datalist></div>
+    <div class="field"><label>Veículo a substituir</label>${frotaRefSelect("ivVeic", v.Veiculo, dis, "Prefixo (opcional)")}</div>
     <div class="field full form-sec">Quando e quanto</div>
     <div class="field"><label>Status<span class="req">*</span></label>${sel("ivSt", INV_STATUS, v.Status || "Ideia")}</div>
     <div class="field"><label>Prioridade</label>${sel("ivPri", INV_PRIOR, v.Prioridade, true)}</div>
@@ -28695,7 +28698,7 @@ window.rceForm = id => {
     <div class="field"><label>Código de barras</label>${inp("reB", v.CodigoBarras, "", 'maxlength="60"')}</div>
     <div class="field"><label>Homologação Anatel</label>${inp("reA", v.Anatel, "", 'maxlength="40"')}</div>
     <div class="field"><label>Versão / firmware</label>${inp("reV", v.Versao, "", 'maxlength="60"')}</div>
-    <div class="field"><label>Carro (prefixo)</label>${inp("reC", v.Veiculo, "Onde está instalado", 'maxlength="30"')}</div>
+    <div class="field"><label>Carro (prefixo)</label>${frotaRefSelect("reC", v.Veiculo, ed ? "" : "disabled", "Onde está instalado")}</div>
     <div class="field"><label>Situação<span class="req">*</span></label>${sel("reSit", RCE_SIT, v.Situacao)}</div>
     <div class="field"><label>Situação desde</label><input id="reD" type="date" value="${esc(v.Desde ? ymd(v.Desde) : "")}" ${ed ? "" : "disabled"}></div>
     <div class="field full"><label>Motivo da baixa <span class="sup">(defeito permanente, devolução, desligamento)</span></label>${inp("reMot", v.MotivoBaixa, "", 'maxlength="255"')}</div>
@@ -31756,6 +31759,118 @@ window.dreExcel = async () => {
 window.addEventListener("beforeunload", ev => { if (session && session.modAtual === "dre" && DRE.rasc) { ev.preventDefault(); ev.returnValue = ""; } });
 /* teclado: Enter ou espaço abre/fecha a linha do demonstrativo */
 document.addEventListener("keydown", ev => { if (ev.key !== "Enter" && ev.key !== " ") return; const tr = ev.target && ev.target.closest ? ev.target.closest("#dreRoot tr[data-k], #dreRoot tr.cap-row-click") : null; if (!tr || tr !== ev.target) return; ev.preventDefault(); tr.click(); });
+
+
+/* =====================================================================
+   v0.12.86 · Veículos de todas as listas = os cadastrados em Frota › Veículos (pedido de 10/10, 16:23)
+   Manutenção, Não conformidades, Multas, Diesel, Rio Card (equipamentos), Bilhetagem, Controle de Roletas,
+   Arrecadação e Plano de investimentos escolhem o veículo numa lista dos cadastrados (sem arquivados; ocultos só
+   para administradores). Valor antigo que não está no cadastro aparece marcado e pode ser trocado; o administrador
+   padroniza os prefixos antigos (ex.: 221.017 → RJ 221.017) nas listas da Frota.
+   ===================================================================== */
+const FROTA_REF = { itens: null, t: 0, carregando: null, erro: "" };
+async function frotaRefsCarregar(force) {
+  if (!force && (FROTA.veicsTodos || (FROTA_REF.itens && Date.now() - FROTA_REF.t < 5 * 60e3))) return;
+  if (FROTA_REF.carregando) return FROTA_REF.carregando;
+  FROTA_REF.carregando = (async () => {
+    try {
+      const site = await SP.site(CONFIG.sites[LISTS.frota_veic.siteKey]);
+      const l = (await SP.lists(site.id)).find(x => x.displayName === LISTS.frota_veic.displayName) || null;
+      FROTA_REF.itens = l ? (await SP.items(site.id, l.id, "($select=Title,Placa,Tipo,Situacao,Oculto,Arquivado)")).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+      FROTA_REF.t = Date.now(); FROTA_REF.erro = "";
+    } catch (e) { FROTA_REF.erro = String((e && e.message) || e); if (!FROTA_REF.itens) FROTA_REF.itens = []; FROTA_REF.t = Date.now(); }   /* revisão: falha não repete a leitura a cada abertura */
+  })();
+  try { await FROTA_REF.carregando; } finally { FROTA_REF.carregando = null; }
+}
+function frotaRefsBase() { return FROTA.veicsTodos || (FROTA.veics && FROTA.veics.length ? FROTA.veics : null) || FROTA_REF.itens || []; }
+/* prefixos que podem ser escolhidos: cadastrados, sem arquivados; ocultos só para administradores */
+function frotaRefsLista() {
+  return [...new Set(frotaRefsBase().filter(v => String(v.Title || "").trim() && !v.Arquivado && !(v.Oculto && !session.n1)).map(v => String(v.Title).trim()))]
+    .sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+}
+const frotaRefDig = t => String(t || "").replace(/\D/g, "");
+/* prefixo cadastrado que corresponde a um valor antigo (mesmos números: 221.017, 221017, 221-017 → RJ 221.017) */
+function frotaRefCanon(val) {
+  const t = String(val || "").trim(); if (!t) return "";
+  const todos = frotaRefsBase().map(v => String(v.Title || "").trim()).filter(Boolean);
+  const igual = todos.find(x => frotaNorm(x) === frotaNorm(t)); if (igual) return igual;
+  const d = frotaRefDig(t); if (d.length < 4) return "";
+  const m = todos.filter(x => frotaRefDig(x) === d);
+  return m.length === 1 ? m[0] : "";
+}
+function frotaRefMarca(v) {   /* revisão: arquivado/oculto não é "não cadastrado" */
+  const r = frotaRefsBase().find(x => frotaNorm(x.Title) === frotaNorm(v));
+  return !r ? "não cadastrado" : r.Arquivado ? "arquivado" : r.Oculto ? "oculto" : "não cadastrado";
+}
+function frotaRefOpcoes(val, ph, semCanon) {
+  const lista = frotaRefsLista(), v = String(val || "").trim(), canon = v && !semCanon && !lista.includes(v) ? frotaRefCanon(v) : "";
+  const sel = canon && lista.includes(canon) ? canon : v;
+  const extra = v && !lista.includes(sel) ? `<option value="${esc(v)}" selected>${esc(v)} (${frotaRefMarca(v)})</option>` : "";
+  return `<option value="">${esc(/opcional/i.test(ph || "") ? "Nenhum (opcional)" : "Selecione o veículo…")}</option>${extra}${lista.map(x => `<option value="${esc(x)}" ${x === sel ? "selected" : ""}>${esc(x)}</option>`).join("")}`;
+}
+/* campo de veículo: lista dos cadastrados; sem acesso ao cadastro (ou cadastro vazio), volta a ser texto livre */
+function frotaRefSelect(id, val, dis, ph) {
+  if (!frotaRefsLista().length) return `<input id="${esc(id)}" value="${esc(val || "")}" placeholder="${esc(ph || "Prefixo")}" autocomplete="off" maxlength="30" ${dis || ""}>`;
+  const v = String(val || "").trim(), lista = frotaRefsLista(), canon = v && !lista.includes(v) ? frotaRefCanon(v) : "";
+  const dica = canon && lista.includes(canon) && !/disabled/.test(dis || "") ? `<div class="sup frota-ref-dica">O prefixo antigo "${esc(v)}" será gravado como "${esc(canon)}" ao salvar.</div>` : "";   /* revisão: a troca não é silenciosa */
+  return `<select id="${esc(id)}" class="frota-ref" ${dis || ""} title="Veículos cadastrados em Operacional › Frota">${frotaRefOpcoes(val, ph)}</select>${dica}`;
+}
+window.frotaRefsLista = frotaRefsLista; window.frotaRefOpcoes = frotaRefOpcoes;
+/* as sugestões da Frota (filtro e resumo das multas): os cadastrados e, até padronizar, os prefixos que ainda estão nas multas */
+frotaVeiculos = function () { const reg = frotaRefsLista(), set = new Set(reg); return reg.concat([...new Set((FROTA.itens || []).map(m => String(m.Veiculo || "").trim()).filter(t => t && !set.has(t)))].sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }))); };
+/* Diesel: preenche a lista do formulário de abastecimento */
+/* revisão: enquanto o cadastro carrega, continua lista; só vira texto se a leitura terminou sem veículos; volta a ser lista quando chegar */
+window.dslVeicSel = () => { const s = document.getElementById("abVeiculo"); if (!s) return; const cur = s.value, lista = frotaRefsLista(), lido = !!(FROTA.veicsTodos || (FROTA_REF.itens && !FROTA_REF.carregando));
+  if (!lista.length && lido) { if (s.tagName === "INPUT") return; const i = document.createElement("input"); i.id = "abVeiculo"; i.setAttribute("list", "dlVeiculo"); i.placeholder = "221.003"; i.value = cur; i.disabled = s.disabled; s.replaceWith(i); return; }
+  if (s.tagName === "INPUT") { const n = document.createElement("select"); n.id = "abVeiculo"; n.disabled = s.disabled; s.replaceWith(n); n.innerHTML = frotaRefOpcoes(cur); return; }
+  s.innerHTML = frotaRefOpcoes(cur); };
+{ const d0 = initDiesel; initDiesel = function () { const r = d0.apply(this, arguments); frotaRefsCarregar().then(() => window.dslVeicSel()).catch(() => {}); return r; }; }
+/* Rio Card (equipamentos), Bilhetagem e CAPEX / OPEX: cadastro lido antes de abrir */
+{ const f0 = window.rceForm; window.rceForm = async function () { await frotaRefsCarregar().catch(() => {}); return f0.apply(this, arguments); }; }
+{ const b0 = renderBil; renderBil = async function () { await frotaRefsCarregar().catch(() => {}); return b0.apply(this, arguments); }; }
+{ const c0 = cpxCarregar; cpxCarregar = async function () { const a = arguments; await Promise.all([c0.apply(this, a), frotaRefsCarregar(a[0]).catch(() => {})]); }; }
+/* Controle de Roletas e Arrecadação: carro escolhido da Frota (editor de lançamentos); sem acesso ao cadastro, volta a ser texto */
+{ const campos = () => [((LANC.rol || {}).cols || []).find(c => c.k === "c"), ((LANC.rec || {}).cab || []).find(c => c.k === "Carro")].filter(Boolean);
+  campos().forEach(f => { f.opts = () => frotaRefsLista(); f.phSel = "Carro…"; });
+  const a0 = window.lancAbrir;
+  window.lancAbrir = async function (k) {
+    if (k === "rol" || k === "rec") { await frotaRefsCarregar().catch(() => {}); const tem = frotaRefsLista().length > 0; campos().forEach(f => { f.tipo = tem ? "select" : "text"; f.ph = tem ? "Carro…" : "221003"; }); }
+    return a0.apply(this, arguments);
+  };
+}
+/* ---- padronizar prefixos antigos nas listas da Frota (só administradores) ---- */
+function frotaRefPend(soLk) {
+  const reg = new Set(frotaRefsBase().map(v => String(v.Title || "").trim()).filter(Boolean)), out = { trocar: [], sem: {} };
+  [["listManut", FROTA.manut], ["listNc", FROTA.ncs], ["list", FROTA.itens]].filter(([lk]) => !soLk || lk === soLk).forEach(([lk, arr]) => (arr || []).forEach(x => {
+    const v = String(x.Veiculo || "").trim(); if (!v || reg.has(v)) return;
+    const c = frotaRefCanon(v); if (c) out.trocar.push({ lk, id: x._id, de: v, para: c }); else out.sem[v] = (out.sem[v] || 0) + 1; }));
+  return out;
+}
+{ const p0 = frotaPintar; frotaPintar = function () {
+    const r = p0.apply(this, arguments);
+    const body = $("frotaBody");
+    const lkAba = { manut: "listManut", nc: "listNc", multas: "list" }[FROTA.aba];
+    if (body && lkAba && FROTA[lkAba] && !FROTA.erro && !body.querySelector(".cap-empty") && frotaRefsBase().length && (session.n1 || pagNivel("frota", FROTA.aba) !== "nenhum")) {
+      const P = frotaRefPend(lkAba), sem = Object.entries(P.sem);
+      if (P.trocar.length || sem.length) {
+        const ex = [...new Set(P.trocar.map(t => `${t.de} → ${t.para}`))].slice(0, 4).join(", ");
+        body.insertAdjacentHTML("afterbegin", `<div class="cpx-avisos frota-ref-av">${P.trocar.length ? `<div>${P.trocar.length} registro(s) desta aba usam o prefixo antigo (${esc(ex)}${P.trocar.length > 4 ? "…" : ""}).${session.n1 && !vcAtivo() ? ` <button class="btn sm" onclick="frotaRefPadronizar()" title="Padroniza Manutenção, Não conformidades e Multas">Padronizar para o cadastro</button>` : " Um administrador pode padronizar."}</div>` : ""}${sem.length ? `<div>${sem.reduce((n, [, q]) => n + q, 0)} registro(s) com veículo que não está cadastrado em Frota › Veículos: ${esc(sem.slice(0, 6).map(([v, q]) => `${v} (${q})`).join(", "))}${sem.length > 6 ? "…" : ""}. Abra o registro e escolha o veículo, ou cadastre-o.</div>` : ""}</div>`);
+      }
+    }
+    return r;
+  }; }
+window.frotaRefPadronizar = async () => {
+  if (!session.n1 || vcAtivo()) return;
+  const P = frotaRefPend(); if (!P.trocar.length) return;
+  if (!(await erpConfirmar({ titulo: "Padronizar veículos", texto: `Trocar o veículo de ${P.trocar.length} registro(s) de Manutenção, Não conformidades e Multas pelo prefixo do cadastro (ex.: ${P.trocar[0].de} → ${P.trocar[0].para})?`, sim: "Padronizar" }))) return;
+  let ok = 0, falha = 0;
+  for (const t of P.trocar) {
+    const l = FROTA[t.lk]; if (!l) { falha++; continue; }
+    try { await SP.update(FROTA.site.id, l.id, t.id, { Veiculo: t.para }); ok++; } catch (e) { falha++; }
+  }
+  toast(`${ok} registro(s) padronizado(s)${falha ? `; ${falha} com erro` : ""}.`, 5000);
+  await frotaCarregar(); frotaPintar();
+};
 
 </script>
 </body>

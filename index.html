@@ -30602,10 +30602,12 @@ function frotaChkSanear(tipo, v) {
       if (FROTA.site) {
         const ls = await SP.lists(FROTA.site.id);
         FROTA.listInsp = ls.find(l => l.displayName === LISTS.frota_insp.displayName) || null;
-        FROTA.insps = FROTA.listInsp ? (await SP.items(FROTA.site.id, FROTA.listInsp.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+        FROTA.insps = FROTA.listInsp ? (await SP.items(FROTA.site.id, FROTA.listInsp.id, "($select=Title,Veiculo,VeicId,Tipo,Data,Responsavel,Linha,Garagem,Resultado,NaoConformes,Observacoes)")).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
       }
     } catch (e) { FROTA.insps = []; }
     try { const [g, a] = await Promise.all([erpParamLer("frota.chk.geral"), erpParamLer("frota.chk.ades")]); FROTA_CHK.geral = g && g.valor ? frotaChkSanear("geral", g.valor) : null; FROTA_CHK.ades = a && a.valor ? frotaChkSanear("ades", a.valor) : null; } catch (e) {}
+    if (!FROTA.erro) FROTA.veicsTodos = FROTA.veics || [];   /* carga com erro: mantém a lista completa anterior */
+    frotaFiltrarVeics();
     FROTA.carregadoEm = Date.now();
     return r;
   };
@@ -30613,9 +30615,15 @@ function frotaChkSanear(tipo, v) {
 async function frotaGarantir(force) { if (force || !FROTA.carregadoEm || FROTA.listVeic === undefined) await frotaCarregar(); }
 
 /* ---------- ajudantes ---------- */
+const frotaVe = k => !!session.n1 || pagNivel("frota", k) !== "nenhum";
+const frotaEd = k => !(typeof vcAtivo === "function" && vcAtivo()) && ["editar", "proprietario"].includes(pagNivel("frota", k));
+const frotaEdInsp = () => frotaEd("geral") || frotaEd("veic");
+/* arquivados só aparecem para o administrador com "Mostrar ocultos e arquivados"; ocultos só para administradores */
+function frotaFiltrarVeics() { FROTA.veicsTodos = FROTA.veicsTodos || FROTA.veics || []; FROTA.veics = FROTA.veicsTodos.filter(v => !(v.Arquivado && !(session.n1 && FROTA.mostrar)) && !(v.Oculto && !session.n1)); }
+window.frotaMostrar = () => { FROTA.mostrar = !FROTA.mostrar; frotaFiltrarVeics(); frotaPintar(); };
 const frotaNorm = t => String(t || "").trim().toUpperCase();
 const frotaOrdem = (a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR", { numeric: true });
-function frotaVisivel(v) { if (v.Arquivado) return !!(session.n1 && FROTA.mostrar); if (v.Oculto) return !!(session.n1 && FROTA.mostrar); return true; }
+function frotaVisivel(v) { if (v.Arquivado) return !!(session.n1 && FROTA.mostrar); if (v.Oculto) return !!session.n1; return true; }
 function frotaFrota() { return (FROTA.veics || []).filter(v => !v.Arquivado && v.Situacao !== "Baixado"); }   /* frota ativa (indicadores) */
 function frotaNovoV(v) { const c = v.Created ? new Date(v.Created) : null; return !!(c && !isNaN(c) && (Date.now() - c.getTime()) < 7 * 864e5); }
 function frotaDias(x) { return x ? Math.round((dLocal(ymd(x)) - dLocal(todayISO())) / 864e5) : null; }
@@ -30633,8 +30641,8 @@ function frotaInspSt(v, tipo) {
 }
 function frotaSaude(v) {
   const docs = frotaDocs(v), ig = frotaInspSt(v, "Geral"), ia = frotaInspSt(v, "Adesivos");
-  const ncs = frotaDe(FROTA.ncs, v).filter(n => n.Situacao !== "Concluída"), ncG = ncs.filter(n => n.Gravidade === "Grave");
-  const man = frotaDe(FROTA.manut, v).filter(m => m.Situacao !== "Concluída"), mult = frotaDe(FROTA.itens, v).filter(m => !["Paga", "Cancelada"].includes(m.Situacao));
+  const ncs = frotaVe("nc") ? frotaDe(FROTA.ncs, v).filter(n => n.Situacao !== "Concluída") : [], ncG = ncs.filter(n => n.Gravidade === "Grave");
+  const man = frotaVe("manut") ? frotaDe(FROTA.manut, v).filter(m => m.Situacao !== "Concluída") : [], mult = frotaVe("multas") ? frotaDe(FROTA.itens, v).filter(m => !["Paga", "Cancelada"].includes(m.Situacao)) : [];
   const al = [];
   docs.forEach(d => { if (d.st === "erro") al.push(["erro", `${d.lbl} vencido(a) em ${fmtDate(d.x)}`]); else if (d.st === "aviso") al.push(["aviso", `${d.lbl} vence em ${d.d} dia(s)`]); });
   [["Inspeção Geral", ig], ["Inspeção de Adesivos", ia]].forEach(([n, s]) => { if (s.st === "erro") al.push(["erro", `${n} não conforme (${fmtDate(s.u.Data)})`]); else if (s.st === "na") al.push(["aviso", `Sem ${n}`]); else if (s.st === "aviso") al.push(["aviso", `${n} ${s.u.Resultado === "Incompleta" ? "incompleta" : "desatualizada"}`]); });
@@ -30646,15 +30654,16 @@ function frotaSaude(v) {
 }
 const FROTA_NIVEL = { erro: "Crítico", aviso: "Atenção", ok: "Em dia", na: "—" };
 const frotaDot = (st, t) => `<i class="sem-dot sem-${st === "erro" ? "erro" : st === "aviso" ? "aviso" : st === "ok" ? "ok" : "na"}"${t ? ` title="${esc(t)}"` : ""}></i>`;
-function frotaVeicPorId(id) { return (FROTA.veics || []).find(v => String(v._id) === String(id)) || null; }
+function frotaVeicPorId(id) { return (session.n1 ? (FROTA.veicsTodos || FROTA.veics || []) : (FROTA.veics || [])).find(v => String(v._id) === String(id)) || null; }
 window.frotaAbrirVeic = id => { location.hash = `#/operacional/frota/veiculo/${encodeURIComponent(id)}`; };
 
 /* ---------- opções de veículo nos formulários: sem arquivados (e ocultos para quem não administra) ---------- */
+{ const comFrotaFixa = f0 => function () { const v0 = FROTA.veics; if (FROTA.veicsTodos) FROTA.veics = FROTA.veicsTodos.filter(v => !v.Arquivado); try { return f0.apply(this, arguments); } finally { FROTA.veics = v0; } };
+  frotaDetroDados = comFrotaFixa(frotaDetroDados); execFrotaBlocos = comFrotaFixa(execFrotaBlocos); }
 { const fv0 = frotaVeiculos;
   frotaVeiculos = function () {
-    const fora = new Set((FROTA.veics || []).filter(v => v.Arquivado || (v.Oculto && !session.n1)).map(v => frotaNorm(v.Title)));
-    const usados = new Set([...(FROTA.itens || []), ...(FROTA.manut || []), ...(FROTA.ncs || [])].map(x => frotaNorm(x.Veiculo)));
-    return fv0.apply(this, arguments).filter(t => !fora.has(frotaNorm(t)) || usados.has(frotaNorm(t)));
+    const fora = new Set((FROTA.veicsTodos || FROTA.veics || []).filter(v => v.Arquivado || (v.Oculto && !session.n1)).map(v => frotaNorm(v.Title)));
+    return fv0.apply(this, arguments).filter(t => !fora.has(frotaNorm(t)));
   };
 }
 
@@ -30686,17 +30695,17 @@ function frotaBotoesVeic(atual) {
 function frotaGeralPintar(body) {
   const ed = podeEditar("frota") && !(typeof vcAtivo === "function" && vcAtivo());
   const acts = $("frotaActions");
-  if (acts) acts.innerHTML = `<button class="btn" onclick="renderFrota()">Atualizar</button>${session.n1 ? `<button class="btn ghost" onclick="FROTA.mostrar=!FROTA.mostrar; frotaPintar()">${FROTA.mostrar ? "Esconder ocultos e arquivados" : "Mostrar ocultos e arquivados"}</button>` : ""}<button class="btn" onclick="frotaRelFrota()">🖨 Relatório da frota</button>${ed && FROTA.listVeic ? `<button class="btn primary" onclick="location.hash='#/operacional/frota/layout/novo'">+ Novo layout / veículo</button>` : ""}`;
+  if (acts) acts.innerHTML = `<button class="btn" onclick="renderFrota()">Atualizar</button>${session.n1 ? `<button class="btn ghost" onclick="frotaMostrar()">${FROTA.mostrar ? "Esconder ocultos e arquivados" : "Mostrar ocultos e arquivados"}</button>` : ""}<button class="btn" onclick="frotaRelFrota()">🖨 Relatório da frota</button>${frotaEd("veic") && FROTA.listVeic ? `<button class="btn primary" onclick="location.hash='#/operacional/frota/layout/novo'">+ Novo layout / veículo</button>` : ""}`;
   if (FROTA.erro) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(FROTA.erro)}</p></div>`; return; }
   if (!FROTA.listVeic) return frotaSemLista(body, "frota_veic");
   const ativos = frotaFrota(), sa = ativos.map(v => [v, frotaSaude(v)]);
   const kpi = (l, val, sub, cls) => `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(l)}</div><div class="val">${val}</div><div class="sub">${esc(sub)}</div></div>`;
   const nCrit = sa.filter(x => x[1].nivel === "erro").length, nAt = sa.filter(x => x[1].nivel === "aviso").length;
-  const ncAb = (FROTA.ncs || []).filter(n => n.Situacao !== "Concluída").length, multAb = (FROTA.itens || []).filter(m => !["Paga", "Cancelada"].includes(m.Situacao)).length;
+  const ncAb = sa.reduce((t, x) => t + x[1].ncs.length, 0), multAb = sa.reduce((t, x) => t + x[1].mult.length, 0);
   const inspOk = sa.filter(x => x[1].ig.st === "ok" && x[1].ia.st === "ok").length;
   const kpis = `<div class="cap-kpis fv-kpis">${kpi("Veículos ativos", ativos.length, `${ativos.filter(v => (v.Situacao || "Em operação") === "Em operação").length} em operação · ${ativos.filter(v => v.Situacao === "Em manutenção").length} em manutenção`)}
     ${kpi("Saúde crítica", nCrit, "algo vencido ou não conforme", nCrit ? "venc" : "pago")}${kpi("Atenção", nAt, "a vencer, sem inspeção ou pendente", nAt ? "hoje" : "")}
-    ${kpi("Inspeções em dia", `${inspOk}/${ativos.length}`, "Geral e Adesivos", inspOk === ativos.length && ativos.length ? "pago" : "")}${kpi("Não conformidades", ncAb, "abertas", ncAb ? "hoje" : "")}${kpi("Multas", multAb, "em aberto", multAb ? "hoje" : "")}</div>`;
+    ${kpi("Inspeções em dia", `${inspOk}/${ativos.length}`, "Geral e Adesivos", inspOk === ativos.length && ativos.length ? "pago" : "")}${frotaVe("nc") ? kpi("Não conformidades", ncAb, "abertas", ncAb ? "hoje" : "") : ""}${frotaVe("multas") ? kpi("Multas", multAb, "em aberto", multAb ? "hoje" : "") : ""}</div>`;
   const vs = (FROTA.veics || []).filter(frotaVisivel).slice().sort(frotaOrdem);
   const card = v => { const S = frotaSaude(v), lug = v.Sentados ? `${v.Sentados} lug.` : "";
     return `<button class="fv-card nv-${S.nivel}" onclick="frotaAbrirVeic('${esc(v._id)}')">${frotaNovoV(v) ? `<span class="fv-novo">novo</span>` : ""}
@@ -30732,14 +30741,14 @@ function frotaVeicPintar() {
   topo.innerHTML = `${frotaCrumbs(v)}
     <div class="cap-topo fv-topo"><div><h1 style="margin:0">${esc(v.Title || "—")} <span class="fv-nivel nv-${S.nivel}">${frotaDot(S.nivel)}${esc(FROTA_NIVEL[S.nivel])}</span>${v.Oculto ? ` <span class="fv-tag">oculto</span>` : ""}${v.Arquivado ? ` <span class="fv-tag">arquivado</span>` : ""}</h1>
       <p class="sup" style="margin:2px 0 0">${esc([v.Placa, v.Tipo, [v.ChassiMarca, v.ChassiModelo, v.Ano].filter(Boolean).join(" "), [v.CarroceriaMarca, v.Carroceria, v.AnoCarroceria].filter(Boolean).join(" "), v.Situacao || "Em operação"].filter(Boolean).join(" · "))}</p></div>
-      <span class="grow"></span><div class="page-actions"><button class="btn ghost" onclick="location.hash='#/operacional/frota'">← Frota</button>${ed && FROTA.listVeic ? `<button class="btn" onclick="veicForm('${esc(v._id)}')">Editar cadastro</button>` : ""}<button class="btn" onclick="frotaRelVeic('${esc(v._id)}')">🖨 Vida útil</button>
+      <span class="grow"></span><div class="page-actions"><button class="btn ghost" onclick="location.hash='#/operacional/frota'">← Frota</button>${frotaEd("veic") && FROTA.listVeic ? `<button class="btn" onclick="veicForm('${esc(v._id)}')">Editar cadastro</button>` : ""}<button class="btn" onclick="frotaRelVeic('${esc(v._id)}')">🖨 Vida útil</button>
       ${adm ? `<button class="btn ghost" onclick="frotaVeicFlag('${esc(v._id)}','Oculto',${!v.Oculto})">${v.Oculto ? "Mostrar" : "Ocultar"}</button><button class="btn ghost" onclick="frotaVeicFlag('${esc(v._id)}','Arquivado',${!v.Arquivado})">${v.Arquivado ? "Desarquivar" : "Arquivar"}</button><button class="btn ghost danger" onclick="frotaVeicExcluir('${esc(v._id)}')">Excluir</button>` : ""}</div></div>
     ${frotaBotoesVeic(v._id)}`;
   const insCard = (tipo, rota, s) => `<button class="fv-insp nv-${s.st}" onclick="location.hash='#/operacional/frota/veiculo/${encodeURIComponent(v._id)}/inspecao/${rota}'"><span class="fv-insp-h">${frotaDot(s.st)}<b>Inspeção ${tipo === "Geral" ? "Geral" : "de Adesivos"}</b></span><span class="fv-insp-t">${s.st === "na" ? "Sem inspeção registrada" : s.st === "erro" ? "Não conforme" : s.st === "aviso" ? (s.u && s.u.Resultado === "Incompleta" ? "Incompleta" : "Conforme, mas desatualizada") : "Em conformidade"}</span><span class="sup">${esc(s.u ? `${fmtDate(s.u.Data)}${s.u.Responsavel ? " · " + s.u.Responsavel : ""}${s.u.NaoConformes ? ` · ${s.u.NaoConformes} item(ns) NC` : ""}` : "clique para preencher o checklist")}</span><span class="fv-insp-go">Abrir checklist →</span></button>`;
   const docs = `<div class="cap-card"><div class="cap-card-h"><h3>Documentos</h3></div><ul class="fv-docs">${S.docs.map(d => `<li>${frotaDot(d.st)}<span>${esc(d.lbl)}</span><b class="${d.st === "erro" ? "venc-txt" : d.st === "aviso" ? "warn-txt" : ""}">${d.x ? esc(fmtDate(d.x)) : "—"}</b></li>`).join("")}${v.SeloNumero || v.SeloCor ? `<li>${frotaDot("na")}<span>Selo DETRO</span><b>${esc([v.SeloCor, v.SeloNumero ? "nº " + v.SeloNumero : "", v.SeloData ? fmtDate(v.SeloData) : ""].filter(Boolean).join(" · "))}</b></li>` : ""}</ul></div>`;
-  const pend = `<div class="cap-card"><div class="cap-card-h"><h3>Pendências</h3></div><ul class="fv-docs"><li>${frotaDot(S.ncG.length ? "erro" : S.ncs.length ? "aviso" : "ok")}<span>Não conformidades abertas</span><b>${S.ncs.length}</b></li><li>${frotaDot(S.man.length ? "aviso" : "ok")}<span>Manutenções abertas</span><b>${S.man.length}</b></li><li>${frotaDot(S.mult.length ? "aviso" : "ok")}<span>Multas em aberto</span><b>${S.mult.length}</b></li></ul></div>`;
+  const pend = `<div class="cap-card"><div class="cap-card-h"><h3>Pendências</h3></div><ul class="fv-docs">${frotaVe("nc") ? `<li>${frotaDot(S.ncG.length ? "erro" : S.ncs.length ? "aviso" : "ok")}<span>Não conformidades abertas</span><b>${S.ncs.length}</b></li>` : ""}${frotaVe("manut") ? `<li>${frotaDot(S.man.length ? "aviso" : "ok")}<span>Manutenções abertas</span><b>${S.man.length}</b></li>` : ""}${frotaVe("multas") ? `<li>${frotaDot(S.mult.length ? "aviso" : "ok")}<span>Multas em aberto</span><b>${S.mult.length}</b></li>` : ""}</ul></div>`;
   const vistas = [["int", "Interna"], ["ext", "Externa · direita"], ["extL", "Externa · esquerda"]];
-  const layout = `<div class="cap-card fv-lay"><div class="cap-card-h"><h3>Layout</h3><span class="cap-card-s" id="fvLayInfo">${v.Layout ? "" : "modelo padrão do tipo — edite para ajustar ao veículo"}</span><span class="grow"></span>${ed && FROTA.listVeic ? `<button class="btn mini" onclick="location.hash='#/operacional/frota/layout/${encodeURIComponent(v._id)}'">✎ Editar layout</button>` : ""}</div>
+  const layout = `<div class="cap-card fv-lay"><div class="cap-card-h"><h3>Layout</h3><span class="cap-card-s" id="fvLayInfo">${v.Layout ? "" : "modelo padrão do tipo — edite para ajustar ao veículo"}</span><span class="grow"></span>${FROTA.listVeic ? `<button class="btn mini" onclick="location.hash='#/operacional/frota/layout/${encodeURIComponent(v._id)}'">${frotaEd("veic") ? "✎ Editar layout" : "Ver layout"}</button>` : ""}</div>
     <div class="cap-views fv-lay-tabs">${vistas.map(([k, n]) => `<button class="tab ${FV.aba === k ? "on" : ""}" onclick="FV.aba='${k}'; frotaLayPrev()">${n}</button>`).join("")}</div><div class="fv-lay-svg" id="fvLaySvg"><div class="sup" style="padding:24px">Desenhando o layout…</div></div></div>`;
   const dados = [["Prefixo", v.Title], ["Placa", v.Placa], ["Chassi (nº)", v.Chassi], ["Chassi", [v.ChassiMarca, v.ChassiModelo].filter(Boolean).join(" ")], ["Ano do chassi", v.Ano], ["Carroceria", [v.CarroceriaMarca, v.Carroceria].filter(Boolean).join(" ")], ["Ano da carroceria", v.AnoCarroceria], ["Tipo", v.Tipo], ["Lugares", [v.Sentados ? v.Sentados + " sentados" : "", v.EmPe ? v.EmPe + " em pé" : ""].filter(Boolean).join(" · ")], ["Acessível", v.Elevador], ["Ar-condicionado", v.ArCond], ["Linha principal", v.Linha], ["Licenciamento", v.Licenciamento], ["Próxima preventiva", [v.ProxPrevData ? fmtDate(v.ProxPrevData) : "", v.ProxPrevKm ? v.ProxPrevKm + " km" : ""].filter(Boolean).join(" · ")], ["Observações", v.Observacoes]].filter(x => x[1] !== undefined && x[1] !== null && String(x[1]).trim() !== "");
   body.innerHTML = `<div class="fv-saude">${insCard("Geral", "geral", S.ig)}${insCard("Adesivos", "adesivos", S.ia)}${docs}${pend}</div>
@@ -30750,9 +30759,9 @@ function frotaVeicPintar() {
 }
 function frotaVida(v) {
   const ev = [];
-  frotaDe(FROTA.manut, v).forEach(m => ev.push({ k: "manut", d: ymd(m.DataInicio || ""), t: `${m.Tipo || "Manutenção"}: ${m.Title || ""}`, s: `${m.Situacao || ""}${m.DataFim ? " · fim " + fmtDate(m.DataFim) : ""}${m.Km ? " · " + m.Km + " km" : ""}`, st: m.Situacao === "Concluída" ? "ok" : "aviso" }));
-  frotaDe(FROTA.ncs, v).forEach(n => ev.push({ k: "nc", d: ymd(n.Abertura || ""), t: `Não conformidade (${n.Gravidade || "—"}): ${n.Title || ""}`, s: `${n.Situacao || ""}${n.Conclusao ? " · concluída " + fmtDate(n.Conclusao) : n.Prazo ? " · prazo " + fmtDate(n.Prazo) : ""}`, st: n.Situacao === "Concluída" ? "ok" : n.Gravidade === "Grave" ? "erro" : "aviso" }));
-  frotaDe(FROTA.itens, v).forEach(m => ev.push({ k: "multa", d: ymd(m.DataInfracao || ""), t: `Multa ${m.Title || ""}: ${m.Enquadramento || ""}`, s: `${m.Situacao || ""}${m.Orgao ? " · " + m.Orgao : ""}`, st: ["Paga", "Cancelada"].includes(m.Situacao) ? "ok" : "aviso" }));
+  if (frotaVe("manut")) frotaDe(FROTA.manut, v).forEach(m => ev.push({ k: "manut", d: ymd(m.DataInicio || ""), t: `${m.Tipo || "Manutenção"}: ${m.Title || ""}`, s: `${m.Situacao || ""}${m.DataFim ? " · fim " + fmtDate(m.DataFim) : ""}${m.Km ? " · " + m.Km + " km" : ""}`, st: m.Situacao === "Concluída" ? "ok" : "aviso" }));
+  if (frotaVe("nc")) frotaDe(FROTA.ncs, v).forEach(n => ev.push({ k: "nc", d: ymd(n.Abertura || ""), t: `Não conformidade (${n.Gravidade || "—"}): ${n.Title || ""}`, s: `${n.Situacao || ""}${n.Conclusao ? " · concluída " + fmtDate(n.Conclusao) : n.Prazo ? " · prazo " + fmtDate(n.Prazo) : ""}`, st: n.Situacao === "Concluída" ? "ok" : n.Gravidade === "Grave" ? "erro" : "aviso" }));
+  if (frotaVe("multas")) frotaDe(FROTA.itens, v).forEach(m => ev.push({ k: "multa", d: ymd(m.DataInfracao || ""), t: `Multa ${m.Title || ""}: ${m.Enquadramento || ""}`, s: `${m.Situacao || ""}${m.Orgao ? " · " + m.Orgao : ""}`, st: ["Paga", "Cancelada"].includes(m.Situacao) ? "ok" : "aviso" }));
   ["Geral", "Adesivos"].forEach(t => frotaInspDe(v, t).forEach(i => ev.push({ k: "insp", d: ymd(i.Data || ""), t: `Inspeção ${t === "Geral" ? "Geral" : "de Adesivos"}: ${i.Resultado || ""}`, s: `${i.Responsavel || ""}${i.NaoConformes ? ` · ${i.NaoConformes} item(ns) NC` : ""}`, st: i.Resultado === "Conforme" ? "ok" : i.Resultado === "Não conforme" ? "erro" : "aviso" })));
   (FROTA.sits || []).filter(x => String(x.VeicId || "") === String(v._id) || (!x.VeicId && frotaNorm(x.Title) === frotaNorm(v.Title))).forEach(x => ev.push({ k: "sit", d: ymd(x.Desde || ""), t: `Situação: ${x.Situacao || ""}`, s: x.Anterior ? `antes: ${x.Anterior}` : "", st: "na" }));
   if (v.Created) ev.push({ k: "sit", d: ymd(v.Created), t: "Cadastro no ERP", s: "", st: "na" });
@@ -30769,7 +30778,7 @@ window.frotaVeicFlag = async (id, campo, val) => {
   const v = frotaVeicPorId(id); if (!v || !FROTA.listVeic) return;
   const txt = campo === "Oculto" ? (val ? "Ocultar o veículo? Ele sai dos botões, das listas e dos formulários para quem não é administrador (o histórico fica)." : "Mostrar o veículo de novo para todos?") : (val ? "Arquivar o veículo? Ele sai da frota ativa, dos indicadores e dos formulários; o histórico fica e dá para desarquivar." : "Desarquivar o veículo (volta para a frota ativa)?");
   if (!(await erpConfirmar({ titulo: `${val ? (campo === "Oculto" ? "Ocultar" : "Arquivar") : (campo === "Oculto" ? "Mostrar" : "Desarquivar")} ${v.Title}`, texto: txt, sim: "Confirmar" }))) return;
-  try { await SP.update(FROTA.site.id, FROTA.listVeic.id, v._id, { [campo]: !!val }); v[campo] = !!val; if (val) FROTA.mostrar = true; toast("Feito"); frotaVeicPintar(); } catch (e) { toast("Erro: " + e.message, 6000); }
+  try { await SP.update(FROTA.site.id, FROTA.listVeic.id, v._id, { [campo]: !!val }); v[campo] = !!val; if (val) FROTA.mostrar = true; frotaFiltrarVeics(); toast("Feito"); frotaVeicPintar(); } catch (e) { toast("Erro: " + e.message, 6000); }
 };
 window.frotaVeicExcluir = async id => {
   if (!session.n1) { toast("Só administradores excluem veículos."); return; }
@@ -30783,7 +30792,7 @@ window.frotaVeicExcluir = async id => {
 
 /* ---------- layout: saneamento, renderizador escondido e prévia ---------- */
 const FL_TIPOS = { seat: { n: "", pref: false, soft: false, belt: false, elev: false }, driver: {}, door: { side: "b", txt: "PORTA", kind: "dianteira" }, exit: { side: "t", txt: "SAÍDA EMERG." }, hatch: { txt: "ALÇAPÃO" },
-  badge: { k: "C" }, pcd: { txt: "ÁREA PCD" }, catraca: {}, pole: {}, wheelbox: {}, rack: { txt: "" }, area: { txt: "", color: "navy" }, text: { txt: "", size: 13, color: "graphite", bold: false }, window: { emerg: false }, edoor: { txt: "" }, wheel: {}, sticker: { n: 1 } };
+  badge: { k: "C", txt: "" }, pcd: { txt: "ÁREA PCD" }, catraca: {}, pole: {}, wheelbox: {}, rack: { txt: "" }, area: { txt: "", color: "navy" }, text: { txt: "", size: 13, color: "graphite", bold: false }, window: { emerg: false }, edoor: { txt: "" }, wheel: {}, sticker: { n: 1 } };
 const FL_ENUM = { side: ["t", "b"], k: ["C", "M", "E", "K", "T", "L", "X"], kind: ["dianteira", "central", "traseira", "re", "outra"], color: ["navy", "orange", "blue", "green", "gray", "graphite"] };
 const FL_MAX = 60000;
 function frotaLayoutSanear(o) {
@@ -30808,7 +30817,8 @@ window.frotaLayoutPronto = w => {
 };
 function frotaRender() {
   if (FR.pronto && FR.frame && FR.frame.isConnected) return FR.pronto;
-  FR.pronto = new Promise(ok => { FR.ok = ok; });
+  if (FR.frame) { try { FR.frame.remove(); } catch (e) {} }
+  FR.pronto = new Promise((ok, falha) => { const t = setTimeout(() => { FR.pronto = null; FR.ok = null; try { FR.frame.remove(); } catch (e) {} FR.frame = null; falha(new Error("o desenho do layout não respondeu")); }, 20000); FR.ok = w => { clearTimeout(t); ok(w); }; });
   const f = document.createElement("iframe"); f.className = "fv-render"; f.setAttribute("aria-hidden", "true"); f.tabIndex = -1; f.title = "renderizador de layouts";
   FR.frame = f; document.body.appendChild(f); f.srcdoc = FROTA_LAYOUT_ED;
   return FR.pronto;
@@ -30838,7 +30848,7 @@ function pageFrotaLayout(id) {
   return `<div class="page fl-page" id="flRoot">${frotaCrumbs(v, novo ? "Novo layout" : "Layout")}
     <div class="cap-topo"><div><h1 style="margin:0">${novo ? "Novo layout / veículo" : `Layout · ${esc((v && v.Title) || "")}`}</h1><p class="sup" style="margin:2px 0 0">${novo ? "Monte a planta interna e as vistas externas; ao salvar, o veículo é cadastrado (se ainda não existir)." : "Planta interna e vistas externas do veículo. O 💾 Salvar do editor grava no ERP."}</p></div><span class="grow"></span>
       <div class="page-actions"><button class="btn ghost" onclick="frotaLayoutVoltar()">← Voltar</button><button class="btn primary" id="flSalvar" onclick="frotaLayoutSalvar()">💾 Salvar no ERP</button></div></div>
-    ${novo ? `<div class="fl-novo form-grid"><div class="field"><label>Prefixo<span class="req">*</span></label><input id="flP" placeholder="RJ 221.000" autocomplete="off"></div><div class="field"><label>Placa</label><input id="flPl" placeholder="ABC1D23" autocomplete="off"></div><div class="field"><label>Tipo</label><select id="flT">${VEIC_TIPO.map(t => `<option>${esc(t)}</option>`).join("")}</select></div><div class="field"><label>Modelo base</label><select id="flTpl"><option value="urbano">Urbano · 40 lugares</option><option value="urbano3p">Urbano 3 portas · 38 lugares</option><option value="rodoviario">Rodoviário · 48 lugares</option><option value="executivo">Executivo · 44 lugares</option><option value="blank">Em branco</option></select></div></div>` : ""}
+    ${novo ? `<div class="fl-novo form-grid"><div class="field"><label>Prefixo<span class="req">*</span></label><input id="flP" placeholder="RJ 221.000" maxlength="30" autocomplete="off"></div><div class="field"><label>Placa</label><input id="flPl" placeholder="ABC1D23" maxlength="10" autocomplete="off"></div><div class="field"><label>Tipo</label><select id="flT">${VEIC_TIPO.map(t => `<option>${esc(t)}</option>`).join("")}</select></div><div class="field"><label>Modelo base</label><select id="flTpl"><option value="urbano">Urbano · 40 lugares</option><option value="urbano3p">Urbano 3 portas · 38 lugares</option><option value="rodoviario">Rodoviário · 48 lugares</option><option value="executivo">Executivo · 44 lugares</option><option value="blank">Em branco</option></select></div></div>` : ""}
     <div class="fl-frame-w"><iframe id="flFrame" class="fl-frame" title="Editor de layouts da frota"></iframe></div></div>`;
 }
 async function renderFrotaLayout(id) {
@@ -30846,22 +30856,24 @@ async function renderFrotaLayout(id) {
   await frotaGarantir();
   const f = $("flFrame"); if (!f) return;
   if (FLY.id !== "novo" && !frotaVeicPorId(FLY.id)) { $("flRoot").innerHTML = frotaCrumbs(null) + `<div class="cap-empty"><h3>Veículo não encontrado</h3></div>`; return; }
-  if (!podeEditar("frota")) { const b = $("flSalvar"); if (b) b.style.display = "none"; }
+  if (!frotaEd("veic")) { const b = $("flSalvar"); if (b) b.style.display = "none"; }
+  if (FLY.id !== "novo") { const v = frotaVeicPorId(FLY.id), h = document.querySelector("#flRoot h1"); if (v && h) h.textContent = `Layout · ${v.Title || ""}`; }
   FLY.frame = f; f.srcdoc = FROTA_LAYOUT_ED;
-  const tpl = $("flTpl"); if (tpl) tpl.addEventListener("change", () => { if (FLY.win) FLY.win.nmbCarregar(null, { tpl: tpl.value, nome: ($("flP").value || "Novo layout").trim() }); });
+  const tpl = $("flTpl"); if (tpl) { let ant = tpl.value; tpl.addEventListener("change", async () => { if (!FLY.win) return; if (FLY.win.nmbSujo() && !(await erpConfirmar({ titulo: "Trocar o modelo base?", texto: "O desenho atual será substituído pelo modelo escolhido.", sim: "Trocar" }))) { tpl.value = ant; return; } ant = tpl.value; FLY.win.nmbCarregar(null, { tpl: tpl.value, nome: ($("flP").value || "Novo layout").trim() }); }); }
   const tp = $("flT"); if (tp && tpl) tp.addEventListener("change", () => { const r = /rodovi/i.test(tp.value) ? "rodoviario" : "urbano"; if (tpl.value !== r && FLY.win && !FLY.win.nmbSujo()) { tpl.value = r; tpl.dispatchEvent(new Event("change")); } });
 }
 function frotaLayoutIniciar(w) {
   FLY.win = w;
   if (FLY.id === "novo") w.nmbCarregar(null, { tpl: ($("flTpl") || {}).value || "urbano", nome: "Novo layout" });
-  else { const v = frotaVeicPorId(FLY.id); w.nmbCarregar(frotaLayoutDe(v), { tpl: frotaTplDe(v), nome: `${v.Title}${v.Tipo ? " · " + v.Tipo : ""}`, modelo: [v.CarroceriaMarca, v.Carroceria].filter(Boolean).join(" ") }); }
+  else { const v = frotaVeicPorId(FLY.id); if (!v) return; w.nmbCarregar(frotaLayoutDe(v), { tpl: frotaTplDe(v), nome: `${v.Title}${v.Tipo ? " · " + v.Tipo : ""}`, modelo: [v.CarroceriaMarca, v.Carroceria].filter(Boolean).join(" "), ver: !frotaEd("veic") }); }
 }
 window.frotaLayoutVoltar = () => { location.hash = FLY.id === "novo" ? "#/operacional/frota" : `#/operacional/frota/veiculo/${encodeURIComponent(FLY.id)}`; };
 window.frotaLayoutSalvar = async () => {
   if (FLY.salvando) return;
-  if (!podeEditar("frota") || (typeof vcAtivo === "function" && vcAtivo())) { toast("Seu acesso à Frota é só de leitura."); return; }
-  if (!FLY.win || !FROTA.listVeic) { toast("O editor ainda está carregando."); return; }
-  const L = frotaLayoutSanear(FLY.win.nmbLayout()); if (!L) { toast("Layout inválido."); return; }
+  if (!frotaEd("veic")) { toast("Seu acesso aos veículos da Frota é só de leitura."); return; }
+  const win = FLY.win; if (!win || !FROTA.listVeic) { toast("O editor ainda está carregando."); return; }
+  const base0 = JSON.stringify(win.nmbLayout());
+  const L = frotaLayoutSanear(win.nmbLayout()); if (!L) { toast("Layout inválido."); return; }
   const txt = JSON.stringify(L); if (txt.length > FL_MAX) { toast(`Layout grande demais (${Math.round(txt.length / 1000)} mil caracteres; limite ${FL_MAX / 1000} mil). Tire elementos repetidos.`, 8000); return; }
   const lug = L.int.els.filter(e => e.t === "seat").length;
   FLY.salvando = true; const b = $("flSalvar"); if (b) { b.disabled = true; b.textContent = "Salvando…"; }
@@ -30869,22 +30881,22 @@ window.frotaLayoutSalvar = async () => {
     if (FLY.id === "novo") {
       const pre = ($("flP").value || "").trim(); if (!pre) { toast("Informe o prefixo do veículo (ex.: RJ 221.001)."); $("flP").focus(); return; }
       await frotaCarregar();
-      const ja = (FROTA.veics || []).find(x => frotaNorm(x.Title) === frotaNorm(pre));
+      const ja = (FROTA.veicsTodos || FROTA.veics || []).find(x => frotaNorm(x.Title) === frotaNorm(pre));
       let id;
       if (ja) {
         if (!(await erpConfirmar({ titulo: "Veículo já cadastrado", texto: `${ja.Title} já existe. Gravar este layout nele (substitui o layout atual)?`, sim: "Gravar no veículo" }))) return;
-        await SP.update(FROTA.site.id, FROTA.listVeic.id, ja._id, { Layout: txt, Sentados: lug || ja.Sentados || null }); id = ja._id;
+        await SP.update(FROTA.site.id, FROTA.listVeic.id, ja._id, Object.assign({ Layout: txt }, !ja.Sentados && lug ? { Sentados: lug } : {})); id = ja._id;
       } else {
         const r = await SP.create(FROTA.site.id, FROTA.listVeic.id, { Title: pre, Placa: (($("flPl").value || "").trim().toUpperCase()) || null, Tipo: $("flT").value || null, Carroceria: L.modelo || null, Situacao: "Em operação", Sentados: lug || null, Layout: txt });
         id = r && r.id;
         if (FROTA.listSit && id) { try { await SP.create(FROTA.site.id, FROTA.listSit.id, { Title: pre, VeicId: String(id), Situacao: "Em operação", Desde: todayISO() }); } catch (e) {} }
       }
-      FLY.win.nmbMarcarSalvo(); await frotaCarregar(); toast(ja ? "Layout gravado no veículo" : `Veículo ${pre} cadastrado com o layout`, 4000);
+      try { if (JSON.stringify(win.nmbLayout()) === base0) win.nmbMarcarSalvo(); } catch (e) {} await frotaCarregar(); toast(ja ? "Layout gravado no veículo" : `Veículo ${pre} cadastrado com o layout`, 4000);
       if (id) location.hash = `#/operacional/frota/veiculo/${encodeURIComponent(id)}`;
     } else {
       const v = frotaVeicPorId(FLY.id); if (!v) return;
-      await SP.update(FROTA.site.id, FROTA.listVeic.id, v._id, { Layout: txt, Sentados: lug || v.Sentados || null });
-      v.Layout = txt; if (lug) v.Sentados = lug; FLY.win.nmbMarcarSalvo(); toast("Layout salvo", 2500);
+      await SP.update(FROTA.site.id, FROTA.listVeic.id, v._id, Object.assign({ Layout: txt }, !v.Sentados && lug ? { Sentados: lug } : {}));
+      v.Layout = txt; if (!v.Sentados && lug) v.Sentados = lug; try { if (JSON.stringify(win.nmbLayout()) === base0) win.nmbMarcarSalvo(); } catch (e) {} toast("Layout salvo", 2500);
       try { await frotaCarregar(); } catch (e) {}
     }
   } catch (e) { toast("Não foi possível salvar: " + e.message, 7000); }
@@ -30895,55 +30907,66 @@ window.frotaLayoutSalvar = async () => {
 const FI = { id: "", tipo: "geral", ver: null, resp: null };
 function pageFrotaInsp() { return `<div class="page" id="fiRoot"><div id="fiTopo">${frotaCrumbs(null)}</div><div id="fiBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`; }
 async function renderFrotaInsp(id, tipo) {
-  FI.id = String(id); FI.tipo = tipo === "adesivos" ? "adesivos" : "geral"; FI.ver = null; FI.resp = null;
+  FI.id = String(id); FI.tipo = tipo === "adesivos" ? "adesivos" : "geral"; FI.ver = null; FI.resp = null; FI.cab = null; FI.gravado = false;
   await frotaGarantir(!FROTA.carregadoEm || Date.now() - FROTA.carregadoEm > 60000);
+  const v = frotaVeicPorId(FI.id); if (v && FI.tipo === "adesivos") await frotaInspResp(frotaInspDe(v, "Adesivos")[0]);
   frotaInspPintar();
 }
 function frotaInspItensBase() {   /* itens do checklist atual, já com as respostas da última inspeção de adesivos (aplicável) */
   if (FI.tipo === "geral") { let n = 0; return frotaChkGeral().flatMap(s => s.itens.map(txt => ({ n: ++n, s: s.s, txt, r: "", o: "" }))); }
-  const v = frotaVeicPorId(FI.id), u = v ? frotaInspDe(v, "Adesivos")[0] : null; let ant = []; try { ant = u ? (JSON.parse(u.Respostas || "{}").itens || []) : []; } catch (e) {}
+  const v = frotaVeicPorId(FI.id), u = v ? frotaInspDe(v, "Adesivos")[0] : null, ant = u ? frotaInspRespDe(u) : [];
   return frotaChkAdes().map((i, k) => { const a = ant.find(x => x.txt === i.txt); return { n: k + 1, g: i.g, txt: i.txt, a: a ? a.a !== false : true, r: "" }; });
 }
-function frotaInspRespDe(i) { try { const o = JSON.parse(i.Respostas || "{}"); return Array.isArray(o.itens) ? o.itens : []; } catch (e) { return []; } }
+function frotaInspRespDe(i) {
+  let o = null; try { o = JSON.parse(i.Respostas || "{}"); } catch (e) { o = null; }
+  return (o && Array.isArray(o.itens) ? o.itens : []).filter(x => x && typeof x === "object").slice(0, 300).map((x, k) => ({ n: Number(x.n) > 0 ? Math.floor(Number(x.n)) : k + 1, s: String(x.s || "").slice(0, 80), g: String(x.g || "").slice(0, 80), txt: String(x.txt || "").slice(0, 260), r: ["C", "NC", "NA"].includes(x.r) ? x.r : "", o: String(x.o || "").slice(0, 200), a: x.a !== false }));
+}
+async function frotaInspResp(i) {   /* as respostas não vêm na carga da Frota (pesariam a cada tela): lidas quando a inspeção é aberta */
+  if (!i || i.Respostas !== undefined || !FROTA.listInsp) return;
+  try { const r = await graph(`/sites/${FROTA.site.id}/lists/${FROTA.listInsp.id}/items/${i._id}?$expand=fields($select=Respostas)`); i.Respostas = (r && r.fields && r.fields.Respostas) || ""; } catch (e) { toast("Não foi possível ler as respostas da inspeção: " + e.message, 6000); }
+}
 function frotaInspPintar() {
   const topo = $("fiTopo"), body = $("fiBody"); if (!topo || !body) return;
   const v = frotaVeicPorId(FI.id); if (!v) { body.innerHTML = `<div class="cap-empty"><h3>Veículo não encontrado</h3></div>`; return; }
   const tipo = FI.tipo === "geral" ? "Geral" : "Adesivos", nome = FI.tipo === "geral" ? "Inspeção Geral" : "Inspeção de Adesivos";
-  const ed = podeEditar("frota") && !(typeof vcAtivo === "function" && vcAtivo()) && !!FROTA.listInsp, adm = !!session.n1 && !(typeof vcAtivo === "function" && vcAtivo());
+  const ed = frotaEdInsp() && !!FROTA.listInsp, adm = !!session.n1 && !(typeof vcAtivo === "function" && vcAtivo());
   const hist = frotaInspDe(v, tipo), vendo = FI.ver ? hist.find(i => i._id === FI.ver) : null, so = !!vendo || !ed;
+  if (!vendo && $("fiData") && $("fiData").dataset.novo === "1") FI.cab = { Data: $("fiData").value, Responsavel: $("fiResp").value, Linha: $("fiLinha") ? $("fiLinha").value : undefined, Garagem: $("fiGar") ? $("fiGar").value : undefined, Observacoes: $("fiObs") ? $("fiObs").value : "" };   /* repintar não perde o que foi digitado */
   if (!FI.resp || FI.respDe !== (FI.ver || "novo")) { FI.resp = vendo ? frotaInspRespDe(vendo) : frotaInspItensBase(); FI.respDe = FI.ver || "novo"; }
   const it = FI.resp, dis = so ? "disabled" : "";
   topo.innerHTML = `${frotaCrumbs(v, nome)}<div class="cap-topo"><div><h1 style="margin:0">${esc(nome)} · ${esc(v.Title)}</h1><p class="sup" style="margin:2px 0 0">${FI.tipo === "geral" ? "Check-list de segurança para viagem: C (conforme), NC (não conforme), N/A (não se aplica)." : "Sinalização obrigatória DETRO/RJ: se o adesivo se aplica ao veículo e se está conforme."}</p></div><span class="grow"></span>
     <div class="page-actions"><button class="btn ghost" onclick="location.hash='#/operacional/frota/veiculo/${encodeURIComponent(v._id)}'">← Voltar ao veículo</button><button class="btn" onclick="frotaInspImprimir(false)">🖨 Imprimir em branco</button><button class="btn" onclick="frotaInspImprimir(true)">🖨 Imprimir preenchida</button><button class="btn" onclick="frotaInspBaixar()">⬇ Baixar (Word)</button>${adm ? `<button class="btn ghost" onclick="frotaChkEditar()">✎ Editar itens</button>` : ""}</div></div>`;
   if (FROTA.listInsp === null) { body.innerHTML = `<div class="rhf-aviso">A lista "${esc(LISTS.frota_insp.displayName)}" ainda não existe. ${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração</a>.` : "Peça a um administrador para rodar a Configuração."} Dá para imprimir o checklist em branco.</div>`; }
-  const cab = vendo || {};
+  const cab = vendo || FI.cab || {}, novoCab = !vendo && !!FI.cab;
   const head = `<div class="cap-card"><div style="padding:12px 16px"><div class="form-grid fi-cab">
-    <div class="field"><label>Data</label><input type="date" id="fiData" value="${esc(vendo ? ymd(cab.Data || "") : todayISO())}" ${dis}></div>
-    <div class="field"><label>Responsável</label><input id="fiResp" value="${esc(vendo ? cab.Responsavel || "" : (session.me && session.me.displayName) || "")}" ${dis}></div>
-    ${FI.tipo === "geral" ? `<div class="field"><label>Linha</label><input id="fiLinha" value="${esc(vendo ? cab.Linha || "" : v.Linha || "")}" ${dis}></div><div class="field"><label>Garagem</label><select id="fiGar" ${dis}>${["", "C. Macabu", "Macaé"].map(g => `<option ${(cab.Garagem || "") === g ? "selected" : ""}>${g}</option>`).join("")}</select></div>` : ""}
+    <div class="field"><label>Data</label><input type="date" id="fiData" data-novo="${vendo ? "" : "1"}" value="${esc(vendo ? ymd(cab.Data || "") : novoCab ? cab.Data || "" : todayISO())}" ${dis}></div>
+    <div class="field"><label>Responsável</label><input id="fiResp" maxlength="100" value="${esc(vendo || novoCab ? cab.Responsavel || "" : (session.me && session.me.displayName) || "")}" ${dis}></div>
+    ${FI.tipo === "geral" ? `<div class="field"><label>Linha</label><input id="fiLinha" maxlength="120" value="${esc(vendo || novoCab ? cab.Linha || "" : v.Linha || "")}" ${dis}></div><div class="field"><label>Garagem</label><select id="fiGar" ${dis}>${["", "C. Macabu", "Macaé"].map(g => `<option ${(cab.Garagem || "") === g ? "selected" : ""}>${g}</option>`).join("")}</select></div>` : ""}
   </div>${vendo ? `<div class="import-help" style="margin-top:8px">Inspeção de ${esc(fmtDate(cab.Data))} · ${esc(cab.Resultado || "")}${cab.NaoConformes ? ` · ${cab.NaoConformes} item(ns) NC` : ""} — só leitura. <a href="javascript:FI.ver=null; FI.resp=null; frotaInspPintar()">Fazer uma nova inspeção</a></div>` : ""}</div></div>`;
   const seg = (k, r) => `<span class="fi-seg" role="radiogroup">${[["C", "C"], ["NC", "NC"], ["NA", "N/A"]].map(([val, lbl]) => `<label class="fi-op o-${val} ${r === val ? "on" : ""}"><input type="radio" name="fi${k}" value="${val}" ${r === val ? "checked" : ""} ${dis} onchange="frotaInspMarca(${k}, this.value)">${lbl}</label>`).join("")}</span>`;
   let tabela;
   if (FI.tipo === "geral") {
     let sAnt = null;
-    tabela = `<table class="cap-table fi-tab"><thead><tr><th class="right">Nº</th><th>Item</th><th class="fi-c">Conformidade</th><th>Observação</th></tr></thead><tbody>${it.map((x, k) => { const sec = x.s !== sAnt ? `<tr class="fi-sec"><td colspan="4">${esc(x.s || "")}</td></tr>` : ""; sAnt = x.s; return `${sec}<tr class="${x.r === "NC" ? "fi-nc" : ""}"><td class="right sup">${x.n}</td><td>${esc(x.txt)}</td><td class="fi-c">${seg(k, x.r)}</td><td><input class="fi-obs" value="${esc(x.o || "")}" ${dis} placeholder="${x.r === "NC" ? "o que está errado?" : ""}" oninput="FI.resp[${k}].o = this.value"></td></tr>`; }).join("")}</tbody></table>`;
+    tabela = `<table class="cap-table fi-tab"><thead><tr><th class="right">Nº</th><th>Item</th><th class="fi-c">Conformidade</th><th>Observação</th></tr></thead><tbody>${it.map((x, k) => { const sec = x.s !== sAnt ? `<tr class="fi-sec"><td colspan="4">${esc(x.s || "")}</td></tr>` : ""; sAnt = x.s; return `${sec}<tr class="${x.r === "NC" ? "fi-nc" : ""}"><td class="right sup">${esc(x.n)}</td><td>${esc(x.txt)}</td><td class="fi-c">${seg(k, x.r)}</td><td><input class="fi-obs" value="${esc(x.o || "")}" ${dis} placeholder="${x.r === "NC" ? "o que está errado?" : ""}" oninput="FI.resp[${k}].o = this.value"></td></tr>`; }).join("")}</tbody></table>`;
   } else {
     let gAnt = null;
-    tabela = `<table class="cap-table fi-tab"><thead><tr><th class="right">Nº</th><th>Item de sinalização</th><th class="fi-c">Aplicável</th><th class="fi-c">Conformidade</th></tr></thead><tbody>${it.map((x, k) => { const sec = x.g !== gAnt ? `<tr class="fi-sec"><td colspan="4">${esc(x.g || "")}</td></tr>` : ""; gAnt = x.g; return `${sec}<tr class="${x.a === false ? "fi-na" : x.r === "NC" ? "fi-nc" : ""}"><td class="right sup">${x.n}</td><td>${esc(x.txt)}</td><td class="fi-c"><label class="fi-apl"><input type="checkbox" ${x.a !== false ? "checked" : ""} ${dis} onchange="frotaInspApl(${k}, this.checked)"> ${x.a !== false ? "Sim" : "Não"}</label></td><td class="fi-c">${x.a === false ? `<span class="sup">—</span>` : seg(k, x.r)}</td></tr>`; }).join("")}</tbody></table>`;
+    tabela = `<table class="cap-table fi-tab"><thead><tr><th class="right">Nº</th><th>Item de sinalização</th><th class="fi-c">Aplicável</th><th class="fi-c">Conformidade</th></tr></thead><tbody>${it.map((x, k) => { const sec = x.g !== gAnt ? `<tr class="fi-sec"><td colspan="4">${esc(x.g || "")}</td></tr>` : ""; gAnt = x.g; return `${sec}<tr class="${x.a === false ? "fi-na" : x.r === "NC" ? "fi-nc" : ""}"><td class="right sup">${esc(x.n)}</td><td>${esc(x.txt)}</td><td class="fi-c"><label class="fi-apl"><input type="checkbox" ${x.a !== false ? "checked" : ""} ${dis} onchange="frotaInspApl(${k}, this.checked)"> ${x.a !== false ? "Sim" : "Não"}</label></td><td class="fi-c">${x.a === false ? `<span class="sup">—</span>` : seg(k, x.r)}</td></tr>`; }).join("")}</tbody></table>`;
   }
   const cont = frotaInspConta(it);
-  const rodape = `<div class="fi-rod"><span class="sup" id="fiConta">${frotaInspContaTxt(cont)}</span><span class="grow"></span>${!so ? `${FI.tipo === "geral" ? `<label class="rh-chk" style="margin:0"><input type="checkbox" id="fiAbrirNc" ${FROTA.listNc ? "checked" : "disabled"}> abrir não conformidades para os itens NC</label>` : ""}<button class="btn primary" id="fiSalvar" onclick="frotaInspSalvar()">💾 Salvar inspeção</button>` : ""}</div>`;
-  const obs = `<div class="field full" style="margin-top:10px"><label>Observações / outras anomalias</label><textarea id="fiObs" rows="2" ${dis}>${esc(vendo ? cab.Observacoes || "" : "")}</textarea></div>`;
-  const histHtml = `<div class="cap-card"><div class="cap-card-h"><h3>Histórico</h3><span class="cap-card-s">${hist.length} inspeção(ões)</span></div>${hist.length ? `<ul class="fv-docs fi-hist">${hist.map(i => `<li class="${FI.ver === i._id ? "on" : ""}" onclick="FI.ver='${esc(i._id)}'; FI.resp=null; frotaInspPintar()">${frotaDot(i.Resultado === "Conforme" ? "ok" : i.Resultado === "Não conforme" ? "erro" : "aviso")}<span>${esc(fmtDate(i.Data))} · ${esc(i.Responsavel || "—")}</span><b>${esc(i.Resultado || "")}${i.NaoConformes ? ` · ${i.NaoConformes} NC` : ""}</b></li>`).join("")}</ul>` : `<div class="sup" style="padding:12px 16px">Nenhuma ainda.</div>`}</div>`;
+  const rodape = `<div class="fi-rod"><span class="sup" id="fiConta">${frotaInspContaTxt(cont)}</span><span class="grow"></span>${!so ? `${FI.tipo === "geral" ? `<label class="rh-chk" style="margin:0"><input type="checkbox" id="fiAbrirNc" ${FROTA.listNc && frotaEd("nc") ? "checked" : "disabled"}> abrir não conformidades para os itens NC</label>` : ""}<button class="btn primary" id="fiSalvar" onclick="frotaInspSalvar()">💾 Salvar inspeção</button>` : ""}</div>`;
+  const obs = `<div class="field full" style="margin-top:10px"><label>Observações / outras anomalias</label><textarea id="fiObs" rows="2" ${dis}>${esc(vendo || novoCab ? cab.Observacoes || "" : "")}</textarea></div>`;
+  const histHtml = `<div class="cap-card"><div class="cap-card-h"><h3>Histórico</h3><span class="cap-card-s">${hist.length} inspeção(ões)</span></div>${hist.length ? `<ul class="fv-docs fi-hist">${hist.map(i => `<li class="${FI.ver === i._id ? "on" : ""}" onclick="frotaInspVer('${esc(i._id)}')">${frotaDot(i.Resultado === "Conforme" ? "ok" : i.Resultado === "Não conforme" ? "erro" : "aviso")}<span>${esc(fmtDate(i.Data))} · ${esc(i.Responsavel || "—")}</span><b>${esc(i.Resultado || "")}${i.NaoConformes ? ` · ${i.NaoConformes} NC` : ""}</b></li>`).join("")}</ul>` : `<div class="sup" style="padding:12px 16px">Nenhuma ainda.</div>`}</div>`;
   body.innerHTML = (FROTA.listInsp === null ? body.innerHTML : "") + `<div class="fi-grid"><div>${head}<div class="table-wrap">${tabela}</div>${obs}${rodape}</div><div>${histHtml}</div></div>`;
 }
 function frotaInspConta(it) { const ap = it.filter(x => x.a !== false); return { tot: ap.length, c: ap.filter(x => x.r === "C").length, nc: ap.filter(x => x.r === "NC").length, na: ap.filter(x => x.r === "NA").length, sem: ap.filter(x => !x.r).length }; }
 function frotaInspContaTxt(c) { return `${c.c} C · ${c.nc} NC · ${c.na} N/A${c.sem ? ` · ${c.sem} sem resposta` : ""}`; }
+window.frotaInspVer = async id => { const v = frotaVeicPorId(FI.id); const i = v ? frotaInspDe(v, FI.tipo === "geral" ? "Geral" : "Adesivos").find(x => x._id === String(id)) : null; if (!i) return; await frotaInspResp(i); FI.ver = i._id; FI.resp = null; frotaInspPintar(); };
 window.frotaInspMarca = (k, val) => { if (!FI.resp[k]) return; FI.resp[k].r = val; const tr = document.querySelector(`input[name="fi${k}"]`).closest("tr"); tr.classList.toggle("fi-nc", val === "NC"); tr.querySelectorAll(".fi-op").forEach(l => l.classList.toggle("on", l.querySelector("input").value === val)); const o = tr.querySelector(".fi-obs"); if (o) o.placeholder = val === "NC" ? "o que está errado?" : ""; const c = $("fiConta"); if (c) c.textContent = frotaInspContaTxt(frotaInspConta(FI.resp)); };
 window.frotaInspApl = (k, on) => { if (!FI.resp[k]) return; FI.resp[k].a = !!on; if (!on) FI.resp[k].r = ""; const y = window.scrollY; frotaInspPintar(); window.scrollTo(0, y); };
 window.frotaInspSalvar = async () => {
   const v = frotaVeicPorId(FI.id); if (!v || !FROTA.listInsp) return;
-  if (!podeEditar("frota") || (typeof vcAtivo === "function" && vcAtivo())) { toast("Seu acesso à Frota é só de leitura."); return; }
+  if (!frotaEdInsp()) { toast("Seu acesso à Frota é só de leitura."); return; }
+  if (FI.gravando) return;
   const data = $("fiData").value; if (!data) { toast("Informe a data da inspeção."); return; }
   const c = frotaInspConta(FI.resp);
   if (c.sem && !(await erpConfirmar({ titulo: "Itens sem resposta", texto: `${c.sem} item(ns) ficaram sem resposta. Salvar assim mesmo (a inspeção fica como Incompleta)?`, sim: "Salvar" }))) return;
@@ -30952,15 +30975,21 @@ window.frotaInspSalvar = async () => {
   const f = { Title: `${tipo} · ${v.Title} · ${data}`, Veiculo: v.Title, VeicId: String(v._id), Tipo: tipo, Data: data, Responsavel: ($("fiResp").value || "").trim() || null, Resultado: res, NaoConformes: c.nc, Respostas: JSON.stringify({ v: 1, itens }), Observacoes: ($("fiObs").value || "").trim() || null };
   if (FI.tipo === "geral") { f.Linha = ($("fiLinha").value || "").trim() || null; f.Garagem = $("fiGar").value || null; }
   if (f.Respostas.length > 60000) { toast("Respostas grandes demais — encurte as observações.", 6000); return; }
-  const abrirNc = FI.tipo === "geral" && $("fiAbrirNc") && $("fiAbrirNc").checked && FROTA.listNc;
+  const abrirNc = FI.tipo === "geral" && $("fiAbrirNc") && $("fiAbrirNc").checked && FROTA.listNc && frotaEd("nc");
   const b = $("fiSalvar"); if (b) { b.disabled = true; b.textContent = "Salvando…"; }
+  FI.gravando = true;
+  try { await SP.create(FROTA.site.id, FROTA.listInsp.id, f); }
+  catch (e) { FI.gravando = false; toast("Não foi possível salvar: " + e.message, 7000); if (b) { b.disabled = false; b.textContent = "💾 Salvar inspeção"; } return; }
+  let nNc = 0, erroNc = "";
   try {
-    await SP.create(FROTA.site.id, FROTA.listInsp.id, f);
-    let nNc = 0;
-    if (abrirNc) for (const x of itens.filter(i => i.r === "NC")) { await SP.create(FROTA.site.id, FROTA.listNc.id, { Title: x.txt.slice(0, 250), Veiculo: v.Title, Gravidade: "Média", Abertura: data, Prazo: (() => { const d = dLocal(data); d.setDate(d.getDate() + NC_PRAZO["Média"]); return ymd(d); })(), Situacao: "Aberta", Observacoes: `Inspeção Geral de ${fmtDate(data)}${x.o ? " — " + x.o : ""}` }); nNc++; }
-    toast(`Inspeção salva (${res})${nNc ? ` · ${nNc} não conformidade(s) aberta(s)` : ""}`, 5000);
-    await frotaCarregar(); FI.ver = null; FI.resp = null; frotaInspPintar();
-  } catch (e) { toast("Não foi possível salvar: " + e.message, 7000); if (b) { b.disabled = false; b.textContent = "💾 Salvar inspeção"; } }
+    const jaAbertas = new Set((FROTA.ncs || []).filter(n => n.Situacao !== "Concluída" && frotaNorm(n.Veiculo) === frotaNorm(v.Title)).map(n => String(n.Title || "").trim()));
+    if (abrirNc) for (const x of itens.filter(i => i.r === "NC" && !jaAbertas.has(i.txt.slice(0, 250).trim()))) { await SP.create(FROTA.site.id, FROTA.listNc.id, { Title: x.txt.slice(0, 250), Veiculo: v.Title, Gravidade: "Média", Abertura: data, Prazo: (() => { const d = dLocal(data); d.setDate(d.getDate() + NC_PRAZO["Média"]); return ymd(d); })(), Situacao: "Aberta", Observacoes: `Inspeção Geral de ${fmtDate(data)}${x.o ? " — " + x.o : ""}` }); nNc++; }
+  } catch (e) { erroNc = e.message; }
+  toast(`Inspeção salva (${res})${nNc ? ` · ${nNc} não conformidade(s) aberta(s)` : ""}${erroNc ? ` · as demais não conformidades não foram abertas (${erroNc}); abra pela aba Não conformidades` : ""}`, erroNc ? 9000 : 5000);
+  FI.gravando = false; FI.cab = null; if ($("fiData")) $("fiData").dataset.novo = "";
+  try { await frotaCarregar(); } catch (e) {}
+  if (FI.tipo === "adesivos") await frotaInspResp(frotaInspDe(v, "Adesivos")[0]);
+  FI.ver = null; FI.resp = null; frotaInspPintar();
 };
 window.frotaChkEditar = () => {
   if (!session.n1) return;
@@ -30975,7 +31004,7 @@ window.frotaChkEditar = () => {
     else val = frotaChkSanear("ades", linhas.map(l => { const i = l.indexOf("|"); return i >= 0 ? { g: l.slice(0, i).trim(), txt: l.slice(i + 1).trim() } : { g: "", txt: l }; }));
     if (!val || !val.length) { const e = $("fiChkErr"); e.textContent = "Inclua pelo menos um item."; e.style.display = "block"; return false; }
     try { await erpParamGravar(geral ? "frota.chk.geral" : "frota.chk.ades", val); FROTA_CHK[geral ? "geral" : "ades"] = val; } catch (e) { const er = $("fiChkErr"); er.textContent = "Não foi possível salvar: " + e.message; er.style.display = "block"; return false; }
-    toast("Itens atualizados"); FI.resp = null; frotaInspPintar(); return true;
+    toast("Itens atualizados"); FI.resp = null; if (!geral) { const v = frotaVeicPorId(FI.id); if (v) await frotaInspResp(frotaInspDe(v, "Adesivos")[0]); } frotaInspPintar(); return true;
   });
   const foot = document.querySelector("#modal .modal-foot"); if (foot) foot.insertAdjacentHTML("afterbegin", `<button class="btn ghost" style="margin-right:auto" onclick="$('fiChkTxt').value = ${jsArg(geral ? FROTA_CHK_GERAL.map(s => `# ${s.s}\n${s.itens.join("\n")}`).join("\n") : FROTA_CHK_ADES.map(i => `${i.g} | ${i.txt}`).join("\n"))}">Voltar ao padrão</button>`);
 };
@@ -30986,8 +31015,8 @@ function frotaInspDoc(preenchida) {
   const box = on => on ? "☒" : "☐";
   let sAnt = null;
   const linhas = it.map(x => { const k = geral ? x.s : x.g, sec = k !== sAnt ? `<tr class="sec"><td colspan="${geral ? 6 : 6}">${esc(k || "")}</td></tr>` : ""; sAnt = k;
-    return geral ? `${sec}<tr><td class="n">${x.n}</td><td>${esc(x.txt)}</td><td class="c">${box(x.r === "C")}</td><td class="c">${box(x.r === "NC")}</td><td class="c">${box(x.r === "NA")}</td><td class="o">${esc(preenchida ? x.o || "" : "")}</td></tr>`
-      : `${sec}<tr><td class="n">${x.n}</td><td>${esc(x.txt)}</td><td class="c">${preenchida ? box(x.a !== false) : "☐"}</td><td class="c">${box(preenchida && x.a !== false && x.r === "C")}</td><td class="c">${box(preenchida && x.a !== false && x.r === "NC")}</td><td class="c">${box(preenchida && (x.r === "NA" || x.a === false))}</td></tr>`; }).join("");
+    return geral ? `${sec}<tr><td class="n">${esc(x.n)}</td><td>${esc(x.txt)}</td><td class="c">${box(x.r === "C")}</td><td class="c">${box(x.r === "NC")}</td><td class="c">${box(x.r === "NA")}</td><td class="o">${esc(preenchida ? x.o || "" : "")}</td></tr>`
+      : `${sec}<tr><td class="n">${esc(x.n)}</td><td>${esc(x.txt)}</td><td class="c">${preenchida ? box(x.a !== false) : "☐"}</td><td class="c">${box(preenchida && x.a !== false && x.r === "C")}</td><td class="c">${box(preenchida && x.a !== false && x.r === "NC")}</td><td class="c">${box(preenchida && (x.r === "NA" || x.a === false))}</td></tr>`; }).join("");
   const titulo = geral ? "CHECK-LIST DE SEGURANÇA PARA VIAGEM" : "FICHA DE INSPEÇÃO – ADESIVOS DE SINALIZAÇÃO OBRIGATÓRIA";
   const css = `body{font-family:Arial,Helvetica,sans-serif;color:#1D1E4A;margin:0;font-size:11px}h1{font-size:15px;margin:0}.sub{color:#6B6E76;font-size:10.5px;margin:2px 0 8px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #C9CCD8;padding:3px 5px;vertical-align:top}th{background:#1D1E4A;color:#fff;font-size:10px}tr.sec td{background:#EEF0F6;font-weight:bold;text-transform:uppercase;font-size:10px}td.c{text-align:center;width:34px;font-size:13px}td.n{width:24px;text-align:right;color:#6B6E76}td.o{width:28%}.cab td{border:1px solid #C9CCD8;padding:5px}.cab b{color:#6B6E76;font-weight:normal;font-size:9.5px;display:block}.ass{margin-top:22px;display:flex;gap:40px}.ass div{flex:1;border-top:1px solid #1D1E4A;padding-top:3px;text-align:center;color:#6B6E76}@page{size:A4 portrait;margin:10mm}`;
   const cab = `<table class="cab" style="margin-bottom:8px"><tr><td><b>Prefixo</b>${esc(v.Title || "RJ 221.___")}</td><td><b>Placa</b>${esc(v.Placa || "")}</td><td><b>${geral ? "Linha" : "Tipo"}</b>${esc(geral ? g("fiLinha") || (preenchida ? "" : v.Linha || "") : v.Tipo || "")}</td><td><b>Data</b>${esc(g("fiData") ? fmtDate(g("fiData")) : "____/____/______")}</td></tr><tr><td colspan="2"><b>${geral ? "Motorista / responsável" : "Responsável"}</b>${esc(g("fiResp"))}</td><td><b>${geral ? "Garagem" : "Matrícula"}</b>${esc(geral ? (g("fiGar") || "☐ C. Macabu   ☐ Macaé") : "")}</td><td><b>${geral ? "Hora início / término" : "Nº da ficha"}</b>${geral ? "____:____  /  ____:____" : ""}</td></tr></table>`;
@@ -31062,7 +31091,7 @@ window.frotaRelFrota = async () => {
       <div class="field"><label>Selo DETRO (cor)</label><input id="vcSc" value="${esc(v.SeloCor || "")}" placeholder="Ex.: AZUL/23" ${dis}></div>
       <div class="field"><label>Selo DETRO (nº)</label><input id="vcSn" value="${esc(v.SeloNumero || "")}" ${dis}></div>
       <div class="field full"><label>Observações</label><textarea id="vcO"`);
-    opt.ler = (g, err) => { const f = l0(g, err); if (!f) return f; const n = $("vcCaa") && $("vcCaa").value !== "" ? Number($("vcCaa").value) : null;
+    opt.ler = (g, err) => { const pre = g("vcP").toUpperCase(); if (pre && (FROTA.veicsTodos || []).some(x => frotaNorm(x.Title) === pre && (!m || x._id !== m._id))) return err("Já existe veículo com este prefixo (pode estar arquivado ou oculto)."); const f = l0(g, err); if (!f) return f; const n = $("vcCaa") && $("vcCaa").value !== "" ? Number($("vcCaa").value) : null;
       return Object.assign(f, { ChassiMarca: g("vcCm").toUpperCase() || null, ChassiModelo: g("vcCmo").toUpperCase() || null, CarroceriaMarca: g("vcCam").toUpperCase() || null, AnoCarroceria: Number.isFinite(n) ? n : null, ValidadeCAT: g("vcCat") || null, SeloData: g("vcSd") || null, SeloCor: g("vcSc").toUpperCase() || null, SeloNumero: g("vcSn") || null }); };
     return cf0.call(this, opt);
   };

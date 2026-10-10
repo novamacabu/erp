@@ -29161,12 +29161,22 @@ function itnDesenhar(svg, L, o) {
   /* rosa dos ventos */
   const rv = itnS("g", { transform: `translate(${ITN_VB.w - 46},46)`, opacity: .55 }, svg);
   itnS("circle", { r: 22, fill: "#fff", stroke: "#C9D0DD" }, rv); itnS("path", { d: "M0,-17 L6,4 L0,0 L-6,4 z", fill: ITN_COR.navy }, rv); itnS("path", { d: "M0,17 L6,-4 L0,0 L-6,-4 z", fill: "#C9D0DD" }, rv); itnTx(0, -30, "N", { size: 11, bold: true, fill: ITN_COR.navy }, rv);
+  /* v0.12.81: na exportação (PNG e impressão) entram a marca d'água da logo, o título e o rodapé */
+  if (o.exp && typeof LOGO_NMB === "string") itnS("image", { href: LOGO_NMB, x: ITN_VB.w / 2 - 260, y: ITN_VB.h / 2 - 188, width: 520, height: 376, opacity: .06, preserveAspectRatio: "xMidYMid meet" }, svg);
   const gZ = itnS("g", {}, svg), gR = itnS("g", {}, svg), gE = itnS("g", {}, svg), gLeg = itnS("g", {}, svg), gOv = itnS("g", { class: "itn-ov" }, svg);
   const zonas = L.els.filter(e => e.t === "area" || e.t === "restrita");
   zonas.filter(e => e.t === "area").concat(zonas.filter(e => e.t === "restrita")).forEach(e => itnEl(e, gZ, L, o));
   itnDesenhaRota(L, gR, o);
   L.els.filter(e => e.t !== "area" && e.t !== "restrita").sort((a, b) => itnCamada(a) - itnCamada(b)).forEach(e => itnEl(e, gE, L, o));
-  if (L.legenda) itnLegenda(L, gLeg);
+  if (o.exp) {
+    const gt = itnS("g", {}, gLeg);
+    itnS("rect", { x: 16, y: 16, width: 560, height: 66, rx: 12, fill: "rgba(255,255,255,.94)", stroke: "#DCE1EA" }, gt);
+    itnS("rect", { x: 16, y: 16, width: 8, height: 66, rx: 4, fill: ITN_COR.or }, gt);
+    itnTx(38, 40, String(L.nome || "Itinerário").slice(0, 60), { size: 22, bold: true, fill: ITN_COR.navy, anchor: "start" }, gt);
+    itnTx(38, 66, [L.linha ? "Linha " + L.linha : "", L.sentido || ""].filter(Boolean).join(" · ").slice(0, 80) || "Itinerário", { size: 14, fill: "#5B6068", anchor: "start" }, gt);
+    itnTx(ITN_VB.w - 16, ITN_VB.h - 14, `Transportadora Nova Macabu · Itinerários · ${new Date().toLocaleDateString("pt-BR")}`, { size: 12, fill: "#8A93A6", anchor: "end" }, gt);
+  }
+  if (L.legenda) itnLegenda(L, gLeg, o.exp ? 96 : 16);
   if (o.sel && o.sel.size) L.els.filter(e => o.sel.has(e.id)).forEach(e => itnSelBox(e, gOv, o.sel.size === 1));
 }
 function itnCamada(e) { return { texto: 1, rodovia: 2, marco: 3, garagem: 3, alerta: 4, via: 5, parada: 6, origem: 7, destino: 7 }[e.t] || 0; }
@@ -29257,7 +29267,7 @@ function itnSelBox(e, g, handle) {
   itnS("rect", { x: e.x - pad, y: e.y - pad, width: e.w + 2 * pad, height: e.h + 2 * pad, rx: 6, fill: "rgba(232,98,44,.05)", stroke: ITN_COR.or, "stroke-width": 2, "stroke-dasharray": "6 4", "pointer-events": "none" }, g);
   if (handle && ITN_T[e.t].zona) itnS("rect", { class: "itn-handle", "data-handle": e.id, x: e.x + e.w - 2, y: e.y + e.h - 2, width: 12, height: 12, rx: 3, fill: "#fff", stroke: ITN_COR.or, "stroke-width": 2, style: "cursor:nwse-resize" }, g);
 }
-function itnLegenda(L, g) {
+function itnLegenda(L, g, topo) {
   const tem = t => L.els.some(e => e.t === t), temK = (t, f) => L.els.some(e => e.t === t && f(e));
   const itens = [];
   if (tem("origem")) itens.push(["ori", "Origem"]); if (tem("destino")) itens.push(["des", "Destino"]);
@@ -29266,7 +29276,7 @@ function itnLegenda(L, g) {
   if (tem("restrita")) itens.push(["res", "Área restrita"]); if (tem("alerta")) itens.push(["ale", "Alerta"]);
   if (!itens.length) return;
   const k = 1.35, h0 = 24 + itens.length * 22, cor = L.cor || ITN_COR.navy, x0 = 0, y0 = 0;
-  g = itnS("g", { transform: `translate(16,16) scale(${k})` }, g); const h = h0;   /* canto superior esquerdo: a origem do modelo fica embaixo à esquerda */
+  g = itnS("g", { transform: `translate(16,${topo || 16}) scale(${k})` }, g); const h = h0;   /* canto superior esquerdo: a origem do modelo fica embaixo à esquerda */
   itnS("rect", { x: x0, y: y0, width: 210, height: h, rx: 12, fill: "rgba(255,255,255,.94)", stroke: "#DCE1EA" }, g);
   itnTx(x0 + 14, y0 + 14, "LEGENDA", { size: 10, bold: true, fill: "#6B6E76", anchor: "start", ls: 1.5 }, g);
   itens.forEach(([k, lb], i) => {
@@ -29491,7 +29501,7 @@ function itnUp(ev) {
 }
 function itnCtx(x, y, noEl, p) {
   const m = $("itnCtx"); if (!m) return;
-  m.innerHTML = noEl ? `<button data-a="dup">⧉ Duplicar <small style="float:right;color:#999">Ctrl+D</small></button><button data-a="frente">⤒ Trazer para frente</button><button data-a="tras">⤓ Enviar para trás</button>${ITN.sel.size > 1 ? `<hr><button data-a="alE">⇤ Alinhar à esquerda</button><button data-a="alT">⤒ Alinhar no topo</button><button data-a="distH">↔ Distribuir na horizontal</button><button data-a="distV">↕ Distribuir na vertical</button>` : ""}<hr><button data-a="del" style="color:#B3271E">🗑 Excluir <small style="float:right;color:#999">Delete</small></button>`
+  m.innerHTML = noEl ? `<button data-a="dup">⧉ Duplicar <small style="float:right;color:#999">Ctrl+D</small></button><button data-a="frente">⤒ Trazer para frente</button><button data-a="tras">⤓ Enviar para trás</button><button data-a="girar">↻ Girar 90° <small style="float:right;color:#999">R</small></button>${ITN.sel.size > 1 ? `<hr><button data-a="alE">⇤ Alinhar à esquerda</button><button data-a="alD">⇥ Alinhar à direita</button><button data-a="alT">⤒ Alinhar no topo</button><button data-a="alB">⤓ Alinhar pela base</button><button data-a="distH">↔ Distribuir na horizontal</button><button data-a="distV">↕ Distribuir na vertical</button>` : ""}<hr><button data-a="del" style="color:#B3271E">🗑 Excluir <small style="float:right;color:#999">Delete</small></button>`
     : Object.keys(ITN_T).map(t => `<button data-add="${t}">+ ${esc(ITN_T[t].lb)}</button>`).join("");
   m.style.display = "block"; m.style.left = Math.min(x, window.innerWidth - 210) + "px"; m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 8) + "px";
   m.onclick = ev => { const b = ev.target.closest("button"); if (!b) return; itnCtxFechar(); if (b.dataset.a) itnAcao(b.dataset.a); if (b.dataset.add) itnColocar(p, b.dataset.add); };
@@ -29511,6 +29521,10 @@ function itnAcao(a) {
   itnPush();
   if (a === "alE") { const m = Math.min(...E.map(e => e.x)); E.forEach(e => { e.x = m; }); }
   if (a === "alT") { const m = Math.min(...E.map(e => e.y)); E.forEach(e => { e.y = m; }); }
+  if (a === "alD") { const m = Math.max(...E.map(e => e.x + e.w)); E.forEach(e => { e.x = m - e.w; }); }
+  if (a === "alB") { const m = Math.max(...E.map(e => e.y + e.h)); E.forEach(e => { e.y = m - e.h; }); }
+  /* girar 90°: áreas, rodovias e textos giram; nos pontos (paradas, alertas…) o rótulo dá a volta (direita → abaixo → esquerda → acima) */
+  if (a === "girar") E.forEach(e => { if (ITN_T[e.t].zona) { let r = ((e.r || 0) + 90) % 360; if (r > 180) r -= 360; e.r = r; } else if (e.lado != null) e.lado = { d: "b", b: "e", e: "c", c: "d" }[e.lado] || "d"; });
   if (a === "alCx") { const m = E.reduce((s, e) => s + itnCx(e), 0) / E.length; E.forEach(e => { e.x = itnSnap(m - e.w / 2); }); }
   if (a === "alCy") { const m = E.reduce((s, e) => s + itnCy(e), 0) / E.length; E.forEach(e => { e.y = itnSnap(m - e.h / 2); }); }
   if (a === "distH" && E.length > 2) { const s = E.slice().sort((p, q) => itnCx(p) - itnCx(q)), a0 = itnCx(s[0]), st = (itnCx(s[s.length - 1]) - a0) / (s.length - 1); s.forEach((e, i) => { e.x = itnSnap(a0 + i * st - e.w / 2); }); }
@@ -29535,7 +29549,7 @@ function itnProps() {
   if (!E.length) {
     box.innerHTML = `<h4>Propriedades</h4><p class="vazio">Escolha um item da paleta e toque no mapa para colocar. Clique num item para editar; arraste para mover; Shift + clique ou um laço no fundo seleciona vários. Pontos de parada e de passagem entram no trecho da rota mais próximo.</p>${stats}${obs}`;
   } else if (E.length > 1) {
-    box.innerHTML = `<h4>${E.length} itens selecionados</h4><div class="btns"><button class="btn" data-a="alE">⇤ Esquerda</button><button class="btn" data-a="alT">⤒ Topo</button><button class="btn" data-a="alCx">↔ Centro</button><button class="btn" data-a="alCy">↕ Meio</button><button class="btn" data-a="distH">Distribuir ↔</button><button class="btn" data-a="distV">Distribuir ↕</button></div><div class="btns"><button class="btn" data-a="dup">⧉ Duplicar</button><button class="btn" data-a="del" style="color:#B3271E">🗑 Excluir</button></div>${stats}${obs}`;
+    box.innerHTML = `<h4>${E.length} itens selecionados</h4><div class="btns"><button class="btn" data-a="alE">⇤ Esquerda</button><button class="btn" data-a="alD">⇥ Direita</button><button class="btn" data-a="alT">⤒ Topo</button><button class="btn" data-a="alB">⤓ Base</button><button class="btn" data-a="alCx">↔ Centro</button><button class="btn" data-a="alCy">↕ Meio</button><button class="btn" data-a="distH">Distribuir ↔</button><button class="btn" data-a="distV">Distribuir ↕</button></div><div class="btns"><button class="btn" data-a="dup">⧉ Duplicar</button><button class="btn" data-a="girar">↻ Girar 90°</button><button class="btn" data-a="del" style="color:#B3271E">🗑 Excluir</button></div>${stats}${obs}`;
   } else {
     const e = E[0], T = ITN_T[e.t]; let h = `<h4>${esc(T.lb)}${e.t === "parada" ? " " + itnNumParada(e) : ""}</h4>`;
     const inp = (k, lb, extra) => itnFld(lb, `<input data-k="${k}" value="${esc(e[k] == null ? "" : e[k])}" ${extra || ""}>`);
@@ -29551,18 +29565,19 @@ function itnProps() {
     if (e.t === "rodovia") h += inp("txt", "Rodovia", 'maxlength="14"');
     if (e.t === "texto") h += inp("txt", "Texto", 'maxlength="160"') + inp("size", "Tamanho", 'type="number" min="8" max="60"') + sel("cor", "Cor", ITN_TXT_COR) + itnFld("Negrito", `<input type="checkbox" data-k="bold" ${e.bold ? "checked" : ""} style="flex:0">`);
     if (e.t === "garagem") h += inp("txt", "Nome", 'maxlength="60"') + sel("lado", "Rótulo", ITN_LADO);
-    if (T.zona || e.t === "marco" || e.t === "alerta" || e.t === "garagem" || e.t === "parada") h += itnFld("Tamanho", `<input data-k="w" type="number" min="10" max="1400" style="width:70px"> <input data-k="h" type="number" min="10" max="800" style="width:70px">`);
+    h += `<hr><h4>Posição e tamanho</h4>` + itnFld("X · Y", `<input data-k="x" type="number" step="5" min="-200" max="1600" style="width:70px" title="X"> <input data-k="y" type="number" step="5" min="-200" max="1000" style="width:70px" title="Y">`)
+      + itnFld("Larg. · Alt.", `<input data-k="w" type="number" min="10" max="1400" style="width:70px" title="Largura"> <input data-k="h" type="number" min="10" max="800" style="width:70px" title="Altura">`);
     if (T.zona) h += inp("r", "Girar (graus)", 'type="number" min="-180" max="180" step="5"');
     if (T.rota && e.t !== "origem" && e.t !== "destino") h += `<div class="btns"><button class="btn" data-a="antes" title="Passa a vir antes na rota">↑ Antes na rota</button><button class="btn" data-a="depois" title="Passa a vir depois na rota">↓ Depois na rota</button></div>`;
-    h += `<div class="btns">${e.t !== "origem" && e.t !== "destino" ? `<button class="btn" data-a="dup">⧉ Duplicar</button>` : ""}<button class="btn" data-a="del" style="color:#B3271E">🗑 Excluir</button></div>`;
+    h += `<div class="btns">${e.t !== "origem" && e.t !== "destino" ? `<button class="btn" data-a="dup">⧉ Duplicar</button>` : ""}${T.zona || e.lado != null ? `<button class="btn" data-a="girar" title="${T.zona ? "Gira 90°" : "Dá a volta no rótulo"} (R)">↻ Girar 90°</button>` : ""}<button class="btn" data-a="del" style="color:#B3271E">🗑 Excluir</button></div><p class="vazio" style="font-size:11.5px;margin-top:4px">Setas movem (Shift = 1 px, Ctrl = 20 px) · R gira · Ctrl+D duplica · Delete exclui</p>`;
     box.innerHTML = h + stats + obs;
-    box.querySelectorAll("[data-k=w]").forEach(i => { i.value = e.w; }); box.querySelectorAll("[data-k=h]").forEach(i => { i.value = e.h; });
+    ["x", "y", "w", "h"].forEach(k => box.querySelectorAll(`[data-k=${k}]`).forEach(i => { i.value = Math.round(e[k]); }));
     box.querySelectorAll("[data-k]").forEach(i => {
       const k = i.dataset.k; let marcou = false;
       const aplica = () => {
         if (!marcou) { itnPush(); marcou = true; }
         let v = i.type === "checkbox" ? i.checked : i.value;
-        if (["w", "h", "size", "r"].includes(k)) { v = Number(v); if (!Number.isFinite(v)) return; v = k === "r" ? Math.max(-180, Math.min(180, v)) : Math.max(k === "size" ? 8 : 10, Math.min(k === "w" ? 1400 : 800, v)); }
+        if (["w", "h", "size", "r", "x", "y"].includes(k)) { v = Number(v); if (!Number.isFinite(v) || i.value === "") return; v = k === "r" ? Math.max(-180, Math.min(180, v)) : k === "x" ? Math.max(-200, Math.min(1600, v)) : k === "y" ? Math.max(-200, Math.min(1000, v)) : Math.max(k === "size" ? 8 : 10, Math.min(k === "w" ? 1400 : 800, v)); }
         e[k] = v; itnDesenhar($("itnBoard"), ITN.L, { sel: ITN.sel, grade: ITN.grade }); itnMarca(true);
       };
       i.addEventListener(i.tagName === "SELECT" || i.type === "checkbox" ? "change" : "input", aplica);
@@ -29589,6 +29604,7 @@ document.addEventListener("keydown", ev => {
   if (c && k === "s") { ev.preventDefault(); itnSalvar(); return; }
   if (c && k === "d") { ev.preventDefault(); itnAcao("dup"); return; }
   if (c && k === "a") { ev.preventDefault(); itnSelTudo(); return; }
+  if (!c && !ev.altKey && k === "r" && ITN.sel.size) { ev.preventDefault(); itnAcao("girar"); return; }
   if (ev.key === "Escape") { if (ITN.tool) itnSetTool(null); else { ITN.sel = new Set(); itnRender(); } itnCtxFechar(); return; }
   if ((ev.key === "Delete" || ev.key === "Backspace") && ITN.sel.size) { ev.preventDefault(); itnAcao("del"); return; }
   const st = ev.shiftKey ? 1 : c ? 20 : ITN_SNAP;
@@ -29629,7 +29645,7 @@ window.itnAjuda = () => {
     <p><b>Colocar:</b> escolha um item em "Adicionar" e toque no mapa (Shift mantém o item para colocar vários). Botão direito no fundo também adiciona. Pontos de parada e de passagem entram no trecho da rota mais próximo; a ordem pode ser mudada em "Antes / Depois na rota".</p>
     <p><b>Selecionar:</b> clique; Shift ou Ctrl + clique soma; arraste no fundo para um laço; Ctrl+A seleciona tudo.</p>
     <p><b>Mover:</b> arraste, ou use as setas (Shift = 1 px, Ctrl = 20 px). Áreas, rodovias e textos têm a alça laranja para redimensionar e podem ser girados.</p>
-    <p><b>Atalhos:</b> Ctrl+Z desfaz · Ctrl+Y refaz · Ctrl+D duplica · Delete exclui · Ctrl+S salva · Esc cancela. Duplo clique abre o nome para editar; Enter no nome de uma parada pula para a próxima.</p>
+    <p><b>Atalhos:</b> Ctrl+Z desfaz · Ctrl+Y refaz · Ctrl+D duplica · R gira 90° (nos pontos, dá a volta no rótulo) · Delete exclui · Ctrl+S salva · Esc cancela. Posição e tamanho exatos ficam no painel à direita. Duplo clique abre o nome para editar; Enter no nome de uma parada pula para a próxima.</p>
     <p><b>Para quem só vê:</b> os pontos de passagem somem; o mapa mostra a rota, os pontos numerados, a legenda e a lista "Trajeto" ao lado.</p></div><div class="modal-foot"><button class="btn primary" onclick="closeModal()">Entendi</button></div>`);
 };
 window.itnJson = () => {
@@ -29648,7 +29664,7 @@ window.itnJsonImportar = () => {
   ITN.sel = new Set(); closeModal(); itnSyncBarra(); itnRender(); toast(`Importado: ${ITN.L.els.length} elemento(s).`);
 };
 /* ---------- PNG e impressão ---------- */
-function itnSvgTexto(L) { const tmp = document.createElement("div"); tmp.innerHTML = itnSvg(L, { id: "itnExp", ver: true }); const s = tmp.querySelector("svg"); s.setAttribute("width", ITN_VB.w); s.setAttribute("height", ITN_VB.h); return new XMLSerializer().serializeToString(s); }
+function itnSvgTexto(L) { const tmp = document.createElement("div"); tmp.innerHTML = itnSvg(L, { id: "itnExp", ver: true, exp: true }); const s = tmp.querySelector("svg"); s.setAttribute("width", ITN_VB.w); s.setAttribute("height", ITN_VB.h); return new XMLSerializer().serializeToString(s); }
 function itnLAtual() { return ITN.modo === "editar" && ITN.L ? ITN.L : (itnAtual() ? itnParse(itnAtual().Dados) : null); }
 window.itnPng = () => {
   const L = itnLAtual(); if (!L) return; const x = itnAtual();

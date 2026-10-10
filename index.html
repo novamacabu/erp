@@ -5666,7 +5666,7 @@ function modal(html) {
   m.innerHTML = html; m.dataset.sujo = "";
   m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true");
   if (window.innerWidth > 900) setTimeout(() => { if (!$("modalBack").classList.contains("on") || m.contains(document.activeElement)) return; const f = m.querySelector(".modal-body input:not([type=hidden]):not([disabled]):not([readonly]), .modal-body select:not([disabled]), .modal-body textarea:not([disabled])"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } }, 0);
-  if (!m._erpSujo) { m.addEventListener("input", ev => { if (ev.target && ev.target.matches && ev.target.matches("input:not([type=search]),textarea,select")) m.dataset.sujo = "1"; }, true); m._erpSujo = true; }
+  if (!m._erpSujo) { m.addEventListener("input", ev => { if (ev.target && ev.target.matches && ev.target.matches("input:not([type=search]):not([type=checkbox]):not([type=radio]):not([type=file]),textarea")) m.dataset.sujo = "1"; }, true); m._erpSujo = true; }
   const back = $("modalBack"); back.classList.add("on");
   /* v0.12.81: só fecha pelo fundo se o clique começou no fundo (soltar o mouse fora da janela ao selecionar texto não fecha mais) */
   back.onmousedown = ev => { back._ini = ev.target; };
@@ -5759,9 +5759,10 @@ window.capCadastrarForn = () => {
   const wasNew = !CAP_STATE.editing, filaDocs = CAP_STATE.docFila ? CAP_STATE.docFila.slice() : null;   /* v0.12.81: os arquivos já escolhidos não se perdem */
   const voltar = () => {
     modal(capForm(CAP_STATE.editing)); capWireForm(wasNew);
-    if (filaDocs && filaDocs.length) CAP_STATE.docFila = filaDocs;
+    if (filaDocs && filaDocs.length) { CAP_STATE.docFila = filaDocs; if (typeof capFilaPinta === "function") { try { capFilaPinta(); } catch (e) {} } }
     Object.entries(draft).forEach(([id, v]) => { const el = $(id); if (el && v) el.value = v; });
-    if (ckIsenta != null && $("fIsenta")) $("fIsenta").checked = ckIsenta;
+    if (ckIsenta != null && $("fIsenta")) { $("fIsenta").checked = ckIsenta; $("fIsenta").dispatchEvent(new Event("change", { bubbles: true })); }
+    $("modal").dataset.sujo = "1";   /* o que foi preenchido continua contando como digitado */
   };
   modal(fornForm({ Title: nome, CNPJ: docFmt(doc), Tipo: "", Ativo: true })); fornWireForm();   /* v0.12.58: cadastro rápido entra "a classificar" (não vira recorrente sem querer) */
   /* v0.12.81: cancelar o cadastro do fornecedor volta para a conta (antes descartava a conta inteira) */
@@ -10456,7 +10457,10 @@ function aplicarPayload(p,origem){
 let infJanela=92;
 async function infAmpliar(){
   if(infJanela>=800||modo!=="live"||!webhookUrl) return false;
-  infJanela=800; await atualizar(webhookUrl); return true;
+  infJanela=800; const av=$("aviso-erro"); if(av) av.classList.add("oculto");
+  await atualizar(webhookUrl);
+  if(av && !av.classList.contains("oculto")){ infJanela=92; return false; }   /* v0.12.81: falhou — tenta de novo na próxima vez */
+  return true;
 }
 async function buscar(url){
   const SITE="novamacabu.sharepoint.com,b3157f32-09da-493f-8144-219675455eb7,7cc490ec-91fd-4413-9497-1751706abff6";
@@ -29839,7 +29843,7 @@ function erpChartsLimpar() { try { if (!window.Chart || !Chart.instances) return
   route = function () {
     const m0 = session.modAtual, aberta = !!($("modalBack") && $("modalBack").classList.contains("on"));
     const out = rX.apply(this, arguments);
-    if (aberta && session.modAtual !== m0 && $("modalBack").classList.contains("on")) closeModal();
+    if (aberta && session.modAtual !== m0 && $("modalBack").classList.contains("on") && $("modal").dataset.sujo !== "1") closeModal();   /* com algo digitado, a janela fica (não se perde o que foi preenchido) */
     setTimeout(erpChartsLimpar, 0);
     return out;
   };

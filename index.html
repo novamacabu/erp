@@ -3636,6 +3636,11 @@ body.hig-arrastando,body.hig-arrastando *{cursor:grabbing!important}.hig-fantasm
 .tf-c-resp{display:flex;align-items:center;gap:6px;min-width:0}@media (max-width:1100px){.tf-tbl .tf-c-resp{display:none}}.tf-c-resp .tf-avs{margin-left:0}.tf-nomes{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tf-pchip{display:inline-flex;align-items:center;gap:5px}
 .tf-c-resp .tf-av,.tf-pchip .tf-av,.tf-atr-tag .tf-av,.tf-atr-op .tf-av{margin:0}
+/* v0.12.95: foto da pessoa (RH › Funcionários) no lugar das iniciais, como no Planner */
+img.tf-av{object-fit:cover;background:#E6E8EE;padding:0}.tf-card-f .tf-av{width:28px;height:28px}.tf-card-f .tf-avs .tf-av{margin-left:-7px}.tf-card-f .tf-avs .tf-av:first-child{margin-left:0}
+.tf-c-st{display:flex;align-items:center;gap:6px;min-width:0}.tf-c-avm{display:none}.tf-c-avm .tf-av{margin-right:0}
+@media (max-width:1100px) and (min-width:641px){.tf-th,.tf-row{grid-template-columns:30px minmax(0,1fr) 100px 96px 132px}.tf-tbl .tf-c-resp{display:flex}.tf-c-resp .tf-nomes{display:none}.tf-th .tf-c-resp{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+@media (max-width:640px){.tf-c-st{justify-content:flex-end}.tf-c-avm{display:inline-flex}.tf-c-avm .tf-avs{margin-left:0}.tf-c-avm .tf-av{width:28px;height:28px;font-size:11px}}
 .tf-meu{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;padding:10px 14px;border:1px solid #C9D6EF;background:#EEF3FC;border-radius:10px;font-size:13.5px}.tf-meu .btn{margin-left:auto}.tf-meu-i{font-size:16px}
 .tf-atr-sel{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tf-atr-tag{display:inline-flex;align-items:center;gap:6px;padding:3px 6px 3px 3px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12.5px}
 .tf-atr-tag button{border:0;background:none;cursor:pointer;font-size:15px;line-height:1;color:var(--ink-2);padding:0 2px}
@@ -3703,7 +3708,7 @@ body.hig-arrastando,body.hig-arrastando *{cursor:grabbing!important}.hig-fantasm
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.94<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.95<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3740,7 +3745,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.94",
+  version: "v0.12.95",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -30224,6 +30229,7 @@ async function rhFotoGravar(funcId, nome, foto) {
   else if (r) await SP.update(RH_FOTO.site.id, RH_FOTO.list.id, r._id, { Foto: null });   /* remover = esvaziar (excluir linha é só do proprietário) */
   else if (foto) await SP.create(RH_FOTO.site.id, RH_FOTO.list.id, { Title: nome || String(funcId), FuncId: String(funcId), Foto: foto });
   await rhFotoCarregar(true);
+  if (typeof TF_FOTO !== "undefined") { TF_FOTO.em = 0; TF_FOTO.ger++; }   /* v0.12.95: a Central de Tarefas relê as fotos */
 }
 /* a foto não vai para "RH — Funcionários": sai do formulário e é gravada na lista de fotos */
 { const c2 = SP.create, u2 = SP.update;
@@ -32743,6 +32749,7 @@ async function tfCarregar(force) {
   } catch (e) { A().erro = String((e && e.message) || e); }
   try { if (TF_CTX[ctx].auto && (permModulo("frota") !== "nenhum" || session.n1)) await frotaGarantir(force); } catch (e) {}
   try { if (!(ACESSO.itens || []).length) await acessoItens(); } catch (e) {}   /* v0.12.94: pessoas do grupo para atribuir */
+  tfFotosCarregar();   /* v0.12.95: fotos do RH em segundo plano; a tela é repintada quando chegam */
   A().carregado = Date.now();
 }
 /* ---- tela ---- */
@@ -32804,7 +32811,7 @@ function tfLinha(t) {
     <div class="tf-c-resp">${tfNomes(t) ? `${tfAvs(t, 3)}<span class="tf-nomes">${esc(tfNomes(t))}</span>` : `<span class="mut">—</span>`}</div>
     <div class="tf-c-pr">${pr.w ? `<span class="tf-pr"><i style="background:${pr.cor}"></i>${esc(pr.k)}</span>` : `<span class="mut">—</span>`}</div>
     <div class="tf-c-pz"><span class="${pzc}">${esc(pz)}</span></div>
-    <div><span class="tf-pill st-${st.c}"><i></i>${esc(st.k)}</span></div></div>`;
+    <div class="tf-c-st">${tfNomes(t) ? `<span class="tf-c-avm">${tfAvs(t, 2)}</span>` : ""}<span class="tf-pill st-${st.c}"><i></i>${esc(st.k)}</span></div></div>`;
 }
 const tfIni = n => String(n).trim().split(/\s+/).slice(0, 2).map(p => p[0] || "").join("").toUpperCase();
 function tfAvCor(n) { const C = ["#1E2153", "#D6421F", "#197A46", "#1A5D6B", "#9A6A00", "#6B2F82", "#0E7F8C", "#B3271E"]; let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return C[h % C.length]; }
@@ -33039,11 +33046,11 @@ function tfMembros() {
 function tfAtr(t) { try { const a = JSON.parse((t && t.Atribuidos) || "[]"); return Array.isArray(a) ? a.filter(x => x && x.e).map(x => ({ e: normEmail(x.e), n: String(x.n || x.e).slice(0, 80) })) : []; } catch (e) { return []; } }
 const tfMinha = t => { const eu = tfEuEmails(); return tfAtr(t).some(x => eu.includes(x.e)); };
 const tfNomes = t => { const a = tfAtr(t); return a.length ? a.map(x => x.n).join(", ") : String((t && t.Responsavel) || ""); };
-const tfAv1 = (n, extra) => `<span class="tf-av${extra || ""}" style="background:${tfAvCor(n)}" title="${esc(n)}">${esc(tfIni(n))}</span>`;
+const tfAv1 = (n, extra, e) => { const f = tfFotoDe(e, n); return f ? `<img class="tf-av tf-av-f${extra || ""}" src="${f}" alt="${esc(n)}" title="${esc(n)}" loading="lazy" data-ini="${esc(tfIni(n))}" data-cor="${tfAvCor(n)}" onerror="tfAvErro(this)">` : `<span class="tf-av${extra || ""}" style="background:${tfAvCor(n)}" title="${esc(n)}">${esc(tfIni(n))}</span>`; };   /* v0.12.95: foto do RH › Funcionários quando houver */
 function tfAvs(t, max) {
   const a = tfAtr(t); max = max || 3;
   if (!a.length) return t.Responsavel ? tfAv1(t.Responsavel) : "";
-  return `<span class="tf-avs">${a.slice(0, max).map(x => tfAv1(x.n)).join("")}${a.length > max ? `<span class="tf-av mais" title="${esc(a.slice(max).map(x => x.n).join(", "))}">+${a.length - max}</span>` : ""}</span>`;
+  return `<span class="tf-avs">${a.slice(0, max).map(x => tfAv1(x.n, "", x.e)).join("")}${a.length > max ? `<span class="tf-av mais" title="${esc(a.slice(max).map(x => x.n).join(", "))}">+${a.length - max}</span>` : ""}</span>`;
 }
 function tfMembroPorNome(w) { const q = normName(w); if (!q) return null; const M = tfMembros();
   for (const f of [m => normName(m.n.split(/\s+/)[0]) === q, m => normName(m.n).startsWith(q), m => m.e.startsWith(q)]) { const r = M.filter(f); if (r.length === 1) return r[0]; if (r.length > 1) { TF.avisoGravar = `mais de uma pessoa com "${w}" no grupo; abra a tarefa e escolha quem`; return null; } }
@@ -33055,7 +33062,7 @@ function tfPesChips(todas) {
   const semN = todas.filter(t => t.Status !== "Concluído" && !tfAtr(t).length).length, conta = e => todas.filter(t => t.Status !== "Concluído" && tfAtr(t).some(x => x.e === e)).length;
   const ps = [...vistos.entries()].sort((a, b) => a[1].localeCompare(b[1], "pt-BR"));
   if (!ps.length && !semN) return "";
-  return `<div class="tf-fl"><span class="tf-fl-l">Pessoas</span>${ps.map(([e, n]) => `<button class="chip tf-pchip ${TF.pes.has(e) ? "on" : ""}" onclick="tfChip('pes', ${esc(jsArg(e))})">${tfAv1(n, " sm")}${esc(n.split(/\s+/)[0])} <span class="sup">${conta(e)}</span></button>`).join("")}${semN ? `<button class="chip ${TF.pes.has("_sem") ? "on" : ""}" onclick="tfChip('pes', '_sem')">Sem atribuição <span class="sup">${semN}</span></button>` : ""}</div>`;
+  return `<div class="tf-fl"><span class="tf-fl-l">Pessoas</span>${ps.map(([e, n]) => `<button class="chip tf-pchip ${TF.pes.has(e) ? "on" : ""}" onclick="tfChip('pes', ${esc(jsArg(e))})">${tfAv1(n, " sm", e)}${esc(n.split(/\s+/)[0])} <span class="sup">${conta(e)}</span></button>`).join("")}${semN ? `<button class="chip ${TF.pes.has("_sem") ? "on" : ""}" onclick="tfChip('pes', '_sem')">Sem atribuição <span class="sup">${semN}</span></button>` : ""}</div>`;
 }
 function tfGruposPessoa(vis) {
   const nomes = new Map(); vis.forEach(t => tfAtr(t).forEach(x => { if (!nomes.has(x.e)) nomes.set(x.e, x.n); }));
@@ -33077,9 +33084,9 @@ function tfAtrPintar(ed) {
   const vis = M.filter(m => !q || normName(m.n + " " + m.e).includes(q));
   const eu = tfEuEmails()[0];
   el.innerHTML = `${TF.atrLeg ? `<div class="sup" style="margin-bottom:6px">Responsável anotado antes: <b>${esc(TF.atrLeg)}</b>${ed ? " · escolha a(s) pessoa(s) abaixo para atribuir" : ""}</div>` : ""}
-    <div class="tf-atr-sel">${TF.atr.length ? TF.atr.map(x => `<span class="tf-atr-tag">${tfAv1(x.n, " sm")}${esc(x.n)}${ed ? `<button type="button" aria-label="Remover ${esc(x.n)}" onclick="tfAtrTog(${esc(jsArg(x.e))})">×</button>` : ""}</span>`).join("") : `<span class="mut">Ninguém atribuído</span>`}</div>
+    <div class="tf-atr-sel">${TF.atr.length ? TF.atr.map(x => `<span class="tf-atr-tag">${tfAv1(x.n, " sm", x.e)}${esc(x.n)}${ed ? `<button type="button" aria-label="Remover ${esc(x.n)}" onclick="tfAtrTog(${esc(jsArg(x.e))})">×</button>` : ""}</span>`).join("") : `<span class="mut">Ninguém atribuído</span>`}</div>
     ${ed ? `<div class="tf-atr-bar">${eu && !sel.has(eu) && M.some(m => m.e === eu) ? `<button type="button" class="btn sm" onclick="tfAtrTog(${esc(jsArg(eu))})">Atribuir a mim</button>` : ""}${M.length > 8 ? `<input type="search" class="busca" placeholder="Buscar pessoa…" value="${esc(TF.atrQ || "")}" oninput="TF.atrQ=this.value; tfAtrPintar(); const i=document.querySelector('#tfAtr input[type=search]'); if(i){i.focus(); i.setSelectionRange(i.value.length,i.value.length)}" aria-label="Buscar pessoa">` : ""}</div>
-    <div class="tf-atr-lista">${vis.length ? vis.map(m => `<button type="button" class="tf-atr-op ${sel.has(m.e) ? "on" : ""}" onclick="tfAtrTog(${esc(jsArg(m.e))})" aria-pressed="${sel.has(m.e)}">${tfAv1(m.n, " sm")}<span>${esc(m.n)}${m.e === eu ? " (você)" : ""}</span>${sel.has(m.e) ? "<b>✓</b>" : ""}</button>`).join("") : `<span class="mut">Ninguém do grupo encontrado. As pessoas vêm de Sistema › Usuários e permissões (acesso a este módulo).</span>`}</div>` : ""}`;
+    <div class="tf-atr-lista">${vis.length ? vis.map(m => `<button type="button" class="tf-atr-op ${sel.has(m.e) ? "on" : ""}" onclick="tfAtrTog(${esc(jsArg(m.e))})" aria-pressed="${sel.has(m.e)}">${tfAv1(m.n, " sm", m.e)}<span>${esc(m.n)}${m.e === eu ? " (você)" : ""}</span>${sel.has(m.e) ? "<b>✓</b>" : ""}</button>`).join("") : `<span class="mut">Ninguém do grupo encontrado. As pessoas vêm de Sistema › Usuários e permissões (acesso a este módulo).</span>`}</div>` : ""}`;
 }
 window.tfAtrPintar = tfAtrPintar;
 window.tfAtrTog = e => {
@@ -33088,6 +33095,69 @@ window.tfAtrTog = e => {
   else { const m = tfMembros().find(x => x.e === e) || (TF.atrIni || []).find(x => x.e === e); if (m) TF.atr.push({ e: m.e, n: m.n }); if (TF.atr.length > 20) TF.atr.length = 20; }
   tfAtrPintar();
 };
+
+/* =====================================================================
+   v0.12.95 · Foto das pessoas nos cartões da Central de Tarefas, como no Planner. A foto vem do cadastro de
+   RH › Funcionários (lista "RH — Funcionários · Fotos"): a pessoa da tarefa é ligada ao funcionário pelo e-mail
+   e, se não houver e-mail igual, pelo nome (só quando o nome é único). Sem foto ou sem acesso ao site RH: iniciais.
+   Da lista de funcionários só são lidos nome, e-mail e situação.
+   ===================================================================== */
+const TF_FOTO = { email: new Map(), nome: new Map(), url: new Map(), em: 0, ger: 0, carregando: null };
+/* e-mail cadastrado no RH decide sozinho (mesmo sem foto); senão o nome completo; senão primeiro + último nome.
+   Chave com mais de um funcionário (com ou sem foto) é ambígua: fica com as iniciais. */
+function tfFotoDe(e, n) {
+  e = normEmail(e); if (e && TF_FOTO.email.has(e)) return TF_FOTO.email.get(e);
+  const k = normName(n); if (!k) return "";
+  if (TF_FOTO.nome.has(k)) return TF_FOTO.nome.get(k);
+  const p = k.split(" "); return p.length > 1 ? (TF_FOTO.nome.get("~" + p[0] + " " + p[p.length - 1]) || "") : "";
+}
+/* a foto vira um endereço blob: (um por foto), para não repetir o base64 em cada cartão a cada repintura */
+function tfFotoUrl(d, velhas) {
+  if (!d) return ""; if (velhas.has(d)) { const u = velhas.get(d); velhas.delete(d); return u; }
+  try { const b = atob(d.slice(d.indexOf(",") + 1)), a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+    return URL.createObjectURL(new Blob([a], { type: d.slice(5, d.indexOf(";")) })); } catch (e) { return ""; }
+}
+function tfFotosCarregar(force) {
+  if (TF_FOTO.carregando) return TF_FOTO.carregando;
+  if (!force && TF_FOTO.em && Date.now() - TF_FOTO.em < 10 * 60 * 1000) return Promise.resolve();
+  const ger = TF_FOTO.ger;
+  TF_FOTO.carregando = (async () => {
+    let fs;
+    try {
+      const site = await SP.site(CONFIG.sites[LISTS.rh_func.siteKey]);
+      const l = (await SP.lists(site.id)).find(x => x.displayName === LISTS.rh_func.displayName);
+      fs = l ? (await SP.items(site.id, l.id, "($select=Title,Email,Situacao)")).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+      await rhFotoCarregar(true);
+      if (RH_FOTO.erro) throw new Error(RH_FOTO.erro);
+    } catch (e) {   /* sem acesso ao site RH ou falha passageira: mantém o que já havia e tenta de novo em 1 minuto */
+      TF_FOTO.em = Date.now() - 9 * 60 * 1000; return;
+    }
+    const velhas = new Map([...TF_FOTO.url.entries()]), url = new Map();
+    const ft = f => { const d = (RH_FOTO.map.get(String(f._id)) || {}).Foto; if (!erpFotoOk(d)) return ""; if (!url.has(d)) url.set(d, tfFotoUrl(d, velhas)); return url.get(d); };
+    const um = lista => { const v = [...new Set(lista.map(ft))]; return v.length === 1 ? v[0] : ""; };   /* fotos diferentes para a mesma chave: não adivinha */
+    const porEmail = new Map(), porNome = new Map(), junta = (M, k, f) => { if (k) { if (!M.has(k)) M.set(k, []); M.get(k).push(f); } };
+    fs.forEach(f => {
+      junta(porEmail, normEmail(f.Email), f);
+      if (f.Situacao === "Desligado") return;   /* desligado não entra na ligação por nome */
+      const k = normName(f.Title), p = k.split(" ");
+      junta(porNome, k, f); if (p.length > 1) junta(porNome, "~" + p[0] + " " + p[p.length - 1], f);
+    });
+    const email = new Map(), nome = new Map();
+    porEmail.forEach((L, e) => { const at = L.filter(f => f.Situacao !== "Desligado"); email.set(e, um(at.length ? at : L)); });
+    porNome.forEach((L, k) => nome.set(k, L.length === 1 ? ft(L[0]) : ""));
+    velhas.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) {} });
+    const assin = M => [...M.entries()].map(x => x.join("=")).join("|"), mudou = assin(email) + assin(nome) !== assin(TF_FOTO.email) + assin(TF_FOTO.nome);
+    Object.assign(TF_FOTO, { email, nome, url, em: TF_FOTO.ger === ger ? Date.now() : 0 });   /* foto gravada no RH durante a leitura: relê na próxima vez */
+    if (mudou) {
+      const foc = document.activeElement, digitando = el => !!(foc && foc.closest && foc.closest(el) && /^(INPUT|TEXTAREA|SELECT)$/.test(foc.tagName));
+      const arrastando = TF_DRAG || document.querySelector("#tfBody .arr, #tfBody .drag");
+      if (!digitando("#tfBody") && !arrastando) tfPintar();   /* quem está digitando ou arrastando vê as fotos na próxima repintura */
+      if ($("tfAtr") && !digitando("#tfAtr")) tfAtrPintar();
+    }
+  })().finally(() => { TF_FOTO.carregando = null; });
+  return TF_FOTO.carregando;
+}
+window.tfAvErro = img => { const s = document.createElement("span"); s.className = img.className.replace(/\btf-av-f\b/, "").trim(); s.style.background = img.dataset.cor || "#8A93A3"; s.textContent = img.dataset.ini || "?"; s.title = img.title || ""; img.replaceWith(s); };   /* foto corrompida: volta às iniciais */
 
 </script>
 </body>

@@ -3534,7 +3534,7 @@ tr.dre-aj td{background:#FFF8E6}
 .hig-crono td.plan{color:var(--navy);font-weight:800}.hig-crono td.plan.atr{color:var(--err);background:#FCEDEC}.hig-crono td.real{color:#197A46;font-weight:800;background:#EAF6EF}
 .hig-crono .lnk{all:unset;cursor:pointer;font-weight:800;color:var(--navy)}.hig-crono .lnk:hover{text-decoration:underline}
 .hig-duo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:var(--gap,16px)}.hig-duo>.cap-card:only-child{grid-column:1/-1}@media (max-width:980px){.hig-duo{grid-template-columns:1fr}}
-.hig-its{display:flex;gap:16px;flex-wrap:wrap}.hig-acoes{display:flex;flex-direction:column;gap:8px;align-items:stretch}.hig-qtd{padding:0 6px;margin-left:4px;line-height:18px}.hig-ac{display:flex;gap:4px;justify-content:flex-end}.hig-fix{display:flex;align-items:center;gap:8px;margin:4px 0}li.hig-em{font-size:12.5px}
+.hig-its{display:flex;gap:16px;flex-wrap:wrap}.hig-acoes{display:flex;flex-direction:column;gap:8px;align-items:stretch}.hig-qtd{padding:0 6px;margin-left:4px;line-height:18px}.hig-ac{display:flex;gap:4px;justify-content:flex-end}.hig-qtd-l{background:none;border:0;padding:2px 4px;min-height:24px;font:inherit;color:var(--ink-2);cursor:pointer;border-radius:4px}.hig-qtd-l:hover,.hig-qtd-l:focus-visible{color:var(--navy);text-decoration:underline}.hig-fds-v .hig-qtd-l{font-size:12px}.hig-fix{display:flex;align-items:center;gap:8px;margin:4px 0}li.hig-em{font-size:12.5px}
 /* v0.12.87 · Central de Tarefas */
 #tfRoot{--tf-gn:300px}
 .tf-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}@media (max-width:1100px){.tf-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}@media (max-width:640px){.tf-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -3655,7 +3655,7 @@ tr.dre-aj td{background:#FFF8E6}
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.88<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.89<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3692,7 +3692,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.88",
+  version: "v0.12.89",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -32091,10 +32091,14 @@ function higPintar(body) {
     ${kpi("Janela aberta", cont("janela") + cont("sem"), cont("sem") ? `${cont("sem")} sem histórico` : "podem ser lavados", cont("janela") + cont("sem") ? "hoje" : "")}${kpi("Atrasadas", cont("atrasada"), `passaram de ${c.max} dias`, cont("atrasada") ? "venc" : "pago")}
     ${kpi("Próximo fim de semana", prox ? higFds(prox) : "—", prox ? `${P.carga.get(prox).map(x => x.v.Title).join(" e ")} · ${P.carga.get(prox).reduce((t, x) => t + higPecas(x.v), 0)} peças` : "nada planejado")}
     ${kpi("Jogos reserva", HIG_ITENS.filter(i => J[i].total).map(i => `${J[i].prontos}/${J[i].total}`).join(" · ") || "0", HIG_ITENS.filter(i => J[i].total).map(i => `${i.toLowerCase()}: ${J[i].prontos} pronto(s)`).join(" · ") || "configure em ⚙", HIG_ITENS.some(i => J[i].total && !J[i].prontos) ? "hoje" : "")}</div>`;
+  const qEd = higQtdEd();
+  /* v0.12.89: as quantidades mostradas nos cards também se editam ali (quem edita o cadastro; administrador) */
+  const qtdTxt = v => esc(higItensDe(v).map(i => `${higQtd(v, i)} ${i.toLowerCase()}`).join(" + "));
+  const qtdBtn = v => qEd ? `<button class="hig-qtd-l" type="button" onclick="higQtdForm('${esc(v._id)}')" title="Editar as quantidades de ${esc(v.Title)}">${qtdTxt(v)} ✎</button>` : `<span class="sup">${qtdTxt(v)}</span>`;
   /* próximos fins de semana */
   const fdsCard = s => { const L = P.carga.get(s), pecas = L.reduce((t, x) => t + higPecas(x.v), 0), cort = L.filter(x => higQtd(x.v, "Cortinas") > 0).length, falta = s === prox && J.Cortinas.total && cort > J.Cortinas.prontos;
     return `<div class="hig-fds${s === prox ? " prox" : ""}"><div class="hig-fds-h"><b>${esc(higFds(s))}</b><span class="sup">${L.length}/${c.cap} ônibus · ${pecas} peças</span></div>
-      ${L.length ? L.map(x => `<div class="hig-fds-v ${x.atraso ? "atr" : ""}"><span>${frotaDot(x.atraso ? "erro" : x.sem ? "aviso" : "ok")}<b>${esc(x.v.Title)}</b>${x.fixo ? ` <span class="fv-tag" title="Data fixada">📌 fixada</span>` : ""}${x.sem ? ` <span class="sup">sem histórico</span>` : x.atraso ? ` <span class="sup">fora da janela (até ${esc(fmtDate(x.fim))})</span>` : ""}</span><span class="sup">${esc(higItensDe(x.v).map(i => `${higQtd(x.v, i)} ${i.toLowerCase()}`).join(" + "))}</span>${ed ? `<span class="hig-fds-a"><button class="btn mini" onclick="higConfirmar('${esc(x.v._id)}','${s}')">✓ Confirmar</button><button class="btn mini ghost" onclick="higFixar('${esc(x.v._id)}','${s}')" title="${x.fixo ? "Mudar a data fixada ou desfixar" : "Fixar em outro fim de semana"}">📌</button></span>` : ""}</div>`).join("") : `<div class="sup" style="padding:6px 0">livre</div>`}
+      ${L.length ? L.map(x => `<div class="hig-fds-v ${x.atraso ? "atr" : ""}"><span>${frotaDot(x.atraso ? "erro" : x.sem ? "aviso" : "ok")}<b>${esc(x.v.Title)}</b>${x.fixo ? ` <span class="fv-tag" title="Data fixada">📌 fixada</span>` : ""}${x.sem ? ` <span class="sup">sem histórico</span>` : x.atraso ? ` <span class="sup">fora da janela (até ${esc(fmtDate(x.fim))})</span>` : ""}</span>${qtdBtn(x.v)}${ed ? `<span class="hig-fds-a"><button class="btn mini" onclick="higConfirmar('${esc(x.v._id)}','${s}')">✓ Confirmar</button><button class="btn mini ghost" onclick="higFixar('${esc(x.v._id)}','${s}')" title="${x.fixo ? "Mudar a data fixada ou desfixar" : "Fixar em outro fim de semana"}">📌</button></span>` : ""}</div>`).join("") : `<div class="sup" style="padding:6px 0">livre</div>`}
       ${falta ? `<div class="hig-falta">Só ${J.Cortinas.prontos} jogo(s) reserva de cortinas pronto(s) para ${cort} ônibus</div>` : ""}</div>`; };
   const proxHtml = `<div class="cap-card"><div class="cap-card-h"><h3>Próximos fins de semana</h3><span class="cap-card-s">até ${c.cap} ônibus por fim de semana · confirmar a lavagem reorganiza o plano</span></div><div class="hig-fds-grid">${P.slots.slice(0, 6).map(fdsCard).join("")}</div></div>`;
   /* cronograma: ônibus × fins de semana */
@@ -32105,7 +32109,6 @@ function higPintar(body) {
     if (real.length) return `<td class="hig-c real" title="Lavado em ${esc(fmtDate(ymd(real[0].Data)))}${ed ? " · clique para editar" : ""}"${ed ? ` onclick="higEditarCel('${esc(v._id)}','${s}')"` : ""}>✓</td>`;
     if (!e) return `<td class="hig-c"${ed ? ` onclick="higFixar('${esc(v._id)}','${s}')" title="Fixar ${esc(v.Title)} em ${esc(higFds(s))}"` : ""}></td>`;
     return `<td class="hig-c plan ${e.fixo ? "fixo" : ""} ${e.atraso ? "atr" : ""}" title="${esc(`${v.Title} · ${higFds(s)}${e.fixo ? " · fixada" : ""}${e.atraso ? " · fora da janela" : ""}`)}"${ed ? ` onclick="higAcao('${esc(v._id)}','${s}')"` : ""}>${e.fixo ? "📌" : "●"}</td>`; };
-  const qEd = higQtdEd();
   const linha = ([v, St]) => `<tr><th><button class="lnk" onclick="frotaAbrirVeic('${esc(v._id)}')">${esc(v.Title)}</button><div class="sup">${esc(higItensDe(v).map(i => `${higQtd(v, i)} ${i.toLowerCase()}`).join(" + "))}${qEd ? ` <button class="btn mini ghost hig-qtd" onclick="higQtdForm('${esc(v._id)}')" title="Editar as quantidades de cortinas e forros" aria-label="Editar quantidades de ${esc(v.Title)}">✎</button>` : ""}</div></th>
     <td class="nw">${frotaDot(HIG_ST[St.st][1])}${esc(HIG_ST[St.st][0])}<div class="sup">${St.base ? `última ${esc(fmtDate(St.base))}` : "nunca lavado no ERP"}${St.base && St.falta.length ? ` · ${esc(St.falta.join(", ").toLowerCase())} sem histórico` : ""}</div></td>${cols.map(s => celula(v, s)).join("")}</tr>`;
   const crono = `<div class="cap-card"><div class="cap-card-h"><h3>Cronograma</h3><span class="cap-card-s">● planejado · 📌 fixado · ✓ lavado · vermelho = fora da janela${ed ? " · clique numa casa vazia para fixar; num ● ou 📌 para confirmar, mudar a data ou desfixar; num ✓ para corrigir a lavagem" : ""}${qEd ? " · ✎ muda as quantidades" : ""}</span></div>
@@ -32356,9 +32359,9 @@ window.higConfig = () => {
       const its = higItensDe(v), H = higSit(v), P = higPlanejar(), prox = P.slots.find(s => P.carga.get(s).some(x => x.v._id === v._id));
       const st = HIG_ST[H.st];
       grid.insertAdjacentHTML("beforeend", `<div class="cap-card fv-hig"><div class="cap-card-h"><h3>${frotaDot(st[1])} Higienização</h3><span class="grow"></span>${higEd() && its.length ? `<button class="btn mini" onclick="higConfirmar('${esc(v._id)}')">✓ Confirmar</button>` : ""}</div>
-        ${its.length ? `<ul class="fv-docs">${its.map(i => `<li>${frotaDot(H.ult[i] ? (higHoje() > higAdd(H.ult[i], higCfg().max) ? "erro" : "ok") : "aviso")}<span>${esc(i)} (${higQtd(v, i)})</span><b>${H.ult[i] ? esc(fmtDate(H.ult[i])) : "—"}</b></li>`).join("")}
+        ${its.length ? `<ul class="fv-docs">${its.map(i => `<li>${frotaDot(H.ult[i] ? (higHoje() > higAdd(H.ult[i], higCfg().max) ? "erro" : "ok") : "aviso")}<span>${esc(i)} (${higQtdEd() ? `<button class="hig-qtd-l" type="button" onclick="higQtdForm('${esc(v._id)}')" title="Editar as quantidades" aria-label="Editar quantidade de ${esc(i.toLowerCase())} (${higQtd(v, i)})">${higQtd(v, i)} ✎</button>` : higQtd(v, i)})</span><b>${H.ult[i] ? esc(fmtDate(H.ult[i])) : "—"}</b></li>`).join("")}
           <li>${frotaDot(st[1])}<span>Próxima</span><b>${prox ? esc(higFds(prox)) : "—"}</b></li></ul><div class="sup" style="padding:0 16px 10px">${esc(st[0])}${H.base ? ` · janela ${esc(fmtDate(H.ini))} a ${esc(fmtDate(H.fim))}` : ""} · <a href="#/operacional/frota" onclick="FROTA.aba='hig'">ver cronograma</a></div>`
-        : `<div class="sup" style="padding:12px 16px">Sem cortinas nem forros no cadastro.${frotaEd("veic") ? " Informe as quantidades em Editar cadastro." : ""}</div>`}</div>`);
+        : `<div class="sup" style="padding:12px 16px">Sem cortinas nem forros no cadastro.${higQtdEd() ? ` <button class="btn mini" onclick="higQtdForm('${esc(v._id)}')">Informar quantidades</button>` : ""}</div>`}</div>`);
     }
     return r;
   };

@@ -3690,7 +3690,7 @@ body.hig-arrastando,body.hig-arrastando *{cursor:grabbing!important}.hig-fantasm
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.92<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.12.93<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3727,7 +3727,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.12.92",
+  version: "v0.12.93",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -19730,8 +19730,21 @@ function printDoc(o) {
   let fr = $("printFrame");
   if (!fr) { fr = document.createElement("iframe"); fr.id = "printFrame"; fr.setAttribute("aria-hidden", "true"); fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0"; document.body.appendChild(fr); }
   fr.srcdoc = html;
-  fr.onload = () => { setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { toast("Não foi possível abrir a impressão: " + e.message, 6000); } }, 400); };
+  /* v0.12.93: umaPagina — cada .pg é medida na largura útil do A4 e reduzida (zoom) até caber numa folha */
+  const fr0 = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0";
+  fr.setAttribute("tabindex", "-1");
+  if (o.umaPagina) fr.style.cssText = `position:fixed;left:0;top:0;width:${o.paisagem ? 1032 : 703}px;height:20000px;border:0;opacity:0;pointer-events:none;z-index:-1`;   /* alto o bastante para não aparecer barra de rolagem na medição */
+  else fr.style.cssText = fr0;
+  fr.onload = () => { setTimeout(async () => { try {
+    if (o.umaPagina) { try { await Promise.race([fr.contentDocument.fonts.ready, new Promise(r => setTimeout(r, 1500))]); } catch (e) {} printCaber(fr.contentDocument, o.paisagem); }
+    fr.contentWindow.focus(); fr.contentWindow.print();
+    if (o.umaPagina) { fr.style.cssText = fr0; try { window.focus(); } catch (e) {} }   /* depois da impressão, a moldura volta a 0×0 */
+  } catch (e) { toast("Não foi possível abrir a impressão: " + e.message, 6000); } }, 400); };
   return html;
+}
+function printCaber(doc, paisagem) {
+  const maxH = (paisagem ? 210 - 28 : 297 - 28) * 96 / 25.4 * 0.97;   /* altura útil da folha (margens de 13 e 15 mm), com folga de 3% */
+  [...doc.querySelectorAll(".pg")].forEach(pg => { pg.style.zoom = ""; const h = pg.scrollHeight; if (h > maxH) pg.style.zoom = String(Math.max(0.5, Math.floor(maxH / h * 1000) / 1000)); });
 }
 /* titulo: HTML de constantes do próprio código; sub e campos da ficha: texto */
 function printCab(titulo, sub, opt) {
@@ -19740,14 +19753,14 @@ function printCab(titulo, sub, opt) {
   const quem = vcQuemEmite();   /* v0.12.29: na visualização, quem emite é o administrador */
   const agora = new Date(), p = n => String(n).padStart(2, "0");
   const emissao = `${p(agora.getDate())}/${p(agora.getMonth() + 1)}/${agora.getFullYear()} ${p(agora.getHours())}:${p(agora.getMinutes())}`;
-  const meta = [["Documento", opt.doc || "—"], ["Emissão", emissao], ["Emitido por", quem]].concat(opt.meta || []);
+  const meta = [["Documento", opt.doc || "—"], ["Emissão", emissao]].concat(opt.semQuem ? [] : [["Emitido por", quem]]).concat(opt.meta || []);   /* v0.12.93: semQuem tira "Emitido por" (cartaz de horários) */
   return `<header class="doc-cab"><img src="${LOGO_NMB}" alt="${LOGO_ALT}"><div><div class="emp">Transportadora Nova Macabu</div><h1>${titulo}</h1>${sub ? `<div class="doc-sub">${esc(sub)}${opt.stamp ? ` <span class="stamp ${esc(opt.stampCls || "neutro")}">${esc(opt.stamp)}</span>` : ""}</div>` : ""}</div>
     ${ficha ? `<dl class="doc-meta">${meta.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : `<span></span>`}</header>`;
 }
 function printKpis(arr) { return `<div class="kpis">${arr.map(([l, v, s, cls]) => `<div><div class="l">${esc(l)}</div><div class="v ${cls || ""}">${esc(v)}</div>${s ? `<div class="s">${esc(s)}</div>` : ""}</div>`).join("")}</div>`; }
 let PRINT_SEC_N = 0;
 function printSec(t, s, n, attrs) { return `<h2 class="sec"${attrs || ""}>${n ? `<span class="n">${esc(String(n))}</span>` : ""}${esc(t)}${s ? `<span class="s">${esc(s)}</span>` : ""}</h2>`; }   /* attrs (v0.12.69): atributos já escapados, de origem para a tela (data-rota/data-origem) */
-function printRodape(origem) { const quem = vcQuemEmite(); return `<div class="rod"><span>ERP NMB · ${esc(origem || "")}</span><span>Impresso em ${esc(new Date().toLocaleString("pt-BR"))} por <b>${esc(quem)}</b></span></div>`; }
+function printRodape(origem, semQuem) { const quem = vcQuemEmite(); return `<div class="rod"><span>ERP NMB · ${esc(origem || "")}</span><span>Impresso em ${esc(new Date().toLocaleString("pt-BR"))}${semQuem ? "" : ` por <b>${esc(quem)}</b>`}</span></div>`; }
 function printAssin(arr) { return `<div class="assin">${arr.map(([cargo, nome, quando]) => `<div><b>${esc(cargo)}</b>${esc(nome || "")}${quando ? `<br><span>${esc(quando)}</span>` : ""}</div>`).join("")}</div>`; }
 
 /* ---- Boletim diário de caixa: versão técnica ---- */
@@ -26581,11 +26594,12 @@ const HOR_PRINT_CSS = `
   table.ht th{background:#EEF1F5;color:#1E2153;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;text-align:left;padding:6px 9px;border-bottom:1px solid #8D96A3;width:50%}
   table.ht td{padding:0;vertical-align:top;border-bottom:.5px solid #DDE1E6;width:50%}
   table.ht td+td{border-left:.5px solid #DDE1E6}
-  .hr{display:flex;align-items:center;gap:9px;padding:5px 9px;min-height:27px}
-  .hr .h{font-size:14.5px;font-weight:800;font-variant-numeric:tabular-nums;color:#1B2230;min-width:46px}
-  .hp{display:inline-block;font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:3px;background:#E7EBF5;color:#1E2153;white-space:nowrap}
+  .hr{display:flex;align-items:center;gap:4px;padding:5px 6px;min-height:27px;flex-wrap:nowrap;overflow:hidden}
+  .hr>*{flex-shrink:0}.hr .ho{flex:1 1 auto;min-width:0;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}.hr .ho{text-wrap:balance}   /* v0.12.93: observação no centro da altura (até 2 linhas se faltar espaço); a etiqueta da linha nunca passa para a outra coluna */
+  .hr .h{font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;color:#1B2230;min-width:38px}
+  .hp{display:inline-block;font-size:8px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;padding:2px 3px;border-radius:3px;background:#E7EBF5;color:#1E2153;white-space:nowrap}
   .hp.unico{background:#FFF0E8;color:#A33B00}.hp.mad{background:#E3F2E7;color:#1F7A3E}.hp.fret{background:#F1EAF7;color:#6E4B8E}
-  .ho{font-size:10px;color:#3B4352;font-weight:600}
+  .ho{font-size:9px;color:#3B4352;font-weight:600}
   .hp.lin{margin-left:auto}.hp.l1000{background:#E8EEF9;color:#2B4C8C}.hp.l1001{background:#FFF4E5;color:#9A5B00}.hp.l2000{background:#E9EDF2;color:#3E4C61}
   .hleg{display:flex;gap:14px;flex-wrap:wrap;margin:12px 0 0;font-size:9.5px;color:#3B4352;align-items:center}
   .hnota{font-size:9.5px;color:#6B7280;margin:6px 0 0}`;
@@ -26604,16 +26618,16 @@ function horPrintPagina(q) {
   const vig = horVigencia(), hoje = new Date();
   const doc = `HOR-${q === "Segunda a sexta" ? "SEGSEX" : q === "Sábados" ? "SAB" : q === "Domingos e feriados" ? "DOMFER" : "ESP"}-${(vig || todayISO()).replace(/-/g, "")}`;
   const temServ = ["Linha", "Fretamento", "Madalena"].some(bl => HOR_ORIGENS.some(o => horDe(q, bl, o).some(z => z.Servico)));
-  return `<div class="pg">${printCab(`Tabela de horários`, `Válida a partir de ${vig ? fmtDate(vig).replace(/(\d{2})\/(\d{2})\/(\d{2})$/, "$1/$2/20$3") : "—"}`, { doc, meta: [["Tipo de dia", q]] })}
+  return `<div class="pg">${printCab(`Tabela de horários`, `Válida a partir de ${vig ? fmtDate(vig).replace(/(\d{2})\/(\d{2})\/(\d{2})$/, "$1/$2/20$3") : "—"}`, { doc, meta: [["Tipo de dia", q]], semQuem: true })}
     <div class="hq"><b>${esc(q)}</b><span>Conceição de Macabu · Macaé · Santa Maria Madalena</span></div>
     ${tabela("Conceição de Macabu × Macaé", "linha regular", linha("Macabu"), linha("Macaé"), "Macabu", "Macaé")}
     ${fret("Macabu").length || fret("Macaé").length ? tabela("Fretamento", "", fret("Macabu"), fret("Macaé"), "Macabu", "Macaé") : ""}
     ${mad("Madalena").length || mad("Macaé").length ? tabela("Horário de Madalena", "Macaé × Santa Maria Madalena", mad("Madalena"), mad("Macaé"), "Madalena", "Macaé") : ""}
     ${temServ ? `<div class="hleg"><b>Serviços:</b> <span class="hp">Parador</span> para em todos os pontos · <span class="hp unico">Direto</span> preço único, sem paradas intermediárias · <span class="hp mad">via Madalena</span> segue até Santa Maria Madalena${fret("Macabu").length ? ` · <span class="hp fret">Fretamento</span> firmas` : ""}</div>` : ""}${(() => { const zs = ["Linha", "Fretamento", "Madalena"].flatMap(bl => HOR_ORIGENS.flatMap(o => horDe(q, bl, o))); const ms = HOR_MAD.filter(m => zs.some(z => z.Madalena === m)), ls = HOR_LINHAS.filter(l => zs.some(z => z.Linha === l)); return ms.length || ls.length ? `<div class="hleg">${ms.length ? `<b>Madalena:</b> ${ms.map(m => `<span class="hp mad">${esc(m)}</span>`).join(" ")}` : ""}${ls.length ? ` <b>Linhas:</b> ${ls.map(l => `<span class="hp ${horLinhaCls(l)}">${esc(l)}</span>`).join(" ")}` : ""}</div>` : ""; })()}
     <p class="hnota">Horários sujeitos a alteração sem aviso prévio. Em feriados vale o quadro de domingos.</p>
-    ${printRodape("Operacional · Tabela de Horários")}</div>`;
+    ${printRodape("Operacional · Tabela de Horários", true)}</div>`;
 }
-window.horImprimir = tudo => { const qs = tudo ? HOR_QUADROS.filter(q => q !== "Especiais" || HOR_BLOCOS.some(bl => HOR_ORIGENS.some(o => horDe(q, bl, o).length))) : [HOR_STATE.quadro]; printDoc({ titulo: "Tabela de Horários", html: qs.map(horPrintPagina).join(""), fonte: 11, css: HOR_PRINT_CSS }); };
+window.horImprimir = tudo => { const qs = tudo ? HOR_QUADROS.filter(q => q !== "Especiais" || HOR_BLOCOS.some(bl => HOR_ORIGENS.some(o => horDe(q, bl, o).length))) : [HOR_STATE.quadro]; printDoc({ titulo: "Tabela de Horários", html: qs.map(horPrintPagina).join(""), fonte: 11, css: HOR_PRINT_CSS, umaPagina: true }); };   /* v0.12.93: cada tipo de dia numa folha */
 /* Excel: uma aba por tipo de dia, com cabeçalho na paleta do ERP, faixa do tipo de dia, serviço e observação em colunas próprias, bordas finas e impressão A4 */
 window.horExcel = async () => {
   try {

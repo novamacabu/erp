@@ -3529,8 +3529,12 @@ tr.dre-aj td{background:#FFF8E6}
 .hig-fds-h{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:6px}
 .hig-fds-v{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:6px 0;border-top:1px dashed var(--line)}.hig-fds-v>span:first-child{display:inline-flex;align-items:center;gap:6px}.hig-fds-v.atr b{color:var(--err)}
 .hig-fds-a{margin-left:auto;display:inline-flex;gap:4px}.hig-falta{margin-top:6px;font-size:12px;font-weight:700;color:#9A6A00}
-.hig-crono th,.hig-crono td{white-space:nowrap}.hig-crono th.hig-mes{text-align:center;text-transform:capitalize}.hig-crono th.hig-sab{text-align:center;min-width:30px;padding:4px}.hig-crono th.hig-sab.prox{color:var(--orange,#F0541B)}
-.hig-crono td.hig-c{text-align:center;padding:4px;cursor:default;border-left:1px solid var(--line)}.hig-crono td.hig-c[onclick]{cursor:pointer}.hig-crono td.hig-c[onclick]:hover{background:var(--soft)}
+.hig-crono th,.hig-crono td{white-space:nowrap}.hig-crono th.hig-mes{text-align:center;text-transform:none}.hig-crono th.hig-sab{text-align:center;min-width:30px;padding:4px}.hig-crono th.hig-sab.prox{color:var(--orange,#F0541B)}
+.hig-crono td.hig-c{text-align:center;padding:4px;cursor:default;border-left:1px solid var(--line)}.hig-crono td.hig-c[onclick]{cursor:pointer}.hig-crono td.plan[onclick]{cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.hig-crono td.hig-alvo{outline:2px dashed var(--navy);outline-offset:-3px;background:var(--soft)}.hig-crono td.hig-alvo.cheio{outline-color:var(--err)}.hig-crono td.hig-orig{opacity:.35}.toast .hig-desf{margin-left:10px;background:none;border:1px solid rgba(255,255,255,.6);color:inherit;font:inherit;font-weight:700;padding:4px 10px;border-radius:6px;cursor:pointer}
+body.hig-arrastando,body.hig-arrastando *{cursor:grabbing!important}.hig-fantasma{position:fixed;z-index:9999;pointer-events:none;transform:translate(-50%,-120%);background:var(--navy);color:#fff;font-size:12px;font-weight:700;padding:4px 8px;border-radius:6px;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+.hig-crono thead tr:first-child th:first-child{position:sticky;left:0;z-index:7;background:#F7F8FA}.hig-crono tbody th{position:sticky;left:0;z-index:1;background:var(--surface,#fff);text-transform:none;letter-spacing:0}.hig-crono tbody th .lnk{text-transform:none}.hig-st-m{display:none}
+@media (max-width:700px){.hig-crono .hig-st{display:none}.hig-st-m{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--ink-2);margin-top:2px}.hig-crono tbody th{padding:8px 10px;box-shadow:2px 0 0 var(--line);white-space:normal;min-width:112px;max-width:130px}.hig-crono thead tr:first-child th:first-child{min-width:112px;max-width:130px}.hig-crono td.hig-c{min-width:34px;height:44px;font-size:15px}}.hig-crono td.hig-c[onclick]:hover{background:var(--soft)}
 .hig-crono td.plan{color:var(--navy);font-weight:800}.hig-crono td.plan.atr{color:var(--err);background:#FCEDEC}.hig-crono td.real{color:#197A46;font-weight:800;background:#EAF6EF}
 .hig-crono .lnk{all:unset;cursor:pointer;font-weight:800;color:var(--navy)}.hig-crono .lnk:hover{text-decoration:underline}
 .hig-duo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:var(--gap,16px)}.hig-duo>.cap-card:only-child{grid-column:1/-1}@media (max-width:980px){.hig-duo{grid-template-columns:1fr}}
@@ -32104,15 +32108,15 @@ function higPintar(body) {
   /* cronograma: ônibus × fins de semana */
   const cols = P.slots.slice(0, 16), meses = [];
   cols.forEach(s => { const m = s.slice(0, 7); const u = meses[meses.length - 1]; if (u && u.m === m) u.n++; else meses.push({ m, n: 1 }); });
-  const mesNome = m => dLocal(m + "-01").toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
+  const mesNome = m => { const t = dLocal(m + "-01").toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }).replace(" de ", " "); return t.charAt(0).toUpperCase() + t.slice(1); };
   const celula = (v, s) => { const e = P.carga.get(s).find(x => x.v._id === v._id), real = higDe(v).filter(x => x.Situacao === "Realizada" && x.Data && higSab(ymd(x.Data)) === s);
     if (real.length) return `<td class="hig-c real" title="Lavado em ${esc(fmtDate(ymd(real[0].Data)))}${ed ? " · clique para editar" : ""}"${ed ? ` onclick="higEditarCel('${esc(v._id)}','${s}')"` : ""}>✓</td>`;
-    if (!e) return `<td class="hig-c"${ed ? ` onclick="higFixar('${esc(v._id)}','${s}')" title="Fixar ${esc(v.Title)} em ${esc(higFds(s))}"` : ""}></td>`;
-    return `<td class="hig-c plan ${e.fixo ? "fixo" : ""} ${e.atraso ? "atr" : ""}" title="${esc(`${v.Title} · ${higFds(s)}${e.fixo ? " · fixada" : ""}${e.atraso ? " · fora da janela" : ""}`)}"${ed ? ` onclick="higAcao('${esc(v._id)}','${s}')"` : ""}>${e.fixo ? "📌" : "●"}</td>`; };
-  const linha = ([v, St]) => `<tr><th><button class="lnk" onclick="frotaAbrirVeic('${esc(v._id)}')">${esc(v.Title)}</button><div class="sup">${esc(higItensDe(v).map(i => `${higQtd(v, i)} ${i.toLowerCase()}`).join(" + "))}${qEd ? ` <button class="btn mini ghost hig-qtd" onclick="higQtdForm('${esc(v._id)}')" title="Editar as quantidades de cortinas e forros" aria-label="Editar quantidades de ${esc(v.Title)}">✎</button>` : ""}</div></th>
-    <td class="nw">${frotaDot(HIG_ST[St.st][1])}${esc(HIG_ST[St.st][0])}<div class="sup">${St.base ? `última ${esc(fmtDate(St.base))}` : "nunca lavado no ERP"}${St.base && St.falta.length ? ` · ${esc(St.falta.join(", ").toLowerCase())} sem histórico` : ""}</div></td>${cols.map(s => celula(v, s)).join("")}</tr>`;
-  const crono = `<div class="cap-card"><div class="cap-card-h"><h3>Cronograma</h3><span class="cap-card-s">● planejado · 📌 fixado · ✓ lavado · vermelho = fora da janela${ed ? " · clique numa casa vazia para fixar; num ● ou 📌 para confirmar, mudar a data ou desfixar; num ✓ para corrigir a lavagem" : ""}${qEd ? " · ✎ muda as quantidades" : ""}</span></div>
-    <div class="table-wrap"><table class="cap-table hig-crono"><thead><tr><th rowspan="2">Ônibus</th><th rowspan="2">Situação</th>${meses.map(m => `<th colspan="${m.n}" class="hig-mes">${esc(mesNome(m.m))}</th>`).join("")}</tr><tr>${cols.map(s => `<th class="hig-sab${s === prox ? " prox" : ""}">${esc(s.slice(8, 10))}</th>`).join("")}</tr></thead>
+    if (!e) return `<td class="hig-c" data-v="${esc(v._id)}" data-s="${s}"${ed ? ` onclick="higFixar('${esc(v._id)}','${s}')" title="Fixar ${esc(v.Title)} em ${esc(higFds(s))}"` : ""}></td>`;
+    return `<td class="hig-c plan ${e.fixo ? "fixo" : ""} ${e.atraso ? "atr" : ""}" data-v="${esc(v._id)}" data-s="${s}" title="${esc(`${v.Title} · ${higFds(s)}${e.fixo ? " · fixada" : ""}${e.atraso ? " · fora da janela" : ""}${ed ? " · arraste para outro fim de semana" : ""}`)}"${ed ? ` onclick="higAcao('${esc(v._id)}','${s}')"` : ""}>${e.fixo ? "📌" : "●"}</td>`; };
+  const linha = ([v, St]) => `<tr><th><button class="lnk" onclick="frotaAbrirVeic('${esc(v._id)}')">${esc(v.Title)}</button><div class="sup">${esc(higItensDe(v).map(i => `${higQtd(v, i)} ${i.toLowerCase()}`).join(" + "))}${qEd ? ` <button class="btn mini ghost hig-qtd" onclick="higQtdForm('${esc(v._id)}')" title="Editar as quantidades de cortinas e forros" aria-label="Editar quantidades de ${esc(v.Title)}">✎</button>` : ""}</div><div class="hig-st-m">${frotaDot(HIG_ST[St.st][1])}${esc(HIG_ST[St.st][0])}</div></th>
+    <td class="nw hig-st">${frotaDot(HIG_ST[St.st][1])}${esc(HIG_ST[St.st][0])}<div class="sup">${St.base ? `última ${esc(fmtDate(St.base))}` : "nunca lavado no ERP"}${St.base && St.falta.length ? ` · ${esc(St.falta.join(", ").toLowerCase())} sem histórico` : ""}</div></td>${cols.map(s => celula(v, s)).join("")}</tr>`;
+  const crono = `<div class="cap-card"><div class="cap-card-h"><h3>Cronograma</h3><span class="cap-card-s">● planejado · 📌 fixado · ✓ lavado · vermelho = fora da janela${ed ? " · casa vazia: fixar · ● ou 📌: confirmar, mudar ou desfixar · arraste para outro fim de semana (no celular, segure e arraste) · ✓: corrigir" : ""}${qEd ? " · ✎ quantidades" : ""}</span></div>
+    <div class="table-wrap"><table class="cap-table hig-crono"><thead><tr><th rowspan="2">Ônibus</th><th rowspan="2" class="hig-st">Situação</th>${meses.map(m => `<th colspan="${m.n}" class="hig-mes">${esc(mesNome(m.m))}</th>`).join("")}</tr><tr>${cols.map(s => `<th class="hig-sab${s === prox ? " prox" : ""}">${esc(s.slice(8, 10))}</th>`).join("")}</tr></thead>
     <tbody>${S.map(linha).join("") || `<tr><td colspan="${cols.length + 2}" class="mut">Nenhum ônibus com cortinas ou forros cadastrados.</td></tr>`}</tbody></table></div></div>`;
   /* jogos reserva e histórico */
   const jogos = HIG_ITENS.some(i => J[i].total || J[i].em.length) ? `<div class="cap-card"><div class="cap-card-h"><h3>Rodízio do jogo reserva</h3><span class="cap-card-s">na troca, o ônibus recebe o jogo limpo e o retirado é lavado durante a semana</span></div><ul class="fv-docs">${HIG_ITENS.filter(i => J[i].total || J[i].em.length).map(i => `<li>${frotaDot(J[i].prontos ? "ok" : "aviso")}<span>${esc(i)}: ${J[i].prontos} de ${J[i].total} pronto(s)</span><b>${J[i].em.length} em lavagem</b></li>${J[i].em.map(x => `<li class="hig-em"><span>· jogo retirado de <b>${esc(x.Veiculo || "")}</b> em ${esc(fmtDate(ymd(x.Data)))}</span>${ed ? `<button class="btn mini" onclick="higJogoPronto('${esc(x._id)}')">Marcar pronto</button>` : ""}</li>`).join("")}`).join("")}</ul></div>` : "";
@@ -32121,6 +32125,8 @@ function higPintar(body) {
   const histHtml = `<div class="cap-card"><div class="cap-card-h"><h3>Lavagens realizadas</h3><span class="cap-card-s">${hist.length ? `últimas ${hist.length}` : "nenhuma ainda"}</span></div>${hist.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Data</th><th>Ônibus</th><th>Item</th><th>Modalidade</th><th class="right">Retiradas</th><th class="right">Devolvidas</th><th class="right">Danificadas</th><th>Responsável</th>${ed || podeExc ? "<th></th>" : ""}</tr></thead><tbody>
     ${hist.map(x => { const perda = Number(x.Retiradas || 0) - Number(x.Devolvidas || 0); return `<tr><td class="nw">${esc(fmtDate(ymd(x.Data)))}</td><td><b>${esc(x.Veiculo || "")}</b></td><td>${esc(x.Item || "")}</td><td>${esc(x.Modalidade || "—")}</td><td class="right">${x.Retiradas ?? "—"}</td><td class="right">${x.Devolvidas ?? "—"}${perda > 0 ? ` <span class="venc-txt" title="peças que não voltaram">(−${perda})</span>` : ""}</td><td class="right">${Number(x.Danificadas || 0) ? `<span class="warn-txt">${esc(String(x.Danificadas))}</span>` : "0"}</td><td>${esc(x.Responsavel || "")}</td>${ed || podeExc ? `<td class="nw hig-ac">${ed ? `<button class="btn mini" onclick="higEditar('${esc(x._id)}')" title="Corrigir esta lavagem">Editar</button>` : ""}${podeExc ? `<button class="btn mini ghost danger" onclick="higExcluir('${esc(x._id)}')" title="Excluir esta lavagem" aria-label="Excluir">✕</button>` : ""}</td>` : ""}</tr>`; }).join("")}</tbody></table></div>` : ""}</div>`;
   body.innerHTML = kpis + proxHtml + crono + `<div class="hig-duo">${jogos}${histHtml}</div>` + `<p class="cpx-nota">Regra: a próxima lavagem fica entre ${c.min} e ${c.max} dias depois da última confirmada (alvo ${c.alvo}). Cortinas e forros do mesmo ônibus vão juntos. Sem histórico, o ERP escalona ${c.cap} ônibus por fim de semana a partir do próximo. As quantidades de cada ônibus mudam no ✎ do cronograma ou em Editar cadastro (padrão: ${c.cortinas} cortinas; forros só nos ônibus com bancos executivos).</p>`;
+  if (window.higArrastoCancelar) window.higArrastoCancelar();
+  { const tb = body.querySelector(".hig-crono"); if (tb && window.higToqueMove) tb.addEventListener("touchmove", window.higToqueMove, { passive: false }); }
 }
 /* ---- confirmar lavagem ---- */
 window.higConfirmar = (vid, sab) => {
@@ -32188,6 +32194,7 @@ const higQtdEd = () => frotaEd("veic") && !!FROTA.listVeic;
 const HIG_MODS = ["Troca por jogo reserva", "Lavagem e reinstalação"], k0 = o => !Object.keys(o).length;
 window.higAcao = (vid, sab) => {
   if (!higEd()) return;
+  if (HIG.movendo) { toast("Aguarde: salvando a mudança anterior."); return; }
   const v = frotaVeicPorId(vid); if (!v) return;
   const fx = higDe(v).find(x => x.Situacao === "Fixada" && x.Data && higSab(ymd(x.Data)) === sab);
   openModal(`${v.Title} · ${higFds(sab)}`, `<p class="sup">${fx ? "Data fixada à mão." : "Data planejada pelo ERP."} O que você quer fazer?</p>
@@ -32258,9 +32265,74 @@ window.higEditarCel = (vid, sab) => {
   openModal(`${v.Title} · ${higFds(sab)}`, `<p class="sup">Qual lavagem você quer corrigir?</p><div class="hig-acoes">${real.map(x => `<button class="btn" type="button" onclick="closeModal(); higEditar('${esc(x._id)}')">${esc(x.Item || "")} · ${esc(fmtDate(ymd(x.Data)))}</button>`).join("")}</div>`, () => true);
   const b = $("mSave"); if (b) b.style.display = "none";
 };
+/* ---- v0.12.89: arrastar o ● / 📌 no cronograma para outro fim de semana ---- */
+function higToastDesfazer(msg, fn) {
+  toast(msg, 9000); const t = $("toast"); if (!t || !fn) return;
+  const b = document.createElement("button"); b.type = "button"; b.className = "hig-desf"; b.textContent = "Desfazer";
+  b.onclick = () => { if (HIG.movendo) { toast("Aguarde: salvando outra mudança; tente Desfazer de novo em instantes.", 4000); return; } t.classList.remove("on"); fn(); }; t.appendChild(document.createTextNode(" ")); t.appendChild(b);
+}
+async function higMover(vid, de, para) {
+  if (!higEd() || de === para) return;
+  if (HIG.movendo) { toast("Aguarde: salvando a mudança anterior."); return; }
+  const v = frotaVeicPorId(vid); if (!v) { toast("Ônibus não encontrado; atualize a página."); return; }
+  const P = higPlanejar(); if (!P.slots.includes(para)) { toast("Esse fim de semana saiu do cronograma; atualize a página."); return; }
+  if (higDe(v).some(x => x.Situacao === "Realizada" && x.Data && higSab(ymd(x.Data)) === para)) { toast("Esse fim de semana já tem lavagem confirmada para o ônibus."); return; }
+  const fix = higDe(v).filter(x => x.Situacao === "Fixada" && x.Data);
+  const atual = fix.find(f => higSab(ymd(f.Data)) === de), ja = fix.some(f => higSab(ymd(f.Data)) === para);
+  if (ja && !atual) { toast(`${v.Title} já está fixado em ${higFds(para)}.`); return; }
+  const outros = (P.carga.get(para) || []).filter(x => x.v._id !== vid);
+  if (outros.length >= P.c.cap && !(await erpConfirmar({ titulo: "Fim de semana cheio", texto: `${higFds(para)} já tem ${outros.map(x => x.v.Title).join(" e ")}. Fixar ${v.Title} mesmo assim? O plano tira um dos outros desse fim de semana se a data deles não for fixada.`, sim: "Fixar mesmo assim" }))) return;
+  HIG.movendo = true;
+  document.querySelectorAll(`.hig-crono td.hig-c[data-v="${CSS.escape(String(vid))}"]`).forEach(td => { if (td.dataset.s === de) td.classList.add("hig-orig"); if (td.dataset.s === para) { td.classList.add("hig-alvo"); td.textContent = "…"; } });
+  let novo = null, aviso = "";
+  try {
+    try { if (!ja) novo = await SP.create(FROTA.site.id, HIG.list.id, { Title: `Fixada · ${v.Title} · ${para}`, Veiculo: v.Title, VeicId: String(v._id), Item: "Todos", Situacao: "Fixada", Data: para }); }
+    catch (e) { toast("Não foi possível gravar: " + e.message, 6000); return; }
+    if (atual) { try { await SP.update(FROTA.site.id, HIG.list.id, atual._id, { Situacao: "Cancelada" }); } catch (e) { aviso = e.message; } }
+    try { await frotaCarregar(); } catch (e) {}
+  } finally { HIG.movendo = false; frotaPintar(); }
+  if (aviso) { toast(`${v.Title} fixado em ${higFds(para)}, mas a data antiga não pôde ser liberada: ${aviso}. Use Desfixar nela.`, 8000); return; }
+  const novoId = novo && (novo.id || (novo.fields && novo.fields.id));
+  higToastDesfazer(`${v.Title} fixado em ${higFds(para)}.`, async () => {
+    if (HIG.movendo) return; HIG.movendo = true;
+    try { if (novoId) await SP.update(FROTA.site.id, HIG.list.id, novoId, { Situacao: "Cancelada" }); if (atual) await SP.update(FROTA.site.id, HIG.list.id, atual._id, { Situacao: "Fixada" }); toast("Mudança desfeita"); }
+    catch (e) { toast("Não foi possível desfazer: " + e.message, 6000); }
+    finally { try { await frotaCarregar(); } catch (e) {} HIG.movendo = false; frotaPintar(); }
+  });
+}
+window.higMover = higMover;
+{ /* mouse: arrasta depois de 5 px; toque: segurar 450 ms e arrastar (sem segurar, a tabela rola normalmente; segurar e soltar no lugar abre as opções) */
+  let A = null;
+  const celula = (x, y) => { const el = document.elementFromPoint(x, y); const td = el && el.closest && el.closest(".hig-crono td.hig-c"); return td && A && td.dataset.v === A.vid ? td : null; };
+  const limpar = () => { document.querySelectorAll(".hig-crono .hig-alvo,.hig-crono .hig-orig").forEach(e => e.classList.remove("hig-alvo", "cheio", "hig-orig")); document.body.classList.remove("hig-arrastando"); if (A) { clearTimeout(A.tm); clearInterval(A.rola); if (A.fan) A.fan.remove(); } };
+  let cancelado = null;   /* Esc: segura o clique até soltar o botão */
+  const cancelar = () => { if (!A) return; if (A.on) { A.td._semClique = Date.now(); cancelado = A.td; } limpar(); A = null; };
+  const iniciar = () => { A.on = true; A.td.classList.add("hig-orig"); document.body.classList.add("hig-arrastando"); A.fan = document.createElement("div"); A.fan.className = "hig-fantasma"; A.fan.textContent = A.nome; document.body.appendChild(A.fan); try { navigator.vibrate && navigator.vibrate(20); } catch (e) {} };
+  const rolar = (x) => { const w = A.td.closest(".table-wrap"); if (!w) return; const r = w.getBoundingClientRect(); clearInterval(A.rola); const d = x < r.left + 36 ? -14 : x > r.right - 36 ? 14 : 0; if (d) A.rola = setInterval(() => { w.scrollLeft += d; if (A && A.on) mover(A.ux, A.uy, true); }, 30); };
+  const mover = (x, y, auto) => { if (!A || !A.on) return; A.ux = x; A.uy = y; A.fan.style.left = x + "px"; A.fan.style.top = y + "px"; if (!auto && A.saiu) rolar(x); document.querySelectorAll(".hig-crono .hig-alvo").forEach(e => e.classList.remove("hig-alvo", "cheio")); const td = celula(x, y); A.alvo = null; A.saiu = A.saiu || (td !== A.td);
+    if (td && td.dataset.s !== A.de && !td.classList.contains("real")) { A.alvo = td.dataset.s; td.classList.add("hig-alvo"); const P = A.P; if (P && (P.carga.get(A.alvo) || []).filter(z => z.v._id !== A.vid).length >= P.c.cap) td.classList.add("cheio"); A.fan.textContent = `${A.nome} → ${higFds(A.alvo)}`; } else A.fan.textContent = A.nome; };
+  const soltar = () => { if (!A) return; const a = A; limpar(); A = null; if (!a.on) return; a.td._semClique = Date.now();
+    if (a.alvo) higMover(a.vid, a.de, a.alvo); else if (a.toque && !a.saiu) higAcao(a.vid, a.de); };
+  const comecar = (td, x, y) => { if (A) { limpar(); A = null; } if (!higEd() || HIG.movendo) return false; const v = frotaVeicPorId(td.dataset.v); if (!v) return false; A = { td, vid: td.dataset.v, de: td.dataset.s, x, y, on: false, nome: v.Title, P: null }; return true; };
+  const plano = () => { if (A && !A.P) A.P = higPlanejar(); };
+  document.addEventListener("mousedown", e => { if (e.button !== 0) return; const td = e.target.closest && e.target.closest(".hig-crono td.hig-c.plan[onclick]"); if (!td || !comecar(td, e.clientX, e.clientY)) return; e.preventDefault(); });
+  document.addEventListener("mousemove", e => { if (!A || A.toque) return; if (!e.buttons) { cancelar(); return; } if (!A.on && Math.hypot(e.clientX - A.x, e.clientY - A.y) > 5) { plano(); iniciar(); } mover(e.clientX, e.clientY); });
+  document.addEventListener("mouseup", () => { if (cancelado) { cancelado._semClique = Date.now(); cancelado = null; } if (A && !A.toque) soltar(); });
+  window.higArrastoCancelar = cancelar;
+  window.addEventListener("blur", cancelar);
+  document.addEventListener("contextmenu", e => { if (A && A.on) e.preventDefault(); });
+  document.addEventListener("click", e => { const td = e.target.closest && e.target.closest(".hig-crono td.hig-c"); if (td && td._semClique && Date.now() - td._semClique < 500) { e.stopPropagation(); e.preventDefault(); } }, true);
+  document.addEventListener("touchstart", e => { if (A && A.toque && e.touches.length > 1) { cancelar(); return; } const td = e.target.closest && e.target.closest(".hig-crono td.hig-c.plan[onclick]"); if (!td || e.touches.length > 1) return; const t = e.touches[0]; if (!comecar(td, t.clientX, t.clientY)) return; A.toque = true; A.tm = setTimeout(() => { if (A && A.toque) { plano(); iniciar(); mover(A.x, A.y); } }, 450); }, { passive: true });
+  /* o touchmove que bloqueia a rolagem fica só na tabela do cronograma (higPintar liga) */
+  window.higToqueMove = e => { if (!A || !A.toque) return; const t = e.touches[0]; if (!A.on) { if (Math.hypot(t.clientX - A.x, t.clientY - A.y) > 8) { clearTimeout(A.tm); A = null; } return; } e.preventDefault(); mover(t.clientX, t.clientY); };
+  document.addEventListener("touchend", e => { if (!A || !A.toque) return; clearTimeout(A.tm); if (A.on) { e.preventDefault(); soltar(); } else A = null; }, { passive: false });
+  document.addEventListener("touchcancel", () => { if (A && A.toque) cancelar(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && A && A.on) cancelar(); });
+}
 /* ---- fixar / desfixar ---- */
 window.higFixar = async (vid, sab) => {
   if (!higEd()) return;
+  if (HIG.movendo) { toast("Aguarde: salvando a mudança anterior."); return; }
   const v = frotaVeicPorId(vid); if (!v) return;
   const P = higPlanejar(), fix = higDe(v).filter(x => x.Situacao === "Fixada" && x.Data && higSab(ymd(x.Data)) >= P.slots[0]);
   const atual = fix.find(f => higSab(ymd(f.Data)) === sab);   /* v0.12.88: mudar uma data fixada troca a antiga pela nova */

@@ -3442,6 +3442,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
 .rhf-cad .rhf-foto-acts { display: none; }
 .rhf-topo-av { margin-right: 12px; display: inline-flex; }
 .cap-views-n.neutro { background: #EEF1F6; color: #3B4252; }
+.div-agreg{margin-top:14px;padding:12px 16px;font-size:13.5px;line-height:1.5}.div-agreg .money{white-space:nowrap}
 .rh-st { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
 .rh-ul { margin: 4px 0 8px; padding-left: 18px; font-size: 13px; columns: 2; }
 .rh-chk { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; font-size: 13px; }
@@ -3733,7 +3734,7 @@ img.tf-av{object-fit:cover;background:#E6E8EE;padding:0}.tf-card-f .tf-av{width:
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.13.0<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.13.1<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3770,7 +3771,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.13.0",
+  version: "v0.13.1",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -3942,9 +3943,9 @@ async function nmbEstabsCarregar(force) {
     } catch (e) { out = null; }
     if (!out || !out.length) {
       try {
-        if (!CAP_STATE.site) CAP_STATE.site = await SP.site(CONFIG.sites[LISTS.cap.siteKey]);
-        if (!CAP_STATE.list) { const lists = await SP.lists(CAP_STATE.site.id); CAP_STATE.list = lists.find(x => x.displayName === LISTS.cap.displayName) || null; }
-        if (CAP_STATE.list) { const cols = await graphAll(`/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/columns?$select=name,choice`); const c = cols.find(x => x.name === "Estabelecimento"); const ch = (c && c.choice && c.choice.choices) || []; if (ch.length) { out = ch.slice(); origem = "cap"; } }
+        const siteCap = await SP.site(CONFIG.sites[LISTS.cap.siteKey]);
+        const listaCap = (await SP.lists(siteCap.id)).find(x => x.displayName === LISTS.cap.displayName) || null;   /* v0.13.1: variáveis locais — nunca grava CAP_STATE.list aqui (modo Dívidas) */
+        if (listaCap) { const cols = await graphAll(`/sites/${siteCap.id}/lists/${listaCap.id}/columns?$select=name,choice`); const c = cols.find(x => x.name === "Estabelecimento"); const ch = (c && c.choice && c.choice.choices) || []; if (ch.length) { out = ch.slice(); origem = "cap"; } }
       } catch (e) {}
     }
     NMB_EST.lista = [...new Set(out || [])]; NMB_EST.origem = NMB_EST.lista.length ? origem : ""; NMB_EST.prom = null; return NMB_EST.lista;
@@ -4824,7 +4825,7 @@ function route() {
   else if (mod.id === "cap") { main.innerHTML = pageCAP(); renderCAP(); }
   else if (mod.id === "forn") { main.innerHTML = pageForn(); renderForn(); }
   else if (mod.id === "obr") { main.innerHTML = pageObr(); renderObr(); }
-  else if (mod.id === "dividas") { main.innerHTML = pageDiv(); renderDiv(); }
+  else if (mod.id === "dividas") { divModo(true); main.innerHTML = pageCAP(); session.modAtual = "cap"; renderCAP(); }   /* v0.13.1: a Gestão de Dívidas é a CAP sobre as listas restritas "Dívidas — …" */
   else if (mod.id === "almox") { main.innerHTML = pageAlmox(); }
   else if (mod.id === "perm") { main.innerHTML = pagePerm(); renderPerm(); }
   else if (mod.id === "pax") { main.innerHTML = pagePax(); renderPax(); }
@@ -5439,15 +5440,18 @@ function fornAtivos() { return FORN_STATE.items.filter(f => f.Ativo !== false); 
 function fornByName(name) { const q = (name || "").trim().toLowerCase(); return q ? FORN_STATE.items.find(f => (f.Title || "").trim().toLowerCase() === q) || null : null; }
 
 async function loadCAP(opts) {
-  if (!CAP_STATE.site) CAP_STATE.site = await SP.site(CONFIG.sites[LISTS.cap.siteKey]);
-  if (!CAP_STATE.list) { const lists = await SP.lists(CAP_STATE.site.id); CAP_STATE.list = lists.find(l => l.displayName === LISTS.cap.displayName) || null; }
-  if (!CAP_STATE.list) throw new Error(`A lista "${LISTS.cap.displayName}" ainda não existe. Vá em Sistema → Configuração.`);
+  const _g = typeof DIV !== "undefined" ? DIV.gen : 0, _troc = () => typeof DIV !== "undefined" && DIV.gen !== _g;   /* v0.13.1: a tela trocou (CAP ⇄ Dívidas) durante a leitura → nada é gravado no estado nem no SharePoint */
+  if (!CAP_STATE.site) { const st = await SP.site(CONFIG.sites[LISTS.cap.siteKey]); if (_troc()) throw divTrocou(); CAP_STATE.site = st; }
+  if (!CAP_STATE.list) { const lists = await SP.lists(CAP_STATE.site.id); if (_troc()) throw divTrocou(); CAP_STATE.list = lists.find(l => l.displayName === divLst("cap").displayName) || null; }
+  if (!CAP_STATE.list) throw new Error(`A lista "${divLst("cap").displayName}" ainda não existe. Vá em Sistema → Configuração.`);
   if (!CAP_STATE.cols) {
-    try { CAP_STATE.cols = new Set((await graphAll(`/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/columns?$select=name`)).map(c => c.name)); }
-    catch (_) { CAP_STATE.cols = null; }
+    try { const cs = new Set((await graphAll(`/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/columns?$select=name`)).map(c => c.name)); if (_troc()) throw divTrocou(); CAP_STATE.cols = cs; }
+    catch (e) { if (e && e.divTrocou) throw e; CAP_STATE.cols = null; }
   }
   if (!NMB_EST.lista) await nmbEstabsCarregar().catch(() => {});   /* v0.13.0 · 2a */
+  if (_troc()) throw divTrocou();
   const [items] = await Promise.all([SP.items(CAP_STATE.site.id, CAP_STATE.list.id), loadForn(true).catch(() => [])]);
+  if (_troc()) throw divTrocou();
   CAP_STATE.items = items.map(it => Object.assign({ _id: it.id }, it.fields || {}));
   if ((opts && opts.soLeitura) || !podeEditar("cap") || vcAtivo()) return CAP_STATE.items; /* v0.12.12: Obrigações e Fornecedores só leem — não marcam vencidas nem gravam nada · v0.12.14: quem só vê também não grava */
   /* --- v0.7: Vencido automático --- */
@@ -6751,7 +6755,7 @@ window.obrConta = id => { if (!CAP_STATE.items.some(x => String(x._id) === Strin
 function capFiltroVazio() { return { kpi: null, status: "", categoria: "", comp: "", busca: "", venc: "", forn: "", banco: "", aging: "", grupo: "", obr: "", fk: "", fkNome: "", ordem: (CAP_STATE.filter && CAP_STATE.filter.ordem) || "venc" }; }
 function capIrParaLista() {
   CAP_STATE.view = "lista"; try { sessionStorage.setItem("erp.cap.view", "lista"); } catch (e) {}
-  closeModal(); const alvo = "#/financeiro/contas-a-pagar";
+  closeModal(); const alvo = (typeof DIV !== "undefined" && DIV.on) ? "#/diretoria/dividas" : "#/financeiro/contas-a-pagar";   /* v0.13.1 */
   if (location.hash === alvo) { paintCAP(); window.scrollTo({ top: 0, behavior: "smooth" }); } else location.hash = alvo;
 }
 window.obrVerNaCAP = id => { CAP_STATE.filter = Object.assign(capFiltroVazio(), { obr: String(id) }); capIrParaLista(); };
@@ -7297,9 +7301,11 @@ const pad2 = n => String(n).padStart(2, "0");
 function obrCartReindex() { Object.keys(OBR_CART).forEach(k => delete OBR_CART[k]); OBR_CARTEIRAS.forEach(c => { OBR_CART[c.s] = c; }); }
 function hasColObr(name) { return !OBR_STATE.cols || OBR_STATE.cols.has(name); }
 async function loadCarteiras(lists) {
-  OBR_CART_STATE.list = (lists || []).find(l => l.displayName === LISTS.obr_cart.displayName) || null;
+  OBR_CART_STATE.list = (lists || []).find(l => l.displayName === divLst("obr_cart").displayName) || null;
   if (!OBR_CART_STATE.list) { OBR_CART_STATE.itens = []; OBR_CARTEIRAS.splice(0, OBR_CARTEIRAS.length, ...OBR_CARTEIRAS_PADRAO.map(c => Object.assign({}, c))); obrCartReindex(); return; }
+  const _gen = typeof DIV !== "undefined" ? DIV.gen : 0;
   const items = await SP.items(OBR_STATE.site.id, OBR_CART_STATE.list.id);
+  if (typeof DIV !== "undefined" && DIV.gen !== _gen) throw divTrocou();   /* v0.13.1 */
   OBR_CART_STATE.itens = items.map(it => Object.assign({ _id: String(it.id) }, it.fields || {}));
   if (!OBR_CART_STATE.itens.length) { OBR_CARTEIRAS.splice(0, OBR_CARTEIRAS.length, ...OBR_CARTEIRAS_PADRAO.map(c => Object.assign({}, c))); obrCartReindex(); return; } /* lista vazia: mantém o padrão até a Configuração semear */
   const novas = OBR_CART_STATE.itens.filter(x => x.Ativa !== false && String(x.Title || "").trim())
@@ -7309,16 +7315,19 @@ async function loadCarteiras(lists) {
   obrCartReindex();
 }
 async function loadObr() {
-  if (!OBR_STATE.site) OBR_STATE.site = CAP_STATE.site || await SP.site(CONFIG.sites[LISTS.obr.siteKey]);
+  const _g = typeof DIV !== "undefined" ? DIV.gen : 0, _troc = () => typeof DIV !== "undefined" && DIV.gen !== _g;   /* v0.13.1 */
+  if (!OBR_STATE.site) { const st = CAP_STATE.site || await SP.site(CONFIG.sites[LISTS.obr.siteKey]); if (_troc()) throw divTrocou(); OBR_STATE.site = st; }
   if (!NMB_EST.lista) nmbEstabsCarregar().catch(() => {});   /* v0.13.0 · 2a */
   const lists = await SP.lists(OBR_STATE.site.id);
-  OBR_STATE.list = lists.find(l => l.displayName === LISTS.obr.displayName) || null;
-  if (!OBR_STATE.list) throw new Error(`A lista "${LISTS.obr.displayName}" ainda não existe. Vá em Sistema → Configuração.`);
+  if (_troc()) throw divTrocou();
+  OBR_STATE.list = lists.find(l => l.displayName === divLst("obr").displayName) || null;
+  if (!OBR_STATE.list) throw new Error(`A lista "${divLst("obr").displayName}" ainda não existe. Vá em Sistema → Configuração.`);
   if (!OBR_STATE.cols) {
-    try { OBR_STATE.cols = new Set((await graphAll(`/sites/${OBR_STATE.site.id}/lists/${OBR_STATE.list.id}/columns?$select=name`)).map(c => c.name)); }
-    catch (_) { OBR_STATE.cols = null; }
+    try { const cs = new Set((await graphAll(`/sites/${OBR_STATE.site.id}/lists/${OBR_STATE.list.id}/columns?$select=name`)).map(c => c.name)); if (_troc()) throw divTrocou(); OBR_STATE.cols = cs; }
+    catch (e) { if (e && e.divTrocou) throw e; OBR_STATE.cols = null; }
   }
-  const [items] = await Promise.all([SP.items(OBR_STATE.site.id, OBR_STATE.list.id), loadCarteiras(lists).catch(e => { console.warn("carteiras", e); })]);
+  const [items] = await Promise.all([SP.items(OBR_STATE.site.id, OBR_STATE.list.id), loadCarteiras(lists).catch(e => { if (e && e.divTrocou) throw e; console.warn("carteiras", e); })]);
+  if (_troc()) throw divTrocou();
   OBR_STATE.items = items.map(it => Object.assign({ _id: it.id }, it.fields || {}));
   OBR_STATE.rev = (OBR_STATE.rev || 0) + 1;
   return OBR_STATE.items;
@@ -7412,7 +7421,7 @@ window.obrForm = (id, preset, voltar) => {
       <div class="field"><label>Contrato / apólice / processo</label><input id="oRef" value="${esc(v.RefContrato || "")}"></div>
       <div class="field"><label>Nº do parcelamento</label><input id="oNP" value="${esc(v.NumParcelamento || "")}"></div>
       <div class="field"><label>Órgão / credor</label><input id="oOrg" value="${esc(v.Orgao || "")}"></div>
-      ${veDividas() ? `<div class="field"><label>Onde é gerida</label><select id="oDest">${opt(["CAP", "Dívidas"], v.ModuloDestino || "CAP", false)}</select><div class="hint">"Dívidas" só aparece para administradores</div></div>` : ""}
+      ${veDividas() ? `<div class="field" style="display:none"><label>Onde é gerida</label><select id="oDest">${opt(["CAP", "Dívidas"], v.ModuloDestino || "CAP", false)}</select></div>${(v.ModuloDestino || "CAP") === "Dívidas" && !(typeof DIV !== "undefined" && DIV.on) ? `<div class="field full"><div class="hint">Esta obrigação está marcada como <b>Dívidas</b> e ainda está na lista da CAP: traga-a pela Gestão de Dívidas (botão "Trazer dívidas da CAP").</div></div>` : ""}` : ""}
       <div class="field full form-sec">Observações</div>
       <div class="field full"><label>Observações</label><textarea id="oObs">${esc(v.Observacoes || "")}</textarea></div>
     </div><div class="err-msg" id="oErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`;
@@ -7664,7 +7673,7 @@ window.obrAbrir = (id, back, manterTudo) => {
   };
   const contaHtml = x => {
     const auto = x.how === "auto" || x.how === "outro-forn", grav = x.how === "gravado";
-    return `<a onclick="obrConta(${jsArg(x.it._id)})" title="Abrir a fatura na CAP">${esc(x.it.Title || "fatura")}</a>${x.it.Parcela ? ` <span class="sup">${esc(x.it.Parcela)}</span>` : ""}${anexosDe(x.it).length ? ` <span class="sup" title="${anexosDe(x.it).length} documento(s)">📎</span>` : ""}`
+    return `<a onclick="obrConta(${jsArg(x.it._id)})" title="Abrir a fatura na CAP">${esc(x.it.Title || "fatura")}</a>${edCap ? ` <button class="btn mini" onclick="obrContaEditar(${jsArg(o._id)}, ${jsArg(x.it._id)})" title="Editar esta fatura (volta à obrigação ao salvar)">✎</button>` : ""}${x.it.Parcela ? ` <span class="sup">${esc(x.it.Parcela)}</span>` : ""}${anexosDe(x.it).length ? ` <span class="sup" title="${anexosDe(x.it).length} documento(s)">📎</span>` : ""}`
       + (auto ? ` <span class="obr-auto${x.how === "outro-forn" ? " outro" : ""}" title="${esc(OBR_HOW[x.how])}">${x.how === "outro-forn" ? "outro fornecedor" : "auto"}</span>${link ? ` <button class="btn mini" onclick="obrConfirmarVinculo(${jsArg(o._id)}, ${jsArg(x.it._id)})" title="Gravar o vínculo desta conta com a obrigação">confirmar</button>` : ""}` : "")
       + (grav && link ? ` <button class="doc-x" onclick="obrDesvincular(${jsArg(o._id)}, ${jsArg(x.it._id)})" title="Tirar esta conta da obrigação (a conta continua na CAP)">×</button>` : "");
   };
@@ -7761,7 +7770,7 @@ function obrPlanoMes(C, incluirDiv) {
   for (const o of D.obrs) {
     if (o.Status === "Encerrada") continue;
     const dest = o.ModuloDestino || "CAP";
-    if (dest !== "CAP" && !(incluirDiv && dest === "Dívidas" && veDividas())) continue;
+    if (dest !== "CAP" && !DIV.on && !(incluirDiv && dest === "Dívidas" && veDividas())) continue;   /* v0.13.1: na Gestão de Dívidas todas entram */
     const R = D.res.get(String(o._id)), r = R.lista.find(x => x.comp === C);
     if (!r) { plano.push({ o, acao: "fora", txt: "fora da vigência ou do cronograma" }); continue; }
     if (r.contas.length) { plano.push({ o, r, acao: "ja", txt: r.contas.map(x => x.it.Title).join(", ") }); continue; }
@@ -10204,7 +10213,7 @@ async function renderCAP() {
   CAP_STATE.atualizando = true;
   const b = $("capAtualizar"); if (b) { b.disabled = true; b.textContent = "Atualizando…"; }
   try { await loadCAP(); }
-  catch (e) { CAP_STATE.atualizando = false; body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(e.message)}</p><div class="actions"><button class="btn" onclick="renderCAP()">Tentar de novo</button></div></div>`; return; }
+  catch (e) { if (e && e.divTrocou) return; CAP_STATE.atualizando = false; body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(e.message)}</p><div class="actions"><button class="btn" onclick="renderCAP()">Tentar de novo</button></div></div>`; return; }
   CAP_STATE.atualizando = false;
   if (!$("capBody")) return;   /* saiu da tela enquanto carregava */
   paintCAP();
@@ -16027,7 +16036,7 @@ function paintCAP() {
   if (acts) acts.innerHTML = edita ? `<button class="btn" onclick="capImport()">Importar</button>${ehAdm() ? `<button class="btn" onclick="capDedup()" title="Localiza faturas importadas duas vezes (nome cru da planilha + nome do cadastro)">Duplicadas</button>` : ""}<button class="btn primary" onclick="capNew()" title="Atalho: n">Nova fatura</button>` : `<span class="sup">Acesso só de leitura</span>`;
   const total = CAP_STATE.items.length;
   if (total === 0) {
-    body.innerHTML = `<div class="cap-empty">
+    body.innerHTML = `${typeof DIV !== "undefined" && DIV.on ? capViewsBar() : ""}<div class="cap-empty">
       <h3>Ainda não há faturas cadastradas</h3>
       <p>${edita ? `Você pode cadastrar uma fatura por vez ou importar várias de uma vez colando de uma planilha.${FORN_STATE.items.length ? "" : " Cadastre os fornecedores primeiro para o preenchimento automático funcionar."}` : "Seu acesso é só de leitura."}</p>
       ${edita ? `<div class="actions"><button class="btn primary" onclick="capNew()">Cadastrar fatura</button><button class="btn" onclick="capImport()">Importar em lote</button></div>` : ""}
@@ -19252,13 +19261,14 @@ ERP_LIBS.jspdf = { url: "https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.2.1/jspd
 ERP_LIBS.jspdf_autotable = { url: "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/5.0.8/jspdf.plugin.autotable.min.js", global: "autoTable" };
 CAP_STATE.ctb = null;
 const CTB_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-const CTB_PACOTE = "Contabilidade Nova Macabu";
+const CTB_PACOTE_CAP = "Contabilidade Nova Macabu";
+function ctbPacoteNome() { return (typeof DIV !== "undefined" && DIV.on) ? "Dívidas Nova Macabu" : CTB_PACOTE_CAP; }   /* v0.13.1: o pacote das dívidas é um anexo separado */
 const CTB_REL_PASTA = "00 - Relatório Geral";   /* "00" põe o relatório antes das pastas dos fornecedores em qualquer explorador de arquivos */
 const CTB_ICO_PASTA = `<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.2h8.5A1.5 1.5 0 0 1 21 9.7v8.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></svg>`;
 function ctbMes(comp) { return CTB_MESES[Number(String(comp || "").slice(5, 7)) - 1] || ""; }
 function ctbAamm(comp) { return String(comp || "").slice(0, 4) + String(comp || "").slice(5, 7); }
 function ctbMesAno(comp) { return `${ctbMes(comp)}/${String(comp || "").slice(0, 4)}`; }
-function ctbNomeZip(U) { return `${ctbAamm(U.comp)} - ${CTB_PACOTE} - ${ctbMes(U.comp)}${U.base === "pag" ? " (pagamentos)" : ""}`; }
+function ctbNomeZip(U) { return `${ctbAamm(U.comp)} - ${ctbPacoteNome()} - ${ctbMes(U.comp)}${U.base === "pag" ? " (pagamentos)" : ""}`; }
 function ctbNomeRel(U) { return `${ctbAamm(U.comp)} - Relatório Geral - ${ctbMes(U.comp)}${U.base === "pag" ? " (pagamentos)" : ""}`; }
 function capCtbUI() { if (!CAP_STATE.ctb) { const h = new Date(); CAP_STATE.ctb = { comp: capCompAdd(capCompOf(h), -1), base: "comp" }; } return CAP_STATE.ctb; }
 window.capCtbSet = (k, v) => { capCtbUI()[k] = v; paintCAP(); };
@@ -19568,7 +19578,7 @@ async function capCtbPlanilha(D, C, R) {
   const pagas = g.desp.filter(it => classifyItem(it).pago);
   /* Resumo */
   const r = wb.addWorksheet("Resumo", { views: [{ showGridLines: false }] });
-  cab(r, `Relatório Geral — ${CTB_PACOTE} — ${ctbMesAno(U.comp)}`, `${U.base === "pag" ? "Saídas pela data de pagamento (regime de caixa)" : "Saídas pela competência"} · ${gerado}`);
+  cab(r, `Relatório Geral — ${ctbPacoteNome()} — ${ctbMesAno(U.comp)}`, `${U.base === "pag" ? "Saídas pela data de pagamento (regime de caixa)" : "Saídas pela competência"} · ${gerado}`);
   r.getRow(4).values = ["Indicador", "Valor (R$)", "Qtde", "Observação"]; head(r.getRow(4));
   [["Saídas (despesas) lançadas", ctbSoma(g.desp), g.desp.length, ""], ["Saídas pagas", ctbSoma(pagas), pagas.length, ""], ["Saídas em aberto", ctbSoma(g.desp) - ctbSoma(pagas), g.desp.length - pagas.length, ""],
     ["Transferências entre contas", ctbSoma(g.transf), g.transf.length, "não são despesa: fora das saídas"], ["Isentas no mês (N/A)", ctbSoma(g.isenta), g.isenta.length, "valor de referência: fora das saídas"],
@@ -19681,7 +19691,7 @@ async function capCtbPdf(D, C, R) {
   doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(...MUT); doc.text("TRANSPORTADORA NOVA MACABU", x0, 12.4, { charSpace: 0.5 });
   doc.setFontSize(15.5); doc.setTextColor(...NAVY); doc.text(T(`Relatório Geral - ${ctbMesAno(U.comp)}`), x0, 18.6);
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(59, 67, 82);
-  doc.text(T(`${CTB_PACOTE} · saídas por ${U.base === "pag" ? "data de pagamento (regime de caixa)" : "competência"}${E ? " · entradas do Fluxo de Caixa" : ""}`), x0, 23.4);
+  doc.text(T(`${ctbPacoteNome()} · saídas por ${U.base === "pag" ? "data de pagamento (regime de caixa)" : "competência"}${E ? " · entradas do Fluxo de Caixa" : ""}`), x0, 23.4);
   const fx = W - M - 64; doc.setDrawColor(...LINE); doc.setLineWidth(0.25); doc.line(fx - 3.5, 9, fx - 3.5, 24.5);
   [["DOCUMENTO", docN], ["EMISSÃO", emissao], ["EMITIDO POR", quem]].forEach(([k, v], i) => { const yy = 12.2 + i * 5.2; doc.setFont("helvetica", "bold"); doc.setFontSize(5.8); doc.setTextColor(...MUT); doc.text(T(k), fx, yy, { charSpace: 0.3 });
     doc.setFontSize(8); doc.setTextColor(...INK); const ls = doc.splitTextToSize(T(v), 44).slice(0, 2); doc.text(ls[0], fx + 19, yy); if (ls[1]) { doc.setFont("helvetica", "normal"); doc.setFontSize(6.6); doc.setTextColor(...MUT); doc.text(ls[1], fx + 19, yy + 2.9); } });
@@ -19780,7 +19790,7 @@ async function capCtbPdf(D, C, R) {
 
 /* resumo em texto, só quando nem o Excel nem o PDF puderam ser gerados */
 function capCtbTexto(D, C) {
-  const U = D.U, L = [`Relatório Geral — ${CTB_PACOTE} — ${ctbMesAno(U.comp)}`, `Saídas por ${U.base === "pag" ? "data de pagamento" : "competência"} · gerado em ${new Date().toLocaleString("pt-BR")} por ${vcQuemEmite()}`, "",
+  const U = D.U, L = [`Relatório Geral — ${ctbPacoteNome()} — ${ctbMesAno(U.comp)}`, `Saídas por ${U.base === "pag" ? "data de pagamento" : "competência"} · gerado em ${new Date().toLocaleString("pt-BR")} por ${vcQuemEmite()}`, "",
     `Os relatórios em Excel e PDF não puderam ser gerados (biblioteca indisponível). Este resumo lista as contas do pacote.`, "",
     `${D.contas.length} fatura(s): ${D.g.desp.length} despesa(s) (${fmtBRL(ctbSoma(D.g.desp))}), ${D.g.transf.length} transferência(s) entre contas, ${D.g.isenta.length} isenta(s).`, ...D.avisos.map(a => "Atenção: " + a), ""];
   C.forEach(c => { const it = c.it; L.push(`${fmtDate(it.Vencimento)} · ${it.Fornecedor || "—"} · ${it.Title || "—"} · ${fmtBRL(it.Valor)} · ${CTB_TIPO_ROT[c.tipo]} · ${capCtbSit(it)}`, `   pasta: ${c.pasta || "— (isenta sem documento)"} · arquivos no .zip: ${c.ok || 0}${c.falta.length ? ` · falta no ERP: ${c.falta.join(", ")}` : ""}${c.falhas.length ? ` · não baixaram: ${c.falhas.map(f => f.arq).join("; ")}` : ""}`); });
@@ -19843,7 +19853,7 @@ window.capCtbImprimir = () => {
       ${arr.map(it => `<tr><td class="nw">${fmtDate(it.Vencimento)}</td><td class="nw">${it.DataPagamento ? fmtDate(it.DataPagamento) : "—"}</td><td>${esc(it.Fornecedor || "")}</td><td>${esc(it.Title || "")}</td><td>${esc(isenta ? (it.Categoria || "") : (it.Banco || ""))}</td><td class="r">${esc(fmtBRL(it.Valor))}</td><td>${esc(capCtbSit(it))}</td><td class="c">${anexosDe(it).length}</td></tr>`).join("")}
       <tr class="tot"><td colspan="5">Total · fora do total de saídas</td><td class="r">${esc(fmtBRL(ctbSoma(arr)))}</td><td colspan="2"></td></tr></tbody></table>` : "";
   const comFalta = C.filter(c => c.falta.length);
-  const html = `${printCab("Relatório Geral", `${CTB_PACOTE} · ${ctbMesAno(U.comp)} · saídas por ${U.base === "pag" ? "data de pagamento" : "competência"}`, { doc: `CTB-${ctbAamm(U.comp)}${U.base === "pag" ? "-P" : ""}` })}
+  const html = `${printCab("Relatório Geral", `${ctbPacoteNome()} · ${ctbMesAno(U.comp)} · saídas por ${U.base === "pag" ? "data de pagamento" : "competência"}`, { doc: `CTB-${ctbAamm(U.comp)}${U.base === "pag" ? "-P" : ""}` })}
     ${printKpis([["Saídas (despesas)", fmtBRL(totD), `${g.desp.length} conta(s)`], ["Pagas", fmtBRL(ctbSoma(pagas)), `${pagas.length} conta(s)`], ["Em aberto", fmtBRL(totD - ctbSoma(pagas)), `${g.desp.length - pagas.length} conta(s)`], ["Entradas (caixa)", E ? fmtBRL(E.total) : "—", E ? `${E.n} lançamento(s)` : "Fluxo de Caixa"], ["Documentos", String(C.reduce((a, c) => a + c.docs, 0)), comFalta.length ? `${comFalta.length} conta(s) com falta` : "completos", comFalta.length ? "neg" : ""]])}
     <div class="grid2"><div class="duas">${S("Saídas por categoria", "despesas")}${tabAgg("Categoria", ctbAgrupa(g.desp, it => it.Categoria || "Sem categoria"), totD)}</div>
     <div class="duas">${S("Saídas por centro de custo", "despesas")}${tabAgg("Centro de custo", ctbAgrupa(g.desp, it => ccDe(it) || "Sem centro de custo"), totD)}</div></div>
@@ -23268,7 +23278,7 @@ function cxResumoCapCarregar() {
   if (!cxResumoCapAcesso() || ["carregando", "ok", "erro"].includes(CX.resCap)) return;   /* erro não tenta de novo sozinho: "Tentar de novo" ou reentrar no módulo */
   if (typeof CAP_STATE !== "undefined" && CAP_STATE.items && CAP_STATE.items.length) { CX.resCap = "ok"; return; }
   CX.resCap = "carregando";
-  loadCAP({ soLeitura: true }).then(() => { CX.resCap = "ok"; }).catch(e => { CX.resCap = "erro"; CX.resCapErro = e.message; }).finally(() => { if (CX.tab === "resumo" && $("cxBody")) paintCx(); });
+  loadCAP({ soLeitura: true }).then(() => { CX.resCap = "ok"; }).catch(e => { if (e && e.divTrocou) { CX.resCap = ""; return; } CX.resCap = "erro"; CX.resCapErro = e.message; }).finally(() => { if (CX.tab === "resumo" && $("cxBody")) paintCx(); });
 }
 function cxResumoHtml() {
   const c = CX.comp || cxHoje().slice(0, 7), M = cxMes(c);
@@ -23854,7 +23864,7 @@ function capObrPintar(body) {
   else { const t = body.querySelector(".cap-topo"); if (t) t.outerHTML = capViewsBar(); }
   if ((!OBR_STATE.items || !OBR_STATE.items.length) && !CAP_STATE._obrAbaTentou) {
     CAP_STATE._obrAbaTentou = true;
-    loadObr().then(() => obrEncerrarQuitadas().catch(() => 0)).then(() => { if ($("obrBody")) paintObr(); }).catch(e => { CAP_STATE._obrAbaTentou = false; const b = $("obrBody"); if (b) b.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar as obrigações</h3><p>${esc(e.message)}</p><button class="btn" onclick="paintCAP()">Tentar de novo</button></div>`; });
+    loadObr().then(() => obrEncerrarQuitadas().catch(() => 0)).then(() => { if ($("obrBody")) paintObr(); }).catch(e => { if (e && e.divTrocou) return; CAP_STATE._obrAbaTentou = false; const b = $("obrBody"); if (b) b.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar as obrigações</h3><p>${esc(e.message)}</p><button class="btn" onclick="paintCAP()">Tentar de novo</button></div>`; });
     return;
   }
   /* v0.13.0 (Nota 2): com as obrigações já em memória, confere uma vez por visita se alguma quitada precisa ser encerrada */
@@ -23879,7 +23889,7 @@ function capObrPintar(body) {
   renderCAP = async function () {
     const naAba = CAP_STATE.view === "obr" && OBR_STATE.items && OBR_STATE.items.length;
     const r = await rcO.apply(this, arguments);
-    if (naAba && $("obrBody") && session.modAtual === "cap" && CAP_STATE.view === "obr") { try { await loadObr(); try { await obrEncerrarQuitadas(); } catch (e) {} if ($("obrBody") && CAP_STATE.view === "obr") paintObr(); } catch (e) { toast("Não foi possível atualizar as obrigações: " + e.message, 6000); } }
+    if (naAba && $("obrBody") && session.modAtual === "cap" && CAP_STATE.view === "obr") { try { await loadObr(); try { await obrEncerrarQuitadas(); } catch (e) {} if ($("obrBody") && CAP_STATE.view === "obr") paintObr(); } catch (e) { if (!(e && e.divTrocou)) toast("Não foi possível atualizar as obrigações: " + e.message, 6000); } }
     return r;
   };
   window.renderCAP = renderCAP;
@@ -26931,12 +26941,14 @@ function capFavGet() { let v = {}; try { v = JSON.parse(localStorage.getItem(cap
 function capFavSet(v) { try { localStorage.setItem(capFavKey(), JSON.stringify(v)); } catch (e) {} }
 function capFavHas(t, id) { return capFavGet()[t].includes(String(id)); }
 function capFavCel(t, id, o) {
+  if (typeof DIV !== "undefined" && DIV.on) return `<td class="favc"></td>`;   /* v0.13.1: sem favoritos na Gestão de Dívidas (ids colidem com os da CAP) */
   if (typeof vcAtivo === "function" && vcAtivo()) return `<td class="favc"></td>`;   /* na visualização como outra pessoa os favoritos não aparecem */
   if (o && o.bloqueado) return `<td class="favc" onclick="event.stopPropagation()"><span class="fav-btn cap-fav off" title="${esc(o.bloqueado)}">☆</span></td>`;
   const on = capFavHas(t, id);
   return `<td class="favc" onclick="event.stopPropagation()"><button type="button" class="fav-btn cap-fav ${on ? "on" : ""}" aria-pressed="${on}" title="${on ? "Remover dos favoritos" : "Marcar como favorito"}" onclick="capFavToggle('${t}', ${jsArg(String(id))}, this)">${on ? "★" : "☆"}</button></td>`;
 }
 window.capFavToggle = (t, id, btn) => {
+  if (typeof DIV !== "undefined" && DIV.on) return;   /* v0.13.1 */
   if (typeof vcAtivo === "function" && vcAtivo()) { toast("Na visualização os favoritos não mudam.", 3000); return; }
   if (!["fat", "forn", "obr"].includes(t)) return;
   const F = capFavGet(), k = String(id), i = F[t].indexOf(k), on = i < 0;
@@ -26953,6 +26965,7 @@ function capFavBlocos() {
 }
 /* obrigação quitada sai dos favoritos (só com as obrigações e as contas carregadas: sem elas nada é retirado) */
 function capFavLimpar(D) {
+  if (typeof DIV !== "undefined" && DIV.on) return [];   /* v0.13.1 */
   if (!D || !OBR_STATE.items || !OBR_STATE.items.length || !CAP_STATE.items || !CAP_STATE.items.length || CAP_STATE.espelhoCC) return [];
   const F = capFavGet(); if (!F.obr.length) return [];
   const sair = F.obr.filter(id => { const r = D.res.get(String(id)); return !!(r && r.sit && r.sit.k === "quitada"); });
@@ -27564,6 +27577,7 @@ function cpxDadosAgora() {
   let divida = null, divRestrita = false;
   const obrLida = CPX.fontes.obr && ["ok", "vazio"].includes(CPX.fontes.obr.st);
   try { if (obrLida && typeof OBR_STATE !== "undefined" && !OBR_STATE.items.length) divida = 0; else if (obrLida && CAP_STATE.items) { const D = obrCalcular(); divida = 0; D.obrs.forEach(o => { if (o.Status === "Encerrada" || o.Tipo !== "Parcelado" || !CPX_DIVIDA_CART.includes(obrCarteira(o))) return; const R = D.res.get(String(o._id)); if (!(R && R.saldo > 0)) return; if (!obrVisivel(o)) { divRestrita = true; return; } divida += R.saldo; }); } } catch (e) { divida = null; }
+  if (typeof DIV !== "undefined" && DIV.resumo && Number(DIV.resumo.saldo) > 0) { if (session.n1) divida = (divida || 0) + Number(DIV.resumo.saldo); else divRestrita = true; }   /* v0.13.1: saldo das listas restritas (resumo gravado por um administrador) */
   if (divRestrita) divida = null;   /* 2ª revisão: parte da dívida está na Gestão de Dívidas (só administradores) — um número parcial enganaria */
   /* anualização pelos meses válidos dos últimos 12 */
   const k12 = v12.length ? 12 / v12.length : null;
@@ -33739,6 +33753,186 @@ window.bilSoOficial = v => { BIL_STATE.soOficial = !!v; paintBil(); };
 
 /* v0.12.99 (revisão): voltar à CAP pelo menu também volta o limite de Faturas para 60 (v0.13.0) */
 MOD_RESET.cap = (function (antes) { return () => { if (antes) antes(); CAP_STATE.lim = CAP_LIM; CAP_STATE.limAssin = ""; CAP_STATE._obrQuitChk = false; }; })(MOD_RESET.cap);
+
+/* =====================================================================
+   v0.13.1 · GESTÃO DE DÍVIDAS SEPARADA DA CAP (Nota 1, decisão de 13/10)
+   As dívidas ficam em três listas restritas do site Financeiro — "Dívidas — Parcelas", "Dívidas — Obrigações" e
+   "Dívidas — Carteiras" — com as mesmas colunas das listas da CAP. A Gestão de Dívidas é a própria tela da CAP
+   (Faturas, Obrigações, Pendências, Painel, Contabilidade) trabalhando sobre essas listas: ao entrar na página o ERP
+   troca o conteúdo de CAP_STATE/OBR_STATE/carteiras pelo estado das dívidas e devolve ao sair (divModo). Só
+   administradores entram; no SharePoint, as três listas devem ficar com leitura só dos administradores (como a lista de
+   dados pessoais do RH — o administrador quebra a herança à mão). A CAP não enxerga nada das listas restritas.
+   O que os membros veem: só a linha agregada "Parcelas de dívidas" no Fluxo de Caixa, gravada em "ERP — Parâmetros"
+   (chave div_resumo) sempre que um administrador abre a Gestão de Dívidas. CAPEX usa o mesmo resumo (saldo).
+   ===================================================================== */
+const DIV = { on: false, outro: null, resumo: undefined, migrando: false, ids: new Set(), gen: 0, gravando: null };
+function divTrocou() { const e = new Error("A tela trocou durante a leitura."); e.divTrocou = true; return e; }
+const DIV_LST = { cap: "div_cap", obr: "div_obr", obr_cart: "div_cart" };
+function divLst(k) { return DIV.on ? LISTS[DIV_LST[k]] : LISTS[k]; }
+LISTS.div_cart = Object.assign({}, LISTS.obr_cart, { key: "div_cart", displayName: "Dívidas — Carteiras",
+  description: "Financeiro NMB · carteiras das dívidas geridas pela Diretoria. Lista restrita: leitura só dos administradores (quebre a herança no SharePoint). Editada em Diretoria › Gestão de Dívidas." });
+LISTS.div_obr = Object.assign({}, LISTS.obr, { key: "div_obr", displayName: "Dívidas — Obrigações", seedIfEmpty: undefined, seedMerge: false, mergeFields: undefined, migrations: undefined,
+  description: "Financeiro NMB · parcelamentos e acordos geridos pela Diretoria. Lista restrita: leitura só dos administradores (quebre a herança no SharePoint). Nada daqui aparece na Contas a Pagar." });
+LISTS.div_cap = Object.assign({}, LISTS.cap, { key: "div_cap", displayName: "Dívidas — Parcelas", seedIfEmpty: undefined, seedMerge: false, mergeFields: undefined, migrations: undefined,
+  columns: LISTS.cap.columns.map(c => c.lookupList === "Obrigações" ? Object.assign({}, c, { lookupList: "Dívidas — Obrigações" }) : c),
+  description: "Financeiro NMB · parcelas das dívidas (faturas) geridas pela Diretoria. Lista restrita: leitura só dos administradores (quebre a herança no SharePoint). Nada daqui aparece na Contas a Pagar." });
+SETUP_ORDER.push("div_cart", "div_obr", "div_cap");
+/* o estado das dívidas nasce como uma cópia "vazia" do estado da CAP: mesmas chaves (coleções novas), sem lista, sem itens, filtros limpos */
+function divVazio(st) {
+  const n = {};
+  Object.keys(st).forEach(k => { const v = st[k]; n[k] = v instanceof Set ? new Set() : v instanceof Map ? new Map() : Array.isArray(v) ? [] : (v && typeof v === "object") ? Object.assign({}, v) : v; });
+  n.site = null; n.list = null; n.cols = null; n.items = [];
+  return n;
+}
+function divEstadoNovo() {
+  const cap = divVazio(CAP_STATE); cap.filter = capFiltroVazio(); cap.view = "lista"; cap.lim = typeof CAP_LIM !== "undefined" ? CAP_LIM : 60; cap.limAssin = ""; cap.docFila = null; cap.depois = null; cap.preset = null; cap.espelhoCC = null; cap._todos = null; cap.carregadoEm = null; cap.atualizando = false; cap.rev = 0; cap.recInfo = null; cap.pend = null; cap._pendMemo = null; cap._depoisVoltarFn = null; cap._proxVoltar = null; cap.editing = null; cap.voltarId = null; cap.sel = new Set();
+  const obr = divVazio(OBR_STATE); obr.capList = null; obr.rev = 0; obr.capErro = "";
+  const cart = divVazio(OBR_CART_STATE); cart.itens = [];
+  return { cap, obr, cart, carteiras: OBR_CARTEIRAS_PADRAO.map(c => Object.assign({}, c)) };
+}
+function divTroca(a, b) { const t = Object.assign({}, a); Object.keys(a).forEach(k => delete a[k]); Object.assign(a, b); Object.keys(b).forEach(k => delete b[k]); Object.assign(b, t); }
+function divModo(on) {
+  on = !!on; if (on === DIV.on) return;
+  if (!DIV.outro) DIV.outro = divEstadoNovo();
+  const O = DIV.outro;
+  divTroca(CAP_STATE, O.cap); divTroca(OBR_STATE, O.obr); divTroca(OBR_CART_STATE, O.cart);
+  const cs = OBR_CARTEIRAS.splice(0, OBR_CARTEIRAS.length, ...O.carteiras); O.carteiras = cs; obrCartReindex();
+  DIV.on = on; DIV.gen++;
+  try { if ($("modalBack") && $("modalBack").classList.contains("on")) closeModal(); } catch (e) {}   /* janela aberta pertence à tela anterior: fecha para não gravar na lista errada */
+  CAP_STATE.editing = null; CAP_STATE.depois = null; CAP_STATE._depoisVoltarFn = null; CAP_STATE.docFila = null; CAP_STATE.preset = null;
+  if (on) { CAP_STATE.view = CAP_STATE.view || "lista"; if (CAP_STATE.view === "fav" || CAP_STATE.view === "forn") CAP_STATE.view = "lista"; }
+}
+/* entrar/sair pela rota: a Gestão de Dívidas liga o modo antes de desenhar; qualquer outra rota desliga */
+{ const r0 = route; route = function () { try { const h = (location.hash || "#/inicio").split("?")[0]; if (!h.startsWith("#/diretoria/dividas")) divModo(false); } catch (e) {} return r0.apply(this, arguments); }; window.route = route; }
+{ const p0 = pageCAP; pageCAP = function () { let h = p0.apply(this, arguments); if (DIV.on) h = h.replace("<h1>Contas a Pagar</h1>", "<h1>Gestão de Dívidas</h1>").replace(/<p class="lead">[^<]*<\/p>/, `<p class="lead">Parcelamentos e acordos geridos pela Diretoria. Só administradores veem esta página: faturas, obrigações e carteiras ficam nas listas restritas "Dívidas — Parcelas", "Dívidas — Obrigações" e "Dívidas — Carteiras", separadas da Contas a Pagar.</p>`); return h; }; window.pageCAP = pageCAP; }
+/* guarda: no modo Dívidas (ou em qualquer gravação nas listas restritas) só administrador grava; janela aberta antes da troca de tela não grava */
+{ const m0 = modal; modal = function () { const r = m0.apply(this, arguments); try { const m = $("modal"); if (m) m.dataset.divGen = String(DIV.gen); } catch (e) {} return r; }; window.modal = modal; }
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path) {
+  if (/^(POST|PATCH|PUT|DELETE)$/i.test(method || "GET")) {
+    if ((DIV.on || [...DIV.ids].some(id => id && String(path || "").includes(id))) && !session.n1) { const e = new Error("Só administradores alteram a Gestão de Dívidas."); e.status = 403; e.semAcesso = true; throw e; }
+    const m = $("modal"), mb = $("modalBack");
+    if (m && mb && mb.classList.contains("on") && m.dataset.divGen != null && m.dataset.divGen !== String(DIV.gen) && /\/lists\//.test(String(path || ""))) { const e = new Error("Esta janela foi aberta em outra tela (CAP ⇄ Gestão de Dívidas). Feche e abra de novo."); e.status = 409; e.semAcesso = true; throw e; }
+  }
+  return g0.apply(this, arguments); }; window.guardaEscrita = guardaEscrita; }
+/* no modo Dívidas: sem Favoritos, sem recorrentes, sem espelho; cabeçalho com o botão de migração; resumo gravado a cada leitura */
+{ const f0 = capFavBlocos; capFavBlocos = function () { return DIV.on ? {} : f0.apply(this, arguments); }; window.capFavBlocos = capFavBlocos; }
+{ const g0 = capRecorrentesGerar; capRecorrentesGerar = async function () { if (DIV.on) return; return g0.apply(this, arguments); }; window.capRecorrentesGerar = capRecorrentesGerar; }
+{ const l0 = loadCAP; loadCAP = async function () { const r = await l0.apply(this, arguments); if (DIV.on) { if (CAP_STATE.list) DIV.ids.add(CAP_STATE.list.id); setTimeout(() => { divResumoGravar().catch(e => console.warn("div_resumo", e)); }, 0); } return r; }; window.loadCAP = loadCAP; }
+{ const o0 = loadObr; loadObr = async function () { const r = await o0.apply(this, arguments); if (DIV.on) { if (OBR_STATE.list) DIV.ids.add(OBR_STATE.list.id); if (OBR_CART_STATE.list) DIV.ids.add(OBR_CART_STATE.list.id); if (CAP_STATE.items && CAP_STATE.items.length) setTimeout(() => { divResumoGravar().catch(e => console.warn("div_resumo", e)); }, 0); } return r; }; window.loadObr = loadObr; }
+{ const p0 = paintCAP; paintCAP = function () { const r = p0.apply(this, arguments); if (DIV.on) { const a = $("capActions"); if (a && !a.querySelector(".div-mig")) a.insertAdjacentHTML("afterbegin", `<button class="btn div-mig" onclick="divMigrar()" title="Move para as listas restritas as obrigações da CAP marcadas como «Dívidas», com as faturas e as carteiras delas">Trazer dívidas da CAP</button>`); } return r; }; window.paintCAP = paintCAP; }
+/* formulário de obrigação: nas Dívidas, "Onde é gerida" é sempre Dívidas (campo escondido) */
+{ const f0 = window.obrForm; window.obrForm = function () { const r = f0.apply(this, arguments); if (DIV.on) { const s = $("oDest"); if (s) { s.value = "Dívidas"; const f = s.closest(".field"); if (f) f.style.display = "none"; } } return r; }; }
+/* v0.13.1 (pedido 14/10 a): editar a fatura de dentro da obrigação e voltar ao detalhe ao salvar */
+window.obrContaEditar = (obrId, contaId) => { const fn = () => obrAbrir(obrId, OBR_UI.lastBack, true); obrConta(contaId); if ($("modal") && $("modal").querySelector("#fTitle")) { CAP_STATE.depois = fn; CAP_STATE._depoisObrFn = fn; } };
+/* resumo agregado para quem não vê as listas (Fluxo de Caixa) e para o CAPEX */
+function divResumoCalc() {
+  const meses = {}, m = k => (meses[k] = meses[k] || { pago: 0, aberto: 0, n: 0 });
+  CAP_STATE.items.forEach(it => {
+    if (/^transfer/i.test(String(it.TipoLancamento || "")) || isIsenta(it)) return;
+    const v = Number(it.Valor || 0);
+    if (it.Status === "Pago") { const k = it.DataPagamento ? ymd(it.DataPagamento).slice(0, 7) : (it.Vencimento ? ymd(it.Vencimento).slice(0, 7) : ""); if (!k) return; m(k).pago += v; m(k).n++; }
+    else if (it.Vencimento) { const k = ymd(it.Vencimento).slice(0, 7); m(k).aberto += v; m(k).n++; }
+  });
+  let saldo = 0; try { const D = obrCalcular(); D.obrs.forEach(o => { if (o.Status === "Encerrada") return; const R = D.res.get(String(o._id)); if (R && R.saldo > 0) saldo += R.saldo; }); } catch (e) {}
+  const ord = {}; Object.keys(meses).sort().forEach(k => { ord[k] = { pago: Math.round(meses[k].pago * 100) / 100, aberto: Math.round(meses[k].aberto * 100) / 100, n: meses[k].n }; });
+  return { meses: ord, saldo: Math.round(saldo * 100) / 100, n: CAP_STATE.items.length, obrs: OBR_STATE.items.length };
+}
+async function divResumoGravar() {
+  if (DIV.gravando) return DIV.gravando;
+  DIV.gravando = divResumoGravar2().finally(() => { DIV.gravando = null; });
+  return DIV.gravando;
+}
+async function divResumoGravar2() {
+  if (!DIV.on || !session.n1 || vcAtivo() || !CAP_STATE.items) return;
+  if (!OBR_STATE.items.length) { try { await loadObr(); } catch (e) {} if (!DIV.on) return; }   /* o saldo vem das obrigações */
+  const novo = divResumoCalc();
+  const atual = await erpParamLer("div_resumo", true);
+  const sem = v => { if (!v) return ""; const c = Object.assign({}, v); delete c.atualizado; return JSON.stringify(c); };
+  if (atual && sem(atual.valor) === sem(novo)) { DIV.resumo = atual.valor; return; }
+  novo.atualizado = new Date().toISOString();
+  await erpParamGravar("div_resumo", novo); DIV.resumo = novo;
+}
+function divResumoLer() {
+  if (DIV.resumo !== undefined) return DIV.resumo;
+  DIV.resumo = null; DIV.resumoLendo = true;
+  erpParamLer("div_resumo").then(r => { DIV.resumo = r && r.valor ? r.valor : null; }).catch(() => {}).finally(() => { DIV.resumoLendo = false; if ($("cxBody") && typeof paintCx === "function") paintCx(); });
+  return null;
+}
+function divLinhaFluxo(comp) {
+  const r = divResumoLer();
+  if (!r) return `<div class="cap-card div-agreg"><b>Parcelas de dívidas</b> <span class="sup">(Gestão de Dívidas, só totais)</span><div class="sup">${DIV.resumoLendo ? "Carregando…" : "Ainda sem resumo gravado: um administrador precisa abrir a Gestão de Dívidas uma vez."}</div></div>`;
+  const m = (r.meses || {})[comp] || { pago: 0, aberto: 0, n: 0 };
+  return `<div class="cap-card div-agreg"><b>Parcelas de dívidas</b> <span class="sup">(Gestão de Dívidas, só totais)</span> — pagas no mês: <b class="money">${esc(fmtBRL(m.pago))}</b> · em aberto no mês: <b class="money">${esc(fmtBRL(m.aberto))}</b> · ${m.n} parcela(s)<div class="sup">Não entra nos totais acima (só informa). Saldo total das dívidas: ${session.n1 ? esc(fmtBRL(r.saldo || 0)) : "só administradores"} · atualizado em ${r.atualizado ? new Date(r.atualizado).toLocaleString("pt-BR") : "—"}</div></div>`;
+}
+{ const c0 = cxResumoHtml; cxResumoHtml = function () { const h = c0.apply(this, arguments); try { return h + divLinhaFluxo(CX.comp || cxHoje().slice(0, 7)); } catch (e) { return h; } }; window.cxResumoHtml = cxResumoHtml; }
+{ const c0 = cxPainelHtml; cxPainelHtml = function () { const h = c0.apply(this, arguments); try { return h + divLinhaFluxo(CX.comp || cxHoje().slice(0, 7)); } catch (e) { return h; } }; window.cxPainelHtml = cxPainelHtml; }
+{ const c0 = cpxCarregar; cpxCarregar = async function () { try { const r = await erpParamLer("div_resumo"); DIV.resumo = r && r.valor ? r.valor : null; } catch (e) {} return c0.apply(this, arguments); }; window.cpxCarregar = cpxCarregar; }
+/* migração única: obrigações da CAP marcadas "Dívidas" (+ faturas ligadas + carteiras delas) → listas restritas; depois apaga da CAP */
+const DIV_SYS = /^(id|ContentType|Modified|Created|AuthorLookupId|EditorLookupId|_|Attachments|Edit|LinkTitle|FolderChildCount|ItemChildCount|AppAuthorLookupId|AppEditorLookupId|OData_|@odata)/;
+function divCampos(def, it) { const nomes = new Set(["Title", ...def.columns.map(c => c.lookupList ? c.name + "LookupId" : c.name)]); const f = {}; Object.keys(it).forEach(k => { const base = k.endsWith("LookupId") ? k.slice(0, -8) : k; if ((nomes.has(k) || nomes.has(base)) && !DIV_SYS.test(k) && it[k] != null && it[k] !== "") f[k] = it[k]; }); return f; }   /* pessoas (Responsavel) também vêm como …LookupId */
+function divChaveObr(o) { return [o.Title, o.FornecedorTexto, o.NumParcelas, o.ValorParcela, o.Inicio ? ymd(o.Inicio) : "", o.Carteira, o.NumParcelamento, o.RefContrato].map(x => String(x == null ? "" : x).trim().toLowerCase()).join("|"); }
+function divChaveFat(it) { return [it.Title, it.Vencimento ? ymd(it.Vencimento) : "", Number(it.Valor || 0).toFixed(2), it.Parcela].map(x => String(x == null ? "" : x).trim().toLowerCase()).join("|"); }
+window.divMigrar = async () => {
+  if (!DIV.on || !session.n1) { toast("Só administradores, dentro da Gestão de Dívidas."); return; }
+  if (vcAtivo()) { toast("Você está vendo o ERP como outra pessoa: nada é gravado."); return; }
+  if (DIV.migrando) return;
+  DIV.migrando = true;
+  const gen = DIV.gen, vivo = () => { if (!DIV.on || DIV.gen !== gen) throw divTrocou(); };   /* MN1: se a tela trocar no meio, a migração para antes de gravar */
+  if (!OBR_STATE.list || !OBR_CART_STATE.list) { try { await loadObr(); } catch (e) {} }
+  if (!DIV.on || DIV.gen !== gen) { DIV.migrando = false; return; }
+  if (!CAP_STATE.list || !OBR_STATE.list || !OBR_CART_STATE.list) { DIV.migrando = false; toast("As listas restritas ainda não existem ou não foram lidas. Rode a Configuração e clique em Atualizar."); return; }
+  const dFatL = CAP_STATE.list, dObrL = OBR_STATE.list, dCartL = OBR_CART_STATE.list;   /* listas-alvo fixas: nunca relidas do estado (que pode trocar) */
+  try {
+    const site = CAP_STATE.site, lists = await SP.lists(site.id), achar = n => lists.find(l => l.displayName === n) || null;
+    const capL = achar(LISTS.cap.displayName), obrL = achar(LISTS.obr.displayName), cartL = achar(LISTS.obr_cart.displayName);
+    if (!capL || !obrL) { toast("Listas da CAP não encontradas."); return; }
+    const ler = async l => l ? (await SP.items(site.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+    const obrsTodas = await ler(obrL), obrs = obrsTodas.filter(o => (o.ModuloDestino || "CAP") === "Dívidas");
+    if (!obrs.length) { toast("Nenhuma obrigação marcada como «Dívidas» na CAP — nada a trazer."); return; }
+    const ids = new Set(obrs.map(o => o._id));
+    const fats = (await ler(capL)).filter(it => it.ObrigacaoLookupId != null && ids.has(String(it.ObrigacaoLookupId)));
+    const carts = await ler(cartL), dcarts = await ler(dCartL); vivo();
+    const siglas = [...new Set(obrs.map(o => String(o.Carteira || "").trim().toUpperCase()).filter(Boolean))];
+    const cartsNovas = siglas.filter(s => !dcarts.some(c => String(c.Title || "").trim().toUpperCase() === s)).map(s => carts.find(c => String(c.Title || "").trim().toUpperCase() === s)).filter(Boolean);
+    const restantes = obrsTodas.filter(o => !ids.has(o._id)), cartsSoDiv = siglas.filter(s => !restantes.some(o => String(o.Carteira || "").trim().toUpperCase() === s)).map(s => carts.find(c => String(c.Title || "").trim().toUpperCase() === s)).filter(Boolean);
+    const jaObr = await ler(dObrL), jaFat = await ler(dFatL); vivo();   /* o que já está nas listas restritas não é copiado de novo (reexecução depois de falha) */
+    const jaObrMap = new Map(jaObr.map(o => [divChaveObr(o), o])), jaFatSet = new Set(jaFat.map(divChaveFat));
+    const obrsNovas = obrs.filter(o => !jaObrMap.has(divChaveObr(o))), fatsNovas = fats.filter(it => !jaFatSet.has(divChaveFat(it)));
+    const msg = `Trazer da CAP para as listas restritas:\n• ${obrs.length} obrigação(ões) marcada(s) como «Dívidas»${obrsNovas.length !== obrs.length ? ` (${obrs.length - obrsNovas.length} já copiada(s) antes)` : ""}\n• ${fats.length} fatura(s) com vínculo gravado a elas${fatsNovas.length !== fats.length ? ` (${fats.length - fatsNovas.length} já copiada(s) antes)` : ""}\n• ${cartsNovas.length} carteira(s) copiada(s)${cartsSoDiv.length ? ` (e ${cartsSoDiv.length} carteira(s) usada(s) só por dívidas sai(em) da CAP)` : ""}\n\nSó vêm as faturas com vínculo gravado à obrigação: faturas reconhecidas apenas pelo fornecedor ("auto") ficam na CAP — confirme os vínculos na CAP antes, se houver.\nDepois de copiar e conferir, os registros são apagados da CAP. Os documentos anexados continuam na mesma pasta. Continuar?`;
+    if (!confirm(msg)) return;
+    vivo(); toast("Copiando…", 4000);
+    const falhas = [];
+    for (const c of cartsNovas) { vivo(); try { await SP.create(site.id, dCartL.id, divCampos(LISTS.div_cart, c)); } catch (e) { falhas.push("carteira " + (c.Title || "") + ": " + e.message); } }
+    const mapa = new Map();
+    obrs.forEach(o => { const j = jaObrMap.get(divChaveObr(o)); if (j) mapa.set(o._id, String(j._id)); });
+    for (const o of obrsNovas) { vivo(); try { const f = divCampos(LISTS.div_obr, o); f.ModuloDestino = "Dívidas"; const r = await SP.create(site.id, dObrL.id, f); mapa.set(o._id, String(r.id)); } catch (e) { falhas.push("obrigação " + (o.Title || o._id) + ": " + e.message); } }
+    const fatOk = fats.filter(it => jaFatSet.has(divChaveFat(it)) && mapa.has(String(it.ObrigacaoLookupId)));
+    for (const it of fatsNovas) { const nid = mapa.get(String(it.ObrigacaoLookupId)); if (!nid) continue; vivo(); try { const f = divCampos(LISTS.div_cap, it); f.ObrigacaoLookupId = nid; await SP.create(site.id, dFatL.id, f); fatOk.push(it); } catch (e) { falhas.push("fatura " + (it.Title || it._id) + ": " + e.message); } }
+    /* conferir: relê as listas restritas e exige que cada obrigação e cada fatura copiada exista lá (por conteúdo, não por contagem) */
+    vivo(); const dObrs = await ler(dObrL), dFats = await ler(dFatL), dIds = new Set(dObrs.map(o => o._id)), dFatSet = new Set(dFats.map(divChaveFat));
+    if (![...mapa.values()].every(id => dIds.has(id))) falhas.push("conferência: obrigação copiada não foi encontrada na lista restrita");
+    fatOk.slice().forEach(it => { if (!dFatSet.has(divChaveFat(it))) { falhas.push("conferência: fatura " + (it.Title || it._id) + " não foi encontrada na lista restrita"); } });
+    let apagadas = 0;
+    if (!falhas.length) { vivo();
+      for (const it of fatOk) { try { await graph(`/sites/${site.id}/lists/${capL.id}/items/${it._id}`, { method: "DELETE" }); apagadas++; } catch (e) { falhas.push("apagar fatura " + (it.Title || it._id) + ": " + e.message); } }
+      for (const o of obrs) { if (!mapa.has(o._id)) continue; try { await graph(`/sites/${site.id}/lists/${obrL.id}/items/${o._id}`, { method: "DELETE" }); apagadas++; } catch (e) { falhas.push("apagar obrigação " + (o.Title || o._id) + ": " + e.message); } }
+      for (const c of cartsSoDiv) { try { await graph(`/sites/${site.id}/lists/${cartL.id}/items/${c._id}`, { method: "DELETE" }); } catch (e) { falhas.push("apagar carteira " + (c.Title || "") + ": " + e.message); } }
+    }
+    if (falhas.length) { alert(`A migração parou com ${falhas.length} problema(s) — nada foi apagado da CAP enquanto houver falha na cópia:\n\n${falhas.slice(0, 12).join("\n")}${falhas.length > 12 ? "\n…" : ""}\n\nO que já foi copiado fica nas listas restritas e não é copiado de novo: corrija a causa e clique em "Trazer dívidas da CAP" outra vez.`); }
+    else toast(`${obrs.length} obrigação(ões), ${fatOk.length} fatura(s) e ${cartsNovas.length} carteira(s) trazidas para a Gestão de Dívidas; ${apagadas} registro(s) apagado(s) da CAP.`, 9000);
+    if (DIV.outro) { DIV.outro.cap.items = []; DIV.outro.obr.items = []; }
+    OBR_STATE.items = []; await renderCAP();
+  } catch (e) { toast((e && e.divTrocou ? "Migração interrompida: a tela trocou — nada foi apagado da CAP; volte à Gestão de Dívidas e clique de novo (o que já foi copiado não é copiado outra vez)." : "Migração interrompida: " + e.message), 9000); }
+  finally { DIV.migrando = false; }
+};
+MOD_RESET.dividas = (function (antes) { return () => { if (antes) antes(); divModo(true); CAP_STATE.view = "lista"; CAP_STATE.filter = capFiltroVazio(); }; })(MOD_RESET.dividas);
+MOD_RESET.cap = (function (antes) { return () => { divModo(false); if (antes) antes(); }; })(MOD_RESET.cap);   /* B1: o clique no menu reseta antes da rota — garante que o reset age na CAP, não nas dívidas */
+MOD_RESET.obr = (function (antes) { return () => { divModo(false); if (antes) antes(); }; })(MOD_RESET.obr);
+/* B7: depois da Configuração, listas/colunas podem ter mudado — o estado guardado do outro modo é descartado */
+{ const r0 = runSetup; runSetup = async function () { const r = await r0.apply(this, arguments); try { if (DIV.outro) { DIV.outro.cap.list = null; DIV.outro.cap.cols = null; DIV.outro.obr.list = null; DIV.outro.obr.cols = null; DIV.outro.cart.list = null; } } catch (e) {} return r; }; window.runSetup = runSetup; }
+/* B8: o "voltar à obrigação" do ✎ só vale para a janela que o criou — cancelar limpa */
+{ const c0 = closeModal; closeModal = function () { if (CAP_STATE._depoisObrFn && CAP_STATE.depois === CAP_STATE._depoisObrFn && !CAP_STATE._salvando) { CAP_STATE.depois = null; CAP_STATE._depoisObrFn = null; } return c0.apply(this, arguments); }; window.closeModal = closeModal; }
+{ const s0 = capSave; capSave = async function () { CAP_STATE._salvando = true; try { return await s0.apply(this, arguments); } finally { CAP_STATE._salvando = false; if (!CAP_STATE.depois) CAP_STATE._depoisObrFn = null; } }; window.capSave = capSave; }
 </script>
 </body>
 </html>

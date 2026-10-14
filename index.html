@@ -233,7 +233,8 @@
   .modal-head h2 { flex: 1; font-size: 20px; font-weight: 800; color: var(--navy); letter-spacing: -0.01em; }
   .modal-head .x { background: none; border: 0; font-size: 22px; color: var(--ink-2); padding: 4px 10px; cursor: pointer; }
   .modal-body { padding: 26px; }
-  .modal-foot { padding: 16px 26px; border-top: 1px solid var(--line); display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
+  .modal-foot { padding: 16px 26px; border-top: 1px solid var(--line); display: flex; gap: 10px; row-gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
+  .modal-foot .btn { white-space: nowrap; }   /* v0.13.4 · 3b: com muitos botões a linha quebra em vez de cortar o Excluir */
   .modal-foot .grow { flex: 1; font-size: 13px; color: var(--ink-2); }
 
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
@@ -3724,6 +3725,7 @@ img.tf-av{object-fit:cover;background:#E6E8EE;padding:0}.tf-card-f .tf-av{width:
     </button>
     <a class="marca" href="#/inicio" title="Início" aria-label="Início · Nova Macabu"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span class="nm-pal"><svg class="nm-nova" aria-hidden="true" focusable="false"><use href="#nm-nova" width="100%" height="100%"/></svg><svg class="nm-macabu" aria-hidden="true" focusable="false"><use href="#nm-macabu" width="100%" height="100%"/></svg></span></a>
 <nav class="areas" id="topAreas" aria-label="Áreas"></nav>
+    <div class="top-busca" id="topBuscaWrap"><button type="button" class="top-busca-ico" id="topBuscaIco" title="Buscar no ERP" aria-label="Buscar no ERP">🔍</button><input type="search" id="topBusca" placeholder="Buscar módulos, faturas, NF, fornecedores…" autocomplete="off" aria-label="Buscar no ERP" aria-expanded="false" aria-controls="topBuscaRes"><div class="top-busca-res" id="topBuscaRes" role="listbox" hidden></div></div>
     <div class="user-chip">
       <div class="avatar" id="avatar">·</div>
       <div class="who"><div id="userName">—</div><span id="userRole">—</span></div>
@@ -3736,7 +3738,7 @@ img.tf-av{object-fit:cover;background:#E6E8EE;padding:0}.tf-card-f .tf-av{width:
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.13.3<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.13.4<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3768,13 +3770,13 @@ const CONFIG = {
   /* Um site SharePoint por departamento. Toda lista do ERP nasce no site do departamento dono do módulo (LISTS[k].siteKey). */
   sites: {
     financeiro: "/sites/financeiro", operacional: "/sites/operacional", rh: "/sites/rh",
-    cap: "/sites/CAP", agentes: "/sites/agentes",   /* v0.13.3: sites próprios da CAP (Lançamentos, Fornecedores, Obrigações, Central de Tarefas, Dívidas) e dos Agentes (Agência, Arrecadação, Roletas, Escala) — isolam as permissões do Financeiro */
+    cap: "/sites/CAP", agentes: "/sites/agentes", terceiros: "/sites/terceiros",   /* v0.13.4: Banco de Dados de terceiros (fornecedores etc.) — site aberto, sem as restrições da CAP */   /* v0.13.3: sites próprios da CAP (Lançamentos, Fornecedores, Obrigações, Central de Tarefas, Dívidas) e dos Agentes (Agência, Arrecadação, Roletas, Escala) — isolam as permissões do Financeiro */
     diretoria: "/sites/diretoria", contabilidade: "/sites/contabilidade", juridico: "/sites/juridico",
     almoxarifado: "/sites/almoxarifado", ti: "/sites/ti", sac: "/sites/SAC"
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.13.3",
+  version: "v0.13.4",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -3820,7 +3822,7 @@ const ICONS = {
 const MODULES = [
   { id: "inicio",     path: "#/inicio",                       icon: "home",    name: "Início",              area: null,          groups: ["*"] },
   { id: "cap",        path: "#/financeiro/contas-a-pagar",     icon: "invoice", name: "Contas a Pagar",      area: "Financeiro",  groups: ["financeiro", "diretoria"], status: "ativo" },
-  { id: "forn",       path: "#/terceiros/fornecedores",       icon: "supplier",name: "Fornecedores",        area: "Terceiros",  groups: ["financeiro", "diretoria"], status: "ativo" },
+  { id: "forn",       path: "#/terceiros/fornecedores",       icon: "supplier",name: "Banco de Dados",     area: "Terceiros",  groups: ["financeiro", "diretoria"], status: "ativo" },
   { id: "obr",        path: "#/financeiro/obrigacoes",         icon: "bank",    name: "Obrigações",          area: "Financeiro",  groups: ["financeiro", "diretoria"], status: "ativo", menu: false },   /* v0.12.59: virou aba da CAP (fica fora dos menus; a permissão continua própria) */
   { id: "bilhet",     path: "#/financeiro/bilhetagem",         icon: "invoice", name: "LevBom",              area: "Financeiro",  groups: ["financeiro", "diretoria"], status: "prévia" }, /* v0.12.15: menu fixo, como CAP e Obrigações */
   { id: "riocard",    path: "#/financeiro/rio-card",           icon: "rcard",   name: "Rio Card",            area: "Financeiro",  groups: ["financeiro", "diretoria"], status: "piloto" },   /* v0.12.77: portal Mais Mobi + indicadores (em análise) */
@@ -3849,11 +3851,12 @@ const MODULES = [
   { id: "tarefas",    path: "#/operacional/central-de-tarefas", icon: "tasks", name: "Central de Tarefas", area: "Operacional", groups: ["operacional", "diretoria"], status: "piloto", wide: true },   /* v0.12.87: tarefas manuais + automáticas (alertas do ERP), lista/kanban, calendário e cronograma */
   { id: "itin",       path: "#/operacional/itinerarios",       icon: "gps",     name: "Itinerários",         area: "Operacional", groups: ["operacional", "diretoria"], status: "piloto", wide: true },
   { id: "painel_hor", path: "#/operacional/painel-de-horarios", icon: "tv",      name: "Painel de Horários",  area: "Operacional",   groups: ["operacional", "diretoria"], status: "piloto" },
-  { id: "escala",     path: "#/financeiro/escala-agencia",    icon: "people",  name: "Escala Agência",      area: "Agentes", groups: ["financeiro", "diretoria"], status: "ativo", wide: true },
+  { id: "agentes",    path: "#/financeiro/agentes",           icon: "ticket",  name: "Agentes Financeiros", area: "Financeiro", groups: ["financeiro", "diretoria"], status: "ativo", hub: true },   /* v0.13.4 (pedido 17:22): card no Financeiro que agrupa Movimento de Caixa, Vendas, Escala, Arrecadação e Roletas */
+  { id: "escala",     path: "#/financeiro/escala-agencia",    icon: "people",  name: "Escala Agência",      area: "Financeiro", groups: ["financeiro", "diretoria"], status: "ativo", wide: true, menu: false, hubDe: "agentes" },
   /* v0.12.20: Agência Conceição como grupo (abre tiles) + Fechamento de Caixa como filho em prévia; Recebimento piloto */
-  { id: "ag_conc",    path: "#/financeiro/agencia-conceicao",  icon: "ticket",  name: "Agência",             area: "Agentes", groups: ["financeiro", "diretoria"], status: "piloto" },   /* v0.12.24: renomeado para "Agência" (sem Conceição) e saiu de prévia para piloto */
-  { id: "roletas",    path: "#/operacional/controle-de-roletas", icon: "chart",  name: "Controle de Roletas", area: "Agentes", groups: ["financeiro", "operacional", "diretoria"], status: "piloto" },   /* v0.12.27 #14 · v0.12.71: do Financeiro para o Operacional (o endereço antigo redireciona) */
-  { id: "recebimento", path: "#/financeiro/recebimento",       icon: "cash",    name: "Arrecadação",         area: "Agentes", groups: ["financeiro", "diretoria"], status: "piloto" },   /* v0.12.27 #15: saiu de prévia */
+  { id: "ag_conc",    path: "#/financeiro/agencia-conceicao",  icon: "ticket",  name: "Operações da Agência", area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto", menu: false, hubDe: "agentes" },   /* v0.13.4: o hub "Operações da Agência" foi absorvido por Agentes Financeiros (o endereço redireciona; a permissão das páginas Movimento/Vendas continua aqui) */   /* v0.12.24: renomeado para "Agência" (sem Conceição) e saiu de prévia para piloto */
+  { id: "roletas",    path: "#/operacional/controle-de-roletas", icon: "chart",  name: "Controle de Roletas", area: "Financeiro", groups: ["financeiro", "operacional", "diretoria"], status: "piloto", menu: false, hubDe: "agentes" },   /* v0.12.27 #14 · v0.12.71: do Financeiro para o Operacional (o endereço antigo redireciona) */
+  { id: "recebimento", path: "#/financeiro/recebimento",       icon: "cash",    name: "Arrecadação",         area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto", menu: false, hubDe: "agentes" },   /* v0.12.27 #15: saiu de prévia */
   { id: "fin_tarefas", path: "#/financeiro/central-de-tarefas", icon: "tasks", name: "Central de Tarefas", area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto", wide: true },   /* v0.12.94: a Central de Tarefas no Financeiro, com atribuição a pessoas (como o Planner) */
   { id: "imob",       path: "#/financeiro/imobilizado",       icon: "imob",    name: "Imobilizado",         area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto" },   /* v0.12.73: bens e depreciação (base do CAPEX) */
   { id: "sac",        path: "#/diretoria/sac",                 icon: "chart",   name: "SAC",                 area: "Diretoria",   groups: ["diretoria"],               status: "ativo", wide: true },
@@ -3917,6 +3920,17 @@ const FORMAS = ["PIX", "Boleto", "TED", "Débito Automático", "Cartão", "Dinhe
 const STATUS_CAP = ["Aguardando NF", "Pendente", "Pago", "Vencido", "Cancelada"];   /* v0.13.2: Cancelada (com motivo) — a fatura não existe mais, mas fica o rastro */
 /* v0.12.57 · Classificação de custo do fornecedor (coluna "Tipo"): valor gravado + explicação mostrada abaixo do campo.
    Fixo e Variável geram a conta do mês sozinhos na CAP (capRecorrentesGerar). */
+/* v0.13.4 · 2e: papéis (tipo/classificação) do terceiro — começa com 8; vários no mesmo cadastro. doc = documento exigido. */
+const TERC_PAPEIS = [
+  { k: "forn",  n: "Fornecedor",                   doc: "cnpj", d: "Padrão, a grande maioria do cadastro" },
+  { k: "conc",  n: "Concessionária / Serviços",    doc: "cnpj", d: "Energia, água, telefone e internet; recorrente na CAP" },
+  { k: "orgao", n: "Órgão público",                doc: "cnpj", d: "DETRO, DER, Prefeitura, Receita, INSS, FGTS e multas (sem inscrição estadual)" },
+  { k: "banco", n: "Banco / Instituição financeira", doc: "cnpj", d: "Tarifas, empréstimos e Gestão de Dívidas (exige o código COMPE/ISPB)" },
+  { k: "seg",   n: "Seguradora / Operadora",       doc: "cnpj", d: "Seguros e planos" },
+  { k: "pf",    n: "Pessoa física / Autônomo",     doc: "cpf",  d: "Prestadores sem CNPJ, aluguel e RPA" },
+  { k: "func",  n: "Funcionário",                  doc: "cpf",  d: "Reembolsos, adiantamentos e rescisões — os dados ficam no RH › Banco de Dados › Funcionários" },
+  { k: "socio", n: "Sócio",                        doc: "cpf",  d: "Mútuos e distribuição de lucros, se aplicável" }
+];
 const FORN_CLASSES = [
   ["Fixo", "Mesmo valor todo mês; lançadas automaticamente. Exemplos: aluguel, condomínio, licenças de software, contabilidade, assinaturas."],
   ["Variável", "Acontecem todo mês, mas o valor muda; entram quando chega a NF. Exemplos: energia, água, telefone, combustível, frete. A conta do mês é criada sozinha como \"Aguardando NF\", de lembrete para não perder uma NF atrasada."],
@@ -4022,11 +4036,15 @@ const OBR_SEED = OBR_SEED_RAW.map(([Title, FornecedorTexto, Tipo, ValorTotal, Va
    "lookupList" = coluna de pesquisa apontando para o Título de outra lista do mesmo site (precisa existir antes). */
 const LISTS = {
   forn: {
-    key: "forn", displayName: "Fornecedores", siteKey: "cap", titleAs: "Nome",
+    key: "forn", displayName: "Fornecedores", siteKey: "terceiros", titleAs: "Nome",   /* v0.13.4: site Terceiros (era CAP na v0.13.3, Financeiro antes) */
     description: "Financeiro NMB · cadastro mestre de fornecedores. Um registro por fornecedor; alimenta Contas a Pagar e Obrigações.",
     columns: [
       { name: "CNPJ",               displayName: "CNPJ / CPF",           text: { allowMultipleLines: false, maxLength: 20 } },
-      { name: "Tipo",               displayName: "Tipo",                 choice: choice(FORN_CLASSES.map(c => c[0])), update: true, naoObrig: true },   /* v0.12.57: Classificação de custo (6 opções) */
+      { name: "Papeis",             displayName: "Papéis",               choice: { choices: TERC_PAPEIS.map(p => p.n), displayAs: "checkBoxes", allowTextEntry: false }, update: true, naoObrig: true },   /* v0.13.4 · 2e: tipo/classificação do terceiro (vários papéis no mesmo cadastro) */
+      { name: "Contas",             displayName: "Contas (JSON)",        text: { allowMultipleLines: true, textType: "plain" } },   /* v0.13.4 · 2g: contas/obrigações do mesmo CNPJ (ex.: concessionária com várias unidades) */
+      { name: "CodigoBanco",        displayName: "Código do banco (COMPE/ISPB)", text: { allowMultipleLines: false, maxLength: 20 } },   /* v0.13.4: obrigatório para o papel Banco */
+      { name: "FuncionarioId",      displayName: "Funcionário (id no RH)", text: { allowMultipleLines: false, maxLength: 20 } },   /* v0.13.4 · 2b: papel Funcionário aponta para RH › Funcionários */
+      { name: "Tipo",               displayName: "Classificação de custo", choice: choice(FORN_CLASSES.map(c => c[0])), update: true, naoObrig: true },   /* v0.12.57: Classificação de custo (6 opções) · v0.13.4: título igual ao do ERP */
       { name: "CategoriaPadrao",    displayName: "Categoria padrão",     choice: choice(CATEGORIAS, true), update: true },   /* v0.12.59: aceita texto ("Outros" → categoria digitada) */
       { name: "SubcategoriaPadrao", displayName: "Subcategoria padrão",  text: { allowMultipleLines: false, maxLength: 100 } },
       { name: "BancoPadrao",        displayName: "Banco padrão",         choice: choice(BANCOS), update: true },
@@ -4051,7 +4069,7 @@ const LISTS = {
     key: "obr", displayName: "Obrigações", siteKey: "cap", titleAs: "Nome",
     description: "Financeiro NMB · contratos, apólices, parcelamentos e despesas recorrentes que geram parcelas na Contas a Pagar.",
     columns: [
-      { name: "Fornecedor",         displayName: "Fornecedor",           lookupList: "Fornecedores" },
+      { name: "FornecedorId",       displayName: "Fornecedor (id no Banco de Dados)", number: { decimalPlaces: "none", displayAs: "number" } },   /* v0.13.4: Fornecedores foi para o site Terceiros — lookup entre sites não existe; guarda o id (em memória continua FornecedorLookupId) */
       { name: "FornecedorTexto",    displayName: "Fornecedor (texto)",   text: { allowMultipleLines: false, maxLength: 255 } },
       { name: "Tipo",               displayName: "Tipo",                 required: true, choice: choice(["Recorrente mensal", "Parcelado", "Anual"]) },
       { name: "ValorTotal",         displayName: "Valor total (R$)",     number: money },
@@ -4087,7 +4105,8 @@ const LISTS = {
     description: "Financeiro NMB · contas a pagar do dia a dia. Origem única para o Fluxo de Caixa.",
     columns: [
       { name: "Fornecedor",         displayName: "Fornecedor",           required: true,  text: { allowMultipleLines: false, maxLength: 255 } },
-      { name: "FornecedorRef",      displayName: "Fornecedor (cadastro)", lookupList: "Fornecedores" },
+      { name: "FornecedorRefId",    displayName: "Fornecedor (id no Banco de Dados)", number: { decimalPlaces: "none", displayAs: "number" } },   /* v0.13.4: idem (em memória: FornecedorRefLookupId) */
+      { name: "ContaFornecedor",    displayName: "Conta do fornecedor",  text: { allowMultipleLines: false, maxLength: 120 } },   /* v0.13.4 · 2g: unidade/contrato do mesmo CNPJ (unidade/contrato do mesmo CNPJ) */
       { name: "CNPJ",               displayName: "CNPJ",                                  text: { allowMultipleLines: false, maxLength: 20 } },
       { name: "Categoria",          displayName: "Categoria",                             choice: choice(CATEGORIAS), update: true },
       { name: "Subcategoria",       displayName: "Subcategoria",                          text: { allowMultipleLines: false, maxLength: 100 } },
@@ -4581,7 +4600,7 @@ function renderTopAreas() {
   }).join("");
 }
 /* v0.12.51: siglas de até 3 letras no menu superior (o nome completo fica na dica e no leitor de tela) */
-const AREA_SIGLA = { "Diretoria": "DIR", "Financeiro": "FIN", "Agentes": "AGT", "Contabilidade": "CTB", "Operacional": "OPS", "Recursos Humanos": "RH", "Terceiros": "TER", "Marketing": "MKT", "TI": "TI", "Saúde & Segurança": "SST" };
+const AREA_SIGLA = { "Diretoria": "DIR", "Financeiro": "FIN", "Contabilidade": "CTB", "Operacional": "OPS", "Recursos Humanos": "RH", "Terceiros": "TER", "Marketing": "MKT", "TI": "TI", "Saúde & Segurança": "SST" };
 function renderNav() {
   const visible = MODULES.filter(m => m.menu !== false && canSee(m));
   const ord = NAV.ordenando;
@@ -4760,6 +4779,9 @@ function route() {
   if (hash === "#/operacional/equipamentos/pagbank") { const m = MODULES.find(x => x.id === "equip"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "equip"; document.body.classList.remove("wide", "nav-open"); if (MOD_RESET.pb) MOD_RESET.pb(); $("main").innerHTML = pagePb(); renderPb(); navAtivo("equip"); window.scrollTo(0, 0); return; }
   /* v0.12.27 #14: Controle de Roletas (v0.12.71: em Operacional; o endereço antigo do Financeiro redireciona) */
   if (hash === "#/financeiro/controle-de-roletas") { location.replace("#/operacional/controle-de-roletas"); return; }
+  if (hash === "#/area/Agentes") { location.replace("#/financeiro/agentes"); return; }   /* v0.13.4: a área Agentes virou o card Agentes Financeiros */
+  if (hash === "#/financeiro/agencia-conceicao") { location.replace("#/financeiro/agentes"); return; }   /* v0.13.4: "Operações da Agência" absorvido */
+  if (hash === "#/financeiro/agentes") { const m = MODULES.find(x => x.id === "agentes"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "agentes"; document.body.classList.remove("wide", "nav-open"); $("main").innerHTML = pageAgentes(); if (typeof navAtivo === "function") navAtivo("agentes"); window.scrollTo(0, 0); return; }
   if (hash === "#/operacional/controle-de-roletas") { const m = MODULES.find(x => x.id === "roletas"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "roletas"; document.body.classList.remove("wide", "nav-open"); if (MOD_RESET.rol) MOD_RESET.rol(); $("main").innerHTML = pageRol(); renderRol(); navAtivo("roletas"); window.scrollTo(0, 0); return; }
   /* v0.12.27 #15: Financeiro > Recebimento Motorista (sai da prévia) */
   if (hash === "#/financeiro/recebimento") { const m = MODULES.find(x => x.id === "recebimento"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "recebimento"; document.body.classList.remove("wide", "nav-open"); if (MOD_RESET.rec) MOD_RESET.rec(); $("main").innerHTML = pageRec(); renderRec(); navAtivo("recebimento"); window.scrollTo(0, 0); return; }
@@ -4882,8 +4904,7 @@ function addCrumbs(mod) {
    Os administradores podem reordenar (Menu › Ordenar) — a ordem salva vale para o menu lateral e para os cartões do Início. */
 const AREAS = [
   { name: "Diretoria",        icon: "chart",    desc: "SAC, gestão de dívidas e painel da diretoria" },
-  { name: "Financeiro",       icon: "money",    desc: "Contas a pagar, obrigações, LevBom, Rio Card e caixa" },   /* v0.12.22: símbolo $ */
-  { name: "Agentes",          icon: "ticket",   desc: "Agência (movimento de caixa e vendas), arrecadação, controle de roletas e escala" },   /* v0.13.3: site próprio dos agentes */
+  { name: "Financeiro",       icon: "money",    desc: "Contas a pagar, obrigações, LevBom, Rio Card, caixa e agentes financeiros" },   /* v0.12.22: símbolo $ */
   { name: "Contabilidade",    icon: "bank",     desc: "Guias, DARFs, parcelamentos e apuração" },
   { name: "Operacional",      icon: "bus",      desc: "Frota, manutenção, almoxarifado, infrações, diesel, passageiros, horários, painel de horários, itinerários, tarifas, escala de garagem e regulamentações" },
   { name: "Recursos Humanos", icon: "people",   desc: "Funcionários e banco de talentos" },
@@ -4932,6 +4953,22 @@ function pageHome() {
     ${banner}
     <div class="tiles areas">${tiles}</div>
     ${(() => { const favs = favGet().map(id => MODULES.find(m => m.id === id)).filter(m => m && canSee(m)); return favs.length ? `<h2 class="home-sec">★ Favoritos</h2><div class="tiles">${favs.map(modTile).join("")}</div>` : `<p class="home-hint">Dica: marque a ☆ em um módulo dentro de um departamento para ele aparecer aqui como favorito.</p>`; })()}
+  </div>`;
+}
+function pageAgentes() {   /* v0.13.4: Agentes Financeiros — um card no Financeiro com as rotinas dos agentes (substitui "Operações da Agência" e a área Agentes) */
+  const mods = [
+    { id: "ag_conc", pg: "mov", name: "Movimento de Caixa", icon: "cash", desc: "Movimento diário do caixa da agência: entradas, saídas e aprovação", status: "piloto", href: "#/financeiro/agencia-conceicao/movimento-de-caixa" },
+    { id: "ag_conc", pg: "ven", name: "Vendas da Agência", icon: "ticket", desc: "Fechamento de vendas por linha, tipo de passagem e forma de pagamento", status: "piloto", href: "#/financeiro/agencia-conceicao/vendas" },
+    { id: "escala", name: "Escala Agência", icon: "people", desc: "Escala dos agentes das agências", status: "ativo", href: "#/financeiro/escala-agencia" },
+    { id: "recebimento", name: "Arrecadação", icon: "cash", desc: "Malotes recebidos dos motoristas, conferência e aprovação", status: "piloto", href: "#/financeiro/recebimento" },
+    { id: "roletas", name: "Controle de Roletas", icon: "chart", desc: "Catracas por carro × horário × motorista", status: "piloto", href: "#/operacional/controle-de-roletas" }
+  ].filter(m => { const mod = MODULES.find(x => x.id === m.id); if (!canSee(mod)) return false; if (m.pg) { try { return permPagValor(m.id, m.pg) !== "nenhum"; } catch (e) { return true; } } return true; });
+  const tiles = mods.map(m => `<a class="tile" href="${m.href}"><span class="tile-ico">${ICONS[m.icon] || ICONS.home}</span><h3>${esc(m.name)}</h3><div class="area">${esc(m.desc)}</div><span class="st"><i></i>${esc(m.status)}</span></a>`).join("");
+  return `<div class="page">
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><b>Agentes Financeiros</b></nav>
+    <h1>Agentes Financeiros</h1>
+    <p class="lead">Rotinas dos agentes das agências: movimento do caixa, vendas, escala, arrecadação e controle de roletas. Clique num bloco para abrir.</p>
+    ${tiles ? `<div class="tiles">${tiles}</div>` : `<div class="cap-empty"><h3>Sem acesso</h3><p>Nenhuma destas páginas está liberada para o seu usuário.</p></div>`}
   </div>`;
 }
 function pageArea(name) {
@@ -5438,7 +5475,7 @@ function subcatOptions(cat) { const arr = cat && PLANO_CONTAS[cat] ? PLANO_CONTA
 const hasCol = (name) => !CAP_STATE.cols || CAP_STATE.cols.has(name);
 
 async function loadForn(soft) {
-  if (!FORN_STATE.site) FORN_STATE.site = CAP_STATE.site || await SP.site(CONFIG.sites[LISTS.forn.siteKey]);
+  if (!FORN_STATE.site) FORN_STATE.site = await SP.site(CONFIG.sites[LISTS.forn.siteKey]);   /* v0.13.4: site Terceiros (não é mais o da CAP) */
   if (!FORN_STATE.list) { const lists = await SP.lists(FORN_STATE.site.id); FORN_STATE.list = lists.find(l => l.displayName === LISTS.forn.displayName) || null; }
   if (!FORN_STATE.list) { if (soft) { FORN_STATE.items = []; return []; } throw new Error(`A lista "${LISTS.forn.displayName}" ainda não existe. Vá em Sistema → Configuração.`); }
   if (FORN_STATE.cols === undefined || FORN_STATE.cols === null) { try { FORN_STATE.cols = new Set((await graphAll(`/sites/${FORN_STATE.site.id}/lists/${FORN_STATE.list.id}/columns?$select=name`)).map(c => c.name)); } catch (_) { FORN_STATE.cols = null; } }
@@ -5465,6 +5502,7 @@ async function loadCAP(opts) {
   const [items] = await Promise.all([SP.items(CAP_STATE.site.id, CAP_STATE.list.id), loadForn(true).catch(() => [])]);
   if (_troc()) throw divTrocou();
   CAP_STATE.items = items.map(it => Object.assign({ _id: it.id }, it.fields || {}));
+  if (CAP_STATE.cols && CAP_STATE.cols.has("FornecedorRefId")) CAP_STATE.items.forEach(it => { it.FornecedorRefLookupId = it.FornecedorRefId == null || it.FornecedorRefId === "" ? undefined : it.FornecedorRefId; });   /* v0.13.4: a coluna numérica manda; o lookup antigo (ids de outra lista) é ignorado */
   if ((opts && opts.soLeitura) || !podeEditar("cap") || vcAtivo()) return CAP_STATE.items; /* v0.12.12: Obrigações e Fornecedores só leem — não marcam vencidas nem gravam nada · v0.12.14: quem só vê também não grava */
   /* --- v0.7: Vencido automático --- */
   const hj = new Date(); hj.setHours(0,0,0,0);
@@ -6152,7 +6190,7 @@ async function capSave(existing) {
   if (fields.Status !== "Pago" && !isIsenta(fields) && fields.Vencimento && fields.Vencimento < todayISO()) fields.Status = "Vencido";
   const forn = fornByName(fields.Fornecedor);
   if (forn) fields.Fornecedor = forn.Title;
-  if (hasCol("FornecedorRef")) fields.FornecedorRefLookupId = forn ? Number(forn._id) : null;
+  if (hasCol("FornecedorRefId")) fields.FornecedorRefLookupId = forn ? Number(forn._id) : null;
   for (const k of Object.keys(fields)) if (k !== "FornecedorRefLookupId" && !hasCol(k)) delete fields[k];
   const btn = $("fSave"); btn.disabled = true; btn.textContent = "Salvando…";
   try {
@@ -6256,7 +6294,7 @@ function analyzeImport(text) {
     const forn = fornByName(fields.Fornecedor);
     if (forn) {
       fields.Fornecedor = forn.Title;
-      if (hasCol("FornecedorRef")) fields.FornecedorRefLookupId = Number(forn._id);
+      if (hasCol("FornecedorRefId")) fields.FornecedorRefLookupId = Number(forn._id);
       if (!fields.CNPJ && forn.CNPJ) fields.CNPJ = forn.CNPJ;
       if (!fields.Categoria && forn.CategoriaPadrao) fields.Categoria = forn.CategoriaPadrao;
       if (!fields.Subcategoria && forn.SubcategoriaPadrao) fields.Subcategoria = forn.SubcategoriaPadrao;
@@ -6327,6 +6365,7 @@ async function loadObr() {
   if (!OBR_STATE.list) throw new Error(`A lista "${LISTS.obr.displayName}" ainda não existe. Vá em Sistema → Configuração.`);
   const items = await SP.items(OBR_STATE.site.id, OBR_STATE.list.id);
   OBR_STATE.items = items.map(it => Object.assign({ _id: it.id }, it.fields || {}));
+  if (OBR_STATE.cols && OBR_STATE.cols.has("FornecedorId")) OBR_STATE.items.forEach(o => { o.FornecedorLookupId = o.FornecedorId == null || o.FornecedorId === "" ? undefined : o.FornecedorId; });   /* v0.13.4: idem CAP */
   return OBR_STATE.items;
 }
 
@@ -6858,7 +6897,7 @@ function fornDetalhe(key, tab) {
     return `<tr onclick="capContaVoltar('${esc(it._id)}', ${voltar})" title="Abrir a fatura"><td><div class="desc">${esc(it.Title || "—")}${anexosDe(it).length ? ` <span class="doc-tag">📎 ${anexosDe(it).length}</span>` : ""}</div><div class="sup">${[it.Parcela ? "parcela " + esc(it.Parcela) : "", l && obrVisivel(l.o) ? "obrigação: " + esc(l.o.Title) : ""].filter(Boolean).join(" · ")}</div></td><td class="nw">${esc(compLabel(itemComp(it)))}</td><td class="nw">${fmtDate(it.Vencimento)}</td><td class="right">${esc(fmtBRL(it.Valor))}</td><td>${statusPill(marc)}${c.pago && it.DataPagamento ? `<div class="sup">pago ${fmtDate(it.DataPagamento)}</div>` : ""}</td></tr>`; };
   const linhaPrev = x => `<tr onclick="obrAbrir('${esc(x.o._id)}', ${voltar})" title="Abrir a obrigação"><td><div class="desc">${esc(x.o.Title)}</div><div class="sup">${x.l.k ? "parcela " + x.l.k + "/" + (Number(x.o.NumParcelas) || "") : "mensal"}</div></td><td class="nw">${esc(compLabel(x.l.comp))}</td><td class="nw">${obrDia(x.l.venc)}</td><td class="right">${x.l.valor != null ? esc(fmtBRL(x.l.valor)) : "—"}</td><td>${obrLinhaPill(x.l.st)}</td></tr>`;
   const corpo = T === "previstas" ? listas.previstas.map(linhaPrev).join("") : listas[T].map(linhaConta).join("");
-  const contas = `<div class="obr-sec">Contas ${tabs}</div>${corpo ? `<div class="table-wrap obr-scroll"><table class="cap-table"><thead><tr><th>Descrição</th><th>Compet.</th><th>Vencimento</th><th style="text-align:right">Valor</th><th>Situação</th></tr></thead><tbody>${corpo}</tbody></table></div>` : `<p class="obr-note" style="margin-top:0">Nada nesta aba.</p>`}`;
+  const contas = `${tercContasBloco(cad, g)}<div class="obr-sec">Faturas ${tabs}</div>${corpo ? `<div class="table-wrap obr-scroll"><table class="cap-table"><thead><tr><th>Descrição</th><th>Compet.</th><th>Vencimento</th><th style="text-align:right">Valor</th><th>Situação</th></tr></thead><tbody>${corpo}</tbody></table></div>` : `<p class="obr-note" style="margin-top:0">Nada nesta aba.</p>`}`;
   const html = `<div class="modal-head"><h2>${esc(g.nome)}</h2>${obrSitPill(r.sit.k, r.sit.why)}<button class="x" onclick="closeModal()">×</button></div>
     <div class="modal-body">
       <p class="obr-note" style="margin:0 0 6px">${esc(sub)}</p>
@@ -7209,7 +7248,8 @@ async function capSave(existing) {
     NumeroNF: g("fNF") || null, RefDocumento: g("fRef") || null, Observacoes: g("fObs") || null,
     TipoLancamento: g("fTipoL") || "Despesa", Estabelecimento: g("fEstab") || null, NumParcelamento: g("fNumParc") || null, TipoFavorecido: g("fTipoFav") || "Fornecedor",
     Natureza: document.getElementById("fNat") ? (g("fNat") || null) : undefined,   /* v0.12.73: natureza do gasto (vazia = regra automática) */
-    Estimado: !!(document.getElementById("fEst") && document.getElementById("fEst").checked)   /* v0.13.2 (item 7) */
+    Estimado: !!(document.getElementById("fEst") && document.getElementById("fEst").checked),   /* v0.13.2 (item 7) */
+    ContaFornecedor: document.getElementById("fConta") ? (g("fConta") || null) : undefined   /* v0.13.4 · 2g: conta do fornecedor (unidade/contrato do mesmo CNPJ) */
   };
   if (existing && existing.Status === "Cancelada") { showErr("Fatura cancelada: use «Reativar fatura» para voltar a editá-la."); return; }   /* v0.13.2 (item 5) */
   if (existing && existing.Status === "Pago" && !session.n1) {   /* v0.13.2 (item 6): fatura paga tem valor, vencimento, competência e fornecedor travados — só observações, anexos e classificação mudam */
@@ -7231,7 +7271,7 @@ async function capSave(existing) {
   if (fields.Status !== "Pago" && !isIsenta(fields) && fields.Vencimento && fields.Vencimento < todayISO()) fields.Status = "Vencido";
   const forn = fornByName(fields.Fornecedor);
   if (forn) fields.Fornecedor = forn.Title;
-  if (hasCol("FornecedorRef")) fields.FornecedorRefLookupId = forn ? Number(forn._id) : null;
+  if (hasCol("FornecedorRefId")) fields.FornecedorRefLookupId = forn ? Number(forn._id) : null;
   if (!existing && CAP_STATE.preset && CAP_STATE.preset.ObrigacaoLookupId && hasCol("Obrigacao")) fields.ObrigacaoLookupId = Number(CAP_STATE.preset.ObrigacaoLookupId);
   if (hasCol("Historico")) {   /* v0.13.2 (item 1) */
     if (!existing) fields.Historico = capHistAdd(null, "criada", `${fields.Fornecedor} · ${fmtBRL(fields.Valor)} · vence ${fmtDate(fields.Vencimento)}`);
@@ -7389,6 +7429,7 @@ async function loadObr() {
   const [items] = await Promise.all([SP.items(OBR_STATE.site.id, OBR_STATE.list.id), loadCarteiras(lists).catch(e => { if (e && e.divTrocou) throw e; console.warn("carteiras", e); })]);
   if (_troc()) throw divTrocou();
   OBR_STATE.items = items.map(it => Object.assign({ _id: it.id }, it.fields || {}));
+  if (OBR_STATE.cols && OBR_STATE.cols.has("FornecedorId")) OBR_STATE.items.forEach(o => { o.FornecedorLookupId = o.FornecedorId == null || o.FornecedorId === "" ? undefined : o.FornecedorId; });   /* v0.13.4: idem CAP */
   OBR_STATE.rev = (OBR_STATE.rev || 0) + 1;
   return OBR_STATE.items;
 }
@@ -7520,7 +7561,7 @@ async function obrSalvar(o, voltar) {
   };
   if ($("oDest")) fields.ModuloDestino = g("oDest"); else if (!o) fields.ModuloDestino = "CAP";
   fields.FornecedorLookupId = f ? Number(f._id) : null;
-  for (const k of Object.keys(fields)) { const col = k === "FornecedorLookupId" ? "Fornecedor" : k; if (!hasColObr(col)) delete fields[k]; }
+  for (const k of Object.keys(fields)) { const col = k === "FornecedorLookupId" ? "FornecedorId" : k; if (!hasColObr(col)) delete fields[k]; }   /* v0.13.4: coluna numérica FornecedorId */
   const antes = o ? Object.assign({}, o) : null;
   if (o) await SP.update(OBR_STATE.site.id, OBR_STATE.list.id, o._id, fields);
   else await SP.create(OBR_STATE.site.id, OBR_STATE.list.id, Object.assign({}, fields, Object.fromEntries(Object.entries(fields).filter(([, v]) => v === null).map(([k]) => [k, undefined]))));
@@ -7885,7 +7926,7 @@ window.obrPrepararMes = async () => {
             Banco: o.Banco || null, FormaPagamento: o.Forma || null, Estabelecimento: o.Estabelecimento || null, CentroCusto: o.CentroCusto || null, NumParcelamento: o.NumParcelamento || null,
             Observacoes: `Gerada automaticamente da obrigação "${o.Title}"`, TipoLancamento: "Despesa", ObrigacaoLookupId: Number(o._id) };
           if (f) { fields.FornecedorRefLookupId = Number(f._id); if (f.CNPJ) fields.CNPJ = f.CNPJ; }
-          for (const k of Object.keys(fields)) { const col = k.endsWith("LookupId") ? k.slice(0, -8) : k; if (fields[k] === null || !hasCol(col)) delete fields[k]; }
+          for (const k of Object.keys(fields)) { const col = k === "FornecedorRefLookupId" ? "FornecedorRefId" : k.endsWith("LookupId") ? k.slice(0, -8) : k; if (fields[k] === null || !hasCol(col)) delete fields[k]; }   /* v0.13.4: fornecedor em coluna numérica */
           await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, fields); criadas++;
         }
       } catch (e) { falha++; console.error("preparar mês", x.o.Title, e); }
@@ -9264,7 +9305,7 @@ function pageAgConc() {
   ];
   const tiles = AGCONC_MODS.map(m => `<a class="tile ${m.href ? "" : "disabled"}" ${m.href ? `href="${m.href}"` : "aria-disabled=\"true\""}><span class="tile-ico">${ICONS[m.icon] || ICONS.home}</span><h3>${esc(m.name)}</h3><div class="area">${esc(m.desc)}</div><span class="st ${m.status === "próximo" ? "proximo" : ""}"><i></i>${esc(m.status)}</span></a>`).join("");
   return `<div class="page">
-    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><b>Agência</b></nav>
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><a href="#/financeiro/agentes">Agentes Financeiros</a><span>›</span><b>Agência</b></nav>
     <h1>Agência</h1>
     <p class="lead">Rotinas da agência de Conceição de Macabu: fechamento diário do caixa, bilhetagem e escala. Clique num bloco para abrir.</p>
     <div class="tiles">${tiles}</div>
@@ -9284,7 +9325,7 @@ async function loadAgMov(force) {
   AG_MOV_STATE.ready = true;
 }
 function pageAgMov() {
-  const crumbs = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><a href="#/financeiro/agencia-conceicao">Agência</a><span>›</span><b>Movimento de Caixa</b></nav>`;
+  const crumbs = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><a href="#/financeiro/agentes">Agentes Financeiros</a><span>›</span><b>Movimento de Caixa</b></nav>`;
   return `<div class="page" id="agMovRoot">${crumbs}<div class="cap-topo"><div><h1 style="margin:0">Movimento de Caixa</h1><p class="sup" style="margin:2px 0 0">Lançamentos diários da agência · aprovação por administrador ou proprietário do módulo</p></div><span class="grow"></span><div id="agMovActions"></div></div><div id="agMovBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`;
 }
 async function renderAgMov() {
@@ -9527,7 +9568,7 @@ async function loadRec(force) {
   REC_STATE.ready = true;
 }
 function pageRec() {
-  const crumbs = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><b>Arrecadação</b></nav>`;
+  const crumbs = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><a href="#/financeiro/agentes">Agentes Financeiros</a><span>›</span><b>Arrecadação</b></nav>`;
   return `<div class="page" id="recRoot">${crumbs}<div class="cap-topo"><div><h1 style="margin:0">Arrecadação</h1><p class="sup" style="margin:2px 0 0">Malotes recebidos dos motoristas · conferência e aprovação por administrador ou proprietário do módulo</p></div><span class="grow"></span><div id="recActions"></div></div><div id="recBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`;
 }
 async function renderRec() { const body = $("recBody"); if (!body) return; try { await loadRec(true); } catch (e) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(e.message)}</p></div>`; return; } paintRec(); }
@@ -15543,7 +15584,7 @@ Object.assign(SETUP_TEXT, {
    · Antigo Nível 2: lido como Membro com Proprietário nos departamentos que gerenciava (todos, se o registro era da v0.12.14),
      até um administrador salvar — assim ninguém perde o acesso na troca de versão.
    ===================================================================== */
-const PERM_AREA_ORDEM = ["Diretoria", "Financeiro", "Agentes", "Contabilidade", "Operacional", "Recursos Humanos", "Terceiros", "Marketing", "TI", "Saúde & Segurança"];   /* v0.12.18: mesma ordem do menu */
+const PERM_AREA_ORDEM = ["Diretoria", "Financeiro", "Contabilidade", "Operacional", "Recursos Humanos", "Terceiros", "Marketing", "TI", "Saúde & Segurança"];   /* v0.12.18: mesma ordem do menu */
 function permAreas() {
   const mods = MODULES.filter(m => !["inicio", "diag", "config", "perm", "dividas"].includes(m.id) && m.area);
   const areas = [...new Set(mods.map(m => m.area))].sort((a, b) => { const ia = PERM_AREA_ORDEM.indexOf(a), ib = PERM_AREA_ORDEM.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b, "pt-BR"); });
@@ -15633,6 +15674,7 @@ function canSee(mod) {
   if (MODS_LIVRES.has(mod.id)) return true;
   if (session.n1) return true;                                   /* Administrador vê tudo */
   if (!mod.groups || !mod.groups.length) return false;           /* Usuários e permissões, Gestão de Dívidas e Configuração: só administradores */
+  if (mod.hub && MODULES.some(x => x.hubDe === mod.id && x.id !== mod.id && canSee(x))) return true;   /* v0.13.4: o card Agentes Financeiros aparece para quem tem acesso a qualquer página dele (Arrecadação, Escala…) */
   return permModulo(mod.id) !== "nenhum";                        /* o resto: só pela matriz desta página (grupos do Microsoft 365 não contam) */
 }
 /* v0.12.58 · página aberta com permissão própria: vale a da página (session.pagAtual = "módulo.página") */
@@ -23050,7 +23092,7 @@ function capRecCampos(f, comp) {
     Estabelecimento: f.Estabelecimento || null, Competencia: comp, Vencimento: `${comp}-${String(dia).padStart(2, "0")}`, Valor: valor, Status: fixo && valor > 0 ? "Pendente" : "Aguardando NF", Estimado: !fixo,   /* v0.13.2 (item 7): Variável nasce como valor estimado */
     TipoLancamento: "Despesa", TipoFavorecido: "Fornecedor",
     Observacoes: `${CAP_REC_MARCA} em ${fmtDate(todayISO())} (fornecedor ${fixo ? "Fixo" : "Variável"} ativo).${fixo ? (valor > 0 ? "" : " Sem valor padrão no cadastro: informe o valor.") : " Valor estimado (cadastro ou última conta): confirme com a NF."}${catOk ? "" : ` Categoria do cadastro: ${f.CategoriaPadrao}.`}` };
-  if (hasCol("FornecedorRef")) fields.FornecedorRefLookupId = Number(f._id);
+  if (hasCol("FornecedorRefId")) fields.FornecedorRefLookupId = Number(f._id);
   Object.keys(fields).forEach(k => { if (fields[k] === null || (k !== "FornecedorRefLookupId" && !hasCol(k))) delete fields[k]; });
   return fields;
 }
@@ -29463,7 +29505,7 @@ async function rcSyncGrupo(o) {
       Object.assign(f, { Title: `Reparo Rio Card — NF ${ref.NF}`, Competencia: compFromDate(ref.DataEmissaoNF ? ymd(ref.DataEmissaoNF) : vencto), Fornecedor: forn.Title, CNPJ: forn.CNPJ || null,
         Categoria: forn.CategoriaPadrao || "Terceirização", Subcategoria: forn.SubcategoriaPadrao || "Manutenção externa", CentroCusto: forn.CentroCustoPadrao || "Operacional",
         Banco: forn.BancoPadrao || null, FormaPagamento: forn.FormaPadrao || null, TipoLancamento: "Despesa", TipoFavorecido: "Fornecedor", Status: vencto < todayISO() ? "Vencido" : "Pendente" });
-      if (hasCol("FornecedorRef")) f.FornecedorRefLookupId = Number(forn._id);
+      if (hasCol("FornecedorRefId")) f.FornecedorRefLookupId = Number(forn._id);
     } else if (!pago && !(conta && capCancelada(conta))) f.Status = vencto < todayISO() ? "Vencido" : (conta.Status === "Vencido" || conta.Status === "Aguardando NF" ? "Pendente" : conta.Status);   /* v0.13.2: conta cancelada não é reativada pelo reparo */
     if (pago) { delete f.Valor; delete f.Vencimento; delete f.NumeroNF; delete f.Title; }   /* conta já paga: o financeiro manda nos valores */
     if (conta && conta.Status === "Pago") delete f.Valor;   /* v0.13.2: o valor do reparo (NF) não é sobrescrito pela parte paga / valor pago da conta */
@@ -34030,7 +34072,7 @@ function capHistHtml(it) {
 /* campos da fatura filha que recebe o saldo de um pagamento parcial */
 function capSaldoCampos(it, saldo) {
   const f = {};
-  ["Fornecedor", "FornecedorRefLookupId", "CNPJ", "Categoria", "Subcategoria", "CentroCusto", "Vencimento", "Competencia", "Parcela", "Banco", "FormaPagamento", "NumeroNF", "RefDocumento", "TipoLancamento", "Estabelecimento", "NumParcelamento", "TipoFavorecido", "Natureza", "ObrigacaoLookupId"].forEach(k => { if (it[k] != null && it[k] !== "" && (k.endsWith("LookupId") || hasCol(k))) f[k] = it[k]; });
+  ["Fornecedor", "FornecedorRefLookupId", "CNPJ", "Categoria", "Subcategoria", "CentroCusto", "Vencimento", "Competencia", "Parcela", "Banco", "FormaPagamento", "NumeroNF", "RefDocumento", "TipoLancamento", "Estabelecimento", "NumParcelamento", "TipoFavorecido", "Natureza", "ObrigacaoLookupId"].forEach(k => { if (it[k] != null && it[k] !== "" && (k === "FornecedorRefLookupId" ? hasCol("FornecedorRefId") : (k.endsWith("LookupId") || hasCol(k)))) f[k] = it[k]; });   /* v0.13.4: FornecedorRefLookupId só se a coluna numérica existe */
   if (typeof RC_CAP_REF !== "undefined" && f.RefDocumento === RC_CAP_REF) delete f.RefDocumento;   /* M3: a filha não é um reparo do Rio Card */
   f.Title = `${it.Title || "Fatura"} (saldo)`; f.Valor = saldo; f.Status = it.Vencimento && ymd(it.Vencimento) < todayISO() ? "Vencido" : "Pendente"; f.Isenta = false;
   if (hasCol("ParcialDe")) f.ParcialDe = String(it._id);
@@ -34114,7 +34156,7 @@ window.capReativar = async (id) => {
    existe no destino é reconhecido pelo conteúdo e não é duplicado.
    ===================================================================== */
 const SITES_MIG = [
-  { k: "forn",      de: { site: "financeiro", nome: "Fornecedores" },                        chave: it => it.Title },
+  { k: "forn",      de: [{ site: "cap", nome: "Fornecedores" }, { site: "financeiro", nome: "Fornecedores" }], chave: it => it.Title },   /* v0.13.4: destino Terceiros; a origem pode ser o site CAP (v0.13.3) ou o Financeiro */
   { k: "obr_cart",  de: { site: "financeiro", nome: "Obrigações — Carteiras" },              chave: it => it.Title },
   { k: "obr",       de: { site: "financeiro", nome: "Obrigações" },                          chave: it => [it.Title, it.FornecedorTexto, it.NumParcelas, it.ValorParcela, it.Inicio ? ymd(it.Inicio) : ""].join("|"), lookups: { FornecedorLookupId: "forn" }, anexos: true },
   { k: "cap",       de: { site: "financeiro", nome: "Contas a Pagar" },                      chave: it => [it.Title, it.Fornecedor, it.Vencimento ? ymd(it.Vencimento) : "", Number(it.Valor || 0).toFixed(2), it.Parcela].join("|"), lookups: { FornecedorRefLookupId: "forn", ObrigacaoLookupId: "obr" }, anexos: true, refs: { ParcialDe: "cap" } },
@@ -34124,7 +34166,7 @@ const SITES_MIG = [
   { k: "fin_tarefas", de: { site: "financeiro", nome: "Financeiro — Tarefas" },              chave: it => [it.Title, it.Inicio ? ymd(it.Inicio) : "", it.Prazo ? ymd(it.Prazo) : "", it.Status, it.Responsavel].join("|"), opcional: true },
   { k: "ag_mov",    de: { site: "financeiro", nome: "Agência — Movimentos" },                chave: it => it.Title },
   { k: "ag_vendas", de: { site: "financeiro", nome: "Agência — Vendas" },                    chave: it => it.Title },
-  { k: "cx_recebimento", de: { site: "financeiro", nome: "Financeiro — Recebimentos de Motorista" }, chave: it => it.Title, renomearDe: "Recebimentos de Motorista" },
+  { k: "cx_recebimento", de: [{ site: "agentes", nome: "Recebimentos de Motorista" }, { site: "financeiro", nome: "Financeiro — Recebimentos de Motorista" }], chave: it => it.Title, renomearDe: "Recebimentos de Motorista" },   /* v0.13.4 (pedido 4): a lista pode já ter sido copiada para o site Agentes com o nome antigo — copia de lá para "Arrecadação" (e do Financeiro) */
   { k: "cx_roletas", de: { site: "financeiro", nome: "Financeiro — Controle de Roletas" }, chave: it => it.Title, opcional: true },
   { k: "esc_dias",  de: { site: "financeiro", nome: "Escala — Dias" },                       chave: it => it.Title, opcional: true },
   { k: "esc_param", de: { site: "financeiro", nome: "Escala — Parâmetros" },                 chave: it => it.Title, opcional: true },
@@ -34173,12 +34215,18 @@ window.sitesMigrar = async () => {
     const drives = {}, driveDe = async k => drives[k] || (drives[k] = await graph(`/sites/${(await site(k)).id}/drive?$select=id,name`));
     for (const m of SITES_MIG) {
       const def = LISTS[m.k]; if (!def) continue;
-      const stVelho = await site(m.de.site).catch(() => null), lsVelhas = stVelho ? await listasDe(m.de.site).catch(() => []) : [];
-      const lVelha = lsVelhas.find(l => l.displayName === m.de.nome) || null;
+      let stVelho = null, lVelha = null, deUsado = null; const origens = [];
+      for (const de of (Array.isArray(m.de) ? m.de : [m.de])) {   /* v0.13.4: várias origens possíveis — vale a primeira que existe com itens (ou a última que existe) */
+        if (de.site === def.siteKey && de.nome === def.displayName) continue;   /* origem = destino (lista já no lugar): nada a copiar */
+        const stX = await site(de.site).catch(() => null), lsX = stX ? await listasDe(de.site).catch(() => []) : [], lX = lsX.find(l => l.displayName === de.nome) || null;
+        if (!lX) continue; origens.push({ st: stX, l: lX, de }); if (!lVelha) { stVelho = stX; lVelha = lX; deUsado = de; }
+      }
       const lsNovas = await listasDe(def.siteKey), lNova = lsNovas.find(l => l.displayName === def.displayName) || null;
-      if (!lVelha) { log(`${def.displayName}: lista antiga "${m.de.nome}" não existe em ${CONFIG.sites[m.de.site]} — ${m.opcional ? "nada a migrar" : "pulada"}.`, m.opcional ? "" : "warn"); continue; }
+      if (!lVelha) { const de0 = Array.isArray(m.de) ? m.de[m.de.length - 1] : m.de; log(`${def.displayName}: lista antiga "${de0.nome}" não existe em ${CONFIG.sites[de0.site]} — ${m.opcional ? "nada a migrar" : "pulada"}.`, m.opcional ? "" : "warn"); continue; }
+      if (origens.length) log(`${def.displayName}: origem ${origens.map(o => CONFIG.sites[o.de.site] + " › \"" + o.de.nome + "\"").join(" + ")}.`);
       if (!lNova) { log(`${def.displayName}: lista nova não existe em ${CONFIG.sites[def.siteKey]} — rode a Configuração (Executar tudo na ordem) e tente de novo.`, "warn"); falhas++; continue; }
-      const velhos = await ler(stVelho, lVelha), novos = await ler(await site(def.siteKey), lNova);
+      let velhos = []; for (const o of origens) velhos = velhos.concat(await ler(o.st, o.l));   /* v0.13.4: todas as origens que existem (ex.: Recebimentos no site Agentes e no Financeiro) */
+      const novos = await ler(await site(def.siteKey), lNova);
       const chaveDe = it => { try { return String(m.chave(it) || "").trim().toLowerCase(); } catch (e) { return ""; } };
       const porChave = new Map(); novos.forEach(it => { const c = chaveDe(it); if (c && !porChave.has(c)) porChave.set(c, it); });
       const mapa = new Map(); mapas[m.k] = mapa;
@@ -34187,9 +34235,14 @@ window.sitesMigrar = async () => {
       log(`${def.displayName}: ${velhos.length} na antiga, ${novos.length} já na nova…`);
       for (const it of velhos) {
         const c = chaveDe(it), ja = c ? porChave.get(c) : null;
-        if (ja) { mapa.set(it._id, ja._id); iguais++; continue; }
+        if (ja) { mapa.set(it._id, ja._id); iguais++;
+          for (const [campo, mk] of Object.entries(m.lookups || {})) {   /* v0.13.4: item já existente no destino sem o id numérico: religa pelo mapa */
+            const num = campo.replace(/LookupId$/, "Id"); if (ja[num] != null && ja[num] !== "") continue; const vAnt = it[campo]; if (vAnt == null || vAnt === "") continue; const novo = mapas[mk] && mapas[mk].get(String(vAnt)); if (!novo) continue;
+            try { await SP.update((await site(def.siteKey)).id, lNova.id, ja._id, { [campo]: Number(novo) }); ja[num] = Number(novo); } catch (e) { log(`   "${it.Title || it._id}": vínculo não religado: ${e.message}`, "warn"); }
+          }
+          continue; }
         const f = divCampos(def, it); pessoas.forEach(k => { delete f[k]; });   /* pessoa: o id do usuário muda de site — não copia */
-        for (const [campo, mk] of Object.entries(m.lookups || {})) { if (f[campo] == null) continue; const novo = mapas[mk] && mapas[mk].get(String(f[campo])); if (novo) f[campo] = Number(novo); else delete f[campo]; }
+        for (const [campo, mk] of Object.entries(m.lookups || {})) { const vAnt = f[campo] != null ? f[campo] : it[campo]; if (vAnt == null || vAnt === "") { delete f[campo]; continue; } const novo = mapas[mk] && mapas[mk].get(String(vAnt)); if (novo) f[campo] = Number(novo); else delete f[campo]; }   /* v0.13.4: o id antigo vem do lookup (…LookupId) e vai para a coluna numérica (…Id) */
         if (m.anexos && f.Anexos && hasColDef(def, "Anexos")) { const r = await sitesMigCopiarAnexos(f.Anexos, driveNovo, log); f.Anexos = r.json; anex += r.n; }
         try { const r = await SP.create((await site(def.siteKey)).id, lNova.id, f); mapa.set(it._id, String(r.id)); criados++; porChave.set(c, { _id: String(r.id) }); }
         catch (e) { falhas++; log(`   "${it.Title || it._id}": ${e.message}`, "warn"); }
@@ -34225,6 +34278,490 @@ function hasColDef(def, name) { return def.columns.some(c => c.name === name); }
     <div class="setup-log checks" id="sitesMigLog" style="display:none;max-height:320px;overflow:auto"></div></section>`;
   h = h.replace("<h1>Configuração</h1>", "<h1>Configuração</h1>" + card);
   return h; }; window.pageConfig = pageConfig; }
+
+/* =====================================================================
+   v0.13.4 · BUSCA GLOBAL, TERCEIROS › BANCO DE DADOS E CAP (pedido do Rafael de 14/10, 16:27)
+   1a  busca no topo (módulos, páginas, faturas/NF, fornecedores, obrigações, funcionários) — só o que a pessoa pode ver.
+   2a  Fornecedores sai do site CAP e vai para o site Terceiros (LISTS.forn.siteKey = "terceiros"); os lookups da CAP e das
+       Obrigações viram ids numéricos (FornecedorRefId / FornecedorId) porque lookup entre sites não existe no SharePoint —
+       em memória continuam FornecedorRefLookupId / FornecedorLookupId (ver a ponte em SP.*).
+   2b  papel Funcionário: aviso + ligação com RH › Funcionários (FuncionarioId); CPF de funcionário é apontado no cadastro.
+   2c  o módulo chama-se "Banco de Dados" (Terceiros); #/terceiros/banco-de-dados abre a mesma página.
+   2d  CNPJ/CPF obrigatório (já era); CNPJ preenche o nome (cadastro existente ou consulta pública à Receita via BrasilAPI);
+       na fatura, CNPJ ⇄ Favorecido já se preenchiam; agora também para Funcionário (RH).
+   2e  Papéis (vários) com documento obrigatório por papel (PF/Funcionário/Sócio = CPF; demais = CNPJ; Banco = COMPE/ISPB).
+   2f  no cartão do terceiro, "Contas" virou "Faturas".
+   2g  Contas do terceiro (unidades/contratos do mesmo CNPJ) no cadastro, na fatura (campo Conta) e na lista da CAP.
+   2h  Sistema › Configuração › Terceiros — saneamento: conferir colunas (títulos iguais aos do ERP; colunas sobrando) e
+       unificar cadastros pelo CNPJ/CPF (um por documento; os nomes divergentes viram contas; faturas e obrigações religadas).
+   2i  remover do Banco de Dados os CPFs que estão em RH › Funcionários (ferramenta, com prévia e confirmação).
+   2j  abas por papel na página (Todos, Fornecedores, Concessionárias, Órgãos públicos, Bancos, …).
+   3a  fatura com Tipo de favorecido = Funcionário busca o nome (e o CPF, quando a lista restrita é lida) no RH.
+   3b  rodapé da janela da fatura quebra linha (CSS) em vez de cortar o botão Excluir.
+   ===================================================================== */
+
+/* ---- ponte lookup → id numérico (2a): leitura e gravação continuam usando …LookupId no resto do código ---- */
+{ const PONTE = [["FornecedorRefLookupId", "FornecedorRefId"], ["FornecedorLookupId", "FornecedorId"]];
+  const it0 = SP.items;
+  SP.items = async (...a) => { const r = await it0(...a); (r || []).forEach(it => { const f = it && it.fields; if (!f) return; PONTE.forEach(([m, c]) => { if (f[c] != null && f[c] !== "" && (f[m] == null || f[m] === "")) f[m] = f[c]; }); }); return r; };
+  const norm = fields => { if (!fields || typeof fields !== "object") return fields; const f = Object.assign({}, fields); PONTE.forEach(([m, c]) => { if (m in f) { if (!(c in f)) f[c] = f[m] == null || f[m] === "" ? null : Number(f[m]); delete f[m]; } });
+    Object.keys(f).forEach(k => { if (Array.isArray(f[k]) && !k.includes("@") && !(k + "@odata.type" in f)) f[k + "@odata.type"] = k.endsWith("LookupId") ? "Collection(Edm.Int32)" : "Collection(Edm.String)"; });   /* coluna de múltipla escolha (Papéis) ou multi-lookup: o Graph exige a anotação de tipo */
+    return f; };
+  const c0 = SP.create, u0 = SP.update;
+  SP.create = (s, l, f) => c0(s, l, norm(f));
+  SP.update = (s, l, i, f) => u0(s, l, i, norm(f));
+}
+SETUP_TEXT.forn = `Cria no site Terceiros a lista "Fornecedores" — o Banco de Dados de terceiros (fornecedores, concessionárias, órgãos públicos, bancos, seguradoras, pessoas físicas, sócios). Aberta a todos, sem as restrições da CAP. v0.13.4: colunas Papéis, Contas (JSON), Código do banco e Funcionário (id no RH). Os cadastros antigos (site Financeiro) são copiados pela migração dos sites (cartão abaixo).`;
+
+/* ---- papéis e documento exigido ---- */
+function tercPapeis(x) { const v = x && x.Papeis; return Array.isArray(v) ? v.filter(Boolean) : v ? [String(v)] : []; }
+function tercPapelDef(n) { return TERC_PAPEIS.find(p => p.n === n) || null; }
+function tercDocExigido(papeis) { const ds = new Set(papeis.map(n => (tercPapelDef(n) || {}).doc).filter(Boolean)); return ds.size === 1 ? [...ds][0] : ds.size > 1 ? "ambos" : ""; }
+function tercPapelPill(n) { const p = tercPapelDef(n); return `<span class="pill st-aguardando terc-pill" title="${esc(p ? p.d : n)}"><i></i>${esc(n)}</span>`; }
+function tercContasDe(x) { try { const a = JSON.parse((x && x.Contas) || "[]"); return Array.isArray(a) ? a.filter(c => c && c.n) : []; } catch (e) { return []; } }
+function tercContaRot(c) { return c.id ? `${c.n} (${c.id})` : c.n; }
+
+/* ---- funcionários do RH (nome + id; CPF só quando a lista restrita é lida) ---- */
+const TERC_RH = { funcs: null, em: 0 };
+async function tercRhFuncs(force) {
+  if (!force && TERC_RH.funcs && Date.now() - TERC_RH.em < 300000) return TERC_RH.funcs;
+  try {
+    const st = await SP.site(CONFIG.sites[LISTS.rh_func.siteKey]), ls = await SP.lists(st.id), l = ls.find(x => x.displayName === LISTS.rh_func.displayName);
+    TERC_RH.funcs = l ? (await SP.items(st.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})).filter(f => f.Situacao !== "Desligado").sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR")) : [];
+  } catch (e) { TERC_RH.funcs = []; }
+  TERC_RH.em = Date.now(); return TERC_RH.funcs;
+}
+async function tercRhCpfMapa() {   /* CPF → funcionário (só quem lê "RH — Funcionários · Dados pessoais") */
+  try { await rhPesCarregar(); } catch (e) {}
+  const m = new Map(); if (!rhPesAtivo()) return m;
+  const funcs = await tercRhFuncs();
+  RH_PES.map.forEach((pes, fid) => { const d = docClean(pes.CPF); if (d.length === 11) m.set(d, { fid, nome: (funcs.find(f => f._id === String(fid)) || {}).Title || "" }); });
+  return m;
+}
+
+/* ---- rota #/terceiros/banco-de-dados ---- */
+{ const r0 = route;
+  route = function () { if (location.hash.split("?")[0] === "#/terceiros/banco-de-dados") { location.replace("#/terceiros/fornecedores"); return; } return r0.apply(this, arguments); };
+  window.route = route;
+}
+
+/* ---- página: título, abas por papel, pills na lista ---- */
+{ const pf0 = pageForn;
+  pageForn = function () {
+    return pf0.apply(this, arguments)
+      .replace("<h1>Fornecedores</h1>", "<h1>Banco de Dados</h1>")
+      .replace("Um registro por fornecedor, com categoria, banco e forma padrão. Contas a Pagar e Obrigações puxam daqui, então o nome aqui é o nome que vale.", "Terceiros da NMB: fornecedores, concessionárias, órgãos públicos, bancos, seguradoras, pessoas físicas e sócios — um cadastro por CNPJ/CPF, com os papéis que ele exerce e as contas do mesmo documento. Contas a Pagar e Obrigações puxam daqui. Funcionários ficam no RH › Banco de Dados.")
+      .replace('onclick="fornNew()">Novo fornecedor</button>', 'onclick="fornNew()">Novo cadastro</button>');
+  }; window.pageForn = pageForn;
+  const ff0 = fornFiltered;
+  fornFiltered = function () { let arr = ff0.apply(this, arguments); const p = FORN_STATE.filter.papel; if (p) arr = arr.filter(x => p === "__sem" ? !tercPapeis(x).length : tercPapeis(x).includes(p)); return arr; };
+  window.fornFiltered = fornFiltered;
+  const pt0 = paintForn;
+  paintForn = function () {
+    const r = pt0.apply(this, arguments); const body = $("fornBody"); if (!body || !FORN_STATE.items.length) return r;
+    const flt = body.querySelector(".filters"); if (flt && !body.querySelector(".terc-abas")) {
+      const all = FORN_STATE.ccFixo ? FORN_STATE.items.filter(fornNoCC) : FORN_STATE.items, cnt = n => all.filter(x => n === "__sem" ? !tercPapeis(x).length : tercPapeis(x).includes(n)).length, cur = FORN_STATE.filter.papel || "";
+      const abas = [["", "Todos", all.length]].concat(TERC_PAPEIS.map(p => [p.n, p.n, cnt(p.n)])).concat([["__sem", "Sem papel", cnt("__sem")]]).filter(([k, , n]) => k === "" || n > 0 || k === cur);
+      const div = document.createElement("div"); div.className = "seg-tabs terc-abas";
+      div.innerHTML = abas.map(([k, l, n]) => `<button class="${cur === k ? "on" : ""}" onclick="tercAba(${jsArg(k)})" title="Filtrar por papel">${esc(l)} (${n})</button>`).join("");
+      flt.parentNode.insertBefore(div, flt);
+    }
+    body.querySelectorAll("table.cap-table tbody tr").forEach(tr => {
+      const m = String(tr.getAttribute("onclick") || "").match(/fornAbrir\('(?:id:|id%3A)(\d+)'/i); if (!m) return; const x = FORN_STATE.items.find(i => String(i._id) === m[1]); if (!x) return;
+      const pap = tercPapeis(x), ct = tercContasDe(x), sup = tr.querySelector("td .sup"); if (!sup) return;
+      if (pap.length) sup.insertAdjacentHTML("afterend", `<div class="terc-pills">${pap.map(tercPapelPill).join(" ")}</div>`);
+      if (ct.length) sup.insertAdjacentHTML("afterend", `<div class="sup">${ct.length} conta(s): ${esc(ct.map(c => c.n).slice(0, 3).join(", "))}${ct.length > 3 ? "…" : ""}</div>`);
+    });
+    return r;
+  }; window.paintForn = paintForn;
+  window.tercAba = k => { FORN_STATE.filter.papel = k; paintForn(); };
+}
+
+/* ---- formulário: Papéis, Funcionário (RH), Código do banco, Contas; CNPJ → nome (cadastro ou Receita) ---- */
+{ const fm0 = fornForm;
+  fornForm = function (x) {
+    let h = fm0.apply(this, arguments); const v = x || {}; let pap = tercPapeis(v); const ct = tercContasDe(v);
+    if (!pap.length && !v._id) pap = [docClean(v.CNPJ).length === 11 ? "Pessoa física / Autônomo" : "Fornecedor"];   /* novo (inclusive o cadastro rápido a partir da fatura): papel padrão pelo documento */
+    const papeis = `<div class="field full"><label>Papéis<span class="req">*</span> <span class="sup" style="text-transform:none;font-weight:600">um cadastro pode ter vários</span></label><div class="terc-papeis">${TERC_PAPEIS.map(p => `<label class="terc-papel" title="${esc(p.d)}"><input type="checkbox" name="gPapel" value="${esc(p.n)}" ${pap.includes(p.n) ? "checked" : ""}> ${esc(p.n)}</label>`).join("")}</div><div class="hint" id="gPapelHint"></div>
+      <div class="import-help terc-func-aviso" id="gFuncAviso" hidden><b>Funcionário:</b> os dados de funcionários (nome, CPF, cargo, contato) são mantidos em <a href="#/rh/banco-de-dados/funcs" onclick="closeModal()">RH › Banco de Dados › Funcionários</a>, não aqui. Este cadastro só aponta para o funcionário, para lançar reembolsos, adiantamentos e rescisões na CAP.<div style="margin-top:8px"><label>Funcionário no RH</label> <select id="gFunc"><option value="">— carregando… —</option></select></div></div></div>`;
+    h = h.replace('<div class="field"><label>Situação</label><select id="gAtivo">', papeis + '<div class="field"><label>Situação</label><select id="gAtivo">');
+    h = h.replace('<div class="field"><label>Banco</label><select id="gBanco">', `<div class="field" id="gCodBancoWrap" ${pap.includes("Banco / Instituição financeira") ? "" : "hidden"}><label>Código do banco (COMPE/ISPB)<span class="req">*</span></label><input id="gCodBanco" value="${esc(v.CodigoBanco || "")}" placeholder="Ex.: 033 (COMPE) ou 90400888 (ISPB)"><div class="hint">Exigido para o papel Banco / Instituição financeira</div></div><div class="field"><label>Banco</label><select id="gBanco">`);
+    const contas = `<div class="field full form-sec">Contas <span class="sup" style="text-transform:none;font-weight:600">unidades, contratos ou medidores do mesmo CNPJ/CPF (ex.: Unidade A — Garagem B). A conta aparece na fatura e na CAP.</span></div>
+      <div class="field full"><table class="cap-table terc-contas" id="gContas"><thead><tr><th>Nome da conta</th><th>Identificador (nº cliente, contrato, medidor…)</th><th>Dia venc.</th><th></th></tr></thead><tbody>${ct.map(c => tercContaLinha(c)).join("")}</tbody></table><button type="button" class="btn sm" onclick="tercContaAdd()">+ Conta</button></div>`;
+    h = h.replace('<div class="field full form-sec">Contato</div>', contas + '<div class="field full form-sec">Contato</div>');
+    return h;
+  }; window.fornForm = fornForm;
+  window.tercContaLinha = c => `<tr><td><input class="tc-n" value="${esc((c && c.n) || "")}" placeholder="Ex.: Unidade A"></td><td><input class="tc-id" value="${esc((c && c.id) || "")}" placeholder="Ex.: 1234567"></td><td><input class="tc-dia" type="number" min="1" max="31" value="${c && c.dia ? esc(String(c.dia)) : ""}" style="width:70px"></td><td><button type="button" class="btn sm ghost" onclick="this.closest('tr').remove()" title="Remover a conta">✕</button></td></tr>`;
+  window.tercContaAdd = () => { const tb = document.querySelector("#gContas tbody"); if (!tb) return; tb.insertAdjacentHTML("beforeend", tercContaLinha(null)); const i = tb.lastElementChild.querySelector("input"); if (i) i.focus(); };
+  function tercContasLer() { return [...document.querySelectorAll("#gContas tbody tr")].map(tr => { const n = tr.querySelector(".tc-n").value.trim(), id = tr.querySelector(".tc-id").value.trim(), dia = Number(tr.querySelector(".tc-dia").value || 0); return n ? Object.assign({ n }, id ? { id } : {}, dia >= 1 && dia <= 31 ? { dia } : {}) : null; }).filter(Boolean); }
+  window.tercContasLer = tercContasLer;
+  function tercPapeisLer() { return [...document.querySelectorAll('input[name="gPapel"]:checked')].map(i => i.value); }
+  window.tercPapeisLer = tercPapeisLer;
+  const w0 = fornWireForm;
+  fornWireForm = function () {
+    const r = w0.apply(this, arguments);
+    const hint = () => { const pap = tercPapeisLer(), h = $("gPapelHint"), ex = tercDocExigido(pap); if (h) h.textContent = !pap.length ? "Marque ao menos um papel" : ex === "cpf" ? "Exige CPF" : ex === "cnpj" ? "Exige CNPJ" : ex === "ambos" ? "Papéis de CPF e de CNPJ juntos: o documento é um só — confira" : "";
+      const cb = $("gCodBancoWrap"); if (cb) cb.hidden = !pap.includes("Banco / Instituição financeira");
+      const fa = $("gFuncAviso"); if (fa) { fa.hidden = !pap.includes("Funcionário"); if (!fa.hidden) tercFuncSelect(); } };
+    document.querySelectorAll('input[name="gPapel"]').forEach(i => i.addEventListener("change", hint)); hint();
+    /* CNPJ → nome: cadastro existente avisa (já havia); se o nome está vazio e o CNPJ é válido, consulta a Receita (BrasilAPI) */
+    const d = $("gCNPJ"), nome = $("gNome");
+    if (d && nome) d.addEventListener("change", async () => { const dc = docClean(d.value); if (dc.length !== 14 || !docValido(dc) || nome.value.trim() || fornByDoc(dc)) return; const h = $("gCNPJHint"); try { h.textContent = "Consultando a Receita…"; const r = await tercReceita(dc); if (r && !nome.value.trim()) { nome.value = r.razao || r.fantasia || ""; h.textContent = `Razão social preenchida pela Receita Federal${r.fantasia && r.fantasia !== r.razao ? ` (fantasia: ${r.fantasia})` : ""} — confira`; h.className = "hint ok"; } else if (!h.textContent.startsWith("Já")) h.textContent = "Receita não respondeu — digite o nome"; } catch (e) { h.textContent = "Receita não respondeu — digite o nome"; } });
+    return r;
+  }; window.fornWireForm = fornWireForm;
+  async function tercFuncSelect() {
+    const sel = $("gFunc"); if (!sel || sel.dataset.ok) return;
+    const fs = await tercRhFuncs(); const cur = FORN_STATE.editando && FORN_STATE.editando.FuncionarioId;
+    sel.innerHTML = `<option value="">— escolha o funcionário —</option>` + fs.map(f => `<option value="${esc(f._id)}" ${String(cur || "") === f._id ? "selected" : ""}>${esc(f.Title)}${f.Matricula ? ` · ${esc(f.Matricula)}` : ""}</option>`).join("");
+    sel.dataset.ok = "1";
+    sel.addEventListener("change", async () => { const f = fs.find(x => x._id === sel.value); if (!f) return; const n = $("gNome"); if (n && !n.value.trim()) n.value = f.Title; const c = $("gCNPJ"); if (c && !docClean(c.value)) { try { await rhPesCarregar(); const pes = rhPesAtivo() ? RH_PES.map.get(String(f._id)) : null; if (pes && pes.CPF) c.value = docFmt(pes.CPF); } catch (e) {} } });
+  }
+}
+window.tercReceita = async cnpj => {   /* consulta pública (BrasilAPI) — só razão social e nome fantasia; nada é gravado fora do ERP */
+  const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${docClean(cnpj)}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined });
+  if (!r.ok) return null; const j = await r.json(); return { razao: j.razao_social || "", fantasia: j.nome_fantasia || "" };
+};
+{ const e0 = window.fornEdit; window.fornEdit = id => { FORN_STATE.editando = FORN_STATE.items.find(i => i._id === id) || null; return e0(id); }; }
+{ const n0 = window.fornNew; window.fornNew = () => { FORN_STATE.editando = null; return n0(); }; }
+
+/* fornSave reescrita (v0.13.4): regras por papel + Papéis/Contas/Código do banco/Funcionário */
+async function fornSave(existing, inline) {
+  const g = id => ($(id) ? $(id).value.trim() : "");
+  const showErr = (msg) => { const e = $("gErr"); e.style.display = "block"; e.textContent = msg; };
+  const nome = g("gNome"), tipo = g("gTipo"), doc = docFmt(g("gCNPJ")), papeis = tercPapeisLer(), dc = docClean(doc);
+  if (!nome) { showErr("Preencha o nome."); return; }
+  if (!papeis.length) { showErr("Marque ao menos um papel (Fornecedor, Órgão público, Banco…)."); return; }
+  if (!doc) { showErr("CNPJ/CPF é obrigatório — é a chave do cadastro (um por documento)."); return; }
+  if (!docValido(doc)) { showErr("CNPJ/CPF com dígitos verificadores inválidos. Confira no boleto ou na NF."); return; }
+  const ex = tercDocExigido(papeis);
+  if (ex === "cpf" && dc.length !== 11) { showErr(`Os papéis ${papeis.join(", ")} exigem CPF (11 dígitos).`); return; }
+  if (ex === "cnpj" && dc.length !== 14) { showErr(`Os papéis ${papeis.join(", ")} exigem CNPJ (14 dígitos).`); return; }
+  if (papeis.includes("Banco / Instituição financeira") && !g("gCodBanco")) { showErr("Banco / Instituição financeira exige o código COMPE (3 dígitos) ou ISPB (8 dígitos)."); return; }
+  if (g("gCodBanco") && !/^\d{3}$|^\d{8}$/.test(g("gCodBanco"))) { showErr("Código do banco: COMPE tem 3 dígitos; ISPB tem 8."); return; }
+  if (papeis.includes("Funcionário") && !g("gFunc")) { showErr("Papel Funcionário: escolha o funcionário em RH › Funcionários (os dados dele ficam lá)."); return; }
+  const dupDoc = FORN_STATE.items.find(f => docClean(f.CNPJ) === dc && (!existing || f._id !== existing._id));
+  if (dupDoc) { showErr(`Este CNPJ/CPF já está cadastrado como "${dupDoc.Title}". Edite o existente — se é outra unidade do mesmo documento, cadastre uma conta nele.`); return; }
+  const dup = FORN_STATE.items.find(f => (f.Title || "").trim().toLowerCase() === nome.toLowerCase() && (!existing || f._id !== existing._id));
+  if (dup) { showErr(`Já existe um cadastro chamado "${dup.Title}". Edite o existente ou use um nome diferente.`); return; }
+  if (dc.length === 11 && !papeis.includes("Funcionário")) { try { const m = await tercRhCpfMapa(); const f = m.get(dc); if (f && !confirm(`Este CPF é do funcionário ${f.nome || "(RH)"}. Funcionários são mantidos no RH › Banco de Dados; aqui só se marca o papel Funcionário apontando para lá. Salvar mesmo assim?`)) return; } catch (e) {} }
+  const dia = g("gDia") ? Number(g("gDia")) : null;
+  if (dia !== null && (dia < 1 || dia > 31)) { showErr("Dia de vencimento precisa estar entre 1 e 31."); return; }
+  const contas = tercContasLer();
+  const fields = {
+    Title: nome, CNPJ: doc, Tipo: tipo || null, Papeis: papeis,
+    Contas: contas.length ? JSON.stringify(contas) : null, CodigoBanco: g("gCodBanco") || null, FuncionarioId: papeis.includes("Funcionário") ? (g("gFunc") || null) : null,
+    CategoriaPadrao: (g("gCat") === "Outros" && $("gCatOutro") && g("gCatOutro")) ? g("gCatOutro") : (g("gCat") || null), SubcategoriaPadrao: g("gSub") || null,
+    BancoPadrao: g("gBanco") || null, FormaPadrao: g("gForma") || null,
+    DiaVencimento: dia,
+    Contato: g("gContato") || null, Telefone: g("gTel") || null, Email: g("gEmail") || null,
+    Ativo: g("gAtivo") === "1",
+    PastaSharePoint: $("gPasta") ? (g("gPasta") || pastaPadrao(nome, tipo)) : (existing ? undefined : pastaPadrao(nome, tipo)),
+    Estabelecimento: g("gEstab") || null,
+    CentroCustoPadrao: g("gCC") || null,
+    Observacoes: g("gObs") || null
+  };
+  if (FORN_STATE.cols) for (const k of Object.keys(fields)) if (k !== "Title" && !FORN_STATE.cols.has(k)) delete fields[k];   /* colunas novas só depois da Configuração */
+  if (FORN_STATE.cols && !FORN_STATE.cols.has("Papeis")) toast("A coluna Papéis ainda não existe: rode Sistema › Configuração para gravar os papéis.", 7000);
+  const btn = $("gSave"); btn.disabled = true; btn.textContent = "Salvando…";
+  try {
+    if (existing) await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, existing._id, fields);
+    else await SP.create(FORN_STATE.site.id, FORN_STATE.list.id, fields);
+    if (inline) { toast("Cadastro feito — voltando para a fatura"); return fields; }
+    closeModal(); toast(existing ? "Cadastro atualizado" : "Cadastro feito"); await loadForn(false); paintForn();
+  } catch (e) { showErr("Erro ao salvar: " + e.message); btn.disabled = false; btn.textContent = existing ? "Salvar" : "Cadastrar"; }
+}
+
+/* ---- cartão do terceiro: bloco Contas acima de Faturas (2g) ---- */
+function tercContasBloco(cad, g) {
+  const ct = cad ? tercContasDe(cad) : []; if (!ct.length) return "";
+  const n = c => (g && g.contas ? g.contas.filter(it => String(it.ContaFornecedor || "") === c.n).length : 0);
+  return `<div class="obr-sec">Contas <span class="sup">unidades/contratos deste CNPJ — a fatura leva a conta no campo "Conta"</span></div><div class="terc-contas-lista">${ct.map(c => `<span class="pill st-aguardando" title="${esc(c.id ? "Identificador " + c.id : "")}"><i></i>${esc(tercContaRot(c))}${c.dia ? ` · dia ${esc(String(c.dia))}` : ""} · ${n(c)} fatura(s)</span>`).join(" ")}</div>`;
+}
+
+/* ---- CAP: campo Conta do fornecedor + Funcionário pelo RH (2g, 3a) ---- */
+{ const cf0 = capForm;
+  capForm = function (it) {
+    let h = cf0.apply(this, arguments); const v = it || {};
+    h = h.replace('<div class="field full"><label>Descrição<span class="req">*</span></label>', `<div class="field full" id="fContaWrap" hidden><label>Conta do fornecedor</label><select id="fConta"><option value="">—</option></select><div class="hint">Unidade/contrato do mesmo CNPJ (cadastradas em Terceiros › Banco de Dados)</div></div><div class="field full"><label>Descrição<span class="req">*</span></label>`);
+    if (v.ContaFornecedor) h = h.replace('<select id="fConta"><option value="">—</option></select>', `<select id="fConta"><option value="">—</option><option selected>${esc(v.ContaFornecedor)}</option></select>`);
+    return h;
+  }; window.capForm = capForm;
+  function capContaSync(v) {
+    const w = $("fContaWrap"), s = $("fConta"), forn = $("fForn"); if (!w || !s || !forn) return;
+    const f = fornByName(forn.value), ct = f ? tercContasDe(f) : [], cur = v || s.value;
+    if (!ct.length && !cur) { w.hidden = true; s.innerHTML = `<option value="">—</option>`; return; }
+    s.innerHTML = `<option value="">— sem conta —</option>` + ct.map(c => `<option value="${esc(c.n)}" ${cur === c.n ? "selected" : ""}>${esc(tercContaRot(c))}</option>`).join("") + (cur && !ct.some(c => c.n === cur) ? `<option selected>${esc(cur)}</option>` : "");
+    w.hidden = false;
+    if (ct.length === 1 && !cur) s.value = ct[0].n;
+  }
+  window.capContaSync = capContaSync;
+  const cw0 = capWireForm;
+  capWireForm = function (isNew) {
+    const r = cw0.apply(this, arguments);
+    const forn = $("fForn"), tipo = $("fTipoFav"), doc = $("fCNPJ"), conta = $("fConta"), title = $("fTitle");
+    const curConta = CAP_STATE.editing && CAP_STATE.editing.ContaFornecedor;
+    capContaSync(curConta || "");
+    if (forn) forn.addEventListener("change", () => { capContaSync(""); const f = fornByName(forn.value); if (f && doc && !docClean(doc.value) && f.CNPJ) doc.value = f.CNPJ; });
+    if (conta && title) conta.addEventListener("change", () => { if (isNew && conta.value && title.value && !title.value.includes(conta.value)) { const f = fornByName(forn.value); const base = f ? f.Title : forn.value; title.value = title.value.replace(base, `${base} — ${conta.value}`); } const c = fornByName(forn.value) ? tercContasDe(fornByName(forn.value)).find(x => x.n === conta.value) : null; const venc = $("fVenc"); if (isNew && c && c.dia && venc) { const d = new Date(); d.setDate(Math.min(c.dia, 28)); if (d < new Date()) d.setMonth(d.getMonth() + 1); venc.value = ymd(d); } });
+    /* 3a: Funcionário → nomes do RH; CPF da lista restrita quando lida */
+    const funcMode = async () => {
+      if (!tipo || !forn) return; const dl = $("fornList"); if (!dl) return;
+      if (tipo.value === "Funcionário") {
+        const fs = await tercRhFuncs(); dl.innerHTML = fs.map(f => `<option value="${esc(f.Title)}">`).join("");
+        const hh = $("fFornHint"); if (hh) { hh.textContent = fs.length ? `Nomes de RH › Funcionários (${fs.length})` : "Lista RH — Funcionários não encontrada: digite o nome"; hh.className = "hint"; }
+        forn.dataset.rh = "1";
+      } else if (forn.dataset.rh) { dl.innerHTML = fornAtivos().map(f => `<option value="${esc(f.Title)}">`).join(""); delete forn.dataset.rh; const hh = $("fFornHint"); if (hh) hh.textContent = ""; }
+    };
+    if (tipo) { tipo.addEventListener("change", funcMode); if (tipo.value === "Funcionário") funcMode(); }
+    if (forn) forn.addEventListener("change", async () => { if (!forn.dataset.rh) return; const f = (TERC_RH.funcs || []).find(x => x.Title === forn.value); if (!f) return; try { await rhPesCarregar(); const pes = rhPesAtivo() ? RH_PES.map.get(f._id) : null; if (pes && pes.CPF && doc && !docClean(doc.value)) { doc.value = docFmt(pes.CPF); const h = $("fCNPJHint"); if (h) { h.textContent = "CPF do RH"; h.className = "hint ok"; } } } catch (e) {} if (isNew && title && !title.value) title.value = `${f.Title} ${compLabel(($("fComp") && $("fComp").value) || compFromDate(todayISO()))}`; setTimeout(() => { const hh = $("fFornHint"); if (hh && forn.dataset.rh) { hh.textContent = "Funcionário do RH › Funcionários"; hh.className = "hint ok"; } }, 50); });
+    return r;
+  }; window.capWireForm = capWireForm;
+  /* a linha da fatura mostra a conta */
+  const fl0 = capFaturaLinha;
+  capFaturaLinha = function (it) { let h = fl0.apply(this, arguments); if (it && it.ContaFornecedor) h = h.replace(`<div class="sup">${esc(it.Fornecedor)}`, `<div class="sup">${esc(it.Fornecedor)} · <b>${esc(it.ContaFornecedor)}</b>`); return h; };
+  window.capFaturaLinha = capFaturaLinha;
+}
+
+/* ---- busca global (1a) ---- */
+const BUSCA = { aberta: false, res: [], sel: -1, cache: {}, carregando: false };
+function buscaNorm(s) { return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
+function buscaPagPode(mid, k) { const m = MODULES.find(x => x.id === mid); if (!canSee(m)) return false; try { const v = permPagValor(mid, k); return v !== "nenhum"; } catch (e) { return true; } }
+function buscaFontes() {
+  const out = [];
+  MODULES.filter(m => (m.menu !== false || m.hubDe) && m.path && m.path.startsWith("#/") && canSee(m)).forEach(m => {
+    const hub = m.hubDe ? MODULES.find(x => x.id === m.hubDe) : null;
+    out.push({ t: hub ? "Página" : "Módulo", n: hub ? `${hub.name} › ${m.name}` : m.name, s: m.area || "", ir: m.path, chave: buscaNorm(m.name + " " + (hub ? hub.name + " " : "") + (m.area || "")) });
+    (PAG_DEF[m.id] || []).forEach(p => { if (!p.k || !buscaPagPode(m.id, p.k)) return; const ir = p.rota ? p.rota : p.aba ? { path: m.path, aba: p.aba } : null; if (!ir) return; out.push({ t: "Página", n: `${m.name} › ${p.n.replace(/\s*\(.*\)$/, "")}`, s: m.area || "", ir, chave: buscaNorm(m.name + " " + p.n) }); });
+  });
+  AREAS.forEach(a => { if (MODULES.some(m => m.area === a.name && canSee(m))) out.push({ t: "Área", n: a.name, s: a.desc || "", ir: `#/area/${a.name}`, chave: buscaNorm(a.name + " " + (a.desc || "")) }); });
+  return out;
+}
+async function buscaDados() {   /* dados: só dos módulos que a pessoa pode ver; carregados uma vez por sessão (até 5 min) */
+  if (BUSCA.cache.em && Date.now() - BUSCA.cache.em < 300000) return BUSCA.cache.itens;
+  BUSCA.carregando = true; const itens = [];
+  const pode = id => canSee(MODULES.find(m => m.id === id));
+  try {
+    if (pode("forn")) { try { if (!FORN_STATE.items.length) await loadForn(true); } catch (e) {} FORN_STATE.items.forEach(f => itens.push({ t: "Terceiro", n: f.Title || "", s: [f.CNPJ, tercPapeis(f).join(", "), f.CategoriaPadrao].filter(Boolean).join(" · "), ir: { forn: f._id }, chave: buscaNorm([f.Title, f.CNPJ, docClean(f.CNPJ), f.CategoriaPadrao, f.Contato, tercContasDe(f).map(c => c.n + " " + (c.id || "")).join(" ")].join(" ")) })); }
+    const divAberta = typeof DIV !== "undefined" && DIV.on;   /* Gestão de Dívidas aberta: CAP_STATE está trocado — faturas/obrigações ficam fora da busca */
+    if (pode("cap") && !divAberta) { try { if (!CAP_STATE.items.length) await loadCAP({ soLeitura: true }); } catch (e) {} CAP_STATE.items.forEach(it => itens.push({ t: "Fatura", n: it.Title || "", s: [it.Fornecedor, it.ContaFornecedor, it.NumeroNF ? "NF " + it.NumeroNF : "", fmtDate(it.Vencimento), fmtBRL(it.Valor), it.Status].filter(Boolean).join(" · "), ir: { cap: it._id }, chave: buscaNorm([it.Title, it.Fornecedor, it.ContaFornecedor, it.NumeroNF, it.RefDocumento, it.CNPJ, docClean(it.CNPJ), it.NumParcelamento, it.Competencia].join(" ")) })); }
+    if (pode("obr") && !divAberta) { try { if (!OBR_STATE.items.length) await loadObr(); } catch (e) {} (OBR_STATE.items || []).filter(o => { try { return obrVisivel(o); } catch (e) { return true; } }).forEach(o => itens.push({ t: "Obrigação", n: o.Title || "", s: [o.FornecedorTexto, o.Tipo, o.Status].filter(Boolean).join(" · "), ir: { obr: o._id }, chave: buscaNorm([o.Title, o.FornecedorTexto, o.RefContrato, o.NumParcelamento, o.Orgao].join(" ")) })); }
+    if (pode("rh_db") && buscaPagPode("rh_db", "funcs")) { const fs = await tercRhFuncs(); fs.forEach(f => itens.push({ t: "Funcionário", n: f.Title || "", s: [f.Cargo, f.Setor, f.Matricula ? "matrícula " + f.Matricula : ""].filter(Boolean).join(" · "), ir: { func: f._id }, chave: buscaNorm([f.Title, f.Matricula, f.Cargo, f.Setor].join(" ")) })); }
+  } finally { BUSCA.carregando = false; }
+  BUSCA.cache = { em: Date.now(), itens }; return itens;
+}
+function buscaRank(q, itens) {
+  const termos = buscaNorm(q).split(/\s+/).filter(Boolean); if (!termos.length) return [];
+  const pts = x => { let p = 0; const n = buscaNorm(x.n); for (const t of termos) { if (!x.chave.includes(t)) return -1; p += n.startsWith(t) ? 30 : n.includes(t) ? 20 : 5; } p += x.t === "Módulo" ? 15 : x.t === "Página" || x.t === "Área" ? 10 : 0; return p; };
+  return itens.map(x => [pts(x), x]).filter(a => a[0] >= 0).sort((a, b) => b[0] - a[0] || a[1].n.localeCompare(b[1].n, "pt-BR")).slice(0, 14).map(a => a[1]);
+}
+function buscaPintar() {
+  const box = $("topBuscaRes"), inp = $("topBusca"); if (!box) return;
+  const r = BUSCA.res;
+  box.innerHTML = r.length ? r.map((x, i) => `<div class="tb-item ${i === BUSCA.sel ? "on" : ""}" role="option" data-i="${i}" onmousedown="event.preventDefault(); buscaIr(${i})"><span class="tb-tipo">${esc(x.t)}</span><span class="tb-nome">${esc(x.n)}</span>${x.s ? `<span class="tb-sub">${esc(x.s)}</span>` : ""}</div>`).join("") + (BUSCA.carregando ? `<div class="tb-vazio">Carregando dados…</div>` : "") : `<div class="tb-vazio">${BUSCA.carregando ? "Carregando dados…" : "Nada encontrado para o seu acesso."}</div>`;
+  box.hidden = false; if (inp) inp.setAttribute("aria-expanded", "true"); BUSCA.aberta = true;
+}
+function buscaFechar() { const box = $("topBuscaRes"), inp = $("topBusca"); if (box) box.hidden = true; if (inp) inp.setAttribute("aria-expanded", "false"); BUSCA.aberta = false; BUSCA.sel = -1; }
+async function buscaRodar() {
+  const inp = $("topBusca"); if (!inp) return; const q = inp.value.trim();
+  if (q.length < 2) { buscaFechar(); return; }
+  const fontes = buscaFontes(); BUSCA.res = buscaRank(q, fontes); BUSCA.sel = BUSCA.res.length ? 0 : -1; buscaPintar();
+  const dados = await buscaDados(); if (inp.value.trim() !== q) return;
+  BUSCA.res = buscaRank(q, fontes.concat(dados)); BUSCA.sel = BUSCA.res.length ? 0 : -1; buscaPintar();
+}
+async function buscaEsperar(fn, ms) { const t0 = Date.now(); while (Date.now() - t0 < (ms || 9000)) { try { if (fn()) return true; } catch (e) {} await new Promise(r => setTimeout(r, 250)); } return false; }
+window.buscaIr = async i => {
+  const x = BUSCA.res[i]; if (!x) return; buscaFechar(); const inp = $("topBusca"); if (inp) { inp.value = ""; inp.blur(); }
+  const ir = x.ir;
+  if (typeof ir === "string") { location.hash = ir; return; }
+  if (ir.path) { location.hash = ir.path; await buscaEsperar(() => $("main") && !/Carregando/.test(($("main").innerText || "").slice(0, 300)), 6000); try { (new Function(ir.aba))(); } catch (e) {} return; }
+  if (ir.cap) { if (location.hash.split("?")[0] !== "#/financeiro/contas-a-pagar") location.hash = "#/financeiro/contas-a-pagar"; const ok = await buscaEsperar(() => CAP_STATE.items.some(it => String(it._id) === String(ir.cap)) && $("capBody") && $("capBody").querySelector("table, .cap-empty")); if (ok) capEdit(String(ir.cap)); else toast("Não foi possível abrir a fatura — procure na CAP."); return; }
+  if (ir.forn) { location.hash = "#/terceiros/fornecedores"; const ok = await buscaEsperar(() => FORN_STATE.sitPronta && $("fornBody") && $("fornBody").querySelector("table")); if (ok) fornAbrir("id:" + ir.forn); else fornEdit(String(ir.forn)); return; }
+  if (ir.obr) { location.hash = "#/financeiro/contas-a-pagar"; await buscaEsperar(() => $("capBody") && $("capBody").querySelector("table, .cap-empty")); try { capSetView("obr"); } catch (e) {} await buscaEsperar(() => OBR_STATE.items.some(o => String(o._id) === String(ir.obr)) && $("obrBody")); obrAbrir(String(ir.obr)); return; }
+  if (ir.func) { rhfAbrir(String(ir.func)); return; }
+};
+function buscaInit() {
+  const inp = $("topBusca"), ico = $("topBuscaIco"); if (!inp || inp.dataset.ok) return; inp.dataset.ok = "1";
+  inp.addEventListener("input", () => erpDeb("busca", buscaRodar, 180));
+  inp.addEventListener("focus", () => { if (inp.value.trim().length >= 2) buscaRodar(); });
+  inp.addEventListener("keydown", ev => {
+    if (ev.key === "Escape") { inp.value = ""; buscaFechar(); inp.blur(); return; }
+    if (!BUSCA.aberta || !BUSCA.res.length) { if (ev.key === "Enter") buscaRodar(); return; }
+    if (ev.key === "ArrowDown") { ev.preventDefault(); BUSCA.sel = (BUSCA.sel + 1) % BUSCA.res.length; buscaPintar(); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); BUSCA.sel = (BUSCA.sel - 1 + BUSCA.res.length) % BUSCA.res.length; buscaPintar(); }
+    else if (ev.key === "Enter") { ev.preventDefault(); buscaIr(BUSCA.sel < 0 ? 0 : BUSCA.sel); }
+  });
+  inp.addEventListener("blur", () => setTimeout(buscaFechar, 150));
+  if (ico) ico.addEventListener("click", () => { document.body.classList.toggle("busca-aberta"); if (document.body.classList.contains("busca-aberta")) inp.focus(); });
+  document.addEventListener("keydown", ev => { if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "k") { ev.preventDefault(); document.body.classList.add("busca-aberta"); inp.focus(); inp.select(); } });
+  window.addEventListener("hashchange", () => { BUSCA.cache = {}; });   /* dados mudam ao navegar: a próxima busca relê */
+}
+{ const rt0 = renderTopAreas; renderTopAreas = function () { const r = rt0.apply(this, arguments); try { buscaInit(); } catch (e) {} return r; }; window.renderTopAreas = renderTopAreas; }
+document.addEventListener("DOMContentLoaded", () => { try { buscaInit(); } catch (e) {} });
+{ const st = document.createElement("style"); st.textContent = `
+.top-busca{position:relative;display:flex;align-items:center;gap:6px;margin-left:auto}
+.top-busca input{width:250px;max-width:34vw;height:34px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font:inherit;font-size:13px;background:var(--surface-2,#FAFBFC);color:var(--ink)}
+.top-busca input:focus{outline:2px solid var(--accent,#E8731A);outline-offset:1px;background:var(--white)}
+.top-busca-ico{display:none;border:1px solid var(--line);background:var(--white);border-radius:10px;height:34px;width:34px;cursor:pointer}
+.top-busca-res{position:absolute;top:40px;right:0;width:min(560px,92vw);max-height:60vh;overflow:auto;background:var(--white);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(16,24,40,.16);z-index:60;padding:6px}
+.tb-item{display:grid;grid-template-columns:86px 1fr;gap:2px 10px;padding:8px 10px;border-radius:8px;cursor:pointer;align-items:center}
+.tb-item.on,.tb-item:hover{background:var(--surface-2,#FFF1EA)}
+.tb-tipo{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2)}
+.tb-nome{font-weight:600;font-size:13px;color:var(--ink)}
+.tb-sub{grid-column:2;font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb-vazio{padding:10px 12px;font-size:13px;color:var(--ink-2)}
+@media (max-width:900px){.top-busca input{display:none;position:absolute;right:0;top:42px;width:min(420px,88vw);max-width:none;z-index:61}.top-busca-ico{display:inline-flex;align-items:center;justify-content:center}body.busca-aberta .top-busca input{display:block}.top-busca-res{top:82px}}
+.terc-papeis{display:flex;flex-wrap:wrap;gap:6px 12px}
+.terc-papel{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;border:1px solid var(--line);border-radius:999px;padding:4px 10px;cursor:pointer}
+.terc-papel:has(input:checked){background:var(--surface-2,#FFF1EA);border-color:var(--accent,#E8731A)}
+.terc-pills{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}.terc-pill{font-size:10.5px}
+.terc-contas td{padding:4px 6px}.terc-contas input{width:100%}
+.terc-contas-lista{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.seg-tabs.terc-abas{margin:0 0 12px;flex-wrap:wrap}
+.terc-func-aviso{margin-top:8px}
+.terc-log div.ok{color:var(--ok,#1E7F4E)}.terc-log div.warn{color:var(--err)}`; document.head.appendChild(st); }
+
+/* ---- Configuração › Terceiros — saneamento (2h, 2i) ---- */
+const TERC_SAN = { log: [], rodando: false, extras: {} };
+function tercLog(t, cls) { TERC_SAN.log.push({ t, cls }); const el = $("tercSanLog"); if (el) { el.style.display = "block"; el.innerHTML = TERC_SAN.log.slice(-500).map(l => `<div class="${l.cls || ""}">${esc(l.t)}</div>`).join(""); el.scrollTop = el.scrollHeight; } }
+const TERC_SYS_COLS = new Set(["ID", "Title", "ContentType", "Modified", "Created", "Author", "Editor", "Attachments", "Edit", "LinkTitleNoMenu", "LinkTitle", "LinkTitle2", "DocIcon", "ItemChildCount", "FolderChildCount", "AppAuthor", "AppEditor", "ComplianceAssetId", "_UIVersionString", "_ComplianceFlags", "_ComplianceTag", "_ComplianceTagWrittenTime", "_ComplianceTagUserId", "_IsRecord", "MediaServiceImageTags", "_ColorTag", "_CommentFlags", "_CommentCount", "_LikeCount", "SMTotalSize", "SMLastModifiedDate", "SMTotalFileStreamSize", "SMTotalFileCount", "Order", "GUID", "WorkflowVersion", "WorkflowInstanceID", "FileRef", "FileDirRef", "Last_x0020_Modified", "Created_x0020_Date", "FSObjType", "SortBehavior", "PermMask", "FileLeafRef", "UniqueId", "SyncClientId", "ProgId", "ScopeId", "MetaInfo", "_Level", "_IsCurrentVersion", "ItemChildCount", "Restricted", "OriginatorId", "NoExecute", "ContentVersion", "_VirusStatus", "_VirusVendorID", "_VirusInfo", "AccessPolicy", "_HasCopyDestinations", "_CopySource", "owshiddenversion", "InstanceID", "_ModerationStatus", "_ModerationComments", "SelectTitle", "LinkFilenameNoMenu", "LinkFilename", "BSN", "_ListSchemaVersion", "_Dirty", "_Parsable", "_StubFile", "_HasEncryptedContent", "_HasUserDefinedProtection", "_IpLabelAssignmentMethod", "_ExtendedDescription", "_IpLabelId", "_DisplayName", "_IpLabelHash", "_IpLabelPromotionCtagVersion", "TriggerFlowInfo", "_CheckinComment", "_Hidden"]);
+async function tercListaDe(k) { const def = LISTS[k]; const st = await SP.site(CONFIG.sites[def.siteKey]); const ls = await SP.lists(st.id); const l = ls.find(x => x.displayName === def.displayName) || null; return { def, st, l }; }
+window.tercConferirColunas = async (chaves) => {
+  if (!session.n1) { toast("Só administradores."); return; } if (vcAtivo()) { toast("Visualizando como outra pessoa: nada é gravado."); return; } if (TERC_SAN.rodando) return; TERC_SAN.rodando = true; TERC_SAN.log = []; TERC_SAN.extras = {};
+  const btn = $("tercColBtn"); if (btn) btn.disabled = true;
+  try {
+    for (const k of (chaves || ["forn", "cap", "obr", "obr_cart"])) {
+      const { def, st, l } = await tercListaDe(k);
+      if (!l) { tercLog(`${def.displayName}: a lista não existe em ${CONFIG.sites[def.siteKey]} — rode "Executar tudo na ordem".`, "warn"); continue; }
+      const cols = await graphAll(`/sites/${st.id}/lists/${l.id}/columns`);
+      let renom = 0, faltam = 0;
+      for (const c of def.columns) {
+        const nome = c.lookupList ? c.name : c.name; const sp = cols.find(x => x.name === nome);
+        if (!sp) { faltam++; tercLog(`   ${def.displayName}: falta a coluna "${c.displayName}" (${c.name}) — "Executar tudo na ordem" cria.`, "warn"); continue; }
+        if (sp.displayName !== c.displayName) { try { await graph(`/sites/${st.id}/lists/${l.id}/columns/${sp.id}`, { method: "PATCH", body: { displayName: c.displayName } }); renom++; tercLog(`   ${def.displayName}: "${sp.displayName}" → "${c.displayName}"`, "ok"); } catch (e) { tercLog(`   ${def.displayName}: não renomeou "${sp.displayName}": ${e.message}`, "warn"); } }
+      }
+      const tit = cols.find(x => x.name === "Title"); if (tit && def.titleAs && tit.displayName !== def.titleAs) { try { await graph(`/sites/${st.id}/lists/${l.id}/columns/${tit.id}`, { method: "PATCH", body: { displayName: def.titleAs } }); renom++; tercLog(`   ${def.displayName}: título "${tit.displayName}" → "${def.titleAs}"`, "ok"); } catch (e) {} }
+      const nomesDef = new Set(def.columns.map(c => c.name));
+      const extras = cols.filter(x => !nomesDef.has(x.name) && !TERC_SYS_COLS.has(x.name) && !x.readOnly && !x.hidden && !/^_|^OData_|^Tax|^Compliance|^MediaService|^SharedWith|^Sync|^Client|^App/.test(x.name) && x.columnGroup !== "_Hidden");
+      TERC_SAN.extras[k] = extras.map(x => ({ id: x.id, name: x.name, displayName: x.displayName }));
+      tercLog(`${def.displayName}: ${renom} título(s) acertado(s), ${faltam} coluna(s) faltando, ${extras.length} coluna(s) que o ERP não usa${extras.length ? ": " + extras.map(x => `"${x.displayName}" (${x.name})` ).join(", ") : ""}.`, extras.length || faltam ? "warn" : "ok");
+    }
+    tercPintarExtras();
+  } catch (e) { tercLog("Interrompido: " + e.message, "warn"); }
+  finally { TERC_SAN.rodando = false; if (btn) btn.disabled = false; }
+};
+function tercPintarExtras() {
+  const el = $("tercExtras"); if (!el) return; const grupos = Object.entries(TERC_SAN.extras).filter(([, v]) => v.length);
+  el.innerHTML = grupos.length ? `<p class="desc">Colunas que existem no SharePoint e o ERP não usa (os dados delas se perdem ao apagar):</p>${grupos.map(([k, v]) => `<div><b>${esc(LISTS[k].displayName)}</b>: ${v.map(c => `<label class="terc-papel"><input type="checkbox" data-k="${esc(k)}" data-id="${esc(c.id)}" data-n="${esc(c.displayName)}"> ${esc(c.displayName)} <span class="sup">(${esc(c.name)})</span></label>`).join(" ")}</div>`).join("")}<div class="actions" style="margin-top:8px"><button class="btn" onclick="tercApagarExtras()">Apagar as colunas marcadas</button></div>` : "";
+}
+window.tercApagarExtras = async () => {
+  if (!session.n1) { toast("Só administradores."); return; } if (vcAtivo()) { toast("Visualizando como outra pessoa: nada é gravado."); return; }
+  const sel = [...document.querySelectorAll("#tercExtras input:checked")]; if (!sel.length) { toast("Marque as colunas a apagar."); return; }
+  if (!confirm(`Apagar ${sel.length} coluna(s) do SharePoint?\n${sel.map(i => i.dataset.n).join(", ")}\n\nOs valores gravados nelas se perdem. Não dá para desfazer.`)) return;
+  for (const i of sel) { const k = i.dataset.k; try { const { st, l } = await tercListaDe(k); await graph(`/sites/${st.id}/lists/${l.id}/columns/${i.dataset.id}`, { method: "DELETE" }); tercLog(`${LISTS[k].displayName}: coluna "${i.dataset.n}" apagada.`, "ok"); TERC_SAN.extras[k] = (TERC_SAN.extras[k] || []).filter(c => c.id !== i.dataset.id); } catch (e) { tercLog(`${LISTS[k].displayName}: não apagou "${i.dataset.n}": ${e.message}`, "warn"); } }
+  tercPintarExtras(); FORN_STATE.cols = null; CAP_STATE.cols = null; OBR_STATE.cols = null;
+};
+/* unificar por CNPJ/CPF: um cadastro por documento; nomes divergentes viram contas; faturas e obrigações religadas */
+function tercPlanoUnificar(forns) {
+  const grupos = new Map(); forns.forEach(f => { const d = docClean(f.CNPJ); if (d.length === 11 || d.length === 14) { if (!grupos.has(d)) grupos.set(d, []); grupos.get(d).push(f); } });
+  const planos = [];
+  grupos.forEach((lst, d) => {
+    if (lst.length < 2) return;
+    const ordem = lst.slice().sort((a, b) => Number(a._id) - Number(b._id));
+    const nomes = ordem.map(f => String(f.Title || "").trim());
+    let base = ""; const pre = nomes.map(n => n.split(/\s+[—–-]\s+/)[0].trim()).filter(Boolean);
+    if (pre.length === nomes.length && new Set(pre.map(normName)).size === 1) base = pre[0];
+    else { const w = nomes.map(n => n.split(/\s+/)); let i = 0; while (w.every(x => x[i] && normName(x[i]) === normName(w[0][i]))) i++; base = w[0].slice(0, i).join(" ").replace(/[—–-]$/, "").trim(); }
+    if (!base || base.length < 3) base = nomes.slice().sort((a, b) => a.length - b.length)[0];
+    const principal = ordem.find(f => normName(f.Title) === normName(base)) || ordem[0];
+    const contas = tercContasDe(principal).slice();
+    const outros = ordem.filter(f => f !== principal).map(f => {
+      const n = String(f.Title || "").trim(); let conta = n.split(/\s+[—–-]\s+/).slice(1).join(" — ").trim(); if (!conta) conta = normName(n).startsWith(normName(base)) ? n.slice(base.length).replace(/^[\s—–\-:(]+|[\s)]+$/g, "").trim() : n; if (!conta) conta = n;
+      if (!contas.some(c => normName(c.n) === normName(conta))) contas.push(Object.assign({ n: conta }, f.DiaVencimento ? { dia: Number(f.DiaVencimento) } : {}));
+      return { f, conta };
+    });
+    planos.push({ doc: d, principal, nome: principal.Title, outros, contas });
+  });
+  return planos;
+}
+window.tercUnificar = async () => {
+  if (!session.n1) { toast("Só administradores."); return; } if (vcAtivo()) { toast("Visualizando como outra pessoa: nada é gravado."); return; } if (TERC_SAN.rodando) return;
+  TERC_SAN.rodando = true; TERC_SAN.log = []; const btn = $("tercUniBtn"); if (btn) btn.disabled = true;
+  try {
+    FORN_STATE.list = null; FORN_STATE.site = null; FORN_STATE.cols = null; await loadForn(false);
+    if (FORN_STATE.cols && !FORN_STATE.cols.has("Contas")) { tercLog(`A coluna "Contas (JSON)" ainda não existe em Fornecedores — rode "Executar tudo na ordem" antes.`, "warn"); return; }
+    const planos = tercPlanoUnificar(FORN_STATE.items);
+    if (!planos.length) { tercLog("Nenhum CNPJ/CPF repetido no Banco de Dados — nada a unificar.", "ok"); return; }
+    const resumo = planos.map(p => `• ${p.nome} (${docFmt(p.doc)}): ${p.outros.length} cadastro(s) extra → contas: ${p.outros.map(o => `"${o.conta}"`).join(", ")}`).join("\n");
+    tercLog(`${planos.length} documento(s) repetido(s):`); planos.forEach(p => tercLog(resumo.split("\n")[planos.indexOf(p)]));
+    if (!confirm(`Unificar ${planos.length} documento(s) repetido(s)?\n\n${resumo}\n\nO que acontece: fica um cadastro por CNPJ/CPF; os nomes divergentes viram "Contas" do cadastro principal; faturas (CAP e Dívidas) e obrigações que apontavam para os cadastros extras passam a apontar para o principal, com a conta preenchida; os cadastros extras são apagados. Não dá para desfazer.`)) { tercLog("Cancelado pelo usuário."); return; }
+    await loadCAP({ soLeitura: true }).catch(e => tercLog("CAP: " + e.message, "warn")); await loadObr().catch(e => tercLog("Obrigações: " + e.message, "warn"));
+    if (!CAP_STATE.list || !OBR_STATE.list || !CAP_STATE.items) { tercLog("Não foi possível ler Lançamentos e Obrigações — nada unificado (nada apagado).", "warn"); return; }
+    let fat = 0, obrN = 0, apagados = 0, falhas = 0;
+    const capL = CAP_STATE.list, capS = CAP_STATE.site;
+    for (const p of planos) {
+      const ids = new Set(p.outros.map(o => String(o.f._id))), nomeDe = new Map(p.outros.map(o => [normName(o.f.Title), o.conta])), idDe = new Map(p.outros.map(o => [String(o.f._id), o.conta]));
+      try { await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, p.principal._id, { Contas: JSON.stringify(p.contas) }); } catch (e) { tercLog(`${p.nome}: não gravou as contas: ${e.message}`, "warn"); falhas++; continue; }
+      let okTudo = true;
+      for (const it of CAP_STATE.items) {
+        const porId = it.FornecedorRefLookupId != null && ids.has(String(it.FornecedorRefLookupId)), porNome = !porId && nomeDe.has(normName(it.Fornecedor)); if (!porId && !porNome) continue;
+        const conta = porId ? idDe.get(String(it.FornecedorRefLookupId)) : nomeDe.get(normName(it.Fornecedor));
+        const f = { Fornecedor: p.nome, FornecedorRefLookupId: Number(p.principal._id) }; if (hasCol("ContaFornecedor") && conta) f.ContaFornecedor = conta; if (!hasCol("FornecedorRefId")) delete f.FornecedorRefLookupId;
+        try { await SP.update(capS.id, capL.id, it._id, f); Object.assign(it, f); fat++; } catch (e) { okTudo = false; falhas++; tercLog(`   fatura "${it.Title}": ${e.message}`, "warn"); }
+      }
+      for (const o of OBR_STATE.items || []) {
+        const porId = o.FornecedorLookupId != null && ids.has(String(o.FornecedorLookupId)), porNome = !porId && nomeDe.has(normName(o.FornecedorTexto)); if (!porId && !porNome) continue;
+        const f = { FornecedorTexto: p.nome, FornecedorLookupId: Number(p.principal._id) }; if (!hasColObr("FornecedorId")) delete f.FornecedorLookupId;
+        try { await SP.update(OBR_STATE.site.id, OBR_STATE.list.id, o._id, f); Object.assign(o, f); obrN++; } catch (e) { okTudo = false; falhas++; tercLog(`   obrigação "${o.Title}": ${e.message}`, "warn"); }
+      }
+      if (!okTudo) { tercLog(`${p.nome}: faturas/obrigações com falha — os cadastros extras NÃO foram apagados.`, "warn"); continue; }
+      for (const o of p.outros) { try { await graph(`/sites/${FORN_STATE.site.id}/lists/${FORN_STATE.list.id}/items/${o.f._id}`, { method: "DELETE" }); apagados++; } catch (e) { falhas++; tercLog(`   não apagou "${o.f.Title}": ${e.message}`, "warn"); } }
+      tercLog(`${p.nome}: ${p.contas.length} conta(s), ${p.outros.length} cadastro(s) extra apagado(s).`, "ok");
+    }
+    tercLog(`Concluído: ${fat} fatura(s) e ${obrN} obrigação(ões) religadas, ${apagados} cadastro(s) apagado(s), ${falhas} falha(s). Dívidas — Parcelas não são tocadas (restritas); confira em Gestão de Dívidas.`, falhas ? "warn" : "ok");
+    try { await erpParamGravar("terc_unificacao", { em: new Date().toISOString(), por: capHistQuem(), docs: planos.length, faturas: fat, apagados }); } catch (e) {}
+    await loadForn(false); CAP_STATE.rev = (CAP_STATE.rev || 0) + 1;
+  } catch (e) { tercLog("Interrompido: " + e.message, "warn"); }
+  finally { TERC_SAN.rodando = false; if (btn) btn.disabled = false; }
+};
+/* remover CPFs de funcionários do Banco de Dados (2i) */
+window.tercRemoverFuncionarios = async () => {
+  if (!session.n1) { toast("Só administradores."); return; } if (vcAtivo()) { toast("Visualizando como outra pessoa: nada é gravado."); return; } if (TERC_SAN.rodando) return;
+  TERC_SAN.rodando = true; TERC_SAN.log = []; const btn = $("tercFuncBtn"); if (btn) btn.disabled = true;
+  try {
+    await loadForn(false); const mapa = await tercRhCpfMapa();
+    if (!rhPesAtivo()) { tercLog(`Sem acesso à lista "RH — Funcionários · Dados pessoais" (CPFs) — nada conferido.`, "warn"); return; }
+    const alvo = FORN_STATE.items.filter(f => { const d = docClean(f.CNPJ); return d.length === 11 && mapa.has(d); });
+    if (!alvo.length) { tercLog(`Nenhum CPF do Banco de Dados está em RH › Funcionários (${mapa.size} CPF(s) no RH).`, "ok"); return; }
+    await loadCAP({ soLeitura: true }).catch(e => tercLog("CAP: " + e.message, "warn"));
+    if (!CAP_STATE.list) { tercLog("Não foi possível ler Lançamentos — nada removido.", "warn"); return; }
+    const abertas = f => CAP_STATE.items.filter(it => (String(it.FornecedorRefLookupId || "") === String(f._id) || normName(it.Fornecedor) === normName(f.Title)) && !["Pago", "Cancelada"].includes(it.Status)).length;
+    const lista = alvo.map(f => `• ${f.Title} (${f.CNPJ}) = ${mapa.get(docClean(f.CNPJ)).nome || "funcionário"}${abertas(f) ? ` — ${abertas(f)} fatura(s) em aberto` : ""}`).join("\n");
+    tercLog(`${alvo.length} cadastro(s) com CPF de funcionário:`); lista.split("\n").forEach(l => tercLog(l));
+    if (!confirm(`Remover ${alvo.length} cadastro(s) do Banco de Dados cujo CPF está em RH › Funcionários?\n\n${lista}\n\nOs funcionários continuam no RH; as faturas já lançadas ficam como estão (pelo nome) e as novas usam Tipo de favorecido = Funcionário. Cadastros com fatura em aberto só ficam inativos.`)) { tercLog("Cancelado pelo usuário."); return; }
+    let rem = 0, inat = 0, falhas = 0;
+    for (const f of alvo) {
+      try {
+        if (abertas(f)) { await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, f._id, { Ativo: false, Observacoes: ((f.Observacoes || "") + `\nCPF de funcionário (RH) — inativado em ${todayISO()}; manter as faturas em aberto pelo RH.`).trim() }); inat++; }
+        else { await graph(`/sites/${FORN_STATE.site.id}/lists/${FORN_STATE.list.id}/items/${f._id}`, { method: "DELETE" }); rem++; }
+      } catch (e) { falhas++; tercLog(`   ${f.Title}: ${e.message}`, "warn"); }
+    }
+    tercLog(`Concluído: ${rem} removido(s), ${inat} inativado(s) (com fatura em aberto), ${falhas} falha(s).`, falhas ? "warn" : "ok");
+    await loadForn(false);
+  } catch (e) { tercLog("Interrompido: " + e.message, "warn"); }
+  finally { TERC_SAN.rodando = false; if (btn) btn.disabled = false; }
+};
+{ const pc1 = pageConfig; pageConfig = function () {
+  let h = pc1.apply(this, arguments); if (!session.n1) return h;
+  const card = `<section class="setup-card" id="tercSanCard"><h2>Terceiros › Banco de Dados — saneamento (v0.13.4)</h2>
+    <p class="desc">A lista "Fornecedores" agora fica em <b>${esc(CONFIG.spHost)}${esc(CONFIG.sites.terceiros)}</b> (aberta; sem as restrições da CAP). Ordem: 1) "Executar tudo na ordem" (cria a lista e as colunas novas: Papéis, Contas, Código do banco, Funcionário; e as colunas numéricas de fornecedor em Lançamentos e Obrigações); 2) migração dos sites (cartão acima) copia os cadastros antigos; 3) as ferramentas abaixo.</p>
+    <div class="actions"><button class="btn" id="tercColBtn" onclick="tercConferirColunas()" title="Deixa os títulos das colunas do SharePoint iguais aos do ERP e lista as colunas que o ERP não usa">Conferir colunas (Fornecedores, Lançamentos, Obrigações, Carteiras)</button>
+      <button class="btn" id="tercUniBtn" onclick="tercUnificar()" title="Um cadastro por CNPJ/CPF; os nomes divergentes viram contas; faturas e obrigações religadas">Unificar cadastros pelo CNPJ/CPF</button>
+      <button class="btn" id="tercFuncBtn" onclick="tercRemoverFuncionarios()" title="CPFs que estão em RH › Funcionários saem do Banco de Dados">Remover CPFs de funcionários</button></div>
+    <div id="tercExtras"></div>
+    <div class="setup-log checks terc-log" id="tercSanLog" style="display:none;max-height:320px;overflow:auto"></div></section>`;
+  h = h.replace("<h1>Configuração</h1>", "<h1>Configuração</h1>" + card);
+  return h; }; window.pageConfig = pageConfig; }
+
 </script>
 </body>
 </html>

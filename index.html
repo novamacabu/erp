@@ -217,6 +217,7 @@
   .st-aprovado   { background: #E7EFFB; color: #1C3D6E; } .st-aprovado i   { background: #1C3D6E; }
   .st-pago       { background: #E4F3EA; color: #197A46; } .st-pago i       { background: #197A46; }
   .st-vencido    { background: #FBEDEC; color: #B3271E; } .st-vencido i    { background: #B3271E; }
+  .st-cancelada  { background: #EEF0F3; color: #5C6470; text-decoration: line-through; } .st-cancelada i { background: #8A9099; }
 
   .cap-empty { padding: 60px 24px; text-align: left; border: 1px solid var(--line); max-width: 640px; }
   .cap-empty h3 { color: var(--navy); font-size: 20px; font-weight: 800; margin-bottom: 8px; }
@@ -3443,6 +3444,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
 .rhf-topo-av { margin-right: 12px; display: inline-flex; }
 .cap-views-n.neutro { background: #EEF1F6; color: #3B4252; }
 .div-agreg{margin-top:14px;padding:12px 16px;font-size:13.5px;line-height:1.5}.div-agreg .money{white-space:nowrap}
+.cap-hist{list-style:none;margin:0;padding:0;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:#FBFCFE}.cap-hist li{padding:6px 10px;border-bottom:1px solid var(--line);font-size:13px}.cap-hist li:last-child{border-bottom:0}
 .rh-st { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
 .rh-ul { margin: 4px 0 8px; padding-left: 18px; font-size: 13px; columns: 2; }
 .rh-chk { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; font-size: 13px; }
@@ -3734,7 +3736,7 @@ img.tf-av{object-fit:cover;background:#E6E8EE;padding:0}.tf-card-f .tf-av{width:
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.13.1<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.13.2<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3771,7 +3773,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.13.1",
+  version: "v0.13.2",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -3911,7 +3913,7 @@ const CATEGORIAS = Object.keys(PLANO_CONTAS);
 const SUBCATEGORIAS = [...new Set(Object.values(PLANO_CONTAS).flat())];
 const BANCOS = ["Bradesco", "Banco do Brasil", "Santander", "PagBank", "Dinheiro", "Cheque"];
 const FORMAS = ["PIX", "Boleto", "TED", "Débito Automático", "Cartão", "Dinheiro"];
-const STATUS_CAP = ["Aguardando NF", "Pendente", "Pago", "Vencido"];
+const STATUS_CAP = ["Aguardando NF", "Pendente", "Pago", "Vencido", "Cancelada"];   /* v0.13.2: Cancelada (com motivo) — a fatura não existe mais, mas fica o rastro */
 /* v0.12.57 · Classificação de custo do fornecedor (coluna "Tipo"): valor gravado + explicação mostrada abaixo do campo.
    Fixo e Variável geram a conta do mês sozinhos na CAP (capRecorrentesGerar). */
 const FORN_CLASSES = [
@@ -4109,7 +4111,15 @@ const LISTS = {
       { name: "CentroCusto",        displayName: "Centro de custo",      choice: choice(CENTROS_CUSTO, true), update: true },
       { name: "Anexos",             displayName: "Documentos (JSON)",                     text: { allowMultipleLines: true, textType: "plain" } },
       /* v0.12.20: Isenta (N/A) — parcela isenta/sem cobrança no mês; não vence, conta como "em dia" verde na matriz Recorrentes */
-      { name: "Isenta",             displayName: "Isenta (N/A)",                          boolean: {}, update: true }
+      { name: "Isenta",             displayName: "Isenta (N/A)",                          boolean: {}, update: true },
+      /* v0.13.2: modelo da fatura — o Valor nunca muda ao pagar; o que saiu do caixa fica em ValorPago (= Valor + Juros − Desconto) */
+      { name: "ValorPago",          displayName: "Valor pago (R$)",                       number: money, naoObrig: true },
+      { name: "Juros",              displayName: "Juros e multa (R$)",                    number: money, naoObrig: true },
+      { name: "Desconto",           displayName: "Desconto (R$)",                         number: money, naoObrig: true },
+      { name: "MotivoStatus",       displayName: "Motivo (cancelamento / estorno)",       text: { allowMultipleLines: false, maxLength: 255 } },
+      { name: "Estimado",           displayName: "Valor estimado",                        boolean: {} },
+      { name: "ParcialDe",          displayName: "Saldo da fatura (id)",                  text: { allowMultipleLines: false, maxLength: 20 } },
+      { name: "Historico",          displayName: "Histórico (JSON)",                      text: { allowMultipleLines: true, textType: "plain" } }
     ],
     /* Valores da v0.4 que mudaram de nome no plano de contas / fluxo sem aprovação */
     migrations: [
@@ -5400,7 +5410,7 @@ function dLocal(v) { const m = String(v).match(/^(\d{4}-\d{2}-\d{2})(?:T00:00:00
 function fmtDate(iso) { if (!iso) return "—"; const d = dLocal(iso); if (isNaN(d)) return String(iso); return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }); }
 function todayISO() { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
 function ymd(d) { const m0 = String(d).match(/^(\d{4}-\d{2}-\d{2})(?:T00:00:00(?:\.0+)?Z)?$/); if (m0) return m0[1]; /* v0.12.14: data só-dia (com ou sem T00:00:00Z) não passa pelo fuso */ const x = new Date(d); const p = n => String(n).padStart(2,"0"); return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}`; }
-function slugStatus(s) { return { "Aguardando NF":"aguardando", "Pendente":"pendente", "Pago":"pago", "Vencido":"vencido" }[s] || "aguardando"; }
+function slugStatus(s) { return { "Aguardando NF":"aguardando", "Pendente":"pendente", "Pago":"pago", "Vencido":"vencido", "Cancelada":"cancelada" }[s] || "aguardando"; }
 function statusPill(s) { return `<span class="pill st-${slugStatus(s)}"><i></i>${esc(s || "—")}</span>`; }
 /* v0.12.19: pill de dias até o vencimento, com gradiente verde (longe) → vermelho (atrasado). Verde escuro = pago. */
 function diasPendCel(it) {
@@ -5478,7 +5488,17 @@ async function loadCAP(opts) {
 }
 
 /* v0.12.21: helper único para "a parcela está marcada como N/A (isenta)" — usado em classifyItem, capPainelData e KPIs */
-function isIsenta(it) { return !!(it && (it.Isenta === true || it.Isenta === "true" || it.Isenta === 1)); }
+function isIsenta(it) { return !!(it && (it.Isenta === true || it.Isenta === "true" || it.Isenta === 1 || it.Status === "Cancelada")); }   /* v0.13.2: Cancelada sai de todos os totais como a isenta (mas com rótulo próprio) */
+function capCancelada(it) { return !!(it && it.Status === "Cancelada"); }
+/* v0.13.2: valor que saiu do caixa — paga com juros/desconto usa ValorPago; o Valor original nunca muda */
+function capValorEfetivo(it) { if (!it) return 0; if (it.Status === "Pago" && it.ValorPago != null && it.ValorPago !== "") return Number(it.ValorPago) || 0; return Number(it.Valor || 0); }
+function capEstimado(it) { return !!(it && (it.Estimado === true || it.Estimado === "true" || it.Estimado === 1) && it.Status !== "Pago"); }
+/* v0.13.2: histórico da fatura (quem, quando, o quê) guardado em Historico (JSON, últimos 60) */
+function capHist(it) { try { const h = JSON.parse(it && it.Historico || "[]"); return Array.isArray(h) ? h : []; } catch (e) { return []; } }
+function capHistQuem() { return String((session.me && (session.me.displayName || session.me.mail)) || "").slice(0, 80); }
+function capHistAdd(it, acao, detalhe) { const h = capHist(it); h.push({ t: new Date().toISOString(), por: capHistQuem(), a: acao, d: detalhe ? String(detalhe).slice(0, 300) : undefined }); return JSON.stringify(h.slice(-60)); }
+const CAP_HIST_CAMPOS = { Title: "Descrição", Fornecedor: "Fornecedor", Valor: "Valor", Vencimento: "Vencimento", Competencia: "Competência", Status: "Status", DataPagamento: "Pago em", Categoria: "Categoria", CentroCusto: "Centro de custo", Banco: "Banco", NumeroNF: "NF", Isenta: "N/A", Estimado: "Estimado", Natureza: "Natureza" };
+function capHistDiff(antes, depois) { const d = []; Object.keys(CAP_HIST_CAMPOS).forEach(k => { if (!(k in depois)) return; const a = antes[k], b = depois[k]; const na = a == null || a === "" ? "" : (/^\d{4}-\d{2}-\d{2}/.test(String(a)) ? ymd(a) : String(a)), nb = b == null || b === "" ? "" : (/^\d{4}-\d{2}-\d{2}/.test(String(b)) ? ymd(b) : String(b)); if (na !== nb && !(k === "Valor" && Number(a || 0) === Number(b || 0)) && !((k === "Isenta" || k === "Estimado") && !!a === !!b)) d.push(`${CAP_HIST_CAMPOS[k]}: ${na || "—"} → ${nb || "—"}`); }); return d.join("; "); }
 function classifyItem(it) {
   const today = new Date(); today.setHours(0,0,0,0);
   const isenta = isIsenta(it);   /* v0.12.20 */
@@ -5487,15 +5507,15 @@ function classifyItem(it) {
   const dias = (isenta || !venc) ? null : Math.round((venc - today) / 86400000);
   /* uma conta isenta nunca é "atrasada": zera dias para esse fim */
   const pago = it.Status === "Pago";
-  return { venc: isenta ? null : venc, dias, pago, isenta };
+  return { venc: isenta ? null : venc, dias, pago, isenta, cancelada: capCancelada(it), estimado: capEstimado(it) };
 }
 
 function kpiCounts() {
   const now = new Date(); const mesRef = { y: now.getFullYear(), m: now.getMonth() };
   const acc = { venc: [], hoje: [], sete: [], pagas: [] };
   for (const it of CAP_STATE.items) {
-    const c = classifyItem(it);
-    const v = Number(it.Valor || 0);
+    const c = classifyItem(it); if (c.cancelada) continue;   /* v0.13.2 */
+    const v = c.pago ? capValorEfetivo(it) : Number(it.Valor || 0);
     if (!c.pago && c.dias !== null && c.dias < 0) acc.venc.push({ it, v });
     if (!c.pago && c.dias !== null && c.dias >= 0 && c.dias <= 3) acc.hoje.push({ it, v });
     if (!c.pago && c.dias !== null && c.dias > 3 && c.dias <= 7) acc.sete.push({ it, v });
@@ -5830,8 +5850,8 @@ function capPainelData() {
   const comp = CAP_STATE.painelComp || compAtual;
   const items = CAP_STATE.items;
   const days = n => { const d = new Date(hj); d.setDate(d.getDate() + n); return d; };
-  const sum = a => a.reduce((s, it) => s + Number(it.Valor || 0), 0);
-  const naoPagas = items.filter(it => it.Status !== "Pago");
+  const sum = a => a.reduce((s, it) => s + (it.Status === "Pago" ? capValorEfetivo(it) : Number(it.Valor || 0)), 0);   /* v0.13.2 */
+  const naoPagas = items.filter(it => it.Status !== "Pago" && !capCancelada(it));
   const cls = it => classifyItem(it);
   const venc = naoPagas.filter(it => { const c = cls(it); return c.dias !== null && c.dias < 0; });
   const hoje = naoPagas.filter(it => { const c = cls(it); return c.dias === 0; });
@@ -6455,7 +6475,7 @@ function obrCalcular() {
   const d = obrCalcularAgora(); OBR_CACHE = { k, d }; return d;
 }
 function obrCalcularAgora() {
-  const obrs = (OBR_STATE.items || []).slice(), items = CAP_STATE.items || [];
+  const obrs = (OBR_STATE.items || []).slice(), items = (CAP_STATE.items || []).filter(it => !capCancelada(it));   /* v0.13.2: parcela cancelada volta a "não lançada" */
   const hj = todayISO(), hojeC = hj.slice(0, 7);
   const minComp = items.map(itemComp).filter(Boolean).sort()[0] || hojeC;
   /* uma conta antiga avulsa não "puxa" o começo do ERP para trás: CONFIG.capInicio é o mês em que a CAP passou a valer */
@@ -7077,6 +7097,9 @@ function capForm(it) {
       <div class="field"><label>N/A — Isenta no mês</label><label class="check" style="display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink)"><input type="checkbox" id="fIsenta" ${v.Isenta ? "checked" : ""}> <span>Marcar esta parcela como <b>Isenta</b> (não cobra, não vence, aparece em verde)</span></label><div class="hint">Útil para meses em que uma recorrência não é cobrada (férias, suspensão, cortesia). Isentas não entram em "Vencido".</div></div>
       <div class="field"><label>Vencimento<span class="req">*</span></label><input type="date" id="fVenc" value="${v.Vencimento ? ymd(v.Vencimento) : ""}"></div>
       <div class="field"><label>Competência</label><input type="month" id="fComp" value="${esc(v.Competencia || "")}" placeholder="AAAA-MM"><div class="hint">Mês a que a despesa se refere; vazio = mês do vencimento</div></div>
+      <div class="field"><label>Valor estimado</label><label class="check" style="display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink)"><input type="checkbox" id="fEst" ${capEstimado(v) ? "checked" : ""} ${v.Status === "Pago" ? "disabled" : ""}> <span>Valor ainda <b>estimado</b> (ajustar quando a fatura chegar; some ao pagar)</span></label></div>
+      ${v.Status === "Pago" ? `<div class="field full"><div class="static">Pago em <b>${esc(fmtDate(v.DataPagamento))}</b> · saiu do caixa <b>${esc(fmtBRL(capValorEfetivo(v)))}</b>${Number(v.Juros || 0) ? ` · juros/multa ${esc(fmtBRL(v.Juros))}` : ""}${Number(v.Desconto || 0) ? ` · desconto ${esc(fmtBRL(v.Desconto))}` : ""}${v.ParcialDe ? ` · saldo do pagamento parcial da fatura #${esc(v.ParcialDe)}` : ""}${(() => { const fl = (CAP_STATE.items || []).find(x => String(x.ParcialDe || "") === String(v._id)); return fl ? ` · pagamento parcial: saldo na fatura "${esc(fl.Title)}"` : ""; })()}${session.n1 ? "" : " · valor, vencimento, competência e fornecedor travados (fatura paga)"}</div></div>` : ""}
+      ${v.Status === "Cancelada" ? `<div class="field full"><div class="static" style="color:var(--err)">Fatura <b>cancelada</b>${v.MotivoStatus ? `: ${esc(v.MotivoStatus)}` : ""} — fora de todos os totais.</div></div>` : ""}
       <div class="field"><label>Valor (R$)<span class="req">*</span></label><input type="number" step="0.01" min="0" id="fVal" value="${v.Valor ?? ""}"></div>
       <div class="field"><label>Parcela</label><input id="fParc" value="${esc(v.Parcela || "")}" placeholder="Ex.: 3/12"></div>
       <div class="field full form-sec">Lançamento e estabelecimento</div>
@@ -7086,14 +7109,15 @@ function capForm(it) {
       <div class="field full form-sec">Pagamento e dados bancários</div>
       <div class="field"><label>Banco</label><select id="fBanco">${opt(BANCOS, v.Banco, true)}</select></div>
       <div class="field"><label>Forma de pagamento</label><select id="fForma">${opt(FORMAS, v.FormaPagamento, true)}</select></div>
-      <div class="field"><label>Status<span class="req">*</span></label><select id="fSt" ${!capPodePagar() && v.Status === "Pago" ? "disabled" : ""}>${opt(capPodePagar() || v.Status === "Pago" ? STATUS_CAP : STATUS_CAP.filter(x => x !== "Pago"), v.Status || "Pendente", false)}</select>${capPodePagar() ? "" : `<div class="hint">Dar baixa exige a permissão "Pagar faturas"</div>`}</div>
+      <div class="field"><label>Status<span class="req">*</span></label><select id="fSt" ${(!capPodePagar() && v.Status === "Pago") || v.Status === "Cancelada" ? "disabled" : ""}>${opt((capPodePagar() || v.Status === "Pago" ? STATUS_CAP : STATUS_CAP.filter(x => x !== "Pago")).filter(x => x !== "Cancelada" || v.Status === "Cancelada"), v.Status || "Pendente", false)}</select>${capPodePagar() ? "" : `<div class="hint">Dar baixa exige a permissão "Pagar faturas"</div>`}</div>
       <div class="field" ${capPodePagar() || v.DataPagamento ? "" : 'style="display:none"'}><label>Data do pagamento</label><input type="date" id="fPag" value="${v.DataPagamento ? ymd(v.DataPagamento) : ""}" ${capPodePagar() ? "" : "disabled"}></div>
       <div class="field full form-sec">Referências e observações</div>
       <div class="field full"><label>Ref. documento</label><input id="fRef" value="${esc(v.RefDocumento || "")}" placeholder="Nº do contrato, boleto, processo"></div>
       <div class="field full"><label>Observações</label><textarea id="fObs">${esc(v.Observacoes || "")}</textarea></div>
       ${obrLinha}${docs}
+      ${isNew ? "" : capHistHtml(v)}
     </div><div class="err-msg" id="fErr" style="display:none;color:var(--err);margin-top:12px;font-size:13px;"></div></div>
-    <div class="modal-foot">${isNew || !podeExcluir("cap") ? "" : `<button class="btn" onclick="capDelete(${jsArg(it._id)})" style="margin-right:auto;color:var(--err)">Excluir</button>`}${isNew ? "" : linkSP(CAP_STATE.list, it._id)}<button class="btn" onclick="closeModal()">${edita ? "Cancelar" : "Fechar"}</button>${edita ? `<button class="btn primary" id="fSave">${isNew ? "Cadastrar" : "Salvar"}</button>` : ""}</div>`;
+    <div class="modal-foot">${isNew || !podeExcluir("cap") ? "" : `<button class="btn" onclick="capDelete(${jsArg(it._id)})" style="margin-right:auto;color:var(--err)">Excluir</button>`}${!isNew && edita && v.Status === "Pago" && capPodePagar() ? `<button class="btn" onclick="capEstornar(${jsArg(it._id)})" title="Desfaz a baixa: a fatura volta a ficar em aberto, com o motivo no histórico">Estornar pagamento</button>` : ""}${!isNew && edita && v.Status !== "Pago" && v.Status !== "Cancelada" ? `<button class="btn" onclick="capCancelar(${jsArg(it._id)})" title="A fatura sai de todos os totais, com o motivo no histórico (não é excluída)">Cancelar fatura</button>` : ""}${!isNew && edita && v.Status === "Cancelada" ? `<button class="btn" onclick="capReativar(${jsArg(it._id)})">Reativar fatura</button>` : ""}${isNew ? "" : linkSP(CAP_STATE.list, it._id)}<button class="btn" onclick="closeModal()">${edita ? "Cancelar" : "Fechar"}</button>${edita ? `<button class="btn primary" id="fSave">${isNew ? "Cadastrar" : "Salvar"}</button>` : ""}</div>`;
 }
 function capWireForm(isNew) {
   const forn = $("fForn"), cat = $("fCat"), venc = $("fVenc");
@@ -7182,8 +7206,18 @@ async function capSave(existing) {
     Status: g("fSt"), DataPagamento: g("fPag") || null,
     NumeroNF: g("fNF") || null, RefDocumento: g("fRef") || null, Observacoes: g("fObs") || null,
     TipoLancamento: g("fTipoL") || "Despesa", Estabelecimento: g("fEstab") || null, NumParcelamento: g("fNumParc") || null, TipoFavorecido: g("fTipoFav") || "Fornecedor",
-    Natureza: document.getElementById("fNat") ? (g("fNat") || null) : undefined   /* v0.12.73: natureza do gasto (vazia = regra automática) */
+    Natureza: document.getElementById("fNat") ? (g("fNat") || null) : undefined,   /* v0.12.73: natureza do gasto (vazia = regra automática) */
+    Estimado: !!(document.getElementById("fEst") && document.getElementById("fEst").checked)   /* v0.13.2 (item 7) */
   };
+  if (existing && existing.Status === "Cancelada") { showErr("Fatura cancelada: use «Reativar fatura» para voltar a editá-la."); return; }   /* v0.13.2 (item 5) */
+  if (existing && existing.Status === "Pago" && !session.n1) {   /* v0.13.2 (item 6): fatura paga tem valor, vencimento, competência e fornecedor travados — só observações, anexos e classificação mudam */
+    const trav = { Valor: Number(existing.Valor || 0), Vencimento: existing.Vencimento ? ymd(existing.Vencimento) : "", Competencia: normComp(existing.Competencia || "") || compFromDate(existing.Vencimento) || "", Fornecedor: String(existing.Fornecedor || "").trim() };
+    const novo = { Valor: Number(fields.Valor || 0), Vencimento: fields.Vencimento || "", Competencia: fields.Competencia ? (normComp(fields.Competencia) || fields.Competencia) : (compFromDate(fields.Vencimento) || ""), Fornecedor: String(fields.Fornecedor || "").trim() };
+    const mudou = Object.keys(trav).filter(k => k === "Valor" ? Math.abs(novo.Valor - trav.Valor) >= 0.005 : String(novo[k]) !== String(trav[k]));
+    if (mudou.length) { showErr("Fatura paga: " + mudou.map(k => ({ Valor: "valor", Vencimento: "vencimento", Competencia: "competência", Fornecedor: "fornecedor" }[k])).join(", ") + " não muda(m). Estorne o pagamento primeiro (ou peça a um administrador)."); return; }
+    if (fields.Status !== "Pago") { showErr("Fatura paga: para reabrir, use «Estornar pagamento»."); return; }
+  }
+  if (fields.Status === "Pago") fields.Estimado = false;
   if (!capPodePagar() && (fields.Status === "Pago" || fields.DataPagamento) && !(existing && existing.Status === "Pago")) { showErr("Dar baixa (Status Pago / data do pagamento) exige a permissão \"Pagar faturas\" em Usuários e permissões."); return; }   /* v0.13.0 (revisão G1) */
   const missing = ["Title","Fornecedor","Vencimento","Valor","Status"].filter(k => !fields[k] && fields[k] !== 0);
   if (missing.length) { showErr("Preencha os campos obrigatórios: " + missing.map(k => ({Title:"Descrição",Fornecedor:"Fornecedor",Vencimento:"Vencimento",Valor:"Valor",Status:"Status"}[k])).join(", ")); return; }
@@ -7197,6 +7231,10 @@ async function capSave(existing) {
   if (forn) fields.Fornecedor = forn.Title;
   if (hasCol("FornecedorRef")) fields.FornecedorRefLookupId = forn ? Number(forn._id) : null;
   if (!existing && CAP_STATE.preset && CAP_STATE.preset.ObrigacaoLookupId && hasCol("Obrigacao")) fields.ObrigacaoLookupId = Number(CAP_STATE.preset.ObrigacaoLookupId);
+  if (hasCol("Historico")) {   /* v0.13.2 (item 1) */
+    if (!existing) fields.Historico = capHistAdd(null, "criada", `${fields.Fornecedor} · ${fmtBRL(fields.Valor)} · vence ${fmtDate(fields.Vencimento)}`);
+    else { const dif = capHistDiff(existing, fields); if (dif) fields.Historico = capHistAdd(existing, fields.Status === "Pago" && existing.Status !== "Pago" ? "paga (pelo formulário)" : "editada", dif); }
+  }
   for (const k of Object.keys(fields)) if (!k.endsWith("LookupId") && !hasCol(k)) delete fields[k];
   const btn = $("fSave"); btn.disabled = true; btn.textContent = "Salvando…";
   try {
@@ -7240,6 +7278,7 @@ window.capDelete = async (id) => {
 function capPodePagar() { return podeEditar("cap") && ["editar", "proprietario"].includes(pagNivel("cap", "pagar")); }
 window.capPagar = (id) => {
   const it = CAP_STATE.items.find(x => String(x._id) === String(id)); if (!it) return;
+  if (capCancelada(it)) { toast("Fatura cancelada: reative-a antes de pagar."); return; }   /* v0.13.2 */
   if (!podeEditar("cap")) { toast("Seu acesso à CAP é só de leitura."); return; }
   if (!capPodePagar()) { toast("Seu acesso permite lançar faturas, mas não pagar (página \"Pagar faturas\" em Usuários e permissões)."); return; }
   const f = fornByName(it.Fornecedor);
@@ -7250,7 +7289,10 @@ window.capPagar = (id) => {
       <p class="lead" style="margin:0 0 14px"><b>${esc(it.Title || "—")}</b><br><span class="sup">${esc(it.Fornecedor || "")} · vence ${fmtDate(it.Vencimento)} · <b>${esc(fmtBRL(it.Valor))}</b></span></p>
       <div class="form-grid">
         <div class="field"><label>Data do pagamento<span class="req">*</span></label><input type="date" id="pgData" value="${todayISO()}"></div>
-        <div class="field"><label>Valor pago (R$)</label><input type="number" step="0.01" min="0" id="pgVal" value="${it.Valor ?? ""}"><div class="hint">Altere só se pagou com juros ou desconto</div></div>
+        <div class="field"><label>Valor pago (R$)</label><input type="number" step="0.01" min="0" id="pgVal" value="${it.Valor ?? ""}"><div class="hint">O valor da fatura (${esc(fmtBRL(it.Valor))}) não muda; a diferença vira juros/multa ou desconto</div></div>
+        <div class="field"><label>Juros e multa (R$)</label><input type="number" step="0.01" min="0" id="pgJuros" value="${it.Juros || ""}"></div>
+        <div class="field"><label>Desconto (R$)</label><input type="number" step="0.01" min="0" id="pgDesc" value="${it.Desconto || ""}"></div>
+        <div class="field full"><label class="check" style="display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink)"><input type="checkbox" id="pgParcial"> <span><b>Pagamento parcial</b>: o que faltar vira uma nova fatura em aberto (mesmo fornecedor, obrigação e vencimento), ligada a esta</span></label><div class="hint" id="pgParcialHint"></div></div>
         <div class="field"><label>Banco</label><select id="pgBanco">${opt(BANCOS, banco, true)}</select></div>
         <div class="field"><label>Forma de pagamento</label><select id="pgForma">${opt(FORMAS, forma, true)}</select></div>
         <div class="field"><label>Nº da NF</label><input id="pgNF" value="${esc(it.NumeroNF || "")}" placeholder="Opcional"></div>
@@ -7263,9 +7305,16 @@ window.capPagar = (id) => {
   $("pgSave").onclick = async () => {
     const g = k => $(k).value.trim();
     if (!g("pgData")) { $("pgErr").style.display = "block"; $("pgErr").textContent = "Informe a data do pagamento."; return; }
-    const fields = { Status: "Pago", DataPagamento: g("pgData"), Banco: g("pgBanco") || null, FormaPagamento: g("pgForma") || null };
-    if (g("pgVal")) fields.Valor = Number(g("pgVal"));
+    const fields = { Status: "Pago", DataPagamento: g("pgData"), Banco: g("pgBanco") || null, FormaPagamento: g("pgForma") || null, Estimado: false };
+    const vOrig = Number(it.Valor || 0), vPago = g("pgVal") !== "" ? Number(g("pgVal")) : vOrig, juros = Number(g("pgJuros") || 0), desc = Number(g("pgDesc") || 0), parcial = !!($("pgParcial") && $("pgParcial").checked);
+    if (vPago < 0 || juros < 0 || desc < 0) { $("pgErr").style.display = "block"; $("pgErr").textContent = "Valores negativos não valem."; return; }
+    if (parcial && !(vPago < vOrig - 0.005)) { $("pgErr").style.display = "block"; $("pgErr").textContent = "Pagamento parcial: o valor pago precisa ser menor que o valor da fatura."; return; }
+    const saldo = parcial ? Math.round((vOrig - vPago) * 100) / 100 : 0;
+    if (hasCol("ValorPago")) { fields.ValorPago = vPago; fields.Juros = juros || null; fields.Desconto = desc || null; }   /* v0.13.2 (itens 3 e 4): Valor fica; ValorPago = o que saiu do caixa */
+    else { if (vPago !== vOrig) fields.Valor = vPago; if (parcial) { $("pgErr").style.display = "block"; $("pgErr").textContent = "Pagamento parcial exige as colunas novas: rode Sistema › Configuração (Executar tudo na ordem)."; return; } }   /* lista sem as colunas novas (Configuração não rodou): comportamento antigo */
+    if (parcial) fields.Valor = vPago;   /* G3: a fatura é dividida — o pai fica com a parte paga, a filha com o saldo (sem contar duas vezes); o valor original fica no histórico */
     if (g("pgNF")) fields.NumeroNF = g("pgNF");
+    if (hasCol("Historico")) fields.Historico = capHistAdd(it, parcial ? "pagamento parcial" : "paga", `${fmtBRL(vPago)} em ${fmtDate(g("pgData"))}${juros ? ` · juros/multa ${fmtBRL(juros)}` : ""}${desc ? ` · desconto ${fmtBRL(desc)}` : ""}${parcial ? ` · valor original ${fmtBRL(vOrig)}; saldo ${fmtBRL(saldo)} em nova fatura` : ""}`);
     for (const k of Object.keys(fields)) if (!hasCol(k)) delete fields[k];
     const b = $("pgSave"); b.disabled = true; b.textContent = "Salvando…";
     try {
@@ -7278,7 +7327,16 @@ window.capPagar = (id) => {
         $("pgArq").value = "";   /* enviado: se a gravação falhar e o usuário tentar de novo, não reenvia, mas grava o anexo */
       }
       if (anexosPend) fields.Anexos = anexosPend;
-      await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, fields); Object.assign(it, fields); CAP_STATE.rev = (CAP_STATE.rev || 0) + 1; closeModal(); toast("Pagamento registrado"); paintCAP();
+      let filhaCriada = null;
+      if (parcial && saldo > 0) {   /* v0.13.2 (item 4): primeiro a fatura filha com o saldo; só depois o pai — se o pai falhar, a filha é desfeita */
+        const filha = capSaldoCampos(it, saldo);
+        const r = await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, filha); filhaCriada = Object.assign({ _id: String(r.id) }, filha);
+      }
+      try { await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, fields); }
+      catch (e) { if (filhaCriada) { try { await graph(`/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/items/${filhaCriada._id}`, { method: "DELETE" }); } catch (e2) {} } throw e; }
+      Object.assign(it, fields); CAP_STATE.rev = (CAP_STATE.rev || 0) + 1;
+      if (filhaCriada) { CAP_STATE.items.push(filhaCriada); toast(`Pagamento parcial registrado; saldo de ${fmtBRL(saldo)} ficou na fatura "${filhaCriada.Title}"`, 7000); } else toast("Pagamento registrado");
+      closeModal(); paintCAP();
     } catch (e) { $("pgErr").style.display = "block"; $("pgErr").textContent = "Erro ao salvar: " + e.message; b.disabled = false; b.textContent = "Confirmar pagamento"; }
   };
 };
@@ -8114,9 +8172,11 @@ window.capToggleIsenta = async (id) => {
   if (!podeEditar("cap")) { toast("Seu acesso à CAP é só de leitura."); return; }
   if (!capPodePagar()) { toast("Marcar N/A faz parte da permissão \"Pagar faturas\" (Usuários e permissões)."); return; }
   const it = CAP_STATE.items.find(x => String(x._id) === String(id)); if (!it) return;
+  if (capCancelada(it)) { toast("Fatura cancelada: reative-a antes de marcar N/A."); return; }   /* v0.13.2 */
   const novo = !((it.Isenta === true) || (it.Isenta === "true") || (it.Isenta === 1));
   if (!CAP_STATE.list || !CAP_STATE.site) { toast("Lista da CAP ainda não existe no SharePoint."); return; }
-  try { await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, { Isenta: novo }); it.Isenta = novo; CAP_STATE.rev = (CAP_STATE.rev || 0) + 1; toast(novo ? "Marcada como N/A (isenta)" : "N/A removida — conta volta ao normal"); paintCAP(); }
+  const fIs = { Isenta: novo }; if (hasCol("Historico")) fIs.Historico = capHistAdd(it, "n/a", novo ? "marcada como N/A (isenta no mês)" : "N/A retirado");   /* v0.13.2 */
+  try { await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, fIs); it.Isenta = novo; if (fIs.Historico) it.Historico = fIs.Historico; CAP_STATE.rev = (CAP_STATE.rev || 0) + 1; toast(novo ? "Marcada como N/A (isenta)" : "N/A removida — conta volta ao normal"); paintCAP(); }
   catch (e) { toast("Não foi possível salvar: " + e.message, 6000); }
 };
 window.divSt = s => { DIV_UI.st = s; paintDiv(); };
@@ -8710,7 +8770,7 @@ function previaCap() { return CAP_STATE.items || []; }
 function previaSoma(arr) { return arr.reduce((s, it) => s + Number(it.Valor || 0), 0); }
 function previaDias(n) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return d; }
 function previaMesAtual(it, campo) { const v = it[campo]; if (!v) return false; const d = dLocal(v), h = new Date(); return d.getFullYear() === h.getFullYear() && d.getMonth() === h.getMonth(); }
-function previaAbertas() { return previaCap().filter(it => it.Status !== "Pago"); }
+function previaAbertas() { return previaCap().filter(it => it.Status !== "Pago" && !capCancelada(it)); }   /* v0.13.2 */
 function previaCat(cats) { return previaCap().filter(it => cats.includes(it.Categoria || "")); }
 const EX = s => `<span class="ex-tag" title="Linha de exemplo — não existe no SharePoint">exemplo</span> ${esc(s)}`;
 
@@ -9954,7 +10014,7 @@ window.CAP_AGRUP = window.CAP_AGRUP || {
 };
 function capTotais(arr) {
   const t = { n: arr.length, total: 0, pagar: 0, pago: 0, venc: 0 };
-  arr.forEach(it => { const c = classifyItem(it), v = Number(it.Valor || 0); t.total += v; if (c.pago) t.pago += v; else { t.pagar += v; if (c.dias !== null && c.dias < 0) t.venc += v; } });
+  arr.forEach(it => { const c = classifyItem(it); if (c.cancelada) return; const v = c.pago ? capValorEfetivo(it) : Number(it.Valor || 0); t.total += v; if (c.pago) t.pago += v; else { t.pagar += v; if (c.dias !== null && c.dias < 0) t.venc += v; } });   /* v0.13.2: cancelada fora; paga pelo valor que saiu do caixa */
   return t;
 }
 function capGrupos(lst) {
@@ -9971,7 +10031,7 @@ function capSelPodar() { const ids = new Set(CAP_STATE.items.map(it => String(it
 function capSelItens() { return CAP_STATE.items.filter(it => CAP_STATE.sel.has(String(it._id))); }
 function capSelBarHtml() {
   const its = capSelItens(); if (!its.length) return "";
-  const t = capTotais(its), abertas = its.filter(it => it.Status !== "Pago");
+  const t = capTotais(its), abertas = its.filter(it => it.Status !== "Pago" && !capCancelada(it));
   return `<div class="cap-selbar"><span><b>${its.length}</b> selecionada(s) · ${esc(fmtBRL(t.total))}${abertas.length ? ` · a pagar <b>${esc(fmtBRL(t.pagar))}</b>` : ""}</span><span class="grow"></span>
     ${podeEditar("cap") && capPodePagar() ? `<button class="btn sm primary" onclick="capPagarLote()" ${abertas.length ? "" : "disabled"}>Pagar ${abertas.length} selecionada(s)</button>` : ""}
     <button class="btn sm" onclick="capExportar(capSelItens(), 'selecionadas')">Exportar selecionadas</button>
@@ -9989,7 +10049,7 @@ window.capSelLimpar = () => { CAP_STATE.sel.clear(); document.querySelectorAll("
 window.capPagarLote = () => {
   if (!podeEditar("cap")) { toast("Seu acesso à CAP é só de leitura."); return; }
   if (!capPodePagar()) { toast("Pagar em lote faz parte da permissão \"Pagar faturas\" (Usuários e permissões)."); return; }
-  const its = capSelItens().filter(it => it.Status !== "Pago").sort((a, b) => String(a.Vencimento || "").localeCompare(String(b.Vencimento || "")));
+  const its = capSelItens().filter(it => it.Status !== "Pago" && !capCancelada(it)).sort((a, b) => String(a.Vencimento || "").localeCompare(String(b.Vencimento || "")));   /* v0.13.2: cancelada não entra no lote */
   if (!its.length) { toast("Nenhuma fatura em aberto selecionada."); return; }
   const tot = its.reduce((s, it) => s + Number(it.Valor || 0), 0), jaPagas = capSelItens().length - its.length;
   $("modal").className = "modal wide";
@@ -10016,7 +10076,9 @@ window.capPagarLote = () => {
     $("plCancel").disabled = true; const x = document.querySelector("#modal .modal-head .x"); if (x) x.disabled = true;
     $("modalBack").onclick = null; document.removeEventListener("keydown", escClose);
     for (const it of its) {
-      const fields = { Status: "Pago", DataPagamento: data };
+      const fields = { Status: "Pago", DataPagamento: data, Estimado: false, ValorPago: Number(it.Valor || 0) };   /* v0.13.2: lote paga pelo valor da fatura */
+      if (hasCol("Historico")) fields.Historico = capHistAdd(it, "paga", `${fmtBRL(it.Valor)} em ${fmtDate(data)} (em lote)`);
+      for (const k of Object.keys(fields)) if (!hasCol(k)) delete fields[k];
       if (banco) fields.Banco = banco; if (forma) fields.FormaPagamento = forma;
       for (const k of Object.keys(fields)) if (!hasCol(k)) delete fields[k];
       try { await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, fields); Object.assign(it, fields); ok++; }
@@ -10098,8 +10160,10 @@ function capRefNorm(v) { const t = String(v || "").trim(); if (!t) return ""; co
 function capDuplicadas(f, ignorarId) {
   const forn = normName(f.Fornecedor), nf = String(f.NumeroNF || "").trim().toLowerCase(), parc = capParcNorm(f.Parcela), venc = f.Vencimento ? ymd(f.Vencimento) : "", val = Number(f.Valor), ref = capRefNorm(f.RefDocumento);
   if (!forn && !ref) return [];
+  const pd = f.ParcialDe || (ignorarId != null && (CAP_STATE.items.find(x => String(x._id) === String(ignorarId)) || {}).ParcialDe) || "";
   return CAP_STATE.items.filter(it => {
     if (ignorarId != null && String(it._id) === String(ignorarId)) return false;
+    if (capCancelada(it) || (ignorarId != null && String(it.ParcialDe || "") === String(ignorarId)) || (pd && String(pd) === String(it._id))) return false;   /* v0.13.2: cancelada e pai/filha do parcial não são duplicata */
     if (ref && ref.length >= 8 && capRefNorm(it.RefDocumento) === ref && ref !== capRefNorm(typeof RC_CAP_REF !== "undefined" ? RC_CAP_REF : "") && (/^\d{20,}$/.test(ref) || (forn && capFornNorm(it) === forn))) return true;   /* linha digitável cruza fornecedores; referência em texto só no mesmo fornecedor */
     if (!forn || capFornNorm(it) !== forn) return false;
     /* mesma NF só é duplicata com a mesma parcela (NF de 3 parcelas gera 3 contas legítimas) */
@@ -16023,9 +16087,9 @@ function capFaturaLinha(it, edita, o) {
     <td class="nw venc-cell" data-l="Vence">${fmtDate(it.Vencimento)}</td>
     <td class="nw dp-cell m-oculta" data-l="Dias">${diasPendCel(it)}</td>
     <td class="right valor-cell">${esc(fmtBRL(it.Valor))}</td>
-    <td class="status-cell">${c.isenta ? `<span class="pill isenta" title="Isenta no mês — não vence, verde na matriz"><i></i>N/A</span>` : statusPill(marc)}</td>
+    <td class="status-cell">${c.cancelada ? statusPill("Cancelada") : c.isenta ? `<span class="pill isenta" title="Isenta no mês — não vence, verde na matriz"><i></i>N/A</span>` : statusPill(marc)}${c.estimado ? ` <span class="sup" title="Valor estimado — ajuste quando a fatura chegar">~ estimado</span>` : ""}${c.pago && it.ValorPago != null && it.ValorPago !== "" && Math.abs(Number(it.ValorPago) - Number(it.Valor || 0)) >= 0.005 ? ` <span class="sup" title="Valor que saiu do caixa (juros/desconto)">pago ${esc(fmtBRL(it.ValorPago))}</span>` : ""}</td>
     <td class="nw m-oculta">${esc(it.Banco || "—")}${it.FormaPagamento ? `<div class="sup">${esc(it.FormaPagamento)}</div>` : ""}</td>
-    <td class="nw act">${c.pago ? `<span class="sup">pago ${fmtDate(it.DataPagamento)}</span>` : (edita && capPodePagar() ? `<button class="btn mini" onclick="event.stopPropagation(); ${pre}capPagar(${jsArg(it._id)})">Pagar</button> <button class="btn mini ghost" title="${c.isenta ? "Tirar N/A — a parcela volta a ser normal" : "Marcar como N/A (isenta no mês)"}" onclick="event.stopPropagation(); ${pre}capToggleIsenta(${jsArg(it._id)})">${c.isenta ? "× N/A" : "N/A"}</button>` : "")}</td>
+    <td class="nw act">${c.cancelada ? `<span class="sup">cancelada</span>` : c.pago ? `<span class="sup">pago ${fmtDate(it.DataPagamento)}</span>` : (edita && capPodePagar() ? `<button class="btn mini" onclick="event.stopPropagation(); ${pre}capPagar(${jsArg(it._id)})">Pagar</button> <button class="btn mini ghost" title="${c.isenta ? "Tirar N/A — a parcela volta a ser normal" : "Marcar como N/A (isenta no mês)"}" onclick="event.stopPropagation(); ${pre}capToggleIsenta(${jsArg(it._id)})">${c.isenta ? "× N/A" : "N/A"}</button>` : "")}</td>
   </tr>`;
 }
 /* ---- LISTA ---- */
@@ -19289,8 +19353,8 @@ function ctbNormComp(v) {
   return "";
 }
 function capCtbComp(it) { return ctbNormComp(it.Competencia) || (it.Vencimento ? ymd(it.Vencimento).slice(0, 7) : ""); }
-function capCtbTipo(it) { return capEhTransf(it) ? "transf" : isIsenta(it) ? "isenta" : "desp"; }
-const CTB_TIPO_ROT = { desp: "Despesa", transf: "Transferência entre contas", isenta: "Isenta (N/A)" };
+function capCtbTipo(it) { return capEhTransf(it) ? "transf" : capCancelada(it) ? "cancelada" : isIsenta(it) ? "isenta" : "desp"; }   /* v0.13.2: cancelada tem rótulo próprio e não entra em totais */
+const CTB_TIPO_ROT = { desp: "Despesa", transf: "Transferência entre contas", isenta: "Isenta (N/A)", cancelada: "Cancelada" };
 function capCtbContas(U) {
   U = U || capCtbUI();
   const arr = U.base === "pag"
@@ -19369,7 +19433,7 @@ function capCtbPastaNome(it, U, alt) {
 /* uma pasta por fornecedor/obrigação no mês; várias contas na mesma pasta ganham "venc DD-MM" no nome dos arquivos */
 function capCtbPacote(contas, U) {
   const mapa = new Map(), daConta = new Map(), nomeDe = new Map(), chave = n => n.toLocaleLowerCase("pt-BR");   /* o Windows não diferencia maiúsculas */
-  const comPasta = contas.filter(it => !(capCtbTipo(it) === "isenta" && !anexosDe(it).length));   /* isenta sem documento: aparece só no relatório */
+  const comPasta = contas.filter(it => !((capCtbTipo(it) === "isenta" || capCtbTipo(it) === "cancelada") && !anexosDe(it).length));   /* isenta sem documento: aparece só no relatório */
   comPasta.forEach(it => nomeDe.set(String(it._id), capCtbPastaNome(it, U)));
   /* credores diferentes não dividem pasta: se o corte juntou dois nomes, eles ganham o fim do nome ("Prefeitura … Macaé") e, se ainda empatar, um número */
   const credor = it => normName(ctbNomeArq(it.Fornecedor));
@@ -19413,12 +19477,12 @@ function capCtbCarregarCx() {
 }
 function capCtbDados(U) {
   U = Object.assign({}, U || capCtbUI());
-  const contas = capCtbContas(U), g = { desp: [], transf: [], isenta: [] };
+  const contas = capCtbContas(U), g = { desp: [], transf: [], isenta: [], cancelada: [] };   /* v0.13.2: canceladas aparecem à parte, fora dos totais */
   contas.forEach(it => g[capCtbTipo(it)].push(it));
   return { U, contas, g, E: capCtbEntradas(U), pac: capCtbPacote(contas, U), semData: capCtbPagasSemData(U), avisos: capCtbAvisos(U) };
 }
-const ctbSoma = a => a.reduce((s, it) => s + Number(it.Valor || 0), 0);
-function ctbAgrupa(arr, f) { const m = new Map(); arr.forEach(it => { const k = f(it); m.set(k, (m.get(k) || 0) + Number(it.Valor || 0)); }); return [...m.entries()].sort((a, b) => b[1] - a[1]); }
+const ctbSoma = a => a.reduce((s, it) => s + capValorEfetivo(it), 0);   /* v0.13.2: paga entra pelo valor que saiu do caixa */
+function ctbAgrupa(arr, f) { const m = new Map(); arr.forEach(it => { const k = f(it); m.set(k, (m.get(k) || 0) + capValorEfetivo(it)); }); return [...m.entries()].sort((a, b) => b[1] - a[1]); }
 /* conferência: cada conta do mês, a pasta onde ficou e o que entrou / faltou (R = resultado dos downloads; null fora do .zip) */
 function capCtbConferencia(D, R) {
   return D.contas.map(it => {
@@ -19601,7 +19665,7 @@ async function capCtbPlanilha(D, C, R) {
   head(s.getRow(1));
   g.desp.forEach(it => { const o = capCtbObr(it);
     const row = s.addRow({ pasta: pastaDe(it), venc: dt(it.Vencimento), pag: dt(it.DataPagamento), comp: compLabel(capCtbComp(it)), forn: it.Fornecedor || "", cnpj: it.CNPJ || "", desc: it.Title || "", obr: o ? (o.Codigo ? o.Codigo + " · " : "") + o.Title : "",
-      cat: it.Categoria || "", cc: ccDe(it) || "", nf: it.NumeroNF || "", parc: it.Parcela || "", valor: Number(it.Valor || 0), sit: capCtbSit(it), banco: it.Banco || "", forma: it.FormaPagamento || "",
+      cat: it.Categoria || "", cc: ccDe(it) || "", nf: it.NumeroNF || "", parc: it.Parcela || "", valor: capValorEfetivo(it), sit: capCtbSit(it), banco: it.Banco || "", forma: it.FormaPagamento || "",
       b: ctbDocSt(it, "Boleto"), n: ctbDocSt(it, "NF"), c: ctbDocSt(it, "Comprovante") });
     row.getCell("venc").numFmt = "dd/mm/yyyy"; row.getCell("pag").numFmt = "dd/mm/yyyy"; row.getCell("valor").numFmt = fmtMoney;
     ["b", "n", "c"].forEach(k => { const c = row.getCell(k); if (c.value === "falta") c.font = { bold: true, color: { argb: VERM } }; else if (c.value === "ok") c.font = { color: { argb: VERDE } }; }); });
@@ -19643,7 +19707,7 @@ async function capCtbPlanilha(D, C, R) {
   [52, 12, 28, 32, 20, 14, 10, 11, 14, 22, 46].forEach((w, i) => { cf.getColumn(i + 1).width = w; });
   C.forEach(c => { const it = c.it;
     const obs = [c.falhas.length ? `não baixou: ${c.falhas.map(f => f.arq + " (" + f.erro + ")").join("; ")}` : "", !c.pasta ? "isenta e sem documento: sem pasta" : "", c.rot ? `arquivos com "${c.rot}" no nome` : ""].filter(Boolean).join(" · ");
-    const row = cf.addRow([c.pasta || "—", dt(it.Vencimento), it.Fornecedor || "", it.Title || "", CTB_TIPO_ROT[c.tipo], Number(it.Valor || 0), capCtbSit(it), c.docs, R ? c.ok : "", c.falta.join(", ") || "—", obs]);
+    const row = cf.addRow([c.pasta || "—", dt(it.Vencimento), it.Fornecedor || "", it.Title || "", CTB_TIPO_ROT[c.tipo], capValorEfetivo(it), capCtbSit(it), c.docs, R ? c.ok : "", c.falta.join(", ") || "—", obs]);
     row.getCell(2).numFmt = "dd/mm/yyyy"; row.getCell(6).numFmt = fmtMoney;
     if (c.falta.length) row.getCell(10).font = { bold: true, color: { argb: VERM } };
     if (c.falhas.length) row.getCell(11).font = { color: { argb: VERM } }; });
@@ -20072,7 +20136,7 @@ function cxPainelHtml() {
   /* CAP do mês (quando a CAP está carregada nesta sessão): o que vence no mês × o que entrou no caixa */
   const capOk = typeof CAP_STATE !== "undefined" && CAP_STATE.items && CAP_STATE.items.length;
   let capMes = null;
-  if (capOk) { const its = CAP_STATE.items.filter(it => it.Vencimento && ymd(it.Vencimento).slice(0, 7) === c && !/^transfer/i.test(String(it.TipoLancamento || ""))); const tot = its.reduce((s, it) => s + Number(it.Valor || 0), 0), pago = its.filter(it => it.Status === "Pago").reduce((s, it) => s + Number(it.Valor || 0), 0); capMes = { tot, pago, aberto: tot - pago, n: its.length }; }
+  if (capOk) { const its = CAP_STATE.items.filter(it => it.Vencimento && ymd(it.Vencimento).slice(0, 7) === c && !/^transfer/i.test(String(it.TipoLancamento || ""))); const tot = its.reduce((s, it) => s + Number(it.Valor || 0), 0), pago = its.filter(it => it.Status === "Pago").reduce((s, it) => s + capValorEfetivo(it), 0); capMes = { tot, pago, aberto: tot - its.filter(it => it.Status === "Pago").reduce((s, it) => s + Number(it.Valor || 0), 0), n: its.length }; }   /* v0.13.2: pago = o que saiu do caixa */
   const kp = (lbl, val, sub, cls, varHtml) => `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(lbl)}</div><div class="val money">${esc(val)}</div><div class="sub">${varHtml ? varHtml + " " : ""}${esc(sub || "")}</div></div>`;
   const pctTxt = v => v == null ? "—" : (100 * v).toFixed(1).replace(".", ",") + "%";
   let corpo = "";
@@ -22981,7 +23045,7 @@ function capRecCampos(f, comp) {
   const catOk = !f.CategoriaPadrao || CATEGORIAS.includes(f.CategoriaPadrao);   /* categoria digitada ("Outros") entra como Outros na conta */
   const fields = { Title: `${f.Title} — ${String(m).padStart(2, "0")}/${y}`, Fornecedor: f.Title, CNPJ: f.CNPJ || null, Categoria: catOk ? (f.CategoriaPadrao || null) : "Outros", Subcategoria: f.SubcategoriaPadrao || null,
     CentroCusto: f.CentroCustoPadrao || (typeof CC_POR_CATEGORIA !== "undefined" && CC_POR_CATEGORIA[f.CategoriaPadrao]) || null, Banco: f.BancoPadrao || null, FormaPagamento: f.FormaPadrao || null,
-    Estabelecimento: f.Estabelecimento || null, Competencia: comp, Vencimento: `${comp}-${String(dia).padStart(2, "0")}`, Valor: valor, Status: fixo && valor > 0 ? "Pendente" : "Aguardando NF",
+    Estabelecimento: f.Estabelecimento || null, Competencia: comp, Vencimento: `${comp}-${String(dia).padStart(2, "0")}`, Valor: valor, Status: fixo && valor > 0 ? "Pendente" : "Aguardando NF", Estimado: !fixo,   /* v0.13.2 (item 7): Variável nasce como valor estimado */
     TipoLancamento: "Despesa", TipoFavorecido: "Fornecedor",
     Observacoes: `${CAP_REC_MARCA} em ${fmtDate(todayISO())} (fornecedor ${fixo ? "Fixo" : "Variável"} ativo).${fixo ? (valor > 0 ? "" : " Sem valor padrão no cadastro: informe o valor.") : " Valor estimado (cadastro ou última conta): confirme com a NF."}${catOk ? "" : ` Categoria do cadastro: ${f.CategoriaPadrao}.`}` };
   if (hasCol("FornecedorRef")) fields.FornecedorRefLookupId = Number(f._id);
@@ -23286,7 +23350,7 @@ function cxResumoHtml() {
   const capOk = cxResumoCapAcesso() && CX.resCap === "ok" && typeof CAP_STATE !== "undefined";
   const naoTransf = it => !/^transfer/i.test(String(it.TipoLancamento || "")) && !isIsenta(it);
   const capPagas = capOk ? CAP_STATE.items.filter(it => naoTransf(it) && it.Status === "Pago" && String(it.DataPagamento ? ymd(it.DataPagamento) : "").slice(0, 7) === c) : [];
-  const totCapPago = cxN(capPagas.reduce((s, it) => s + Number(it.Valor || 0), 0));
+  const totCapPago = cxN(capPagas.reduce((s, it) => s + capValorEfetivo(it), 0));   /* v0.13.2 */
   const resultado = cxN(M.ent - M.des - totCapPago);
   /* previsto: em aberto (não pagas) */
   const hoje = cxHoje(), abertas = capOk ? CAP_STATE.items.filter(it => naoTransf(it) && it.Status !== "Pago" && it.Vencimento) : [];
@@ -27517,7 +27581,7 @@ function cpxBase() {
     const n = cpxNat(it, ctx); N.set(String(it._id), n);
     if (isIsenta(it)) return;
     const m = cpxMesConta(it, regime); if (!/^\d{4}-\d{2}$/.test(m)) return;
-    const v = Number(it.Valor || 0); if (!v) return;
+    const v = capValorEfetivo(it); if (!v) return;   /* v0.13.2: paga usa o valor pago (juros/desconto) */
     const a = ac(m);
     if (n.auto && n.revisar) a.nRev++;
     if (ctx.linkados.has(String(it._id))) return;   /* v0.12.73 (revisão): conta que compõe um bem do Imobilizado entra pelo bem, não aqui */
@@ -29398,8 +29462,9 @@ async function rcSyncGrupo(o) {
         Categoria: forn.CategoriaPadrao || "Terceirização", Subcategoria: forn.SubcategoriaPadrao || "Manutenção externa", CentroCusto: forn.CentroCustoPadrao || "Operacional",
         Banco: forn.BancoPadrao || null, FormaPagamento: forn.FormaPadrao || null, TipoLancamento: "Despesa", TipoFavorecido: "Fornecedor", Status: vencto < todayISO() ? "Vencido" : "Pendente" });
       if (hasCol("FornecedorRef")) f.FornecedorRefLookupId = Number(forn._id);
-    } else if (!pago) f.Status = vencto < todayISO() ? "Vencido" : (conta.Status === "Vencido" || conta.Status === "Aguardando NF" ? "Pendente" : conta.Status);
+    } else if (!pago && !(conta && capCancelada(conta))) f.Status = vencto < todayISO() ? "Vencido" : (conta.Status === "Vencido" || conta.Status === "Aguardando NF" ? "Pendente" : conta.Status);   /* v0.13.2: conta cancelada não é reativada pelo reparo */
     if (pago) { delete f.Valor; delete f.Vencimento; delete f.NumeroNF; delete f.Title; }   /* conta já paga: o financeiro manda nos valores */
+    if (conta && conta.Status === "Pago") delete f.Valor;   /* v0.13.2: o valor do reparo (NF) não é sobrescrito pela parte paga / valor pago da conta */
     for (const k of Object.keys(f)) if (!k.endsWith("LookupId") && !hasCol(k)) delete f[k];
     if (conta) await rcCapW(() => SP.update(CAP_STATE.site.id, CAP_STATE.list.id, conta._id, f));
     else {
@@ -31595,7 +31660,7 @@ function dreBase(regime, mapa) {
   (CAP_STATE.items || []).forEach(it => {
     if (isIsenta(it)) return;
     const m = cpxMesConta(it, regime); if (!/^\d{4}-\d{2}$/.test(m)) return;
-    const v = Number(it.Valor || 0); if (!v) return;
+    const v = capValorEfetivo(it); if (!v) return;   /* v0.13.2: paga usa o valor pago (juros/desconto) */
     const id = String(it._id); if (ctx.linkados.has(id)) return;   /* compõe um bem do Imobilizado: entra pela depreciação e pelo CAPEX do bem */
     const n = cpxNat(it, ctx), a = ac(m);
     if (n.nat === "CAPEX") { a.capexCap += v; return; }
@@ -33797,13 +33862,13 @@ function divModo(on) {
   const O = DIV.outro;
   divTroca(CAP_STATE, O.cap); divTroca(OBR_STATE, O.obr); divTroca(OBR_CART_STATE, O.cart);
   const cs = OBR_CARTEIRAS.splice(0, OBR_CARTEIRAS.length, ...O.carteiras); O.carteiras = cs; obrCartReindex();
-  DIV.on = on; DIV.gen++;
+  DIV.on = on; DIV.gen++; OBR_UI.voltarObr = null;
   try { if ($("modalBack") && $("modalBack").classList.contains("on")) closeModal(); } catch (e) {}   /* janela aberta pertence à tela anterior: fecha para não gravar na lista errada */
   CAP_STATE.editing = null; CAP_STATE.depois = null; CAP_STATE._depoisVoltarFn = null; CAP_STATE.docFila = null; CAP_STATE.preset = null;
   if (on) { CAP_STATE.view = CAP_STATE.view || "lista"; if (CAP_STATE.view === "fav" || CAP_STATE.view === "forn") CAP_STATE.view = "lista"; }
 }
 /* entrar/sair pela rota: a Gestão de Dívidas liga o modo antes de desenhar; qualquer outra rota desliga */
-{ const r0 = route; route = function () { try { const h = (location.hash || "#/inicio").split("?")[0]; if (!h.startsWith("#/diretoria/dividas")) divModo(false); } catch (e) {} return r0.apply(this, arguments); }; window.route = route; }
+{ const r0 = route; route = function () { try { OBR_UI.voltarObr = null; const h = (location.hash || "#/inicio").split("?")[0]; if (!h.startsWith("#/diretoria/dividas")) divModo(false); } catch (e) {} return r0.apply(this, arguments); }; window.route = route; }
 { const p0 = pageCAP; pageCAP = function () { let h = p0.apply(this, arguments); if (DIV.on) h = h.replace("<h1>Contas a Pagar</h1>", "<h1>Gestão de Dívidas</h1>").replace(/<p class="lead">[^<]*<\/p>/, `<p class="lead">Parcelamentos e acordos geridos pela Diretoria. Só administradores veem esta página: faturas, obrigações e carteiras ficam nas listas restritas "Dívidas — Parcelas", "Dívidas — Obrigações" e "Dívidas — Carteiras", separadas da Contas a Pagar.</p>`); return h; }; window.pageCAP = pageCAP; }
 /* guarda: no modo Dívidas (ou em qualquer gravação nas listas restritas) só administrador grava; janela aberta antes da troca de tela não grava */
 { const m0 = modal; modal = function () { const r = m0.apply(this, arguments); try { const m = $("modal"); if (m) m.dataset.divGen = String(DIV.gen); } catch (e) {} return r; }; window.modal = modal; }
@@ -33823,13 +33888,26 @@ function divModo(on) {
 /* formulário de obrigação: nas Dívidas, "Onde é gerida" é sempre Dívidas (campo escondido) */
 { const f0 = window.obrForm; window.obrForm = function () { const r = f0.apply(this, arguments); if (DIV.on) { const s = $("oDest"); if (s) { s.value = "Dívidas"; const f = s.closest(".field"); if (f) f.style.display = "none"; } } return r; }; }
 /* v0.13.1 (pedido 14/10 a): editar a fatura de dentro da obrigação e voltar ao detalhe ao salvar */
-window.obrContaEditar = (obrId, contaId) => { const fn = () => obrAbrir(obrId, OBR_UI.lastBack, true); obrConta(contaId); if ($("modal") && $("modal").querySelector("#fTitle")) { CAP_STATE.depois = fn; CAP_STATE._depoisObrFn = fn; } };
+window.obrContaEditar = (obrId, contaId) => { const fn = () => obrAbrir(obrId, OBR_UI.lastBack, true); obrConta(contaId); if ($("modal") && $("modal").querySelector("#fTitle")) { CAP_STATE.depois = fn; CAP_STATE._depoisObrFn = fn; obrVoltarMarcar(obrId); } };
+/* v0.13.2 (pedido 14/10 d): a janela da fatura aberta de dentro da obrigação (✎ ou Lançar) volta à obrigação ao salvar E ao fechar/cancelar; o botão diz "← Voltar à obrigação" */
+function obrVoltarMarcar(obrId) {
+  OBR_UI.voltarObr = { id: obrId, back: OBR_UI.lastBack == null ? null : OBR_UI.lastBack };
+  const m = $("modal"); if (!m) return;
+  m.querySelectorAll(".modal-foot .btn").forEach(b => { if (/^Cancelar$|^Fechar$/.test(b.textContent.trim())) { b.textContent = "← Voltar à obrigação"; b.title = "Fecha esta fatura e volta ao detalhe da obrigação"; } });
+}
+{ const c0 = closeModal; closeModal = function () {
+  const v = OBR_UI.voltarObr, m = $("modal");
+  if (v && m && m.querySelector("#fTitle")) { OBR_UI.voltarObr = null; const r = c0.apply(this, arguments); if (!CAP_STATE._salvando) setTimeout(() => { try { if (!$("modalBack").classList.contains("on")) obrAbrir(v.id, v.back, true); } catch (e) {} }, 30); return r; }
+  if (v && !(m && m.querySelector("#fTitle"))) OBR_UI.voltarObr = null;
+  return c0.apply(this, arguments); }; window.closeModal = closeModal; }
+{ const l0 = window.obrLancar; window.obrLancar = function (obrId) { const r = l0.apply(this, arguments); if ($("modal") && $("modal").querySelector("#fTitle")) { obrVoltarMarcar(obrId); CAP_STATE._depoisObrFn = CAP_STATE.depois; } return r; }; }
+{ const d0 = window.capDelete; window.capDelete = function () { OBR_UI.voltarObr = null; return d0.apply(this, arguments); }; }
 /* resumo agregado para quem não vê as listas (Fluxo de Caixa) e para o CAPEX */
 function divResumoCalc() {
   const meses = {}, m = k => (meses[k] = meses[k] || { pago: 0, aberto: 0, n: 0 });
   CAP_STATE.items.forEach(it => {
     if (/^transfer/i.test(String(it.TipoLancamento || "")) || isIsenta(it)) return;
-    const v = Number(it.Valor || 0);
+    const v = it.Status === "Pago" ? capValorEfetivo(it) : Number(it.Valor || 0);
     if (it.Status === "Pago") { const k = it.DataPagamento ? ymd(it.DataPagamento).slice(0, 7) : (it.Vencimento ? ymd(it.Vencimento).slice(0, 7) : ""); if (!k) return; m(k).pago += v; m(k).n++; }
     else if (it.Vencimento) { const k = ymd(it.Vencimento).slice(0, 7); m(k).aberto += v; m(k).n++; }
   });
@@ -33933,6 +34011,94 @@ MOD_RESET.obr = (function (antes) { return () => { divModo(false); if (antes) an
 /* B8: o "voltar à obrigação" do ✎ só vale para a janela que o criou — cancelar limpa */
 { const c0 = closeModal; closeModal = function () { if (CAP_STATE._depoisObrFn && CAP_STATE.depois === CAP_STATE._depoisObrFn && !CAP_STATE._salvando) { CAP_STATE.depois = null; CAP_STATE._depoisObrFn = null; } return c0.apply(this, arguments); }; window.closeModal = closeModal; }
 { const s0 = capSave; capSave = async function () { CAP_STATE._salvando = true; try { return await s0.apply(this, arguments); } finally { CAP_STATE._salvando = false; if (!CAP_STATE.depois) CAP_STATE._depoisObrFn = null; } }; window.capSave = capSave; }
+
+/* =====================================================================
+   v0.13.2 · MODELO DA FATURA (itens 1 a 7 da lista de 13/10)
+   1 histórico (Historico JSON) · 2 estorno da baixa · 3 valor pago, juros e desconto (Valor nunca muda) · 4 pagamento parcial
+   (saldo vira fatura filha, ParcialDe) · 5 status Cancelada com motivo (fora de todos os totais, rastro mantido) ·
+   6 fatura paga travada (valor, vencimento, competência, fornecedor) para quem não é administrador · 7 valor estimado.
+   ===================================================================== */
+const CAP_HIST_ROT = { criada: "Criada", editada: "Editada", paga: "Paga", "paga (pelo formulário)": "Paga (pelo formulário)", "pagamento parcial": "Pagamento parcial", estorno: "Pagamento estornado", cancelada: "Cancelada", reativada: "Reativada", "n/a": "N/A", importada: "Importada", saldo: "Saldo de pagamento parcial" };
+function capHistHtml(it) {
+  const h = capHist(it);
+  if (!hasCol("Historico")) return "";
+  const linhas = h.slice().reverse().slice(0, 30).map(e => `<li><span class="sup nw">${esc(e.t ? new Date(e.t).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—")}</span> <b>${esc(CAP_HIST_ROT[e.a] || e.a || "")}</b>${e.por ? ` <span class="sup">por ${esc(e.por)}</span>` : ""}${e.d ? `<div class="sup">${esc(e.d)}</div>` : ""}</li>`).join("");
+  return `<div class="field full form-sec">Histórico <span class="sup">quem, quando, o quê — gravado pelo ERP</span></div><div class="field full"><ul class="cap-hist">${linhas || `<li class="sup">Sem registros ainda (faturas antigas só têm o "Modificado por" do SharePoint).</li>`}</ul></div>`;
+}
+/* campos da fatura filha que recebe o saldo de um pagamento parcial */
+function capSaldoCampos(it, saldo) {
+  const f = {};
+  ["Fornecedor", "FornecedorRefLookupId", "CNPJ", "Categoria", "Subcategoria", "CentroCusto", "Vencimento", "Competencia", "Parcela", "Banco", "FormaPagamento", "NumeroNF", "RefDocumento", "TipoLancamento", "Estabelecimento", "NumParcelamento", "TipoFavorecido", "Natureza", "ObrigacaoLookupId"].forEach(k => { if (it[k] != null && it[k] !== "" && (k.endsWith("LookupId") || hasCol(k))) f[k] = it[k]; });
+  if (typeof RC_CAP_REF !== "undefined" && f.RefDocumento === RC_CAP_REF) delete f.RefDocumento;   /* M3: a filha não é um reparo do Rio Card */
+  f.Title = `${it.Title || "Fatura"} (saldo)`; f.Valor = saldo; f.Status = it.Vencimento && ymd(it.Vencimento) < todayISO() ? "Vencido" : "Pendente"; f.Isenta = false;
+  if (hasCol("ParcialDe")) f.ParcialDe = String(it._id);
+  f.Observacoes = `Saldo do pagamento parcial da fatura "${it.Title || ""}" (#${it._id}).${it.Observacoes ? "\n" + it.Observacoes : ""}`;
+  if (hasCol("Historico")) f.Historico = capHistAdd(null, "saldo", `saldo de ${fmtBRL(saldo)} da fatura #${it._id}`);
+  return f;
+}
+async function capMudarStatus(id, fields, msgOk) {
+  const it = CAP_STATE.items.find(x => String(x._id) === String(id)); if (!it) return false;
+  for (const k of Object.keys(fields)) if (!hasCol(k)) delete fields[k];
+  try { await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, fields); Object.assign(it, fields); CAP_STATE.rev = (CAP_STATE.rev || 0) + 1; closeModal(); toast(msgOk); paintCAP(); return true; }
+  catch (e) { toast("Erro: " + e.message, 7000); return false; }
+}
+/* 2 · estorno da baixa: volta a Pendente/Vencido, limpa pagamento; comprovantes anexados ficam (o histórico registra) */
+window.capEstornar = async (id) => {
+  const it = CAP_STATE.items.find(x => String(x._id) === String(id)); if (!it || it.Status !== "Pago") return;
+  if (!capPodePagar()) { toast("Estornar exige a permissão \"Pagar faturas\"."); return; }
+  const filha = CAP_STATE.items.find(x => String(x.ParcialDe || "") === String(it._id) && !capCancelada(x));
+  if (filha) { toast(`Esta fatura teve pagamento parcial: o saldo está na fatura "${filha.Title}". Cancele ou exclua a fatura do saldo antes de estornar.`, 9000); return; }
+  const filhaCanc = CAP_STATE.items.find(x => String(x.ParcialDe || "") === String(it._id) && capCancelada(x));
+  const devolve = filhaCanc ? Math.round((Number(it.Valor || 0) + Number(filhaCanc.Valor || 0)) * 100) / 100 : null;   /* saldo cancelado: o pai volta ao valor original */
+  const motivo = prompt(`Estornar o pagamento de "${it.Title || ""}" (${fmtBRL(capValorEfetivo(it))} em ${fmtDate(it.DataPagamento)})?\nA fatura volta a ficar em aberto. Informe o motivo:`);
+  if (motivo == null) return; if (!String(motivo).trim()) { toast("Informe o motivo do estorno."); return; }
+  const fields = { Status: it.Vencimento && ymd(it.Vencimento) < todayISO() ? "Vencido" : "Pendente", DataPagamento: null, ValorPago: null, Juros: null, Desconto: null, MotivoStatus: String(motivo).trim().slice(0, 255) };
+  if (devolve != null) fields.Valor = devolve;
+  if (hasCol("Historico")) fields.Historico = capHistAdd(it, "estorno", `${fmtBRL(capValorEfetivo(it))} pago em ${fmtDate(it.DataPagamento)} · motivo: ${String(motivo).trim()}${devolve != null ? ` · valor volta a ${fmtBRL(devolve)} (saldo cancelado)` : ""}`);
+  await capMudarStatus(id, fields, "Pagamento estornado — a fatura voltou a ficar em aberto");
+};
+/* 5 · cancelar com motivo (não exclui: fica o rastro, fora de todos os totais) */
+window.capCancelar = async (id) => {
+  const it = CAP_STATE.items.find(x => String(x._id) === String(id)); if (!it || it.Status === "Pago" || it.Status === "Cancelada") return;
+  if (!podeEditar("cap")) return;
+  const motivo = prompt(`Cancelar a fatura "${it.Title || ""}" (${fmtBRL(it.Valor)})?\nEla sai de todos os totais e relatórios, mas continua na lista (riscada). Informe o motivo:`);
+  if (motivo == null) return; if (!String(motivo).trim()) { toast("Informe o motivo do cancelamento."); return; }
+  const fields = { Status: "Cancelada", MotivoStatus: String(motivo).trim().slice(0, 255) };
+  if (hasCol("Historico")) fields.Historico = capHistAdd(it, "cancelada", `de ${it.Status} · motivo: ${String(motivo).trim()}`);
+  await capMudarStatus(id, fields, "Fatura cancelada");
+};
+window.capReativar = async (id) => {
+  const it = CAP_STATE.items.find(x => String(x._id) === String(id)); if (!it || it.Status !== "Cancelada") return;
+  if (!podeEditar("cap")) return;
+  if (!confirm(`Reativar a fatura "${it.Title || ""}"? Ela volta a ficar em aberto.`)) return;
+  const fields = { Status: it.Vencimento && ymd(it.Vencimento) < todayISO() ? "Vencido" : "Pendente", MotivoStatus: null };
+  if (hasCol("Historico")) fields.Historico = capHistAdd(it, "reativada", it.MotivoStatus ? `cancelada antes por: ${it.MotivoStatus}` : "");
+  await capMudarStatus(id, fields, "Fatura reativada");
+};
+/* 3 · janela de pagamento: valor pago ⇄ juros/desconto se completam; parcial mostra o saldo */
+{ const base = window.capPagar;
+  window.capPagar = function (id) {
+    const r = base.apply(this, arguments);
+    const it = CAP_STATE.items.find(x => String(x._id) === String(id)), v = $("pgVal"), j = $("pgJuros"), d = $("pgDesc"), p = $("pgParcial"), h = $("pgParcialHint");
+    if (!it || !v || !j || !d) return r;
+    const orig = Number(it.Valor || 0), n = el => Number(el.value || 0), r2 = x => Math.round(x * 100) / 100;
+    const deVal = () => { if (p && p.checked) { if (h) h.textContent = n(v) < orig ? `Saldo que fica em aberto: ${fmtBRL(r2(orig - n(v)))}` : "O valor pago precisa ser menor que o da fatura"; return; } const dif = r2(n(v) - orig); j.value = dif > 0 ? dif : ""; d.value = dif < 0 ? -dif : ""; };
+    const deJD = () => { v.value = r2(orig + n(j) - n(d)); if (p && p.checked && h) h.textContent = ""; };
+    v.addEventListener("input", deVal); j.addEventListener("input", deJD); d.addEventListener("input", deJD);
+    if (p) p.addEventListener("change", () => { if (p.checked) { j.value = ""; d.value = ""; j.disabled = d.disabled = true; deVal(); } else { j.disabled = d.disabled = false; if (h) h.textContent = ""; deVal(); } });
+    return r;
+  };
+}
+/* 6 · fatura paga: campos travados na tela para quem não é administrador (a gravação também recusa) */
+{ const e0 = window.capEdit;
+  window.capEdit = function (id) {
+    const r = e0.apply(this, arguments);
+    try { const it = CAP_STATE.items.find(x => String(x._id) === String(id)); if (it && it.Status === "Pago" && !session.n1) ["fVal", "fVenc", "fComp", "fForn"].forEach(k => { const el = $(k); if (el) { el.disabled = true; el.title = "Fatura paga: estorne o pagamento para alterar"; } });
+      if (it && it.Status === "Cancelada") { document.querySelectorAll("#modal input, #modal select, #modal textarea").forEach(el => { el.disabled = true; }); const sv = $("fSave"); if (sv) sv.style.display = "none"; } } catch (e) {}
+    return r;
+  };
+}
+/* importação: linhas trazem o histórico "importada" */
 </script>
 </body>
 </html>

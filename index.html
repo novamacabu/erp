@@ -3738,7 +3738,7 @@ img.tf-av{object-fit:cover;background:#E6E8EE;padding:0}.tf-card-f .tf-av{width:
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.13.4.1<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.13.4.2<br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3776,7 +3776,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.13.4.1",
+  version: "v0.13.4.2",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -4045,6 +4045,9 @@ const LISTS = {
     columns: [
       { name: "CNPJ",               displayName: "CNPJ / CPF",           text: { allowMultipleLines: false, maxLength: 20 } },
       { name: "Papeis",             displayName: "Papéis",               choice: { choices: TERC_PAPEIS.map(p => p.n), displayAs: "checkBoxes", allowTextEntry: false }, update: true, naoObrig: true },   /* v0.13.4 · 2e: tipo/classificação do terceiro (vários papéis no mesmo cadastro) */
+      { name: "OutrosContatos",     displayName: "Outros contatos (JSON)", text: { allowMultipleLines: true, textType: "plain" } },   /* v0.13.4.2: vários contatos e telefones */
+      { name: "UF",                 displayName: "UF",                   text: { allowMultipleLines: false, maxLength: 2 } },   /* v0.13.4.2: localização (Estado → Cidade) */
+      { name: "Cidade",             displayName: "Cidade",               text: { allowMultipleLines: false, maxLength: 100 } },
       { name: "Contas",             displayName: "Contas (JSON)",        text: { allowMultipleLines: true, textType: "plain" } },   /* v0.13.4 · 2g: contas/obrigações do mesmo CNPJ (ex.: concessionária com várias unidades) */
       { name: "CodigoBanco",        displayName: "Código do banco (COMPE/ISPB)", text: { allowMultipleLines: false, maxLength: 20 } },   /* v0.13.4: obrigatório para o papel Banco */
       { name: "FuncionarioId",      displayName: "Funcionário (id no RH)", text: { allowMultipleLines: false, maxLength: 20 } },   /* v0.13.4 · 2b: papel Funcionário aponta para RH › Funcionários */
@@ -6877,7 +6880,8 @@ function tercCadastroCard(key) {
   const html = `<div class="modal-head"><h2>${esc(cad.Title || "—")}</h2>${cad.Ativo === false ? `<span class="pill st-vencido"><i></i>Inativo</span>` : `<span class="pill st-pago"><i></i>Ativo</span>`}<button class="x" onclick="closeModal()">×</button></div>
     <div class="modal-body">
       ${pap.length ? `<div class="terc-pills" style="margin:0 0 12px">${pap.map(tercPapelPill).join(" ")}</div>` : `<p class="obr-note" style="margin:0 0 12px">Sem papel definido.</p>`}
-      <div class="obr-mini terc-cad-mini">${lin("CNPJ / CPF", cad.CNPJ || "—")}${lin("Classificação", cad.Tipo || "a classificar")}${lin("Categoria", [cad.CategoriaPadrao, cad.SubcategoriaPadrao].filter(Boolean).join(" › "))}${lin("Centro de custo", cad.CentroCustoPadrao)}${lin("Pagamento padrão", [cad.BancoPadrao, cad.FormaPadrao].filter(Boolean).join(" · "))}${lin("Vencimento", cad.DiaVencimento ? "dia " + cad.DiaVencimento : "")}${lin("Contato", cad.Contato)}</div>
+      <div class="obr-mini terc-cad-mini">${lin("CNPJ / CPF", cad.CNPJ || "—")}${lin("Classificação", cad.Tipo || "a classificar")}${lin("Categoria", [cad.CategoriaPadrao, cad.SubcategoriaPadrao].filter(Boolean).join(" › "))}${lin("Centro de custo", cad.CentroCustoPadrao)}${lin("Pagamento padrão", [cad.BancoPadrao, cad.FormaPadrao].filter(Boolean).join(" · "))}${lin("Vencimento", cad.DiaVencimento ? "dia " + cad.DiaVencimento : "")}${lin("Localização", tercLocTxt(cad))}${lin("Contato", [cad.Contato, cad.Telefone, cad.Email].filter(Boolean).join(" · "))}</div>
+      ${tercContatosDe(cad).length ? `<div class="obr-sec">Outros contatos</div><div class="table-wrap"><table class="cap-table" style="min-width:0"><tbody>${tercContatosDe(cad).map(c => `<tr><td>${esc(c.n || "—")}</td><td class="nw">${c.tel ? `<a href="tel:${esc(String(c.tel).replace(/[^\d+]/g, ""))}">${esc(c.tel)}</a>` : "—"}</td><td>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : "—"}</td></tr>`).join("")}</tbody></table></div>` : ""}
       ${ct.length ? `<div class="obr-sec">Contas <span class="sup">unidades/contratos deste CNPJ — a fatura leva a conta no campo "Conta"</span></div><div class="terc-contas-lista">${ct.map(c => `<span class="pill st-aguardando" title="${esc(c.id ? "Identificador " + c.id : "")}"><i></i>${esc(tercContaRot(c))}${c.dia ? ` · dia ${esc(String(c.dia))}` : ""}</span>`).join(" ")}</div>` : ""}
       ${cad.Observacoes ? `<div class="obr-sec">Observações</div><p class="obr-note" style="margin-top:0;white-space:pre-wrap">${esc(cad.Observacoes)}</p>` : ""}
       <p class="obr-note">Faturas e obrigações deste cadastro ficam na Contas a Pagar${veCap ? "" : " (sem acesso para você)"}.</p>
@@ -14688,7 +14692,7 @@ function paintForn() {
   const _restF = _listaAll.length - FORN_STATE.pageN;
   const moreBtnF = _restF > 0 ? `<div class="cap-more"><button class="btn" onclick="fornMore()">Mostrar mais ${Math.min(45, _restF)} de ${_restF} restantes</button><button class="btn ghost" onclick="fornMoreAll()">Mostrar todos</button></div>` : "";
   const rowsCad = () => lista.map(x => `<tr onclick="fornAbrir('${fornKeyAttr("id:" + x._id)}')" title="Abrir o cadastro">
-      <td><div class="desc">${esc(x.Title || "—")}</div><div class="sup">${esc(x.CNPJ || "sem CNPJ/CPF")}</div></td>
+      <td><div class="desc">${esc(x.Title || "—")}</div><div class="sup">${esc(x.CNPJ || "sem CNPJ/CPF")}${tercLocTxt(x) ? " · " + esc(tercLocTxt(x)) : ""}</div></td>
       <td>${esc(x.CategoriaPadrao || "—")}${x.SubcategoriaPadrao ? `<div class="sup">${esc(x.SubcategoriaPadrao)}</div>` : ""}</td>
       <td class="forn-cls-cel" onclick="event.stopPropagation()">${fornClasseCel(x)}</td>
       <td>${esc(x.CentroCustoPadrao || "—")}</td>
@@ -34396,6 +34400,7 @@ function tercPapelDef(n) { return TERC_PAPEIS.find(p => p.n === n) || null; }
 function tercDocExigido(papeis) { const ds = new Set(papeis.map(n => (tercPapelDef(n) || {}).doc).filter(Boolean)); return ds.size === 1 ? [...ds][0] : ds.size > 1 ? "ambos" : ""; }
 function tercPapelPill(n) { const p = tercPapelDef(n); return `<span class="pill st-aguardando terc-pill" title="${esc(p ? p.d : n)}"><i></i>${esc(n)}</span>`; }
 function tercContasDe(x) { try { const a = JSON.parse((x && x.Contas) || "[]"); return Array.isArray(a) ? a.filter(c => c && c.n) : []; } catch (e) { return []; } }
+function tercContatosDe(x) { try { const a = JSON.parse((x && x.OutrosContatos) || "[]"); return Array.isArray(a) ? a.filter(c => c && (c.n || c.tel || c.email)) : []; } catch (e) { return []; } }
 function tercContaRot(c) { return c.id ? `${c.n} (${c.id})` : c.n; }
 
 /* ---- funcionários do RH (nome + id; CPF só quando a lista restrita é lida) ---- */
@@ -34436,7 +34441,9 @@ async function tercRhCpfMapa() {   /* CPF → funcionário (só quem lê "RH —
       .replace('onclick="fornNew()">Novo fornecedor</button>', 'onclick="fornNew()">Novo cadastro</button>');
   }; window.pageForn = pageForn;
   const ff0 = fornFiltered;
-  fornFiltered = function () { let arr = ff0.apply(this, arguments); const p = FORN_STATE.filter.papel; if (p) arr = arr.filter(x => p === "__sem" ? !tercPapeis(x).length : tercPapeis(x).includes(p)); return arr; };
+  fornFiltered = function () { let arr = ff0.apply(this, arguments); const p = FORN_STATE.filter.papel;
+    /* v0.13.4.2: a busca também acha pela cidade/UF (o filtro base já tirou quem não casou por nome/CNPJ: refaz incluindo a localização) */
+    const q = String(FORN_STATE.filter.busca || "").toLowerCase(); if (q) { const b = FORN_STATE.filter.busca; FORN_STATE.filter.busca = ""; try { const tudo = ff0.apply(this, arguments); arr = tudo.filter(x => [x.Title, x.CNPJ, x.CategoriaPadrao, x.SubcategoriaPadrao, x.Contato, x.Telefone, x.Email, x.Observacoes, x.Cidade, x.UF, ...tercContatosDe(x).flatMap(c => [c.n, c.tel, c.email])].some(v => String(v || "").toLowerCase().includes(q))); } finally { FORN_STATE.filter.busca = b; } } if (p) arr = arr.filter(x => p === "__sem" ? !tercPapeis(x).length : tercPapeis(x).includes(p)); return arr; };
   window.fornFiltered = fornFiltered;
   const pt0 = paintForn;
   paintForn = function () {
@@ -34467,14 +34474,20 @@ async function tercRhCpfMapa() {   /* CPF → funcionário (só quem lê "RH —
     const papeis = `<div class="field full"><label>Papéis<span class="req">*</span> <span class="sup" style="text-transform:none;font-weight:600">um cadastro pode ter vários</span></label><div class="terc-papeis">${TERC_PAPEIS.map(p => `<label class="terc-papel" title="${esc(p.d)}"><input type="checkbox" name="gPapel" value="${esc(p.n)}" ${pap.includes(p.n) ? "checked" : ""}> ${esc(p.n)}</label>`).join("")}</div><div class="hint" id="gPapelHint"></div>
       <div class="import-help terc-func-aviso" id="gFuncAviso" hidden><b>Funcionário:</b> os dados de funcionários (nome, CPF, cargo, contato) são mantidos em <a href="#/rh/banco-de-dados/funcs" onclick="closeModal()">RH › Banco de Dados › Funcionários</a>, não aqui. Este cadastro só aponta para o funcionário, para lançar reembolsos, adiantamentos e rescisões na CAP.<div style="margin-top:8px"><label>Funcionário no RH</label> <select id="gFunc"><option value="">— carregando… —</option></select></div></div></div>`;
     h = h.replace('<div class="field"><label>Situação</label><select id="gAtivo">', papeis + '<div class="field"><label>Situação</label><select id="gAtivo">');
+    h = h.replace('<div class="field full"><label>Classificação de custo</label>', tercLocCampo(v) + '<div class="field full"><label>Classificação de custo</label>');   /* v0.13.4.2 */
     h = h.replace('<div class="field"><label>Banco</label><select id="gBanco">', `<div class="field" id="gCodBancoWrap" ${pap.includes("Banco / Instituição financeira") ? "" : "hidden"}><label>Código do banco (COMPE/ISPB)<span class="req">*</span></label><input id="gCodBanco" value="${esc(v.CodigoBanco || "")}" placeholder="Ex.: 033 (COMPE) ou 90400888 (ISPB)"><div class="hint">Exigido para o papel Banco / Instituição financeira</div></div><div class="field"><label>Banco</label><select id="gBanco">`);
     const contas = `<div class="field full form-sec">Contas <span class="sup" style="text-transform:none;font-weight:600">unidades, contratos ou medidores do mesmo CNPJ/CPF (ex.: Unidade A — Garagem B). A conta aparece na fatura e na CAP.</span></div>
       <div class="field full"><table class="cap-table terc-contas" id="gContas"><colgroup><col style="width:42%"><col><col style="width:84px"><col style="width:46px"></colgroup><thead><tr><th>Nome da conta</th><th title="Nº do cliente, contrato, medidor…">Identificador</th><th>Dia venc.</th><th></th></tr></thead><tbody>${ct.map(c => tercContaLinha(c)).join("")}</tbody></table><button type="button" class="btn sm" onclick="tercContaAdd()">+ Conta</button></div>`;
     h = h.replace('<div class="field full form-sec">Contato</div>', contas + '<div class="field full form-sec">Contato</div>');
+    const oc = tercContatosDe(v);   /* v0.13.4.2 (pedido de 15/10 11:30): outros contatos e telefones */
+    h = h.replace('<div class="field full form-sec">Observações</div>', `<div class="field full"><label>Outros contatos e telefones</label><table class="cap-table terc-contas" id="gOutros"><colgroup><col style="width:30%"><col style="width:22%"><col><col style="width:46px"></colgroup><thead><tr><th>Nome / setor</th><th>Telefone</th><th>E-mail</th><th></th></tr></thead><tbody>${oc.map(c => tercContatoLinha(c)).join("")}</tbody></table><button type="button" class="btn sm" onclick="tercContatoAdd()">+ Contato</button></div><div class="field full form-sec">Observações</div>`);
     return h;
   }; window.fornForm = fornForm;
   window.tercContaLinha = c => `<tr><td><input class="tc-n" value="${esc((c && c.n) || "")}" placeholder="Ex.: Unidade A"></td><td><input class="tc-id" value="${esc((c && c.id) || "")}" placeholder="Nº cliente, contrato, medidor…"></td><td><input class="tc-dia" type="number" min="1" max="31" value="${c && c.dia ? esc(String(c.dia)) : ""}" ></td><td><button type="button" class="btn sm ghost" onclick="this.closest('tr').remove()" title="Remover a conta">✕</button></td></tr>`;
   window.tercContaAdd = () => { const tb = document.querySelector("#gContas tbody"); if (!tb) return; tb.insertAdjacentHTML("beforeend", tercContaLinha(null)); const i = tb.lastElementChild.querySelector("input"); if (i) i.focus(); };
+  window.tercContatoLinha = c => `<tr><td><input class="to-n" value="${esc((c && c.n) || "")}" placeholder="Ex.: Lucas — Peças"></td><td><input class="to-t" value="${esc((c && c.tel) || "")}" placeholder="(00) 00000-0000"></td><td><input class="to-e" type="email" value="${esc((c && c.email) || "")}"></td><td><button type="button" class="btn sm ghost" onclick="this.closest('tr').remove()" title="Remover o contato">✕</button></td></tr>`;
+  window.tercContatoAdd = () => { const tb = document.querySelector("#gOutros tbody"); if (!tb) return; tb.insertAdjacentHTML("beforeend", tercContatoLinha(null)); const i = tb.lastElementChild.querySelector("input"); if (i) i.focus(); };
+  window.tercContatosLer = () => [...document.querySelectorAll("#gOutros tbody tr")].map(tr => { const n = tr.querySelector(".to-n").value.trim(), tel = tr.querySelector(".to-t").value.trim(), email = tr.querySelector(".to-e").value.trim(); return n || tel || email ? Object.assign({}, n ? { n } : {}, tel ? { tel } : {}, email ? { email } : {}) : null; }).filter(Boolean);
   function tercContasLer() { return [...document.querySelectorAll("#gContas tbody tr")].map(tr => { const n = tr.querySelector(".tc-n").value.trim(), id = tr.querySelector(".tc-id").value.trim(), dia = Number(tr.querySelector(".tc-dia").value || 0); return n ? Object.assign({ n }, id ? { id } : {}, dia >= 1 && dia <= 31 ? { dia } : {}) : null; }).filter(Boolean); }
   window.tercContasLer = tercContasLer;
   function tercPapeisLer() { return [...document.querySelectorAll('input[name="gPapel"]:checked')].map(i => i.value); }
@@ -34501,7 +34514,9 @@ async function tercRhCpfMapa() {   /* CPF → funcionário (só quem lê "RH —
 }
 window.tercReceita = async cnpj => {   /* consulta pública (BrasilAPI) — só razão social e nome fantasia; nada é gravado fora do ERP */
   const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${docClean(cnpj)}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined });
-  if (!r.ok) return null; const j = await r.json(); return { razao: j.razao_social || "", fantasia: j.nome_fantasia || "" };
+  if (!r.ok) return null; const j = await r.json(); const res = { razao: j.razao_social || "", fantasia: j.nome_fantasia || "", uf: String(j.uf || "").toUpperCase(), municipio: j.municipio || "" };
+  try { tercLocPreencher(res.uf, res.municipio); } catch (e) {}   /* v0.13.4.2: localização vem junto, se o campo estiver vazio */
+  return res;
 };
 { const e0 = window.fornEdit; window.fornEdit = id => { FORN_STATE.editando = FORN_STATE.items.find(i => i._id === id) || null; return e0(id); }; }
 { const n0 = window.fornNew; window.fornNew = () => { FORN_STATE.editando = null; return n0(); }; }
@@ -34529,9 +34544,10 @@ async function fornSave(existing, inline) {
   const dia = g("gDia") ? Number(g("gDia")) : null;
   if (dia !== null && (dia < 1 || dia > 31)) { showErr("Dia de vencimento precisa estar entre 1 e 31."); return; }
   const contas = tercContasLer();
+  if ($("gOutros") && tercContatosLer().some(c => c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email))) { showErr("Outros contatos: há um e-mail inválido."); return; }
   const fields = {
     Title: nome, CNPJ: doc, Tipo: tipo || null, Papeis: papeis,
-    Contas: contas.length ? JSON.stringify(contas) : null, CodigoBanco: g("gCodBanco") || null, FuncionarioId: papeis.includes("Funcionário") ? (g("gFunc") || null) : null,
+    Contas: contas.length ? JSON.stringify(contas) : null, OutrosContatos: (() => { const oc = $("gOutros") ? tercContatosLer() : null; return oc === null ? undefined : oc.length ? JSON.stringify(oc) : null; })(), UF: g("gUF") || null, Cidade: g("gUF") ? (($("gCidade") && $("gCidade").disabled ? $("gCidade").dataset.v : g("gCidade")) || null) : null,   /* revisão: salvar com a lista ainda carregando mantém a cidade gravada */ CodigoBanco: g("gCodBanco") || null, FuncionarioId: papeis.includes("Funcionário") ? (g("gFunc") || null) : null,
     CategoriaPadrao: (g("gCat") === "Outros" && $("gCatOutro") && g("gCatOutro")) ? g("gCatOutro") : (g("gCat") || null), SubcategoriaPadrao: g("gSub") || null,
     BancoPadrao: g("gBanco") || null, FormaPadrao: g("gForma") || null,
     DiaVencimento: dia,
@@ -34543,6 +34559,7 @@ async function fornSave(existing, inline) {
     Observacoes: g("gObs") || null
   };
   if (FORN_STATE.cols) for (const k of Object.keys(fields)) if (k !== "Title" && !FORN_STATE.cols.has(k)) delete fields[k];   /* colunas novas só depois da Configuração */
+  if (FORN_STATE.cols && ((!FORN_STATE.cols.has("UF") && g("gUF")) || (!FORN_STATE.cols.has("OutrosContatos") && $("gOutros") && tercContatosLer().length))) toast("As colunas de Localização / Outros contatos ainda não existem: rode Sistema › Configuração (Executar tudo) para gravá-las.", 8000);
   if (FORN_STATE.cols && !FORN_STATE.cols.has("Papeis")) toast("A coluna Papéis ainda não existe: rode Sistema › Configuração para gravar os papéis.", 7000);
   const btn = $("gSave"); btn.disabled = true; btn.textContent = "Salvando…";
   try {
@@ -34552,6 +34569,53 @@ async function fornSave(existing, inline) {
     closeModal(); toast(existing ? "Cadastro atualizado" : "Cadastro feito"); await loadForn(false); paintForn();
   } catch (e) { showErr("Erro ao salvar: " + e.message); btn.disabled = false; btn.textContent = existing ? "Salvar" : "Cadastrar"; }
 }
+
+/* ---- v0.13.4.2 (pedido de 15/10 11:26): Localização no cadastro — Estado (lista compacta das 27 UFs) → Cidade (municípios do IBGE) ---- */
+const UFS_BR = [["AC","Acre"],["AL","Alagoas"],["AP","Amapá"],["AM","Amazonas"],["BA","Bahia"],["CE","Ceará"],["DF","Distrito Federal"],["ES","Espírito Santo"],["GO","Goiás"],["MA","Maranhão"],["MT","Mato Grosso"],["MS","Mato Grosso do Sul"],["MG","Minas Gerais"],["PA","Pará"],["PB","Paraíba"],["PR","Paraná"],["PE","Pernambuco"],["PI","Piauí"],["RJ","Rio de Janeiro"],["RN","Rio Grande do Norte"],["RS","Rio Grande do Sul"],["RO","Rondônia"],["RR","Roraima"],["SC","Santa Catarina"],["SP","São Paulo"],["SE","Sergipe"],["TO","Tocantins"]];
+const TERC_CIDADES = {};   /* UF → [nomes] (cache da sessão) */
+async function tercCidades(uf) {
+  if (!/^[A-Z]{2}$/.test(uf || "")) return [];
+  if (TERC_CIDADES[uf]) return TERC_CIDADES[uf];
+  try { const c = sessionStorage.getItem("erp.cidades." + uf); if (c) return (TERC_CIDADES[uf] = JSON.parse(c)); } catch (e) {}
+  const tm = () => (AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined);
+  let nomes = null;
+  try { const r = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`, { signal: tm() }); if (r.ok) { const j = await r.json(); if (Array.isArray(j) && j.length) nomes = j.map(x => String(x.nome || "")).filter(Boolean); } } catch (e) {}
+  if (!nomes) { try { const r = await fetch(`https://brasilapi.com.br/api/ibge/municipios/v1/${uf}`, { signal: tm() }); if (r.ok) { const j = await r.json(); if (Array.isArray(j) && j.length) nomes = j.map(x => String(x.nome || "").toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()).replace(/ (D[aeo]s?|E) /g, w => w.toLowerCase())).filter(Boolean); } } catch (e) {} }
+  if (!nomes) return null;   /* sem acesso às listas públicas: o campo vira texto livre */
+  nomes.sort((a, b) => a.localeCompare(b, "pt-BR"));
+  try { sessionStorage.setItem("erp.cidades." + uf, JSON.stringify(nomes)); } catch (e) {}
+  return (TERC_CIDADES[uf] = nomes);
+}
+function tercLocCampo(v) {
+  const uf = String((v && v.UF) || "").toUpperCase(), cid = (v && v.Cidade) || "";
+  return `<div class="field full"><label>Localização</label><div class="terc-loc">
+      <select id="gUF" title="Estado" onchange="tercLocUF('')"><option value="">UF</option>${UFS_BR.map(([k, n]) => `<option value="${k}" title="${esc(n)}" ${uf === k ? "selected" : ""}>${k}</option>`).join("")}</select>
+      <select id="gCidade" title="Cidade" data-v="${esc(cid)}" ${uf ? "" : "disabled"}>${cid ? `<option selected>${esc(cid)}</option>` : `<option value="">${uf ? "Cidade" : "Escolha o estado"}</option>`}</select>
+    </div><div class="hint" id="gLocHint"></div></div>`;
+}
+async function tercLocUF(manterCidade) {
+  const sel = $("gUF"), alvo = $("gCidade"); if (!sel || !alvo) return;
+  const uf = sel.value, atual = manterCidade != null ? manterCidade : (alvo.dataset.v || ""), h = $("gLocHint"), ger = (tercLocUF.ger = (tercLocUF.ger || 0) + 1);
+  alvo.dataset.v = atual;
+  if (!uf) { alvo.outerHTML = `<select id="gCidade" title="Cidade" data-v="" disabled><option value="">Escolha o estado</option></select>`; return; }
+  if (alvo.tagName === "SELECT") { alvo.disabled = true; alvo.innerHTML = `<option value="">Carregando cidades…</option>`; }
+  const nomes = await tercCidades(uf); if (!$("gUF") || $("gUF").value !== uf || tercLocUF.ger !== ger) return;   /* trocou de estado (ou de formulário) no meio */
+  const cur = $("gCidade"); if (!cur) return;
+  if (!nomes) { cur.outerHTML = `<input id="gCidade" title="Cidade" data-v="${esc(atual)}" value="${esc(atual)}" placeholder="Cidade">`; if (h) h.textContent = "Lista de cidades indisponível agora — digite a cidade."; return; }
+  const achada = atual ? nomes.find(n => normName(n) === normName(atual)) : "";
+  const fora = atual && !achada ? `<option selected>${esc(atual)}</option>` : "";   /* revisão: cidade gravada fora da lista do IBGE não some ao salvar */
+  cur.outerHTML = `<select id="gCidade" title="Cidade" data-v="${esc(achada || atual || "")}"><option value="">Cidade</option>${fora}${nomes.map(n => `<option ${n === achada ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+  if (h) h.textContent = atual && !achada ? `"${atual}" não está na lista do IBGE para ${uf} — escolha a cidade.` : "";
+}
+window.tercLocUF = tercLocUF;
+function tercLocPreencher(uf, cidade) {   /* da consulta do CNPJ: só preenche se a localização estiver vazia */
+  const sel = $("gUF"); if (!sel || sel.value || !/^[A-Z]{2}$/.test(uf || "") || !UFS_BR.some(x => x[0] === uf)) return;
+  sel.value = uf; tercLocUF(cidade || "");
+}
+window.tercLocPreencher = tercLocPreencher;
+const tercLocTxt = x => [x && x.Cidade, x && x.UF].filter(Boolean).join(" / ");
+/* ao abrir o formulário de um cadastro com UF, carrega a lista de cidades do estado */
+{ const fe0 = window.fornEdit; window.fornEdit = id => { const r = fe0(id); setTimeout(() => { if ($("gUF") && $("gUF").value) tercLocUF(); }, 0); return r; }; }
 
 /* ---- cartão do terceiro: bloco Contas acima de Faturas (2g) ---- */
 function tercContasBloco(cad, g) {
@@ -34694,6 +34758,7 @@ document.addEventListener("DOMContentLoaded", () => { try { buscaInit(); } catch
 @media (max-width:900px){.top-busca input{display:none;position:absolute;right:0;top:42px;width:min(420px,88vw);max-width:none;z-index:61}.top-busca-ico{display:inline-flex;align-items:center;justify-content:center}body.busca-aberta .top-busca input{display:block}.top-busca-res{top:82px}}
 .terc-papeis{display:flex;flex-wrap:wrap;gap:6px 12px}
 .terc-papel{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;border:1px solid var(--line);border-radius:999px;padding:4px 10px;cursor:pointer}
+.terc-loc{display:flex;gap:8px}.terc-loc #gUF{flex:0 0 84px;width:84px}.terc-loc #gCidade{flex:1 1 auto;min-width:0}   /* v0.13.4.2 */
 .terc-papel{flex-direction:row}.terc-papel input[type=checkbox]{width:auto;height:auto;min-width:0;margin:0;padding:0;border:0;background:none;box-shadow:none;outline:none;accent-color:var(--accent,#E8731A)}
 .terc-papel:focus-within{box-shadow:0 0 0 2px rgba(232,115,26,.25)}   /* v0.13.4.1: sem o retângulo cinza do estilo geral de campo em volta da caixinha */
 .terc-papel:has(input:checked){background:var(--surface-2,#FFF1EA);border-color:var(--accent,#E8731A)}

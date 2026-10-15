@@ -3739,7 +3739,7 @@ img.tf-av{object-fit:cover;background:#E6E8EE;padding:0}.tf-card-f .tf-av{width:
   <div class="layout">
     <aside class="sidebar">
       <nav class="nav" id="nav"></nav>
-      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB v0.13.4.3<br>Dados no SharePoint. Login Microsoft 365.</span></div>
+      <div class="version"><svg class="nm-simb" aria-hidden="true" focusable="false"><use href="#nm-simbolo" width="100%" height="100%"/></svg><span>ERP NMB <b id="erpVer">v0.14.0</b><br>Dados no SharePoint. Login Microsoft 365.</span></div>
     </aside>
     <main id="main"></main>
   </div>
@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.13.4.5",
+  version: "v0.14.0",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -4903,6 +4903,7 @@ function route() {
   else if (mod.id === "dre") { main.innerHTML = pageDre(); renderDre(); }   /* v0.12.84 */
   else if (mod.id === "tarefas" || mod.id === "fin_tarefas") { tfUsar(mod.id); main.innerHTML = pageTarefas(); renderTarefas(); }   /* v0.12.87 · v0.12.94: também no Financeiro */
   else if (mod.id === "diario") { main.innerHTML = pageDo(); renderDo(); }   /* v0.12.97 */
+  else if (mod.id === "di_mestres") { main.innerHTML = pageMst(); renderMst(); }   /* v0.14.0 */
   else if (mod.id === "rh_aval") { main.innerHTML = pageAval(); renderAval(); }
   else if (mod.id === "ti_chamados") { main.innerHTML = pageTi(); renderTi(); }
   else if (PREVIAS[mod.id]) { main.innerHTML = pagePrevia(mod); renderPrevia(mod); }
@@ -18935,7 +18936,7 @@ window.tiForm = (id) => {
   const stOpts = ["Aberto", "Em atendimento", "Aguardando usuário", "Resolvido", "Fechado", "Cancelado"].map(s => `<option ${v.Status === s ? "selected" : ""}>${s}</option>`).join("");
   const sevOpts = ["Baixa", "Média", "Alta", "Crítica"].map(s => `<option ${v.Severidade === s ? "selected" : ""}>${s}</option>`).join("");
   const catOpts = ["Equipamento", "Acesso / login", "Software / instalação", "Rede / internet", "ERP / sistemas internos", "E-mail / Microsoft 365", "Impressora / periféricos", "Telefonia", "Dúvida / treinamento", "Outro"].map(s => `<option ${v.Categoria === s ? "selected" : ""}>${s}</option>`).join("");
-  const depOpts = ["", "Administrativo", "Financeiro", "Operacional", "Manutenção", "Recursos Humanos", "Comercial / Agência", "Diretoria", "Jurídico", "TI"].map(s => `<option value="${esc(s)}" ${v.Departamento === s ? "selected" : ""}>${s || "(sem departamento)"}</option>`).join("");
+  const depOpts = ["", ...CENTROS_CUSTO, ...(v.Departamento && !CENTROS_CUSTO.includes(v.Departamento) ? [v.Departamento] : [])].map(s => `<option value="${esc(s)}" ${v.Departamento === s ? "selected" : ""}>${esc(s) || "(sem departamento)"}</option>`).join("");
   $("modal").className = "modal wide";
   openModal(x ? `Chamado ${tiProtocolo(x)}` : "Abrir chamado", `<div class="form-grid">
       <div class="field"><label>Solicitante<span class="req">*</span></label><input id="tcSol" value="${esc(v.Solicitante || "")}"></div>
@@ -21899,7 +21900,7 @@ RHDB_COLS.funcs = [["Title", "Nome"], ["Matricula", "Matrícula"], ["Cargo", "Fu
     const kpi = (v, cls, lbl, val, sub) => `<button class="kpi ${cls} ${S.sit === v ? "on" : ""}" onclick="rhfSit('${v}')"><div class="lbl">${esc(lbl)}</div><div class="val">${val}</div><div class="sub">${esc(sub)}</div></button>`;
     const kpis = `<div class="cap-kpis">${kpi("ativos", "pago", "Ativos", nAt, "em atividade, férias ou afastados")}${kpi("desligados", "venc", "Desligados", nDes, "situação Desligado")}${kpi("todos", "", "Todos", all.length, "cadastrados")}<div class="kpi"><div class="lbl">Motoristas</div><div class="val">${nMot}</div><div class="sub">ativos com "Motorista" na função</div></div></div>`;
     const filtros = `<div class="cap-filtros"><input class="busca" id="rhfQ" placeholder="Buscar por nome, matrícula, CPF, função…" value="${esc(S.q)}" autocomplete="off">
-      <select id="rhfDep" aria-label="Departamento"><option value="">Todos os departamentos</option>${deps.map(d => `<option ${S.dep === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select>
+      <select id="rhfDep" aria-label="Centro de custo"><option value="">Todos os centros de custo</option>${deps.map(d => `<option ${S.dep === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select>
       <select id="rhfFun" aria-label="Função"><option value="">Todas as funções</option>${funs.map(d => `<option ${S.fun === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select></div>`;
     const cols = RHDB_COLS.funcs;
     const linha = x => `<tr class="rhf-linha" data-id="${esc(x._id)}" ondblclick="rhfAbrir('${esc(x._id)}')" title="Duplo clique: abre o cadastro">${cols.map(([k, , r]) => `<td>${r ? r(x[k], x) : esc(x[k] == null ? "" : String(x[k]))}</td>`).join("")}<td>${rhAptoPill(x)}</td><td class="act nw"><button class="btn mini" onclick="event.stopPropagation(); rhfAbrir('${esc(x._id)}')">Abrir</button></td></tr>`;   /* v0.12.58: Abrir no botão; duplo clique abre o cadastro na mesma aba (v0.12.70); coluna Apto */
@@ -35231,6 +35232,13 @@ document.addEventListener("DOMContentLoaded", () => { try { buscaInit(); } catch
 .tav-stars label:has(input:focus-visible){outline:2px solid var(--navy);outline-offset:2px;border-radius:4px}
 .tdoc-l{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px}.tdoc-l li{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.tdoc-l a{font-weight:600;overflow-wrap:anywhere}.tdoc-l .sup{margin-left:auto}
 .tdoc-add{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tdoc-add select{width:auto;min-width:170px}.tdoc-add input[type=file]{flex:1 1 200px;min-width:0;font-size:13px}
+.mst-cores{display:flex;flex-wrap:wrap;gap:8px;align-items:center}   /* v0.14.0 · Cadastros mestres */
+.mst-cor{position:relative;cursor:pointer}.mst-cor input{position:absolute;opacity:0;width:0;height:0}
+.mst-cor span{display:block;width:28px;height:28px;border-radius:50%;background:var(--c);border:2px solid #fff;box-shadow:0 0 0 1px #C7CCD6}
+.mst-cor input:checked+span{box-shadow:0 0 0 2px var(--navy)}.mst-cor input:focus-visible+span{outline:2px solid var(--navy);outline-offset:2px}
+.mst-cor-livre{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2,#475569);text-transform:none;letter-spacing:0}.mst-cor-livre input{width:34px;height:28px;padding:0;border:1px solid #D3D8DE;border-radius:6px}
+#mstTabs button:disabled{opacity:.45;cursor:default;border-bottom-color:transparent}
+.mst-tab td{vertical-align:middle}.mst-mig select{min-width:220px}
 .tcad-fant{font-size:12.5px;color:var(--ink-2,#475569);margin-top:1px}   /* v0.13.4.4: nome fantasia abaixo da razão social */
 .tcad-obs{white-space:pre-wrap;font-size:14px;line-height:1.5;color:var(--ink);background:var(--soft);border-radius:8px;padding:10px 12px}
 .tcad-nada{margin:0;color:var(--ink-2);font-size:13.5px}
@@ -35395,6 +35403,376 @@ window.tercRemoverFuncionarios = async () => {
   h = h.replace("<h1>Configuração</h1>", "<h1>Configuração</h1>" + card);
   return h; }; window.pageConfig = pageConfig; }
 
+/* =====================================================================
+   v0.14.0 · DIRETORIA › CADASTROS MESTRES — R1: CENTROS DE CUSTO (pedido de 15/10 17:21; proposta aprovada às 18:01)
+   Fonte única dos centros de custo para Financeiro, RH, Terceiros, DRE e Contabilidade: lista "Diretoria — Centros de custo"
+   (site Diretoria), com código estável (001…, travado), nome, área, responsável, "responde pelo RH", cor da pílula e status.
+   - Os registros passam a gravar o CÓDIGO em coluna própria (CentroCustoCod, CentroCustoPadraoCod, DepartamentoCod, AreaCod),
+     ao lado do nome em texto (a "foto" do nome). Ao ler, o nome vem do cadastro pelo código: renomear muda só o cadastro.
+   - Item usado é inativado, nunca excluído. Inativo some das listas de escolha e continua nos registros antigos.
+   - Sem a lista (ou sem leitura), o ERP usa a última cópia conhecida (navegador) e, por último, os 9 centros do código.
+   - A lista "RH — Departamentos" sai do ERP: Funcionários › Departamento vira "Centro de custo"; a migração (Configuração)
+     exporta e exclui a lista. Os "departamentos" da matriz de permissões são outro conceito e não mudam.
+   ===================================================================== */
+const MST_AREAS = ["Administrativa", "Operacional", "Comercial", "Diretoria"];
+const MST_AREAS_ADM = ["Administrativa", "Comercial", "Diretoria"];   /* DRE: folha destes centros vai para "Pessoal administrativo" */
+const MST_CC_SEED = [["Administrativo", "Administrativa"], ["Financeiro", "Administrativa"], ["Operacional", "Operacional"], ["Manutenção", "Operacional"],
+  ["Recursos Humanos", "Administrativa", true], ["Comercial / Agência", "Comercial"], ["Diretoria", "Diretoria"], ["Jurídico", "Administrativa"], ["TI", "Administrativa"]];
+const MST_CORES = ["#E5EBF7", "#DDEEDD", "#FFE7D6", "#F3E3F7", "#FFF1C7", "#D9EFF5", "#1E2153", "#F7D9DF", "#E0E3E8", "#E8F5E9", "#FDE2E4", "#EDE7F6"];
+LISTS.mst_cc = {
+  key: "mst_cc", displayName: "Diretoria — Centros de custo", siteKey: "diretoria", titleAs: "Código",
+  description: "Cadastros mestres NMB · centros de custo, fonte única para Financeiro, RH, Terceiros, DRE e Contabilidade. Código estável (001…), travado depois de criado. Editada em Diretoria › Cadastros mestres. Dê leitura desta lista a todos da empresa.",
+  columns: [
+    { name: "Nome",             displayName: "Centro de custo",       text: { allowMultipleLines: false, maxLength: 80 } },
+    { name: "Area",             displayName: "Área",                  choice: choice(MST_AREAS), update: true },
+    { name: "Responsavel",      displayName: "Responsável",           text: { allowMultipleLines: false, maxLength: 100 } },
+    { name: "ResponsavelEmail", displayName: "E-mail do responsável", text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "EhRH",             displayName: "Responde pelo RH",      boolean: {} },
+    { name: "Cor",              displayName: "Cor da pílula",         text: { allowMultipleLines: false, maxLength: 7 } },
+    { name: "Status",           displayName: "Status",                choice: choice(["Ativo", "Inativo"]), update: true },
+    { name: "Observacoes",      displayName: "Observações",           text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+SETUP_ORDER.push("mst_cc");
+SETUP_TEXT.mst_cc = `Cria no site Diretoria a lista "Diretoria — Centros de custo" (v0.14.0): fonte única dos centros de custo (Diretoria › Cadastros mestres). Depois de criar, dê leitura desta lista a "Todos, exceto usuários externos" no SharePoint (quem lança na CAP, no RH e em Terceiros precisa ler).`;
+/* colunas de código nos registros */
+const MST_FONTES = [
+  { k: "cap", n: "CentroCusto", c: "CentroCustoCod", rot: "CAP — Lançamentos" },
+  { k: "div_cap", n: "CentroCusto", c: "CentroCustoCod", rot: "Dívidas — Parcelas" },
+  { k: "obr", n: "CentroCusto", c: "CentroCustoCod", rot: "Obrigações" },
+  { k: "div_obr", n: "CentroCusto", c: "CentroCustoCod", rot: "Dívidas — Obrigações" },
+  { k: "forn", n: "CentroCustoPadrao", c: "CentroCustoPadraoCod", rot: "Terceiros (centro de custo padrão)" },
+  { k: "rh_func", n: "Departamento", c: "CentroCustoCod", rot: "RH — Funcionários" },
+  { k: "fin_imob", n: "CentroCusto", c: "CentroCustoCod", rot: "Imobilizado" },
+  { k: "di_invest", n: "Area", c: "AreaCod", rot: "Plano de investimentos" },
+  { k: "op_tarefas", n: "Departamento", c: "DepartamentoCod", rot: "Central de Tarefas (Operacional)" },
+  { k: "fin_tarefas", n: "Departamento", c: "DepartamentoCod", rot: "Central de Tarefas (Financeiro)" },
+  { k: "ti_chamados", n: "Departamento", c: "DepartamentoCod", rot: "TI — Chamados" },
+  { k: "rh_depts", n: "Title", c: "", rot: "RH — Departamentos (lista que sai)" }
+];
+MST_FONTES.filter(f => f.c).forEach(f => { const d = LISTS[f.k]; if (d && Array.isArray(d.columns) && !d.columns.some(c => c.name === f.c)) d.columns.push({ name: f.c, displayName: "Centro de custo (código)", text: { allowMultipleLines: false, maxLength: 10 } }); });
+const MST_PARES = [["CentroCusto", "CentroCustoCod"], ["CentroCustoPadrao", "CentroCustoPadraoCod"], ["Departamento", "CentroCustoCod"], ["Departamento", "DepartamentoCod"], ["Area", "AreaCod"]];
+const MST = { cc: null, fonte: "", erro: "", p: null, site: null, list: undefined, porCod: null, porNome: null, colsLista: {}, iniciou: false, filtro: { q: "", st: "ativos" }, mig: null };
+const MST_CACHE_K = "erp.mst.cc.v1";
+const mstCodOk = c => /^\d{3,}$/.test(String(c || ""));
+function mstSeedItens() { return MST_CC_SEED.map(([n, a, rh], i) => ({ _id: "", cod: String(i + 1).padStart(3, "0"), nome: n, area: a, rh: !!rh, cor: (CC_CORES[n] || CC_DEFAULT_COR).bg, ativo: true, resp: "", respEmail: "", obs: "" })); }
+function mstDeItem(x) { return { _id: String(x._id || ""), cod: String(x.Title || "").trim(), nome: String(x.Nome || "").trim(), area: x.Area || "", resp: x.Responsavel || "", respEmail: x.ResponsavelEmail || "", rh: x.EhRH === true, cor: /^#[0-9a-f]{6}$/i.test(x.Cor || "") ? x.Cor : "", ativo: x.Status !== "Inativo", obs: x.Observacoes || "" }; }
+function mstCorObj(hex) {
+  const h = String(hex || "").replace("#", ""); if (!/^[0-9a-f]{6}$/i.test(h)) return CC_DEFAULT_COR;
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)), lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const esc2 = (v, f) => Math.max(0, Math.min(255, Math.round(v * f))).toString(16).padStart(2, "0");
+  return { bg: "#" + h, fg: lum < 0.55 ? "#FFFFFF" : "#" + esc2(r, 0.38) + esc2(g, 0.38) + esc2(b, 0.38), bd: "#" + esc2(r, 0.86) + esc2(g, 0.86) + esc2(b, 0.86) };
+}
+function mstAplicar() {
+  const cc = MST.cc || [];
+  MST.porCod = new Map(cc.map(c => [c.cod, c])); MST.porNome = new Map(); cc.forEach(c => { const k = normName(c.nome); if (!MST.porNome.has(k) || c.ativo) MST.porNome.set(k, c); });
+  CENTROS_CUSTO.splice(0, CENTROS_CUSTO.length, ...cc.filter(c => c.ativo).map(c => c.nome));
+  cc.forEach(c => { const cor = c.cor || CC_DEFAULT_COR.bg, old = CC_CORES[c.nome]; if (!old || String(old.bg).toLowerCase() !== cor.toLowerCase()) CC_CORES[c.nome] = c.cor ? mstCorObj(c.cor) : CC_DEFAULT_COR; if (typeof TF_DEP_COR === "object" && !TF_DEP_COR[c.nome]) TF_DEP_COR[c.nome] = (CC_CORES[c.nome].bg.toLowerCase() === "#ffffff" ? "#55616E" : CC_CORES[c.nome].fg === "#FFFFFF" ? CC_CORES[c.nome].bg : CC_CORES[c.nome].fg); });
+  if (typeof DRE_CC_ADM !== "undefined" && mstDaLista()) DRE_CC_ADM.splice(0, DRE_CC_ADM.length, ...cc.filter(c => MST_AREAS_ADM.includes(c.area)).map(c => c.nome));
+  if (typeof ALMF === "object" && ALMF && ALMF.cc && !MST.porNome.has(normName(ALMF.cc))) { const n = mstNomePorCod("003"); if (n) ALMF.cc = n; }   /* espelho do Almoxarifado: segue o centro 003 se "Operacional" for renomeado */
+}
+const mstNomePorCod = cod => { const c = MST.porCod && MST.porCod.get(String(cod || "").trim()); return c ? c.nome : ""; };
+const mstCodPorNome = nome => { const c = MST.porNome && MST.porNome.get(normName(nome)); return c ? c.cod : ""; };
+const mstDaLista = () => MST.fonte === "lista" || MST.fonte === "cache";
+async function mstLista(force) {
+  if (MST.list !== undefined && !force) return MST.list;
+  if (!MST.site) MST.site = await SP.site(CONFIG.sites[LISTS.mst_cc.siteKey]);
+  const ls = await SP.lists(MST.site.id); MST.list = ls.find(l => l.displayName === LISTS.mst_cc.displayName) || null; return MST.list;
+}
+function mstCarregar(force) {
+  if (MST.cc && !force) return Promise.resolve(MST.cc);
+  if (MST.p && !force) return MST.p;
+  const p = (async () => {
+    let itens = null, fonte = "", erro = "";
+    try {
+      const l = await mstLista(force);
+      if (l) { const raw = await SP.items(MST.site.id, l.id); itens = raw.map(i => mstDeItem(Object.assign({ _id: i.id }, i.fields))).filter(c => c.cod && c.nome); fonte = itens.length ? "lista" : "vazia"; }
+      else fonte = "sem-lista";
+    } catch (e) { erro = e.message || String(e); }
+    if (fonte === "lista") { try { localStorage.setItem(MST_CACHE_K, JSON.stringify(itens)); } catch (e) {} }
+    else if (erro) { try { const c = JSON.parse(localStorage.getItem(MST_CACHE_K) || "null"); if (Array.isArray(c) && c.length) { itens = c; fonte = "cache"; } } catch (e) {} }
+    if (!itens || !itens.length) { itens = mstSeedItens(); if (!fonte) fonte = "codigo"; }
+    try { const mx = await erpParamLer("mst_cc_maxcod", !!force); if (mx && mx.valor != null) MST.maxCod = Number(mx.valor) || 0; } catch (e) {}
+    MST.cc = itens.slice().sort((a, b) => a.cod.localeCompare(b.cod, "pt-BR", { numeric: true })); MST.fonte = fonte; MST.erro = erro;
+    mstAplicar(); return MST.cc;
+  })();
+  MST.p = p; p.finally(() => { if (MST.p === p) MST.p = null; });
+  return p;
+}
+window.mstCarregar = mstCarregar;
+/* leitura: o nome vem do cadastro pelo código (renomear o centro muda as telas sem regravar registros) */
+{ const i0 = SP.items; SP.items = async function () {
+    const r = await i0.apply(this, arguments);
+    try { if (!mstDaLista() && Array.isArray(r) && r.some(it => it && it.fields && MST_PARES.some(([, c]) => it.fields[c]))) await mstEsperar(); } catch (e) {}   /* revisão: registro com código espera o cadastro */
+    try { if (MST.porCod && mstDaLista() && Array.isArray(r)) r.forEach(it => { const f = it && it.fields; if (!f) return; MST_PARES.forEach(([n, c]) => { if (f[c]) { const nm = mstNomePorCod(f[c]); if (nm) f[n] = nm; } }); }); } catch (e) {}
+    return r;
+  }; }
+/* gravação: quem grava o nome grava também o código (só nas listas que já têm a coluna de código) */
+async function mstColsDe(siteId, listId) {
+  const k = MST.colsLista[listId];
+  if (k && (k.temCod || Date.now() - k.em < 120000)) return k.cols;   /* revisão: "sem coluna de código" vale só 2 min (a Configuração pode ter acabado de criar) */
+  try { const cs = await graphAll(`/sites/${siteId}/lists/${listId}/columns?$select=name`); const cols = new Set(cs.map(c => c.name)); MST.colsLista[listId] = { cols, em: Date.now(), temCod: MST_PARES.some(([, c]) => cols.has(c)) }; return cols; } catch (e) { return new Set(); }
+}
+async function mstCodsPreencher(siteId, listId, fields) {
+  if (!fields || typeof fields !== "object") return;
+  const pares = MST_PARES.filter(([n, c]) => Object.prototype.hasOwnProperty.call(fields, n) && !Object.prototype.hasOwnProperty.call(fields, c)); if (!pares.length) return;
+  const cols = await mstColsDe(siteId, listId); const ps = pares.filter(([, c]) => cols.has(c)); if (!ps.length) return;
+  if (!mstDaLista()) await mstEsperar();
+  /* revisão: com a coluna de código, grava SEMPRE o código — sem cadastro lido ou nome fora do cadastro grava vazio (o nome vale; a migração religa) */
+  ps.forEach(([n, c]) => { const v = fields[n]; fields[c] = v && mstDaLista() ? (mstCodPorNome(v) || null) : null; });
+}
+{ const c0 = SP.create, u0 = SP.update;
+  SP.create = async function (siteId, listId, fields) { try { await mstCodsPreencher(siteId, listId, fields); } catch (e) {} return c0.apply(this, arguments); };
+  SP.update = async function (siteId, listId, itemId, fields) { try { await mstCodsPreencher(siteId, listId, fields); } catch (e) {} return u0.apply(this, arguments); };
+}
+/* carrega cedo: na primeira rota e antes das telas do Financeiro (no máximo 2,5 s de espera) */
+const mstEsperar = () => Promise.race([mstCarregar().catch(() => null), new Promise(r => setTimeout(r, 2500))]);
+{ const r0 = route; route = function () {
+    const h = (location.hash || "").split("?")[0];
+    if (h === "#/rh/banco-de-dados/deptos") { location.replace("#/diretoria/cadastros-mestres"); return; }   /* Departamentos saíram do RH */
+    if (typeof APP_PRONTO !== "undefined" && APP_PRONTO && !MST.iniciou) { MST.iniciou = true; mstCarregar().catch(() => {}); }
+    return r0.apply(this, arguments);
+  }; }
+{ const lc = loadCAP, lo = loadObr, lf = loadForn;
+  loadCAP = async function () { await mstEsperar(); return lc.apply(this, arguments); }; window.loadCAP = loadCAP;
+  loadObr = async function () { await mstEsperar(); return lo.apply(this, arguments); }; window.loadObr = loadObr;
+  loadForn = async function () { await mstEsperar(); return lf.apply(this, arguments); }; window.loadForn = loadForn;
+}
+/* ---- módulo e página ---- */
+MODULES.push({ id: "di_mestres", path: "#/diretoria/cadastros-mestres", icon: "settings", name: "Cadastros mestres", area: "Diretoria", groups: ["diretoria"], status: "piloto", wide: true });
+PAG_DEF.di_mestres = [{ k: "centros", n: "Centros de custo", aba: "mstAba('centros')" }];
+const mstPode = () => podeEditar("di_mestres") && pagNivel("di_mestres", "centros") !== "nenhum";   /* revisão: a guarda de escrita confere o módulo */
+const mstPodeExcluir = () => !!session.n1;   /* revisão: excluir só o administrador (grava o maior código já usado em ERP — Parâmetros) */
+function pageMst() {
+  const abas = PAG_DEF.di_mestres.filter(p => pagNivel("di_mestres", p.k) !== "nenhum").map(p => `<button class="on" data-k="${p.k}" onclick="mstAba('${p.k}')">${esc(p.n)}</button>`).join("")
+    + `<button disabled title="Rodada 2">Plano de contas</button><button disabled title="Rodada 3">Estabelecimentos</button>`;
+  return `<div class="page" id="mstRoot">
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Diretoria">Diretoria</a><span>›</span><b>Cadastros mestres</b></nav>
+    <div class="cap-topo"><div><h1 style="margin:0">Cadastros mestres</h1><p class="sup" style="margin:2px 0 0">Fonte única dos cadastros usados pelo Financeiro, RH, Terceiros, DRE e Contabilidade. Mudanças aqui valem para todo o ERP.</p></div><div id="mstAcoes"></div></div>
+    <div class="cap-views" id="mstTabs">${abas}</div>
+    <div id="mstBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
+  </div>`;
+}
+window.mstAba = () => paintMst();
+async function renderMst() { try { await mstCarregar(true); } catch (e) {} paintMst(); }
+function mstCcPill(c) { const k = CC_CORES[c.nome] || CC_DEFAULT_COR; return `<span class="pill mst-pill" style="background:${esc(k.bg)};color:${esc(k.fg)};border:1px solid ${esc(k.bd)}">${esc(c.nome)}</span>`; }
+function paintMst() {
+  const body = $("mstBody"); if (!body) return;
+  const ed = mstPode(), cc = MST.cc || [], F = MST.filtro, q = normName(F.q);
+  const aviso = MST.fonte === "lista" ? "" : MST.fonte === "vazia" ? `<div class="import-help" style="margin-bottom:14px"><b>A lista está vazia.</b> Enquanto isso, o ERP usa os 9 centros que estavam no código. ${ed ? `<button class="btn" onclick="mstSemear()">Criar os 9 centros iniciais (001 a 009)</button>` : "Peça a quem edita os cadastros para criar os centros."}</div>`
+    : MST.fonte === "sem-lista" ? `<div class="import-help" style="margin-bottom:14px"><b>A lista "${esc(LISTS.mst_cc.displayName)}" ainda não existe.</b> Um administrador cria em Sistema › Configuração › Executar tudo. Enquanto isso, o ERP usa os 9 centros do código.</div>`
+    : `<div class="import-help" style="margin-bottom:14px"><b>Não foi possível ler a lista agora</b> (${esc(MST.erro || "sem acesso")}). ${MST.fonte === "cache" ? "Mostrando a última cópia conhecida." : "Mostrando os 9 centros do código."} Quem não tem leitura no site Diretoria precisa de leitura nesta lista.</div>`;
+  const lista = cc.filter(c => (F.st === "todos" || (F.st === "ativos" ? c.ativo : !c.ativo)) && (!q || normName([c.cod, c.nome, c.area, c.resp, c.obs].join(" ")).includes(q)));
+  const kpi = (l, v, s) => `<div class="kpi static"><div class="lbl">${esc(l)}</div><div class="val">${esc(String(v))}</div><div class="sub">${esc(s)}</div></div>`;
+  $("mstAcoes").innerHTML = ed && mstDaLista() || (ed && MST.fonte === "vazia") ? `<button class="btn primary" onclick="mstForm('')">Novo centro de custo</button>` : "";
+  body.innerHTML = aviso + `<div class="cap-kpis">${kpi("Ativos", cc.filter(c => c.ativo).length, "aparecem nas listas de escolha")}${kpi("Inativos", cc.filter(c => !c.ativo).length, "só nos registros antigos")}${kpi("Sem responsável", cc.filter(c => c.ativo && !c.resp).length, "centros ativos")}${kpi("Responde pelo RH", cc.filter(c => c.rh).map(c => c.nome).join(", ") || "—", "Normas CLT › Responsável")}</div>
+    <div class="filters" role="search"><input type="search" class="span-2" id="mstBusca" placeholder="Buscar por código, nome, área ou responsável" value="${esc(F.q)}">
+      <select id="mstSt"><option value="ativos" ${F.st === "ativos" ? "selected" : ""}>Só ativos</option><option value="todos" ${F.st === "todos" ? "selected" : ""}>Ativos e inativos</option><option value="inativos" ${F.st === "inativos" ? "selected" : ""}>Só inativos</option></select></div>
+    ${lista.length ? `<div class="table-wrap"><table class="cap-table mst-tab"><thead><tr><th>Código</th><th>Centro de custo</th><th>Área</th><th>Responsável</th><th>RH</th><th>Status</th><th>Observações</th></tr></thead><tbody>
+      ${lista.map(c => `<tr ${ed && c._id ? `onclick="mstForm(${jsArg(c.cod)})" title="Editar"` : ""}><td class="nw"><b class="tcad-mono">${esc(c.cod)}</b></td><td>${mstCcPill(c)}</td><td>${esc(c.area || "—")}</td><td>${c.resp ? esc(c.resp) + (c.respEmail ? `<div class="sup">${esc(c.respEmail)}</div>` : "") : `<span class="sup">—</span>`}</td><td>${c.rh ? "✓" : ""}</td>
+        <td>${c.ativo ? `<span class="pill st-pago"><i></i>Ativo</span>` : `<span class="pill st-vencido"><i></i>Inativo</span>`}</td><td class="sup">${esc(c.obs || "")}</td></tr>`).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhum centro de custo neste filtro</h3></div>`}
+    <p class="sup" style="margin-top:12px">O código é dado na criação e não muda. Renomear um centro muda o nome em todas as telas, sem regravar faturas, obrigações ou funcionários. Centro usado em algum registro não é excluído: inative-o.</p>`;
+  $("mstBusca").addEventListener("input", ev => { F.q = ev.target.value; erpDeb("mstBusca", () => keepFocus(paintMst)); });
+  $("mstSt").addEventListener("change", ev => { F.st = ev.target.value; paintMst(); });
+}
+function mstProxCodigo(itens) { const n = Math.max(0, Number(MST.maxCod) || 0, ...itens.map(c => mstCodOk(c.cod) ? parseInt(c.cod, 10) : 0)); return String(n + 1).padStart(3, "0"); }
+window.mstSemear = async () => {
+  if (!mstPode()) return;
+  try {
+    const l = await mstLista(true); if (!l) { toast("A lista ainda não existe: rode Sistema › Configuração › Executar tudo.", 7000); return; }
+    const ja = (await SP.items(MST.site.id, l.id)).map(i => mstDeItem(Object.assign({ _id: i.id }, i.fields)));
+    if (ja.length) { toast("A lista já tem centros cadastrados — nada foi criado."); await renderMst(); return; }
+    for (const c of mstSeedItens()) await SP.create(MST.site.id, l.id, { Title: c.cod, Nome: c.nome, Area: c.area, EhRH: c.rh, Cor: c.cor, Status: "Ativo" });
+    toast("9 centros de custo criados (001 a 009)"); await renderMst();
+  } catch (e) { toast("Não foi possível criar: " + e.message, 8000); }
+};
+window.mstForm = cod => {
+  if (!mstPode()) return;
+  const c = cod ? (MST.cc || []).find(x => x.cod === cod) : null, v = c || { cod: mstProxCodigo(MST.cc || []), nome: "", area: "", resp: "", respEmail: "", rh: false, cor: "", ativo: true, obs: "" };
+  const cores = MST_CORES.map(h => `<label class="mst-cor" title="${h}" style="--c:${h}"><input type="radio" name="mstCor" value="${h}" ${String(v.cor).toLowerCase() === h.toLowerCase() ? "checked" : ""}><span></span></label>`).join("");
+  const funcs = (MST.funcs || []).map(f => `<option value="${esc(f)}">`).join("");
+  openModal(c ? `Centro de custo ${c.cod}` : "Novo centro de custo", `<div class="form-grid">
+      <div class="field"><label>Código</label><input id="mstCod" value="${esc(v.cod)}" disabled><div class="hint">${c ? "Travado: o código não muda." : "Dado automaticamente; não muda depois de criado."}</div></div>
+      <div class="field"><label>Status</label><select id="mstSt2"><option value="Ativo" ${v.ativo ? "selected" : ""}>Ativo</option><option value="Inativo" ${!v.ativo ? "selected" : ""}>Inativo</option></select></div>
+      <div class="field full"><label>Centro de custo<span class="req">*</span></label><input id="mstNome" maxlength="80" value="${esc(v.nome)}" placeholder="Ex.: Operacional"></div>
+      <div class="field"><label>Área</label><select id="mstArea"><option value="">—</option>${MST_AREAS.map(a => `<option ${v.area === a ? "selected" : ""}>${a}</option>`).join("")}</select><div class="hint">Administrativa, Comercial e Diretoria: a folha entra em "Pessoal administrativo" na DRE.</div></div>
+      <div class="field"><label>Responde pelo RH</label><label class="check"><input type="checkbox" id="mstRh" ${v.rh ? "checked" : ""}> Funcionários deste centro aparecem em Normas CLT › Responsável</label></div>
+      <div class="field"><label>Responsável</label><input id="mstResp" maxlength="100" value="${esc(v.resp)}" list="mstRespList" autocomplete="off" placeholder="Nome"><datalist id="mstRespList">${funcs}</datalist></div>
+      <div class="field"><label>E-mail do responsável</label><input id="mstRespEmail" maxlength="120" value="${esc(v.respEmail)}" placeholder="nome@empresa.com.br"></div>
+      <div class="field full"><label>Cor da pílula</label><div class="mst-cores">${cores}<label class="mst-cor-livre" title="Outra cor"><input type="color" id="mstCorLivre" value="${/^#[0-9a-f]{6}$/i.test(v.cor || "") ? v.cor : "#F2F3F5"}"> outra</label></div><div class="hint">Sem cor escolhida, a pílula fica cinza (cor padrão).</div></div>
+      <div class="field full"><label>Observações</label><textarea id="mstObs" rows="2">${esc(v.obs)}</textarea></div>
+    </div><div class="err" id="mstErr" style="display:none"></div>
+    ${c && mstPodeExcluir() ? `<p class="sup" style="margin-top:10px"><a href="#" onclick="event.preventDefault();mstExcluir(${jsArg(c.cod)})">Excluir este centro</a> — só se nunca foi usado; usado, inative.</p>` : ""}`, async () => {
+    const err = m => { const e = $("mstErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const nome = $("mstNome").value.trim().replace(/\s+/g, " "), email = $("mstRespEmail").value.trim();
+    if (!nome) return err("Preencha o nome do centro de custo.");
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return err("E-mail do responsável inválido.");
+    const livre = $("mstCorLivre"), radio = document.querySelector("input[name=mstCor]:checked"), cor = radio ? radio.value : (livre && livre.dataset.mudou ? livre.value : (v.cor || ""));
+    try {
+      const l = await mstLista(true); if (!l) return err("A lista ainda não existe: rode Sistema › Configuração › Executar tudo.");
+      const todos = (await SP.items(MST.site.id, l.id)).map(i => mstDeItem(Object.assign({ _id: i.id }, i.fields)));   /* relê: outra pessoa pode ter criado */
+      const dup = todos.find(x => normName(x.nome) === normName(nome) && (!c || x._id !== c._id)); if (dup) return err(`Já existe o centro ${dup.cod} — ${dup.nome}.`);
+      const f = { Nome: nome, Area: $("mstArea").value || null, Responsavel: $("mstResp").value.trim() || null, ResponsavelEmail: email || null, EhRH: $("mstRh").checked, Cor: cor || null, Status: $("mstSt2").value, Observacoes: $("mstObs").value.trim() || null };
+      if (c && c._id) await SP.update(MST.site.id, l.id, c._id, f);
+      else await SP.create(MST.site.id, l.id, Object.assign({ Title: mstProxCodigo(todos) }, f));
+      toast(c ? (c.nome !== nome ? `Renomeado: "${c.nome}" → "${nome}" em todas as telas` : "Centro de custo atualizado") : "Centro de custo criado");
+      await renderMst(); return true;
+    } catch (e) { return err("Não foi possível salvar: " + e.message); }
+  });
+  const livre = $("mstCorLivre"); if (livre) livre.addEventListener("input", () => { livre.dataset.mudou = "1"; document.querySelectorAll("input[name=mstCor]").forEach(r => { r.checked = false; }); });
+  if (!MST.funcs) tercRhFuncs().then(fs => { MST.funcs = [...new Set((fs || []).map(x => x.Title).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")); const dl = $("mstRespList"); if (dl) dl.innerHTML = MST.funcs.map(n => `<option value="${esc(n)}">`).join(""); }).catch(() => {});
+};
+/* ---- varredura dos valores em uso (exclusão segura e migração) ---- */
+async function mstVarrer(log) {
+  const out = { regs: [], porValor: new Map(), avisos: [] }, sites = {}, listas = {};
+  for (const fo of MST_FONTES) {
+    const def = LISTS[fo.k]; if (!def) continue;
+    try {
+      const sk = def.siteKey; if (!sites[sk]) sites[sk] = await SP.site(CONFIG.sites[sk]); if (!listas[sk]) listas[sk] = await SP.lists(sites[sk].id);
+      const l = listas[sk].find(x => x.displayName === def.displayName); if (!l) { if (!session.n1 && fo.c) out.avisos.push(`${fo.rot}: sem acesso à lista`); if (log) log(`${fo.rot}: lista não encontrada — pulada.`); continue; }
+      const its = await SP.items(sites[sk].id, l.id); let n = 0;
+      its.forEach(it => { const f = it.fields || {}, val = String(f[fo.n] == null ? "" : f[fo.n]).trim(), cod = fo.c ? String(f[fo.c] || "").trim() : ""; if (!val && !cod) return; n++;
+        out.regs.push({ fo, siteId: sites[sk].id, listId: l.id, id: String(it.id), val, cod });
+        const k = normName(val) || ("#" + cod); if (!out.porValor.has(k)) out.porValor.set(k, { val: val || mstNomePorCod(cod) || cod, total: 0, por: {}, comCod: 0 }); const g = out.porValor.get(k); g.total++; g.por[fo.rot] = (g.por[fo.rot] || 0) + 1; if (cod) g.comCod++; });
+      if (log) log(`${fo.rot}: ${its.length} registro(s), ${n} com centro de custo.`);
+    } catch (e) { out.avisos.push(`${fo.rot}: ${e.message}`); if (log) log(`${fo.rot}: não foi possível ler (${e.message}).`, "warn"); }
+  }
+  return out;
+}
+window.mstExcluir = async cod => {
+  if (!mstPodeExcluir()) return; const c = (MST.cc || []).find(x => x.cod === cod); if (!c || !c._id) return;
+  toast("Conferindo se o centro foi usado…");
+  const V = await mstVarrer(); const usos = V.regs.filter(r => r.fo.c && (r.cod === c.cod || normName(r.val) === normName(c.nome))).length;
+  if (V.avisos.length) { toast("Não deu para conferir todas as listas — por segurança, nada foi excluído. Inative o centro.", 8000); return; }
+  if (usos) { toast(`"${c.nome}" está em ${usos} registro(s): não pode ser excluído. Inative-o.`, 8000); return; }
+  if (!(await erpConfirmar({ titulo: "Excluir centro de custo", texto: `Excluir ${c.cod} — ${c.nome}? Ele não aparece em nenhum registro. O código ${c.cod} não será reaproveitado.`, sim: "Excluir", perigo: true }))) return;
+  try {
+    const max = Math.max(Number(MST.maxCod) || 0, ...(MST.cc || []).map(x => mstCodOk(x.cod) ? parseInt(x.cod, 10) : 0));
+    await erpParamGravar("mst_cc_maxcod", max); MST.maxCod = max;   /* o código excluído não volta a ser dado */
+    await graph(`/sites/${MST.site.id}/lists/${MST.list.id}/items/${encodeURIComponent(c._id)}`, { method: "DELETE" }); closeModal(); toast("Centro de custo excluído"); await renderMst(); }
+  catch (e) { toast("Não foi possível excluir: " + e.message, 7000); }
+};
+/* ---- migração (Sistema › Configuração, administrador) ---- */
+const MST_EQUIV = { "trafego": "Operacional", "agencia macae": "Comercial / Agência", "agencia conceicao": "Comercial / Agência", "agencia": "Comercial / Agência", "comercial": "Comercial / Agência",
+  "financeiro / tesouraria": "Financeiro", "tesouraria": "Financeiro", "rh": "Recursos Humanos", "almoxarifado": "Operacional", "administracao": "Administrativo", "adm": "Administrativo", "manutencao": "Manutenção", "oficina": "Manutenção" };
+function mstSugestao(val) {
+  const k = normName(val), k2 = normName(String(val).replace(/\([^)]*\)/g, " "));
+  const d = MST.porNome && (MST.porNome.get(k) || MST.porNome.get(k2)); if (d) return d.cod;
+  const e = MST_EQUIV[k] || MST_EQUIV[k2]; return e ? mstCodPorNome(e) : "";
+}
+function mstLog(t, cls) { const el = $("mstMigLog"); if (!el) return; el.style.display = "block"; el.insertAdjacentHTML("beforeend", `<div class="${cls || ""}">${esc(t)}</div>`); el.scrollTop = el.scrollHeight; }
+window.mstMigLer = async () => {
+  if (!session.n1) return; const btn = $("mstMigLerBtn"), corpo = $("mstMigCorpo"); if (btn) btn.disabled = true; const lg = $("mstMigLog"); if (lg) lg.innerHTML = "";
+  try {
+    await mstCarregar(true);
+    if (!mstDaLista()) { mstLog(`A lista "${LISTS.mst_cc.displayName}" ${MST.fonte === "vazia" ? "está vazia: crie os centros em Diretoria › Cadastros mestres antes" : "não está disponível: rode Executar tudo antes"}.`, "warn"); return; }
+    mstLog("Lendo os valores em uso…"); const V = await mstVarrer(mstLog); MST.mig = { V, mapa: {} };
+    const linhas = [...V.porValor.entries()].sort((a, b) => b[1].total - a[1].total);
+    const ops = cod => `<option value="">— deixar como está —</option>${(MST.cc || []).map(c => `<option value="${esc(c.cod)}" ${c.cod === cod ? "selected" : ""}>${esc(c.cod)} · ${esc(c.nome)}${c.ativo ? "" : " (inativo)"}</option>`).join("")}<option value="__novo">+ criar centro novo com este nome</option>`;
+    corpo.innerHTML = `<p class="desc" style="margin-top:12px"><b>${linhas.length}</b> valor(es) diferente(s) em uso. Escolha para qual centro cada um vai ("de → para"); a sugestão já vem marcada. Nada é gravado antes da prévia e da sua confirmação.</p>
+      <div class="table-wrap"><table class="cap-table mst-mig"><thead><tr><th>Valor em uso</th><th>Onde</th><th>Registros</th><th>Para</th></tr></thead><tbody>
+      ${linhas.map(([k, g], i) => { const sug = mstSugestao(g.val), igual = sug && normName(mstNomePorCod(sug)) === normName(g.val); return `<tr data-k="${esc(k)}"><td><b>${esc(g.val)}</b>${igual ? ` <span class="pill st-pago"><i></i>igual ao cadastro</span>` : sug ? ` <span class="pill"><i></i>sugestão</span>` : ` <span class="pill st-vencido"><i></i>sem correspondência</span>`}</td>
+        <td class="sup">${Object.entries(g.por).map(([r, n]) => `${esc(r)} (${n})`).join("<br>")}</td><td class="nw">${g.total}${g.comCod ? `<div class="sup">${g.comCod} já com código</div>` : ""}</td><td><select class="mst-para" data-i="${i}">${ops(sug)}</select></td></tr>`; }).join("")}</tbody></table></div>
+      <div class="actions" style="margin-top:10px"><button class="btn" id="mstMigPrevBtn" onclick="mstMigPrevia()">Prévia</button><button class="btn primary" id="mstMigGravBtn" onclick="mstMigGravar()" disabled>Gravar</button></div><div id="mstMigPrev"></div>`;
+    MST.mig.linhas = linhas;
+    corpo.querySelectorAll(".mst-para").forEach(s => s.addEventListener("change", () => { $("mstMigGravBtn").disabled = true; $("mstMigPrev").innerHTML = ""; }));
+    mstLog(`Pronto: ${linhas.length} valor(es) diferente(s). Confira o "para" de cada um e clique em Prévia.`, "ok");
+  } catch (e) { mstLog("Interrompido: " + e.message, "warn"); }
+  finally { if (btn) btn.disabled = false; }
+};
+function mstMigPlano() {
+  const M = MST.mig; if (!M) return null; const mapa = {}, novos = [];
+  document.querySelectorAll("#mstMigCorpo .mst-para").forEach(s => { const [k, g] = M.linhas[+s.dataset.i]; if (!s.value) return; if (s.value === "__novo") { novos.push(g.val); mapa[k] = { novo: g.val }; } else mapa[k] = { cod: s.value }; });
+  const ops = [];
+  M.V.regs.forEach(r => {
+    if (!r.fo.c) return;   /* a lista Departamentos não é regravada: ela sai */
+    const k = normName(r.val) || ("#" + r.cod), m = mapa[k]; if (!m) return;
+    ops.push({ r, m });
+  });
+  return { mapa, novos: [...new Set(novos)], ops };
+}
+window.mstMigPrevia = () => {
+  const P = mstMigPlano(); if (!P) return; const el = $("mstMigPrev");
+  const muda = P.ops.filter(o => { const cod = o.m.cod, nome = cod ? mstNomePorCod(cod) : o.m.novo; return o.r.cod !== (cod || "?") || o.r.val !== nome; });
+  const porLista = {}; muda.forEach(o => { porLista[o.r.fo.rot] = (porLista[o.r.fo.rot] || 0) + 1; });
+  MST.mig.plano = Object.assign(P, { muda });
+  el.innerHTML = `<div class="import-help" style="margin-top:10px"><b>Prévia:</b> ${muda.length} registro(s) recebem o nome do cadastro e o código${P.novos.length ? `; ${P.novos.length} centro(s) novo(s): ${P.novos.map(esc).join(", ")}` : ""}.<br>${Object.entries(porLista).map(([r, n]) => `${esc(r)}: ${n}`).join(" · ") || "Nada a gravar."}<br><span class="sup">Contas pagas também recebem o código (o nome antigo só é trocado pelo nome do cadastro). Valores com "deixar como está" não mudam.</span></div>`;
+  $("mstMigGravBtn").disabled = !muda.length && !P.novos.length;
+};
+window.mstMigGravar = async () => {
+  const P = MST.mig && MST.mig.plano; if (!P || !session.n1) return;
+  if (!(await erpConfirmar({ titulo: "Gravar a migração dos centros de custo", texto: `Gravar ${P.muda.length} registro(s)${P.novos.length ? ` e criar ${P.novos.length} centro(s) novo(s)` : ""}? Pode rodar de novo depois: o que já estiver certo é pulado.`, sim: "Gravar" }))) return;
+  const btn = $("mstMigGravBtn"); btn.disabled = true; let ok = 0, falhas = 0;
+  try {
+    const l = await mstLista(true);
+    for (const nome of P.novos) { if (mstCodPorNome(nome)) continue; const todos = (await SP.items(MST.site.id, l.id)).map(i => mstDeItem(Object.assign({ _id: i.id }, i.fields))); const cod = mstProxCodigo(todos); await SP.create(MST.site.id, l.id, { Title: cod, Nome: subcatCapitaliza(nome), Status: "Ativo" }); mstLog(`Centro novo: ${cod} — ${subcatCapitaliza(nome)}`, "ok"); await mstCarregar(true); }
+    const lote = P.muda.map(o => () => { const cod = o.m.cod || mstCodPorNome(subcatCapitaliza(o.m.novo)); const nome = mstNomePorCod(cod); if (!cod || !nome) return Promise.resolve(); return SP.update(o.r.siteId, o.r.listId, o.r.id, { [o.r.fo.n]: nome, [o.r.fo.c]: cod }).then(() => { ok++; }).catch(e => { falhas++; if (falhas <= 5) mstLog(`${o.r.fo.rot} #${o.r.id}: ${e.message}`, "warn"); }); });
+    for (let i = 0; i < lote.length; i += 5) { await Promise.all(lote.slice(i, i + 5).map(f => f())); if (i % 50 === 0) mstLog(`… ${Math.min(i + 5, lote.length)} de ${lote.length}`); }
+    try { await erpParamGravar("mst_cc_migracao", { em: new Date().toISOString(), por: (session.me && session.me.displayName) || "", mapa: Object.fromEntries(Object.entries(P.mapa).map(([k, m]) => [k, m.cod || ("novo:" + m.novo)])), gravados: ok, falhas }); } catch (e) {}
+    mstLog(`Concluído: ${ok} registro(s) gravado(s)${falhas ? `, ${falhas} falha(s) (rode de novo)` : ""}.`, falhas ? "warn" : "ok");
+    CAP_STATE.list = null; FORN_STATE.list = null; FORN_STATE.cols = null; OBR_STATE.list = null;   /* telas releem */
+  } catch (e) { mstLog("Interrompido: " + e.message, "warn"); }
+  finally { btn.disabled = true; if (MST.mig) MST.mig.plano = null; const pv = $("mstMigPrev"); if (pv) pv.insertAdjacentHTML("beforeend", `<p class="sup">Para gravar de novo, leia os valores e faça a prévia outra vez.</p>`); }
+};
+/* Departamentos (RH): exportar (.xlsx) e excluir a lista */
+async function mstDeptosLista() { const st = await SP.site(CONFIG.sites[LISTS.rh_depts.siteKey]); const l = (await SP.lists(st.id)).find(x => x.displayName === LISTS.rh_depts.displayName) || null; return { st, l }; }
+window.mstDeptosExportar = async () => {
+  if (!session.n1) return;
+  try {
+    const { st, l } = await mstDeptosLista(); if (!l) { mstLog(`A lista "${LISTS.rh_depts.displayName}" não existe (já foi excluída?).`, "warn"); return; }
+    const its = (await SP.items(st.id, l.id)).map(i => i.fields || {});
+    await erpLib("xlsx");
+    const aoa = [["Código", "Departamento", "Responsável", "Status", "Criado em", "Id"]].concat(its.map(f => [f.Codigo || "", f.Title || "", f.Responsavel || "", f.Ativo === false ? "Inativo" : "Ativo", f.Created ? String(f.Created).slice(0, 10) : "", f.id || ""]));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "Departamentos");
+    XLSX.writeFile(wb, `RH-Departamentos-copia-${todayISO()}.xlsx`);
+    MST.deptosExportado = true; mstLog(`Cópia exportada (${its.length} departamento(s)). Guarde o arquivo e mande para o projeto.`, "ok");
+  } catch (e) { mstLog("Não foi possível exportar: " + e.message, "warn"); }
+};
+window.mstDeptosExcluir = async () => {
+  if (!session.n1) return;
+  if (!MST.deptosExportado) { mstLog("Exporte a cópia (.xlsx) antes de excluir.", "warn"); return; }
+  try {
+    const { st, l } = await mstDeptosLista(); if (!l) { mstLog("A lista já não existe.", "ok"); return; }
+    if (!(await erpConfirmar({ titulo: "Excluir a lista Departamentos", texto: `Excluir do SharePoint a lista "${LISTS.rh_depts.displayName}" (site RH)? A cópia em .xlsx já foi exportada. Os centros de custo ficam em Diretoria › Cadastros mestres. Não dá para desfazer pelo ERP (a lista vai para a lixeira do site).`, sim: "Excluir a lista", perigo: true }))) return;
+    await graph(`/sites/${st.id}/lists/${l.id}`, { method: "DELETE" });
+    mstLog(`Lista "${LISTS.rh_depts.displayName}" excluída (fica na lixeira do site RH por 93 dias).`, "ok");
+  } catch (e) { mstLog("Não foi possível excluir: " + e.message, "warn"); }
+};
+{ const pc = pageConfig; pageConfig = function () {
+    let h = pc.apply(this, arguments); if (!session.n1) return h;
+    const card = `<section class="setup-card" id="mstMigCard"><h2>Cadastros mestres — centros de custo (v0.14.0)</h2>
+      <p class="desc">1) "Executar tudo na ordem" cria a lista "${esc(LISTS.mst_cc.displayName)}" (site Diretoria) e as colunas de código. 2) Em Diretoria › Cadastros mestres, crie os centros (há um botão para os 9 iniciais). 3) <b>Ler os valores em uso</b> → escolher o "de → para" → <b>Prévia</b> → <b>Gravar</b>. 4) Exporte a cópia dos Departamentos e exclua a lista do RH. 5) No SharePoint, dê leitura da lista de centros a "Todos, exceto usuários externos".</p>
+      <div class="actions"><button class="btn" id="mstMigLerBtn" onclick="mstMigLer()">Ler os valores em uso</button><button class="btn" onclick="mstDeptosExportar()">Exportar Departamentos (.xlsx)</button><button class="btn" onclick="mstDeptosExcluir()">Excluir a lista Departamentos</button></div>
+      <div id="mstMigCorpo"></div><div class="setup-log checks" id="mstMigLog" style="display:none;max-height:300px;overflow:auto"></div></section>`;
+    return h.replace("<h1>Configuração</h1>", "<h1>Configuração</h1>" + card);
+  }; window.pageConfig = pageConfig; }
+/* ---- RH: Departamentos saem; Funcionários › Departamento vira Centro de custo ---- */
+{ const i = RHDB_CARDS.findIndex(c => c.id === "deptos"); if (i >= 0) RHDB_CARDS.splice(i, 1); if (PAG_DEF.rh_db) PAG_DEF.rh_db = PAG_DEF.rh_db.filter(p => p.k !== "deptos");
+  const s = SETUP_ORDER.indexOf("rh_depts"); if (s >= 0) SETUP_ORDER.splice(s, 1); }
+RHF_ROTULO.Departamento = "Centro de custo";
+{ const c = RHDB_COLS.funcs.find(x => x[0] === "Departamento"); if (c) c[1] = "Centro de custo"; }
+RHF_MAPA.push([/^(centro de custo|centro custo|cc)$/, "Departamento"]);
+RHF_SETORES.splice(0, RHF_SETORES.length, "Oficina", "Guichê", "Garagem", "Tráfego", "Escritório", "Almoxarifado");   /* Setor = local de trabalho; o vínculo com a empresa fica no Centro de custo */
+{ const f1 = RHDB_FORMS.funcs;
+  RHDB_FORMS.funcs = v => {
+    let html = f1(v); const atual = String(v.Departamento || ""), ativos = (MST.cc || []).filter(c => c.ativo);
+    const fora = atual && !ativos.some(c => c.nome === atual) ? `<option value="${esc(atual)}" selected>${esc(atual)}${MST.porNome && MST.porNome.get(normName(atual)) ? " (inativo)" : " (fora do cadastro)"}</option>` : "";
+    const sel = `<select id="rdFuDep"><option value="">—</option>${fora}${ativos.map(c => `<option value="${esc(c.nome)}" ${c.nome === atual ? "selected" : ""}>${esc(c.cod)} · ${esc(c.nome)}</option>`).join("")}</select><div class="hint">Da Diretoria › Cadastros mestres</div>`;
+    html = html.replace(/<select id="rdFuDep">[\s\S]*?<\/select>(\s*<div class="hint">[\s\S]*?<\/div>)?/, () => sel).replace(/<input id="rdFuDep"[^>]*>\s*<datalist id="rdFuDepList">[\s\S]*?<\/datalist>/, () => sel);
+    return html.replace(/<label>Departamento<\/label>(\s*<select id="rdFuDep")/, (m, a) => "<label>Centro de custo</label>" + a);
+  };
+}
+/* Normas CLT › Responsável: funcionários do(s) centro(s) marcado(s) "Responde pelo RH" */
+{ const r0 = rhCltRespOpcoes; rhCltRespOpcoes = function (atual) {
+    const rh = new Set((MST.cc || []).filter(c => c.rh).map(c => normName(c.nome)));
+    if (!rh.size) return r0.apply(this, arguments);
+    const nomes = [...new Set((LANC_AUX.funcs || []).filter(f => rh.has(normName(f.Departamento))).map(f => f.Title).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const fora = atual && !nomes.includes(atual) ? `<option selected>${esc(atual)}</option>` : "";
+    return { html: `<option value="">—</option>${fora}${nomes.map(n => `<option ${n === atual ? "selected" : ""}>${esc(n)}</option>`).join("")}`, n: nomes.length };
+  }; window.rhCltRespOpcoes = rhCltRespOpcoes; }
+
+/* v0.14.0: o rodapé do menu mostra sempre a versão do CONFIG (estava fixo desde a v0.13.4.3) */
+{ const ev = document.getElementById("erpVer"); if (ev) { ev.textContent = CONFIG.version; ev.style.fontWeight = "inherit"; } }
 </script>
 </body>
 </html>

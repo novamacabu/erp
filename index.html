@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.13.4.4",
+  version: "v0.13.4.5",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -4047,6 +4047,9 @@ const LISTS = {
       { name: "CNPJ",               displayName: "CNPJ / CPF",           text: { allowMultipleLines: false, maxLength: 20 } },
       { name: "Papeis",             displayName: "Papéis",               choice: { choices: TERC_PAPEIS.map(p => p.n), displayAs: "checkBoxes", allowTextEntry: false }, update: true, naoObrig: true },   /* v0.13.4 · 2e: tipo/classificação do terceiro (vários papéis no mesmo cadastro) */
       { name: "NomeFantasia",       displayName: "Nome fantasia",        text: { allowMultipleLines: false, maxLength: 255 } },   /* v0.13.4.4 (pedido de 15/10 15:49) */
+      { name: "Produtos",           displayName: "Produtos e serviços (JSON)", text: { allowMultipleLines: true, textType: "plain" } },   /* v0.13.4.5 (pedidos de 15/10 17:08) */
+      { name: "Avaliacoes",         displayName: "Avaliações (JSON)",    text: { allowMultipleLines: true, textType: "plain" } },
+      { name: "Documentos",         displayName: "Documentos (JSON)",    text: { allowMultipleLines: true, textType: "plain" } },
       { name: "OutrosContatos",     displayName: "Outros contatos (JSON)", text: { allowMultipleLines: true, textType: "plain" } },   /* v0.13.4.2: vários contatos e telefones */
       { name: "UF",                 displayName: "UF",                   text: { allowMultipleLines: false, maxLength: 2 } },   /* v0.13.4.2: localização (Estado → Cidade) */
       { name: "Cidade",             displayName: "Cidade",               text: { allowMultipleLines: false, maxLength: 100 } },
@@ -34569,7 +34572,7 @@ async function tercRhCpfMapa() {   /* CPF → funcionário (só quem lê "RH —
   const ff0 = fornFiltered;
   fornFiltered = function () { let arr = ff0.apply(this, arguments); const p = FORN_STATE.filter.papel;
     /* v0.13.4.2: a busca também acha pela cidade/UF (o filtro base já tirou quem não casou por nome/CNPJ: refaz incluindo a localização) */
-    const q = String(FORN_STATE.filter.busca || "").toLowerCase(); if (q) { const b = FORN_STATE.filter.busca; FORN_STATE.filter.busca = ""; try { const tudo = ff0.apply(this, arguments); arr = tudo.filter(x => [x.Title, x.NomeFantasia, x.CNPJ, x.CategoriaPadrao, x.SubcategoriaPadrao, x.Contato, x.Telefone, x.Email, x.Observacoes, x.Cidade, x.UF, ...tercContatosDe(x).flatMap(c => [c.n, c.tel, c.email])].some(v => String(v || "").toLowerCase().includes(q))); } finally { FORN_STATE.filter.busca = b; } } if (p) arr = arr.filter(x => p === "__sem" ? !tercPapeis(x).length : tercPapeis(x).includes(p)); return arr; };
+    const q = String(FORN_STATE.filter.busca || "").toLowerCase(); if (q) { const b = FORN_STATE.filter.busca; FORN_STATE.filter.busca = ""; try { const tudo = ff0.apply(this, arguments); arr = tudo.filter(x => [x.Title, x.NomeFantasia, ...tercProdutosDe(x), x.CNPJ, x.CategoriaPadrao, x.SubcategoriaPadrao, x.Contato, x.Telefone, x.Email, x.Observacoes, x.Cidade, x.UF, ...tercContatosDe(x).flatMap(c => [c.n, c.tel, c.email])].some(v => String(v || "").toLowerCase().includes(q))); } finally { FORN_STATE.filter.busca = b; } } if (p) arr = arr.filter(x => p === "__sem" ? !tercPapeis(x).length : tercPapeis(x).includes(p)); return arr; };
   window.fornFiltered = fornFiltered;
   const pt0 = paintForn;
   paintForn = function () {
@@ -34672,7 +34675,7 @@ async function fornSave(existing, inline) {
   const contas = tercContasLer();
   if ($("gOutros") && tercContatosLer().some(c => c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email))) { showErr("Outros contatos: há um e-mail inválido."); return; }
   const fields = {
-    Title: nome, NomeFantasia: $("gFantasia") ? (g("gFantasia") || null) : undefined, CNPJ: doc, Tipo: tipo || null, Papeis: papeis,
+    Title: nome, NomeFantasia: $("gFantasia") ? (g("gFantasia") || null) : undefined, Produtos: $("gProdutos") ? (() => { const pr = tercProdLer(); return pr.length ? JSON.stringify(pr) : null; })() : undefined, CNPJ: doc, Tipo: tipo || null, Papeis: papeis,
     Contas: contas.length ? JSON.stringify(contas) : null, OutrosContatos: (() => { const oc = $("gOutros") ? tercContatosLer() : null; return oc === null ? undefined : oc.length ? JSON.stringify(oc) : null; })(), UF: tercUFCanon(g("gUF")) || null, Cidade: tercUFCanon(g("gUF")) ? (tercCidadeCanon(tercUFCanon(g("gUF")), $("gCidade") && $("gCidade").disabled ? $("gCidade").dataset.v : g("gCidade")) || null) : null,   /* revisão: salvar com a lista ainda carregando mantém a cidade gravada */ CodigoBanco: g("gCodBanco") || null, FuncionarioId: papeis.includes("Funcionário") ? (g("gFunc") || null) : null,
     CategoriaPadrao: (g("gCat") === "Outros" && $("gCatOutro") && g("gCatOutro")) ? g("gCatOutro") : (g("gCat") || null), SubcategoriaPadrao: g("gSub") || null,
     BancoPadrao: g("gBanco") || null, FormaPadrao: g("gForma") || null,
@@ -34685,7 +34688,7 @@ async function fornSave(existing, inline) {
     Observacoes: g("gObs") || null
   };
   if (FORN_STATE.cols) for (const k of Object.keys(fields)) if (k !== "Title" && !FORN_STATE.cols.has(k)) delete fields[k];   /* colunas novas só depois da Configuração */
-  if (FORN_STATE.cols && ((!FORN_STATE.cols.has("UF") && g("gUF")) || (!FORN_STATE.cols.has("NomeFantasia") && g("gFantasia")) || (!FORN_STATE.cols.has("OutrosContatos") && $("gOutros") && tercContatosLer().length))) toast("As colunas de Nome Fantasia / Localização / Outros contatos ainda não existem: rode Sistema › Configuração (Executar tudo) para gravá-las.", 8000);
+  if (FORN_STATE.cols && ((!FORN_STATE.cols.has("UF") && g("gUF")) || (!FORN_STATE.cols.has("NomeFantasia") && g("gFantasia")) || (!FORN_STATE.cols.has("Produtos") && $("gProdutos") && tercProdLer().length) || (!FORN_STATE.cols.has("OutrosContatos") && $("gOutros") && tercContatosLer().length))) toast("As colunas novas (Nome Fantasia, Produtos, Localização, Outros contatos) ainda não existem: rode Sistema › Configuração (Executar tudo) para gravá-las.", 8000);
   if (FORN_STATE.cols && !FORN_STATE.cols.has("Papeis")) toast("A coluna Papéis ainda não existe: rode Sistema › Configuração para gravar os papéis.", 7000);
   const btn = $("gSave"); btn.disabled = true; btn.textContent = "Salvando…";
   try {
@@ -34757,6 +34760,216 @@ const tercLocTxt = x => [x && x.Cidade, x && x.UF].filter(Boolean).join(" / ");
 /* ao abrir o formulário de um cadastro com UF, carrega a lista de cidades do estado */
 { const fe0 = window.fornEdit; window.fornEdit = id => { const r = fe0(id); setTimeout(() => { if ($("gUF") && $("gUF").value) tercLocUF(); }, 0); return r; }; }
 
+/* ===================== v0.13.4.5 (pedidos de 15/10 17:08) · Terceiros: produtos e serviços fornecidos, avaliação dos serviços, documentos e catálogos =====================
+   Produtos: seleção múltipla em Informações Fiscais e Contábeis (lista base + itens novos; o que um administrador digita vira opção para todos,
+   em "ERP — Parâmetros" › terc_produtos_extra). Filtro por produto e busca na lista do Banco de Dados e na busca do topo.
+   Avaliação: no cartão do cadastro — nota de 1 a 5 em Qualidade, Preço, Prazo e Atendimento, "Recomenda?" e comentário; histórico com data e autor; média na lista.
+   Documentos: no cartão — catálogos, tabelas de preços, propostas, contratos… na biblioteca do site Terceiros, pasta "Banco de Dados/<Razão Social>". */
+const TERC_PRODUTOS = ["Água Mineral", "Alimentação e Refeições", "Ar-Condicionado", "Borracharia", "Combustíveis", "Contabilidade", "Copa e Cozinha", "Elétrica Automotiva",
+  "EPI", "Estofamento", "Ferramentas", "Filtros", "Funilaria e Pintura", "Gás", "Gráfica e Impressos", "Informática", "Internet e Telefonia", "Jurídico", "Lavagem de Veículos",
+  "Limpeza (Material)", "Limpeza (Serviço)", "Lubrificantes e Óleo", "Manutenção Predial", "Material de Construção", "Material de Escritório", "Material Elétrico",
+  "Material Hidráulico", "Mecânica", "Medicina do Trabalho", "Peças Automotivas", "Pneus", "Recapagem", "Segurança Patrimonial", "Seguros", "Software", "Tacógrafo",
+  "Tintas", "Transporte e Frete", "Uniformes", "Validadores e Bilhetagem", "Vidros Automotivos"];
+const TERC_DOC_TIPOS = ["Catálogo", "Tabela de Preços", "Proposta / Orçamento", "Contrato", "Certidão", "Outro"];
+const TERC_AVAL_CRIT = [["q", "Qualidade"], ["p", "Preço"], ["pz", "Prazo"], ["at", "Atendimento"]];
+const TERC_X = { prodExtra: null, prodP: null, drive: null, escritas: 0 };
+function tercJson(v) { try { const a = JSON.parse(v || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+const tercProdutosDe = x => tercJson(x && x.Produtos).map(s => String(s || "").trim()).filter(Boolean);
+const tercDocsDe = x => tercJson(x && x.Documentos).filter(a => a && a.id);
+const tercAvalsDe = x => tercJson(x && x.Avaliacoes).filter(a => a && a.d);
+function tercAvalNota(a) { const ns = TERC_AVAL_CRIT.map(([k]) => Number(a[k])).filter(n => n >= 1 && n <= 5); return ns.length ? ns.reduce((t, n) => t + n, 0) / ns.length : null; }
+function tercAvalResumo(x) {
+  const as = tercAvalsDe(x), ns = as.map(tercAvalNota).filter(n => n != null); if (!ns.length) return null;
+  const crit = {}; TERC_AVAL_CRIT.forEach(([k]) => { const v = as.map(a => Number(a[k])).filter(n => n >= 1 && n <= 5); crit[k] = v.length ? v.reduce((t, n) => t + n, 0) / v.length : null; });
+  const rec = as.filter(a => a.rec === "sim" || a.rec === "nao");
+  return { media: ns.reduce((t, n) => t + n, 0) / ns.length, n: ns.length, crit, recSim: rec.filter(a => a.rec === "sim").length, recN: rec.length };
+}
+const tercNota = n => n == null ? "—" : (Math.round(n * 10) / 10).toFixed(1).replace(".", ",");
+const tercEstrelas = n => { const r = n == null ? 0 : Math.round(n); return `<span class="tav-est" aria-label="${r} de 5">${"★".repeat(r)}<i>${"★".repeat(5 - r)}</i></span>`; };
+const tercTam = b => { const n = Number(b) || 0; return n >= 1048576 ? (n / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(n / 1024)) + " KB"; };
+/* conta as gravações no SharePoint (para saber se o salvar do cadastro chegou a gravar) */
+{ const c0 = SP.create, u0 = SP.update;
+  SP.create = async function () { const r = await c0.apply(this, arguments); TERC_X.escritas++; return r; };
+  SP.update = async function () { const r = await u0.apply(this, arguments); TERC_X.escritas++; return r; };
+}
+/* ---- produtos ---- */
+function tercProdCarregar() {
+  if (TERC_X.prodExtra) return Promise.resolve(TERC_X.prodExtra);
+  if (TERC_X.prodP) return TERC_X.prodP;
+  TERC_X.prodP = erpParamLer("terc_produtos_extra").then(r => { TERC_X.prodP = null; TERC_X.prodExtra = r && Array.isArray(r.valor) ? r.valor.map(x => String(x || "").trim()).filter(Boolean) : (TERC_X.prodExtra || []); return TERC_X.prodExtra; })
+    .catch(() => { TERC_X.prodP = null; return TERC_X.prodExtra || []; });
+  return TERC_X.prodP;
+}
+function tercProdOpcoes(extra) {
+  const vistos = new Set(), out = [];
+  [...TERC_PRODUTOS, ...(TERC_X.prodExtra || []), ...(extra || [])].forEach(x => { const k = normName(x); if (!k || vistos.has(k)) return; vistos.add(k); out.push(x); });
+  return out.sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+const tercProdChip = (p, on) => `<label class="terc-papel terc-prod" data-n="${esc(normName(p))}"><input type="checkbox" name="gProd" value="${esc(p)}" ${on ? "checked" : ""}> ${esc(p)}</label>`;
+function tercProdCampo(v) {
+  const sel = tercProdutosDe(v), marc = new Set(sel.map(normName)), ops = tercProdOpcoes(sel);
+  return `<div class="field full terc-prod-field"><label>Produtos e serviços fornecidos <span class="sup" style="text-transform:none;font-weight:600">marque quantos quiser — facilitam achar fornecedores no Banco de Dados</span></label>
+      <input id="gProdBusca" type="search" autocomplete="off" placeholder="Filtrar a lista ou digitar um novo e Enter">
+      <div class="terc-prods" id="gProdutos">${ops.map(p => tercProdChip(p, marc.has(normName(p)))).join("")}</div><div class="hint" id="gProdHint">${sel.length ? sel.length + " marcado(s)" : ""}</div></div>`;
+}
+function tercProdLer() { return [...document.querySelectorAll("#gProdutos input[name=gProd]:checked")].map(i => i.value); }
+function tercProdFiltrar() { const b = $("gProdBusca"), q = normName(b ? b.value : ""); document.querySelectorAll("#gProdutos .terc-prod").forEach(l => { l.hidden = !!q && !l.dataset.n.includes(q) && !l.querySelector("input").checked; }); }
+function tercProdContar() { const h = $("gProdHint"); if (h) { const n = tercProdLer().length; h.textContent = n ? n + " marcado(s)" : ""; } }
+document.addEventListener("input", e => { if (e.target && e.target.id === "gProdBusca") tercProdFiltrar(); });
+document.addEventListener("change", e => { if (e.target && e.target.name === "gProd") tercProdContar(); });
+document.addEventListener("keydown", e => {
+  if (!e.target || e.target.id !== "gProdBusca" || e.key !== "Enter") return;
+  e.preventDefault(); e.stopPropagation();
+  const t = subcatCapitaliza(e.target.value); if (!t) return;
+  const box = $("gProdutos"), k = normName(t), ex = [...box.querySelectorAll(".terc-prod")].find(l => l.dataset.n === k);
+  if (ex) ex.querySelector("input").checked = true; else box.insertAdjacentHTML("afterbegin", tercProdChip(t, true));
+  e.target.value = ""; tercProdFiltrar(); tercProdContar();
+}, true);
+async function tercProdAprender(novos) {
+  if (!ehAdmNivel() || !novos.length) return;
+  try {
+    const r = await erpParamLer("terc_produtos_extra", true); if (r === undefined) return;   /* não leu: não grava por cima */
+    const atual = r && Array.isArray(r.valor) ? r.valor.slice() : [], base = new Set([...TERC_PRODUTOS, ...atual].map(normName));
+    const add = [...new Map(novos.filter(x => !base.has(normName(x))).map(x => [normName(x), x])).values()]; if (!add.length) return;
+    const v = atual.concat(add); await erpParamGravar("terc_produtos_extra", v); TERC_X.prodExtra = v;
+    toast(`${add.map(x => `"${x}"`).join(", ")} ${add.length > 1 ? "passam" : "passa"} a ser opção na lista de produtos.`, 6000);
+  } catch (e) { toast("Não foi possível incluir o produto novo na lista: " + e.message, 8000); }
+}
+{ const fm = fornForm; fornForm = function (x) {
+    const h = fm.apply(this, arguments), v = x || {};
+    const m = h.match(/<input id="gSub"[\s\S]*?<\/datalist><\/div>/); if (!m) return h;
+    return h.replace(m[0], () => m[0] + tercProdCampo(v));
+  }; window.fornForm = fornForm; }
+{ const fs = fornSave; fornSave = async function () {
+    const pr = $("gProdutos") ? tercProdLer() : [], base = new Set([...TERC_PRODUTOS, ...(TERC_X.prodExtra || [])].map(normName)), novos = pr.filter(x => !base.has(normName(x)));
+    const n0 = TERC_X.escritas, r = await fs.apply(this, arguments);
+    if (novos.length && TERC_X.escritas > n0) tercProdAprender(novos);
+    return r;
+  }; window.fornSave = fornSave; }
+{ const lf = loadForn; loadForn = async function () { tercProdCarregar(); return lf.apply(this, arguments); }; window.loadForn = loadForn; }
+/* ---- lista: filtro por produto, produtos e nota em cada linha ---- */
+{ const ff = fornFiltered; fornFiltered = function () {
+    let arr = ff.apply(this, arguments); const pr = FORN_STATE.filter && FORN_STATE.filter.prod;
+    if (pr && tercSoCadastro()) arr = arr.filter(x => tercProdutosDe(x).some(p => normName(p) === normName(pr)));
+    return arr;
+  }; window.fornFiltered = fornFiltered; }
+{ const pf = paintForn; paintForn = function () {
+    const r = pf.apply(this, arguments), body = $("fornBody"); if (!body || !tercSoCadastro()) return r;
+    const flt = body.querySelector(".filters");
+    if (flt && !$("fornProd")) {
+      const um = new Map(); (FORN_STATE.items || []).forEach(x => tercProdutosDe(x).forEach(p => { const k = normName(p); if (!um.has(k)) um.set(k, p); }));   /* revisão: uma leitura por cadastro */
+      const usados = [...um.values()].sort((a, b) => a.localeCompare(b, "pt-BR")), cur = FORN_STATE.filter.prod || "";
+      if (usados.length || cur) {
+        const sel = document.createElement("select"); sel.id = "fornProd"; sel.title = "Produto ou serviço fornecido";
+        sel.innerHTML = `<option value="">Todos os produtos</option>` + (usados.includes(cur) || !cur ? usados : usados.concat(cur)).map(p => `<option value="${esc(p)}" ${p === cur ? "selected" : ""}>${esc(p)}</option>`).join("");
+        sel.addEventListener("change", () => { FORN_STATE.filter.prod = sel.value; FORN_STATE.pageN = 45; paintForn(); });
+        flt.appendChild(sel);
+      }
+    }
+    body.querySelectorAll("table.cap-table tbody tr").forEach(tr => {
+      const m = String(tr.getAttribute("onclick") || "").match(/fornAbrir\('(?:id:|id%3A)(\d+)'/i); if (!m) return; const x = FORN_STATE.items.find(i => String(i._id) === m[1]); if (!x) return;
+      const td = tr.querySelector("td"); if (!td || td.querySelector(".terc-prod-linha, .terc-aval-mini")) return;
+      const pr = tercProdutosDe(x), av = tercAvalResumo(x);
+      if (pr.length) td.insertAdjacentHTML("beforeend", `<div class="terc-prod-linha">${esc(pr.slice(0, 3).join(" · "))}${pr.length > 3 ? ` +${pr.length - 3}` : ""}</div>`);
+      if (av) td.insertAdjacentHTML("beforeend", `<div class="terc-aval-mini" title="Média de ${av.n} avaliação(ões)">★ ${tercNota(av.media)} <span>(${av.n})</span></div>`);
+    });
+    return r;
+  }; window.paintForn = paintForn; }
+/* ---- cartão: produtos, avaliação e documentos ---- */
+async function tercCampoJson(id, campo, muda) {
+  if (FORN_STATE.cols && !FORN_STATE.cols.has(campo)) throw new Error("a coluna ainda não existe no SharePoint — rode Sistema › Configuração › Executar tudo");
+  const cad = FORN_STATE.items.find(x => String(x._id) === String(id));
+  let atual; try { const r = await graph(`/sites/${FORN_STATE.site.id}/lists/${FORN_STATE.list.id}/items/${encodeURIComponent(id)}?$expand=fields`); if (r && r.fields) atual = r.fields[campo] == null ? "" : r.fields[campo]; } catch (e) {}
+  if (atual === undefined) atual = cad ? cad[campo] : "";   /* não releu: usa o que está na tela */
+  const arr = muda(tercJson(atual)), val = arr.length ? JSON.stringify(arr) : null;
+  await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, id, { [campo]: val });
+  if (cad) cad[campo] = val;
+  return arr;
+}
+function tercCardExtras(key) {
+  const id = String(key).replace(/^id:/, ""), cad = FORN_STATE.items.find(x => String(x._id) === id), body = document.querySelector("#modal .modal-body.tcad"); if (!cad || !body) return;
+  const ed = podeEditar("forn"), adm = ehAdmNivel(), vazio = t => `<p class="tcad-vazio">${esc(t)}</p>`, sec = (tit, corpo, extra) => `<section class="tcad-sec">${`<h4>${esc(tit)}${extra ? ` <span>${extra}</span>` : ""}</h4>`}${corpo}</section>`;
+  const pr = tercProdutosDe(cad);
+  const prod = sec("Produtos e serviços fornecidos", pr.length ? `<span class="tcad-pills">${pr.map(p => `<span class="pill">${esc(p)}</span>`).join("")}</span>` : vazio("Nenhum marcado — use Editar cadastro."));
+  const R = tercAvalResumo(cad), as = tercAvalsDe(cad).slice().sort((a, b) => String(b.d).localeCompare(String(a.d)));
+  const resumo = R ? `<div class="tav-res"><div class="tav-media"><b>${tercNota(R.media)}</b>${tercEstrelas(R.media)}<small>${R.n} avaliação(ões)${R.recN ? ` · ${Math.round(R.recSim / R.recN * 100)}% recomendam` : ""}</small></div>
+      <dl class="tav-crit">${TERC_AVAL_CRIT.map(([k, l]) => `<div><dt>${l}</dt><dd>${tercEstrelas(R.crit[k])} <span>${tercNota(R.crit[k])}</span></dd></div>`).join("")}</dl></div>` : vazio("Ainda sem avaliação.");
+  const lista = as.length ? `<ul class="tav-lista">${as.slice(0, 20).map(a => `<li><div class="tav-l1"><b>★ ${tercNota(tercAvalNota(a))}</b>${a.rec === "sim" ? `<span class="pill st-pago"><i></i>Recomenda</span>` : a.rec === "nao" ? `<span class="pill st-vencido"><i></i>Não recomenda</span>` : ""}<span class="sup">${esc(fmtDate(a.d))}${a.por ? " · " + esc(a.por) : ""}</span>${adm ? `<button type="button" class="tav-x" title="Excluir esta avaliação" onclick="tercAvalExcluir(${jsArg(id)}, ${jsArg(a.id || "")})">×</button>` : ""}</div>
+      <div class="sup">${TERC_AVAL_CRIT.map(([k, l]) => { const n = Number(a[k]); return n >= 1 && n <= 5 ? `${l} ${n}` : ""; }).filter(Boolean).join(" · ")}</div>${a.obs ? `<div class="tav-obs">${esc(a.obs)}</div>` : ""}</li>`).join("")}</ul>${as.length > 20 ? `<p class="sup">+${as.length - 20} avaliação(ões) mais antigas</p>` : ""}` : "";
+  const estrelas = k => `<div class="tav-stars" role="radiogroup">${[5, 4, 3, 2, 1].map(n => `<label title="${n}"><input type="radio" name="tav_${k}" value="${n}"><span>★</span></label>`).join("")}</div>`;
+  const form = ed ? `<div class="tav-form" id="tavForm" hidden>${TERC_AVAL_CRIT.map(([k, l]) => `<div class="tav-row"><span>${l}</span>${estrelas(k)}</div>`).join("")}
+      <div class="tav-row"><span>Recomenda?</span><select id="tavRec"><option value="">—</option><option value="sim">Sim</option><option value="nao">Não</option></select></div>
+      <textarea id="tavObs" rows="2" maxlength="600" placeholder="Comentário (o que foi feito, o que funcionou, o que não funcionou)"></textarea><div class="hint" id="tavErr"></div>
+      <div class="actions"><button type="button" class="btn primary" id="tavSalvar" onclick="tercAvalSalvar(${jsArg(id)})">Salvar avaliação</button><button type="button" class="btn" onclick="$('tavForm').hidden=true;$('tavAbrir').hidden=false">Cancelar</button></div></div>
+      <button type="button" class="btn" id="tavAbrir" onclick="this.hidden=true;$('tavForm').hidden=false">Avaliar o serviço</button>` : "";
+  const aval = sec("Avaliação dos serviços", resumo + form + lista, "vale a pena continuar com este terceiro?");
+  const docs = tercDocsDe(cad);
+  const ldocs = docs.length ? `<ul class="tdoc-l">${docs.map(a => `<li><span class="pill">${esc(a.t || "Documento")}</span><a href="#" onclick="event.preventDefault();tercDocVer(${jsArg(id)}, ${jsArg(a.id)})">${esc(a.n || "documento")}</a><span class="sup">${esc(tercTam(a.s))}${a.em ? " · " + esc(fmtDate(a.em)) : ""}${a.por ? " · " + esc(a.por) : ""}</span>${ed ? `<button type="button" class="tav-x" title="Excluir o documento" onclick="tercDocExcluir(${jsArg(id)}, ${jsArg(a.id)})">×</button>` : ""}</li>`).join("")}</ul>` : vazio("Nenhum documento.");
+  const add = ed ? `<div class="tdoc-add"><select id="tdocTipo" title="Tipo do documento">${TERC_DOC_TIPOS.map(t => `<option>${esc(t)}</option>`).join("")}</select><input type="file" id="tdocArq" multiple accept="${esc(DOC_ACEITA)}"><button type="button" class="btn" id="tdocBtn" onclick="tercDocEnviar(${jsArg(id)})">Anexar</button><span class="sup" id="tdocSt"></span></div>` : "";
+  const doc = sec("Documentos e catálogos", ldocs + add, "catálogos, tabelas de preços, propostas, contratos");
+  const nota = body.querySelector(".tcad-nota"), html = prod + aval + doc;
+  if (nota) nota.insertAdjacentHTML("beforebegin", html); else body.insertAdjacentHTML("beforeend", html);
+}
+{ const tc = tercCadastroCard; tercCadastroCard = function (key) { const r = tc.apply(this, arguments); try { tercCardExtras(key); } catch (e) { console.warn("tercCardExtras", e); } return r; }; window.tercCadastroCard = tercCadastroCard; }
+const tercReabrir = id => { const m = $("modal"), y = m && m.querySelector(".modal-body") ? m.querySelector(".modal-body").scrollTop : 0; tercCadastroCard("id:" + id); const b = document.querySelector("#modal .modal-body"); if (b) b.scrollTop = y; };
+window.tercAvalSalvar = async id => {
+  if (!podeEditar("forn")) return;
+  const e = $("tavErr"), btn = $("tavSalvar"), v = {}; TERC_AVAL_CRIT.forEach(([k]) => { const r = document.querySelector(`input[name=tav_${k}]:checked`); if (r) v[k] = Number(r.value); });
+  if (!Object.keys(v).length) { if (e) e.textContent = "Dê a nota de ao menos um item (1 a 5 estrelas)."; return; }
+  const a = Object.assign({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), d: todayISO(), por: (session.me && session.me.displayName) || "" }, v, { rec: ($("tavRec") || {}).value || "", obs: (($("tavObs") || {}).value || "").trim() });
+  if (btn) { btn.disabled = true; btn.textContent = "Salvando…"; }
+  try { await tercCampoJson(id, "Avaliacoes", arr => arr.concat([a])); toast("Avaliação registrada"); tercReabrir(id); if ($("fornBody")) paintForn(); }
+  catch (err) { if (e) e.textContent = "Não foi possível salvar: " + err.message; if (btn) { btn.disabled = false; btn.textContent = "Salvar avaliação"; } }
+};
+window.tercAvalExcluir = async (id, aid) => {
+  if (!ehAdmNivel() || !aid) return;
+  if (!(await erpConfirmar({ titulo: "Excluir avaliação", texto: "Excluir esta avaliação do histórico do cadastro?", sim: "Excluir", perigo: true }))) return;
+  try { await tercCampoJson(id, "Avaliacoes", arr => arr.filter(a => a.id !== aid)); toast("Avaliação excluída"); tercReabrir(id); if ($("fornBody")) paintForn(); }
+  catch (err) { toast("Não foi possível excluir: " + err.message, 7000); }
+};
+async function tercDocDrive() {
+  if (TERC_X.drive) return TERC_X.drive;
+  if (!FORN_STATE.site) FORN_STATE.site = await SP.site(CONFIG.sites[LISTS.forn.siteKey]);
+  TERC_X.drive = await graph(`/sites/${FORN_STATE.site.id}/drive?$select=id,name`); return TERC_X.drive;
+}
+window.tercDocEnviar = async id => {
+  if (!podeEditar("forn")) return;
+  const cad = FORN_STATE.items.find(x => String(x._id) === String(id)), inp = $("tdocArq"), st = $("tdocSt"), btn = $("tdocBtn"), tipo = ($("tdocTipo") || {}).value || "Catálogo";
+  const fs = inp ? [...(inp.files || [])] : []; if (!cad) return; if (!fs.length) { toast("Escolha o arquivo antes de anexar."); return; }
+  if (FORN_STATE.cols && !FORN_STATE.cols.has("Documentos")) { toast("A coluna Documentos ainda não existe: rode Sistema › Configuração › Executar tudo.", 8000); return; }
+  const grande = fs.find(f => f.size > DOC_MAX); if (grande) { toast(`"${grande.name}" passa do limite de 60 MB.`, 7000); return; }
+  if (btn) btn.disabled = true; const metas = [];
+  try {
+    const drive = await tercDocDrive(), pasta = `Banco de Dados/${docNomeSeguro(cad.Title || "Sem nome")}`;
+    for (const f of fs) {
+      if (st) st.textContent = `Enviando ${f.name}…`;
+      const nome = `${docNomeSeguro(tipo)} - ${docNomeSeguro(f.name.replace(/\.[^.]+$/, ""))}${docExt(f.name)}`;
+      const it = await docEnviar(pasta, nome, f, p => { if (st) st.textContent = `Enviando ${f.name}… ${Math.round(p * 100)}%`; }, drive);
+      metas.push(docMeta(it, tipo, f, drive));
+    }
+    await tercCampoJson(id, "Documentos", arr => arr.concat(metas));
+    toast(metas.length > 1 ? `${metas.length} documentos anexados` : "Documento anexado"); tercReabrir(id);
+  } catch (err) {
+    if (st) st.textContent = ""; if (btn) btn.disabled = false;
+    let reg = false; if (metas.length) { try { await tercCampoJson(id, "Documentos", arr => arr.concat(metas.filter(m => !arr.some(a => a.id === m.id)))); reg = true; } catch (e2) {} }   /* revisão: o que já subiu fica registrado (sem duplicar no retry) */
+    toast(`Não foi possível anexar tudo${metas.length ? (reg ? ` — ${metas.length} arquivo(s) anexado(s) antes do erro` : ` — ${metas.length} arquivo(s) chegaram à pasta, mas não foram registrados`) : ""}: ${err.message}`, 9000);
+    if (reg) tercReabrir(id);
+  }
+};
+window.tercDocVer = (id, did) => { const cad = FORN_STATE.items.find(x => String(x._id) === String(id)), a = cad && tercDocsDe(cad).find(x => x.id === did); if (a) docVer(a, `${a.t || "Documento"} · ${a.n || ""}`); };
+window.tercDocExcluir = async (id, did) => {
+  if (!podeEditar("forn")) return;
+  const cad = FORN_STATE.items.find(x => String(x._id) === String(id)), a = cad && tercDocsDe(cad).find(x => x.id === did); if (!a) return;
+  if (!(await erpConfirmar({ titulo: "Excluir documento", texto: `Excluir "${a.n}" do cadastro e da pasta no SharePoint?`, sim: "Excluir", perigo: true }))) return;
+  try {
+    await tercCampoJson(id, "Documentos", arr => arr.filter(x => x.id !== did));
+    let aviso = "";
+    const drv = await tercDocDrive().catch(() => null);
+    if (drv && a.d === drv.id && docIdOk(a.id)) { try { await graph(`/drives/${encodeURIComponent(a.d)}/items/${encodeURIComponent(a.id)}`, { method: "DELETE" }); } catch (e) { aviso = e.message; } }   /* revisão: só apaga arquivo da biblioteca de Terceiros */
+    else aviso = "o arquivo não está na biblioteca de Terceiros";
+    tercReabrir(id); toast(aviso ? `Documento tirado do cadastro; o arquivo continua no SharePoint (${aviso}).` : "Documento excluído", aviso ? 9000 : 3000);
+  } catch (err) { toast("Não foi possível excluir: " + err.message, 7000); }
+};
 /* ---- v0.13.4.3 (pedidos de 15/10 12:36–12:41): máscaras de CNPJ/CPF e telefone com os "0" do que falta; campo sozinho na linha ocupa a largura toda ---- */
 const MASCARAS = {
   cpf: "000.000.000-00", cnpj: "00.000.000/0000-00",
@@ -34899,7 +35112,7 @@ async function buscaDados() {   /* dados: só dos módulos que a pessoa pode ver
   BUSCA.carregando = true; const itens = [];
   const pode = id => canSee(MODULES.find(m => m.id === id));
   try {
-    if (pode("forn")) { try { if (!FORN_STATE.items.length) await loadForn(true); } catch (e) {} FORN_STATE.items.forEach(f => itens.push({ t: "Terceiro", n: f.Title || "", s: [f.NomeFantasia, f.CNPJ, tercPapeis(f).join(", "), f.CategoriaPadrao].filter(Boolean).join(" · "), ir: { forn: f._id }, chave: buscaNorm([f.Title, f.NomeFantasia, f.CNPJ, docClean(f.CNPJ), f.CategoriaPadrao, f.Contato, tercContasDe(f).map(c => c.n + " " + (c.id || "")).join(" ")].join(" ")) })); }
+    if (pode("forn")) { try { if (!FORN_STATE.items.length) await loadForn(true); } catch (e) {} FORN_STATE.items.forEach(f => itens.push({ t: "Terceiro", n: f.Title || "", s: [f.NomeFantasia, f.CNPJ, tercPapeis(f).join(", "), f.CategoriaPadrao].filter(Boolean).join(" · "), ir: { forn: f._id }, chave: buscaNorm([f.Title, f.NomeFantasia, tercProdutosDe(f).join(" "), f.CNPJ, docClean(f.CNPJ), f.CategoriaPadrao, f.Contato, tercContasDe(f).map(c => c.n + " " + (c.id || "")).join(" ")].join(" ")) })); }
     const divAberta = typeof DIV !== "undefined" && DIV.on;   /* Gestão de Dívidas aberta: CAP_STATE está trocado — faturas/obrigações ficam fora da busca */
     if (pode("cap") && !divAberta) { try { if (!CAP_STATE.items.length) await loadCAP({ soLeitura: true }); } catch (e) {} CAP_STATE.items.forEach(it => itens.push({ t: "Fatura", n: it.Title || "", s: [it.Fornecedor, it.ContaFornecedor, it.NumeroNF ? "NF " + it.NumeroNF : "", fmtDate(it.Vencimento), fmtBRL(it.Valor), it.Status].filter(Boolean).join(" · "), ir: { cap: it._id }, chave: buscaNorm([it.Title, it.Fornecedor, it.ContaFornecedor, it.NumeroNF, it.RefDocumento, it.CNPJ, docClean(it.CNPJ), it.NumParcelamento, it.Competencia].join(" ")) })); }
     if (pode("obr") && !divAberta) { try { if (!OBR_STATE.items.length) await loadObr(); } catch (e) {} (OBR_STATE.items || []).filter(o => { try { return obrVisivel(o); } catch (e) { return true; } }).forEach(o => itens.push({ t: "Obrigação", n: o.Title || "", s: [o.FornecedorTexto, o.Tipo, o.Status].filter(Boolean).join(" · "), ir: { obr: o._id }, chave: buscaNorm([o.Title, o.FornecedorTexto, o.RefContrato, o.NumParcelamento, o.Orgao].join(" ")) })); }
@@ -34994,6 +35207,30 @@ document.addEventListener("DOMContentLoaded", () => { try { buscaInit(); } catch
 .tcad-contas{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
 .tcad-conta{border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--soft);display:flex;flex-direction:column;gap:2px;font-size:13px}
 .tcad-conta span{color:var(--ink-2);font-size:12px}
+.terc-prods{display:flex;flex-wrap:wrap;gap:6px 8px;max-height:230px;overflow:auto;padding:2px 0}   /* v0.13.4.5 */
+.terc-prods .terc-prod{text-transform:none;letter-spacing:0;font-weight:500}
+.terc-prod[hidden],.tav-form[hidden],#tavAbrir[hidden]{display:none!important}   /* .btn / .terc-papel / grid venceriam o atributo hidden */
+.tav-row select,.tdoc-add select{width:auto;min-width:160px;height:38px;padding:6px 10px;border:1px solid #D3D8DE;border-radius:var(--radius-sm,6px);font:inherit;font-size:14px;background:#fff}
+#gProdBusca{margin-bottom:8px}
+.terc-prod-linha{font-size:12px;color:var(--ink-2,#475569);margin-top:3px}
+.terc-aval-mini{font-size:12px;font-weight:700;color:#B45309;margin-top:2px}.terc-aval-mini span{font-weight:500;color:var(--ink-2,#475569)}
+.tav-res{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;margin-bottom:10px}
+.tav-media{display:flex;flex-direction:column;gap:2px}.tav-media b{font-size:30px;line-height:1;color:var(--navy)}.tav-media small{font-size:12px;color:var(--ink-2,#475569)}
+.tav-crit{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:4px 18px;flex:1 1 300px;margin:0}.tav-crit div{display:flex;justify-content:space-between;gap:8px}.tav-crit dt{font-size:13px;color:var(--ink-2,#475569)}.tav-crit dd{margin:0;font-size:13px;white-space:nowrap}
+.tav-est{color:#F59E0B;letter-spacing:1px}.tav-est i{font-style:normal;color:#D3D8DE}
+.tav-lista{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px}.tav-lista li{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.tav-l1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.tav-l1 .sup{margin-left:auto}
+.tav-obs{font-size:13.5px;margin-top:4px;white-space:pre-wrap}
+.tav-x{border:0;background:none;color:#9AA2AD;font-size:18px;line-height:1;cursor:pointer;padding:0 4px}.tav-x:hover{color:#B42318}
+.tav-form{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0;display:grid;gap:8px}
+.tav-form textarea{width:100%;font:inherit;padding:8px 10px;border:1px solid #D3D8DE;border-radius:var(--radius-sm,6px)}
+.tav-row{display:flex;align-items:center;gap:12px}.tav-row>span{flex:0 0 110px;font-size:13px;color:var(--ink-2,#475569)}
+.tav-stars{display:inline-flex;flex-direction:row-reverse;gap:2px}.tav-stars label{cursor:pointer;font-size:24px;line-height:1;color:#D3D8DE}
+.tav-stars input{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
+.tav-stars label:has(input:checked),.tav-stars label:has(input:checked)~label,.tav-stars:hover label:hover,.tav-stars:hover label:hover~label{color:#F59E0B}
+.tav-stars label:has(input:focus-visible){outline:2px solid var(--navy);outline-offset:2px;border-radius:4px}
+.tdoc-l{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px}.tdoc-l li{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.tdoc-l a{font-weight:600;overflow-wrap:anywhere}.tdoc-l .sup{margin-left:auto}
+.tdoc-add{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tdoc-add select{width:auto;min-width:170px}.tdoc-add input[type=file]{flex:1 1 200px;min-width:0;font-size:13px}
 .tcad-fant{font-size:12.5px;color:var(--ink-2,#475569);margin-top:1px}   /* v0.13.4.4: nome fantasia abaixo da razão social */
 .tcad-obs{white-space:pre-wrap;font-size:14px;line-height:1.5;color:var(--ink);background:var(--soft);border-radius:8px;padding:10px 12px}
 .tcad-nada{margin:0;color:var(--ink-2);font-size:13.5px}

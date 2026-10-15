@@ -237,7 +237,7 @@
   .modal-foot .btn { white-space: nowrap; }   /* v0.13.4 · 3b: com muitos botões a linha quebra em vez de cortar o Excluir */
   .modal-foot .grow { flex: 1; font-size: 13px; color: var(--ink-2); }
 
-  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }   /* v0.13.4.4: minmax(0,…) — as duas colunas sempre iguais, sem crescer pelo conteúdo (Centro de Custo passava da margem) */
   .form-grid .full { grid-column: 1 / -1; }
   .field label { display: block; font-size: 12px; font-weight: 700; color: var(--ink-2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.03em; }
   .field label .req { color: var(--err); margin-left: 3px; }
@@ -3071,6 +3071,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
 /* v0.12.47 · formulários no celular: nada estoura a borda do modal nem se sobrepõe */
 .form-grid > *, .field, .grid2 > * { min-width: 0 }
 .field input, .field select, .field textarea { min-width: 0; max-width: 100% }
+.field select { width: 100%; field-sizing: fixed }   /* v0.13.4.4: a lista suspensa nova (base-select) não se dimensiona pelo texto das opções */
 .field .hint, .field label { overflow-wrap: anywhere }
 .field label.check { text-transform: none; letter-spacing: 0; font-size: 14px; font-weight: 500; margin: 4px 0 0; padding: 6px 0; border: 0; line-height: 1.35 }
 .field label.check input[type="checkbox"] { width: 18px; height: 18px; flex: none; margin: 0 }
@@ -3776,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.13.4.3",
+  version: "v0.13.4.4",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -3895,7 +3896,7 @@ const PLANO_CONTAS = {
   "Recrutamento":             ["Anúncios", "Exames Admissionais"],
   "Rescisões":                ["Verbas Rescisórias", "Homologação"],
   "Terceirização":            ["Manutenção Externa", "Manutenção Predial", "Segurança do Trabalho", "Limpeza", "Jovem Aprendiz"],
-  "Manutenção":               ["Serviços Mecânicos", "Carroceria", "Elétrica", "Óleo e Lubrificantes", "Lavagem"],
+  "Manutenção":               ["Serviços Mecânicos", "Carroceria", "Elétrica", "Óleo e Lubrificantes", "Lavagem", "Manutenção Predial"],   /* v0.13.4.4: + Manutenção Predial (pedido de 15/10 16:32) */
   "Pneus":                    ["Pneus Novos", "Recapagem", "Borracharia"],
   "Peças e Acessórios":       ["Peças", "Filtros", "Acessórios"],
   "Combustível":              ["Diesel", "Arla 32", "Gasolina"],
@@ -4040,11 +4041,12 @@ const OBR_SEED = OBR_SEED_RAW.map(([Title, FornecedorTexto, Tipo, ValorTotal, Va
    "lookupList" = coluna de pesquisa apontando para o Título de outra lista do mesmo site (precisa existir antes). */
 const LISTS = {
   forn: {
-    key: "forn", displayName: "Fornecedores", siteKey: "terceiros", titleAs: "Nome",   /* v0.13.4: site Terceiros (era CAP na v0.13.3, Financeiro antes) */
+    key: "forn", displayName: "Banco de Dados — Terceiros", nomesAntigos: ["Fornecedores"], siteKey: "terceiros", titleAs: "Razão Social",   /* v0.13.4.4 (pedido de 15/10 15:49): era "Nome" */   /* v0.13.4.4: era "Fornecedores"; o nome antigo continua aceito até a lista ser renomeada */   /* v0.13.4: site Terceiros (era CAP na v0.13.3, Financeiro antes) */
     description: "Financeiro NMB · cadastro mestre de fornecedores. Um registro por fornecedor; alimenta Contas a Pagar e Obrigações.",
     columns: [
       { name: "CNPJ",               displayName: "CNPJ / CPF",           text: { allowMultipleLines: false, maxLength: 20 } },
       { name: "Papeis",             displayName: "Papéis",               choice: { choices: TERC_PAPEIS.map(p => p.n), displayAs: "checkBoxes", allowTextEntry: false }, update: true, naoObrig: true },   /* v0.13.4 · 2e: tipo/classificação do terceiro (vários papéis no mesmo cadastro) */
+      { name: "NomeFantasia",       displayName: "Nome fantasia",        text: { allowMultipleLines: false, maxLength: 255 } },   /* v0.13.4.4 (pedido de 15/10 15:49) */
       { name: "OutrosContatos",     displayName: "Outros contatos (JSON)", text: { allowMultipleLines: true, textType: "plain" } },   /* v0.13.4.2: vários contatos e telefones */
       { name: "UF",                 displayName: "UF",                   text: { allowMultipleLines: false, maxLength: 2 } },   /* v0.13.4.2: localização (Estado → Cidade) */
       { name: "Cidade",             displayName: "Cidade",               text: { allowMultipleLines: false, maxLength: 100 } },
@@ -4245,7 +4247,12 @@ async function setupList(def, cb) {
   try {
     let lists = await SP.lists(site.id);
     list = lists.find(l => l.displayName === def.displayName);
-    if (list) finish(s2, "skip", "Já existia — reaproveitando");
+    if (list && list._nomeAntigo) {   /* v0.13.4.4: lista com o nome antigo — renomeia no SharePoint */
+      const antigo = list._nomeAntigo;
+      try { await graph(`/sites/${site.id}/lists/${list.id}`, { method: "PATCH", body: { displayName: def.displayName } }); delete list._nomeAntigo; finish(s2, "ok", `Renomeada de "${antigo}" para "${def.displayName}"`); }
+      catch (e) { finish(s2, "skip", `Usando a lista com o nome antigo "${antigo}" (não foi possível renomear: ${e.message}). Pode renomear no SharePoint quando quiser.`); }
+    }
+    else if (list) finish(s2, "skip", "Já existia — reaproveitando");
     else {
       list = await graph(`/sites/${site.id}/lists`, { method: "POST", body: { displayName: def.displayName, description: def.description, list: { template: "genericList" } } });
       finish(s2, "ok", "Criada");
@@ -6885,6 +6892,8 @@ function tercCadastroCard(key) {   /* v0.13.4.3 (pedido de 15/10 12:35): cartão
   const mail = m => m ? `<a href="mailto:${esc(m)}">${esc(m)}</a>` : "";
   const sec = (tit, corpo, extra) => `<section class="tcad-sec"><h4>${esc(tit)}${extra ? ` <span>${extra}</span>` : ""}</h4>${corpo}</section>`;
   const ident = sec("Identificação", `<dl class="tcad-dl">
+      ${item("Razão Social", tx(cad.Title), true)}
+      ${item("Nome Fantasia", tx(cad.NomeFantasia), true)}
       ${item(docRot, cad.CNPJ ? `<span class="tcad-mono">${esc(cad.CNPJ)}</span>` : "")}
       ${item("Localização", tx(tercLocTxt(cad)))}
       ${item("Papéis", pap.length ? `<span class="tcad-pills">${pap.map(tercPapelPill).join("")}</span>` : "", true)}
@@ -6949,7 +6958,7 @@ function fornDetalhe(key, tab) {
     <div class="modal-body">
       <p class="obr-note" style="margin:0 0 6px">${esc(sub)}</p>
       <p class="obr-note" style="margin:0 0 14px"><b>Situação:</b> ${esc(r.sit.why)}</p>
-      ${cad && cad.PastaSharePoint && ehAdmNivel() ? `<p class="obr-note" style="margin:-8px 0 14px">Pasta de documentos: ${esc(cad.PastaSharePoint)}</p>` : ""}
+      ${cad && ehAdmNivel() ? `<p class="obr-note" style="margin:-8px 0 14px">Pasta de documentos: ${esc(docPastaFornecedor(cad.Title))}</p>` : ""}
       ${mini}${obrs}${outras}${contas}
     </div>
     <div class="modal-foot">${cad && podeEditar("forn") ? `<button class="btn" onclick="fornEditar('${esc(cad._id)}')" style="margin-right:auto">Editar cadastro</button>` : ""}
@@ -8797,7 +8806,7 @@ const ALMOX_MODS = [
   { id: "requisicoes",  name: "Requisições",             icon: "people",   desc: "Pedidos das áreas e aprovação",         status: "prévia" },
   { id: "ordens-de-compra", name: "Ordens de Compra",   icon: "invoice",  desc: "Pedido de compra com aprovação por administrador",     status: "piloto", href: "#/operacional/almoxarifado/ordens-de-compra" },   /* v0.12.27 #11 */
   { id: "compras",      name: "Compras e cotações",      icon: "cash",     desc: "Cotação com fornecedores e pedido",     status: "prévia" },
-  { id: "fornecedores", name: "Fornecedores (Almoxarifado)", icon: "supplier", desc: "Faturas e fornecedores do centro de custo Operacional (espelho da CAP e de Terceiros › Fornecedores)", status: "ativo", href: "#/operacional/almoxarifado/fornecedores" },   /* v0.12.59 · v0.12.71: nome e abas */
+  { id: "fornecedores", name: "Fornecedores (Almoxarifado)", icon: "supplier", desc: "Faturas e fornecedores do centro de custo Operacional (espelho da CAP e de Terceiros › Banco de Dados)", status: "ativo", href: "#/operacional/almoxarifado/fornecedores" },   /* v0.12.59 · v0.12.71: nome e abas */
   { id: "inventario",   name: "Inventário",              icon: "pulse",    desc: "Contagem e acerto de saldo",            status: "prévia" },
   { id: "relatorios",   name: "Relatórios",              icon: "chart",    desc: "Consumo por veículo e por área",        status: "prévia" }
 ];
@@ -14712,7 +14721,7 @@ function paintForn() {
   const _restF = _listaAll.length - FORN_STATE.pageN;
   const moreBtnF = _restF > 0 ? `<div class="cap-more"><button class="btn" onclick="fornMore()">Mostrar mais ${Math.min(45, _restF)} de ${_restF} restantes</button><button class="btn ghost" onclick="fornMoreAll()">Mostrar todos</button></div>` : "";
   const rowsCad = () => lista.map(x => `<tr onclick="fornAbrir('${fornKeyAttr("id:" + x._id)}')" title="Abrir o cadastro">
-      <td><div class="desc">${esc(x.Title || "—")}</div><div class="sup">${esc(x.CNPJ || "sem CNPJ/CPF")}${tercLocTxt(x) ? " · " + esc(tercLocTxt(x)) : ""}</div></td>
+      <td><div class="desc">${esc(x.Title || "—")}</div>${x.NomeFantasia ? `<div class="tcad-fant">${esc(x.NomeFantasia)}</div>` : ""}<div class="sup">${esc(x.CNPJ || "sem CNPJ/CPF")}${tercLocTxt(x) ? " · " + esc(tercLocTxt(x)) : ""}</div></td>
       <td>${esc(x.CategoriaPadrao || "—")}${x.SubcategoriaPadrao ? `<div class="sup">${esc(x.SubcategoriaPadrao)}</div>` : ""}</td>
       <td class="forn-cls-cel" onclick="event.stopPropagation()">${fornClasseCel(x)}</td>
       <td>${esc(x.CentroCustoPadrao || "—")}</td>
@@ -14739,12 +14748,12 @@ function paintForn() {
       ${soCad ? kpi("A classificar", ativos.filter(x => !x.Tipo).length, "sem classificação de custo · clique para filtrar", "", "fornTipoFiltro('__vazio')") + kpi("Sem CNPJ/CPF", ativos.filter(x => docClean(x.CNPJ).length !== 11 && docClean(x.CNPJ).length !== 14).length, "cadastros a completar") : kpi("Fixas por mês", fmtBRL(estim), `estimativa · ${comValor} de ${fixos.length} fixos com valor (padrão ou última conta)`, "money") + kpi("Com faturas em atraso", atraso == null ? "…" : atraso, "clique para filtrar", atraso ? "venc-txt" : "", pronto ? "fornPagFiltro('atraso')" : "")}
     </div>
     <div class="filters" role="search">
-      <input type="search" class="span-2" id="fornBusca" placeholder="Buscar por nome, CNPJ, categoria, contato..." value="${esc(f.busca)}">
+      <input type="search" class="span-2" id="fornBusca" placeholder="Buscar por razão social, nome fantasia, CNPJ, cidade, contato..." value="${esc(f.busca)}">
       <select id="fornTipo" title="Classificação de custo"><option value="">Todas as classificações</option><option value="__vazio" ${f.tipo === "__vazio" ? "selected" : ""}>A classificar</option>${FORN_CLASSES.map(c => `<option ${f.tipo === c[0] ? "selected" : ""}>${esc(c[0])}</option>`).join("")}</select>
       <select id="fornAtivo"><option value="ativos" ${f.ativo==="ativos"?"selected":""}>Só ativos</option><option value="todos" ${f.ativo==="todos"?"selected":""}>Ativos e inativos</option><option value="inativos" ${f.ativo==="inativos"?"selected":""}>Só inativos</option></select>
       ${soCad ? "" : `<select id="fornPag" ${pronto ? "" : "disabled"} title="Situação de pagamento">${[["", "Qualquer pagamento"], ["atraso", "Em atraso"], ["atencao", "Atenção"], ["emdia", "Em dia"], ["sem", "Sem lançamentos"], ["obr", "Com obrigações ativas"]].map(([v, l]) => `<option value="${v}" ${(f.pag || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select>`}
     </div>
-    ${rows && soCad ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Nome</th><th>Categoria</th><th>Classificação</th><th>Centro de Custo</th><th>Pagamento padrão</th><th>Cadastro</th></tr></thead><tbody>${rows}</tbody></table></div>${moreBtnF}`
+    ${rows && soCad ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Razão Social</th><th>Categoria</th><th>Classificação</th><th>Centro de Custo</th><th>Pagamento padrão</th><th>Cadastro</th></tr></thead><tbody>${rows}</tbody></table></div>${moreBtnF}`
     : rows ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Fornecedor</th><th>Obrigação</th><th>Categoria</th><th>Classificação</th><th>Centro de Custo</th>${FORN_STATE.ccFixo ? `<th title="Dia de vencimento das faturas do fornecedor">Vencimento</th>` : ""}<th>Faturas na CAP</th><th>Pagamento</th><th>Cadastro</th></tr></thead><tbody>${rows}</tbody></table></div>${moreBtnF}`
            : `<div class="cap-empty"><h3>Nenhum fornecedor encontrado</h3><p>Ajuste os filtros para ver mais resultados.</p></div>`}`;
   $("fornBusca").addEventListener("input", ev => { FORN_STATE.filter.busca = ev.target.value; erpDeb("fornBusca", () => keepFocus(paintForn)); });
@@ -14763,7 +14772,8 @@ function fornForm(x) {
   return `<div class="modal-head"><h2>${isNew ? "Novo fornecedor" : "Editar fornecedor"}</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="modal-body"><div class="form-grid forn-form">
       <div class="field full form-sec">Identificação</div>
-      <div class="field full"><label>Nome<span class="req">*</span></label><input id="gNome" value="${esc(v.Title || "")}" placeholder="Como aparece no boleto ou na NF"></div>
+      <div class="field full"><label>Razão Social<span class="req">*</span></label><input id="gNome" value="${esc(v.Title || "")}" placeholder="Como consta no CNPJ, no boleto ou na NF"></div>
+      <div class="field full"><label>Nome Fantasia</label><input id="gFantasia" value="${esc(v.NomeFantasia || "")}" placeholder="Como é conhecido (opcional)"></div>
       <div class="field"><label>CNPJ / CPF<span class="req">*</span></label><input id="gCNPJ" data-mask="doc" inputmode="numeric" autocomplete="off" value="${esc(v.CNPJ || "")}" placeholder="Chave do cadastro"><div class="hint" id="gCNPJHint"></div></div>
       <div class="field"><label>Situação</label><select id="gAtivo"><option value="1" ${v.Ativo !== false ? "selected" : ""}>Ativo</option><option value="0" ${v.Ativo === false ? "selected" : ""}>Inativo</option></select></div>
       <div class="field full"><label>Classificação de custo</label><select id="gTipo"><option value="">— a classificar —</option>${opt(FORN_CLASSES.map(c => c[0]).concat(v.Tipo && !fornClasseDesc(v.Tipo) ? [v.Tipo] : []), v.Tipo || "", false)}</select><div class="hint forn-classe" id="gTipoDesc">${esc(v.Tipo ? fornClasseDesc(v.Tipo) : "Sem classificação: não gera fatura recorrente")}</div></div>
@@ -14776,7 +14786,6 @@ function fornForm(x) {
       <div class="field"><label>Banco</label><select id="gBanco">${opt(BANCOS, v.BancoPadrao, true)}</select></div>
       <div class="field"><label>Forma de Pagamento</label><select id="gForma">${opt(FORMAS, v.FormaPadrao, true)}</select></div>
       <div class="field"><label>Dia de vencimento</label><input type="number" min="1" max="31" id="gDia" value="${v.DiaVencimento ?? ""}" placeholder="1 a 31"></div>
-      ${ehAdmNivel() ? `<div class="field full"><label>Pasta no SharePoint</label><input id="gPasta" value="${esc(v.PastaSharePoint || "")}" placeholder="Preenchida automaticamente no padrão Financeiro/Contas Fixas/<Nome>"><div class="hint">Onde os comprovantes deste fornecedor vão ficar (criação automática entra com os anexos)</div></div>` : ""}
       <div class="field full form-sec">Contatos</div>
       <div class="field"><label>Contato principal</label><input id="gContato" value="${esc(v.Contato || "")}"></div>
       <div class="field"><label>Telefone</label><input id="gTel" data-mask="tel" value="${esc(v.Telefone || "")}"></div>
@@ -14815,7 +14824,7 @@ async function fornSave(existing, inline) {
     DiaVencimento: dia,   /* v0.12.59: Valor padrão saiu do cadastro (o valor guardado fica; a referência passa a ser a última conta) */
     Contato: g("gContato") || null, Telefone: g("gTel") || null, Email: g("gEmail") || null,
     Ativo: g("gAtivo") === "1",
-    PastaSharePoint: $("gPasta") ? (g("gPasta") || pastaPadrao(nome, tipo)) : (existing ? undefined : pastaPadrao(nome, tipo)), /* só administradores e o proprietário veem o campo; para os demais a pasta gravada não muda */
+    PastaSharePoint: undefined,   /* v0.13.4.4 (pedido de 15/10 16:23): campo retirado — os anexos vão para a pasta do fornecedor no site CAP (docPastaFornecedor), não para este texto */ /* só administradores e o proprietário veem o campo; para os demais a pasta gravada não muda */
     Estabelecimento: g("gEstab") || null,
     CentroCustoPadrao: g("gCC") || null,
     Observacoes: g("gObs") || null
@@ -23519,6 +23528,7 @@ async function erpParamGravar(chave, valor) {
 }
 let FORN_ZERAR_ST = "";   /* "", "lendo", "mostrar", "feito" */
 function fornZerarBanner(body) {
+  return;   /* v0.13.4.4: aviso e botão "Zerar a classificação de todos" removidos (uso único; as classificações atuais são do usuário) */
   if (!body || !session.n1 || (typeof vcAtivo === "function" && vcAtivo()) || body.querySelector(".forn-zerar") || FORN_STATE.ccFixo) return;   /* v0.12.59: não aparece no espelho do Almoxarifado */
   if (FORN_ZERAR_ST === "") { FORN_ZERAR_ST = "lendo"; erpParamLer("forn_classe_zerada").then(p => { FORN_ZERAR_ST = p === undefined ? "" : p ? "feito" : "mostrar"; if (FORN_ZERAR_ST === "mostrar") { const b = $("fornBody") || ($("capBody") && CAP_STATE.view === "forn" ? $("capBody") : null); if (b) fornZerarBanner(b); } }); return; }
   if (FORN_ZERAR_ST !== "mostrar") return;
@@ -34373,6 +34383,7 @@ function hasColDef(def, name) { return def.columns.some(c => c.name === name); }
 { const pc0 = pageConfig; pageConfig = function () {
   let h = pc0.apply(this, arguments);
   if (!session.n1) return h;
+  return h;   /* v0.13.4.4: migração concluída — cartão removido da Configuração */
   const card = `<section class="setup-card" id="sitesMigCard"><h2>Sites CAP e Agentes — migração dos dados (v0.13.3)</h2>
     <p class="desc">As listas da CAP (Lançamentos, Fornecedores, Obrigações, carteiras, Dívidas, Central de Tarefas) agora ficam em <b>${esc(CONFIG.spHost)}${esc(CONFIG.sites.cap)}</b> e as dos agentes (Agência — Movimentos, Agência — Vendas, Arrecadação, Controle de Roletas, Escala) em <b>${esc(CONFIG.spHost)}${esc(CONFIG.sites.agentes)}</b>. Ordem: 1) "Executar tudo na ordem" acima (cria lookups, coluna de pessoa, carteiras, Dívidas e Escala nos sites novos); 2) este botão copia os dados das listas antigas, religa os vínculos, copia os documentos anexados e atualiza Rio Card › Reparos e Imobilizado. Nada é apagado das listas antigas; pode rodar de novo sem duplicar.</p>
     <div class="actions"><button class="btn" id="sitesMigSimBtn" onclick="sitesMigrar({ simular: true })" title="Mostra o que seria copiado, sem gravar nada">Simular (não grava)</button><button class="btn" id="sitesMigAgBtn" onclick="sitesMigrar({ so: 'agentes' })" title="Escala, Agência — Movimentos e Vendas, Recebimentos de Motorista e Roletas">Só as listas dos Agentes</button><button class="btn primary" id="sitesMigBtn" onclick="sitesMigrar()">Migrar dados para os sites CAP e Agentes</button></div>
@@ -34412,7 +34423,102 @@ function hasColDef(def, name) { return def.columns.some(c => c.name === name); }
   SP.create = (s, l, f) => c0(s, l, norm(f));
   SP.update = (s, l, i, f) => u0(s, l, i, norm(f));
 }
-SETUP_TEXT.forn = `Cria no site Terceiros a lista "Fornecedores" — o Banco de Dados de terceiros (fornecedores, concessionárias, órgãos públicos, bancos, seguradoras, pessoas físicas, sócios). Aberta a todos, sem as restrições da CAP. v0.13.4: colunas Papéis, Contas (JSON), Código do banco e Funcionário (id no RH). Os cadastros antigos (site Financeiro) são copiados pela migração dos sites (cartão abaixo).`;
+/* v0.13.4.4: listas com nome novo (LISTS[k].nomesAntigos) — enquanto o SharePoint tiver o nome antigo, o ERP enxerga a lista pelo nome novo.
+   Só vale no site da própria lista (as listas antigas "Fornecedores" dos sites CAP e Financeiro não são confundidas). */
+{ const l0 = SP.lists; SP.lists = async function (siteId) {
+  const ls = await l0.apply(this, arguments);
+  try {
+    if (!Array.isArray(ls)) return ls;
+    const doSite = (l, pre) => { try { return decodeURIComponent(new URL(l.webUrl).pathname).toLowerCase().startsWith(pre); } catch (e) { return false; } };
+    for (const def of Object.values(LISTS)) {
+      if (!def || !Array.isArray(def.nomesAntigos) || ls.some(l => l.displayName === def.displayName)) continue;
+      const pre = String(CONFIG.sites[def.siteKey] || "").toLowerCase() + "/"; if (pre === "/") continue;
+      const i = ls.findIndex(l => def.nomesAntigos.includes(l.displayName) && doSite(l, pre));
+      if (i >= 0) ls[i] = Object.assign({}, ls[i], { displayName: def.displayName, _nomeAntigo: ls[i].displayName });
+    }
+  } catch (e) {}
+  return ls;
+}; }
+/* ===================== v0.13.4.4 (pedido de 15/10 16:32) · subcategorias aprendidas =====================
+   O campo Subcategoria aceita texto. Quando um administrador salva (fatura, obrigação ou cadastro de Terceiros) uma subcategoria
+   que não existe na categoria escolhida, ela passa a ser opção da lista dessa categoria nos próximos cadastros.
+   Guardadas em "ERP — Parâmetros" › subcats_extra ({ categoria: [subcategorias] }), com iniciais maiúsculas (decisão de 15/10).
+   Só categorias do plano de contas (a categoria digitada em "Outros" não aprende). */
+const SUBCAT_EXTRA = { v: null, p: null };
+const SUBCAT_LISTAS = [["gSubList", "gCat"], ["subList", "fCat"], ["oSubcatList", "oCat"]];
+function subcatExtrasCarregar(force) {
+  if (SUBCAT_EXTRA.v && !force && !(SUBCAT_EXTRA.falhou && Date.now() - SUBCAT_EXTRA.falhou > 60000)) return Promise.resolve(SUBCAT_EXTRA.v);   /* falha: tenta de novo depois de 1 min */
+  if (SUBCAT_EXTRA.p && !force) return SUBCAT_EXTRA.p;
+  SUBCAT_EXTRA.p = erpParamLer("subcats_extra", !!force).then(r => {
+    SUBCAT_EXTRA.p = null; if (r === undefined) { SUBCAT_EXTRA.v = SUBCAT_EXTRA.v || {}; SUBCAT_EXTRA.falhou = Date.now(); return SUBCAT_EXTRA.v; }
+    SUBCAT_EXTRA.falhou = 0;   /* sem acesso / falha: fica só o plano de contas nesta sessão */
+    const v = {}; const o = r && r.valor && typeof r.valor === "object" ? r.valor : {};
+    for (const [c, arr] of Object.entries(o)) if (PLANO_CONTAS[c] && Array.isArray(arr)) v[c] = arr.map(x => String(x || "").trim()).filter(Boolean);
+    SUBCAT_EXTRA.v = v;
+    Object.values(v).flat().forEach(x => { if (!SUBCAT_CANON.has(normName(x))) SUBCAT_CANON.set(normName(x), x); });
+    SUBCAT_LISTAS.forEach(([dl, cat]) => { const d = $(dl), c = $(cat); if (d && c) d.innerHTML = subcatOptions(c.value); });   /* formulário já aberto */
+    return v;
+  }).catch(() => { SUBCAT_EXTRA.p = null; return SUBCAT_EXTRA.v || {}; });
+  return SUBCAT_EXTRA.p;
+}
+function subcatCapitaliza(t) {
+  const liga = new Set(["de", "da", "do", "das", "dos", "e", "a", "o", "em", "para", "com", "por", "na", "no"]);
+  const txt = String(t || "").trim().replace(/\s+/g, " "), tudoMaiusc = txt === txt.toUpperCase() && /\p{L}{5,}/u.test(txt);   /* "MANUTENÇÃO PREDIAL" digitado em caixa alta não é sigla */
+  return txt.split(" ").map((w, i) => {
+    if (!tudoMaiusc && w.length > 1 && w === w.toUpperCase() && /\p{L}/u.test(w)) return w;   /* siglas (PAT, ISS) ficam */
+    if (i > 0 && w.length === 1 && w === w.toUpperCase() && /\p{L}/u.test(w)) return w;   /* "Classe A" */
+    const l = w.toLowerCase(); if (i > 0 && liga.has(l)) return l;
+    return l.charAt(0).toUpperCase() + l.slice(1);
+  }).join(" ");
+}
+{ const so0 = subcatOptions; subcatOptions = function (cat) {
+  const ex = SUBCAT_EXTRA.v || {}; if (!SUBCAT_EXTRA.v) subcatExtrasCarregar();
+  const base = cat && PLANO_CONTAS[cat] ? PLANO_CONTAS[cat].concat(ex[cat] || []) : SUBCATEGORIAS.concat(Object.values(ex).flat());
+  const vistos = new Set(), arr = base.filter(x => { const k = normName(x); if (vistos.has(k)) return false; vistos.add(k); return true; });
+  return arr.map(x => `<option value="${esc(x)}">`).join("");
+}; window.subcatOptions = subcatOptions; }
+const SUBCAT_APR = { alvo: null, ok: false };
+function subcatAlvo(catId, subId) {
+  if (!ehAdmNivel()) return null;
+  const c = $(catId) ? $(catId).value : "", inp = $(subId), t = inp ? inp.value.trim() : "";
+  if (!c || !t || !PLANO_CONTAS[c]) return null;
+  const tem = PLANO_CONTAS[c].concat((SUBCAT_EXTRA.v || {})[c] || []).some(x => normName(x) === normName(t));
+  if (tem) return null;
+  const sub = SUBCAT_CANON.get(normName(t)) || subcatCapitaliza(t);   /* já existe em outra categoria: mesma grafia */
+  inp.value = sub; return { cat: c, sub };
+}
+async function subcatAprender(a) {
+  try {
+    const r = await erpParamLer("subcats_extra", true); if (r === undefined) throw new Error("não deu para ler a lista atual");   /* nunca grava por cima sem ter lido */
+    const v = {}; Object.entries(r && r.valor && typeof r.valor === "object" ? r.valor : {}).forEach(([c, arr]) => { if (Array.isArray(arr)) v[c] = arr.slice(); });
+    const arr = (v[a.cat] || []).slice(); if (arr.concat(PLANO_CONTAS[a.cat]).some(x => normName(x) === normName(a.sub))) return;
+    arr.push(a.sub); v[a.cat] = arr;
+    await erpParamGravar("subcats_extra", v);
+    SUBCAT_EXTRA.v = v; if (!SUBCAT_CANON.has(normName(a.sub))) SUBCAT_CANON.set(normName(a.sub), a.sub);
+    toast(`"${a.sub}" passa a ser opção de subcategoria em ${a.cat}.`, 6000);
+  } catch (e) { toast(`Não foi possível incluir "${a.sub}" na lista de subcategorias: ${e.message}`, 8000); }
+}
+{ const c0 = SP.create, u0 = SP.update;
+  SP.create = async function () { const r = await c0.apply(this, arguments); if (SUBCAT_APR.alvo) SUBCAT_APR.ok = true; return r; };
+  SP.update = async function () { const r = await u0.apply(this, arguments); if (SUBCAT_APR.alvo) SUBCAT_APR.ok = true; return r; };
+}
+function subcatEnvolve(f0, catId, subId) {
+  return async function () {
+    const a = subcatAlvo(catId, subId); if (!a) return f0.apply(this, arguments);
+    SUBCAT_APR.alvo = a; SUBCAT_APR.ok = false;
+    try { return await f0.apply(this, arguments); }
+    finally { const ok = SUBCAT_APR.ok; SUBCAT_APR.alvo = null; SUBCAT_APR.ok = false; if (ok) subcatAprender(a); }
+  };
+}
+capSave = subcatEnvolve(capSave, "fCat", "fSub"); window.capSave = capSave;
+obrSalvar = subcatEnvolve(obrSalvar, "oCat", "oSubcat"); window.obrSalvar = obrSalvar;
+fornSave = subcatEnvolve(fornSave, "gCat", "gSub"); window.fornSave = fornSave;
+{ const lf = loadForn, lc = loadCAP, lo = loadObr;
+  loadForn = async function () { subcatExtrasCarregar(); return lf.apply(this, arguments); }; window.loadForn = loadForn;
+  loadCAP = async function () { subcatExtrasCarregar(); return lc.apply(this, arguments); }; window.loadCAP = loadCAP;
+  loadObr = async function () { subcatExtrasCarregar(); return lo.apply(this, arguments); }; window.loadObr = loadObr;
+}
+SETUP_TEXT.forn = `Cria no site Terceiros a lista "Banco de Dados — Terceiros" (antes "Fornecedores"; se ainda tiver o nome antigo, é renomeada) — o Banco de Dados de terceiros (fornecedores, concessionárias, órgãos públicos, bancos, seguradoras, pessoas físicas, sócios). Aberta a todos, sem as restrições da CAP. v0.13.4: colunas Papéis, Contas (JSON), Código do banco e Funcionário (id no RH). v0.13.4.4: título "Razão Social" e coluna Nome fantasia. A migração dos cadastros antigos já foi feita.`;
 
 /* ---- papéis e documento exigido ---- */
 function tercPapeis(x) { const v = x && x.Papeis; return Array.isArray(v) ? v.filter(Boolean) : v ? [String(v)] : []; }
@@ -34463,7 +34569,7 @@ async function tercRhCpfMapa() {   /* CPF → funcionário (só quem lê "RH —
   const ff0 = fornFiltered;
   fornFiltered = function () { let arr = ff0.apply(this, arguments); const p = FORN_STATE.filter.papel;
     /* v0.13.4.2: a busca também acha pela cidade/UF (o filtro base já tirou quem não casou por nome/CNPJ: refaz incluindo a localização) */
-    const q = String(FORN_STATE.filter.busca || "").toLowerCase(); if (q) { const b = FORN_STATE.filter.busca; FORN_STATE.filter.busca = ""; try { const tudo = ff0.apply(this, arguments); arr = tudo.filter(x => [x.Title, x.CNPJ, x.CategoriaPadrao, x.SubcategoriaPadrao, x.Contato, x.Telefone, x.Email, x.Observacoes, x.Cidade, x.UF, ...tercContatosDe(x).flatMap(c => [c.n, c.tel, c.email])].some(v => String(v || "").toLowerCase().includes(q))); } finally { FORN_STATE.filter.busca = b; } } if (p) arr = arr.filter(x => p === "__sem" ? !tercPapeis(x).length : tercPapeis(x).includes(p)); return arr; };
+    const q = String(FORN_STATE.filter.busca || "").toLowerCase(); if (q) { const b = FORN_STATE.filter.busca; FORN_STATE.filter.busca = ""; try { const tudo = ff0.apply(this, arguments); arr = tudo.filter(x => [x.Title, x.NomeFantasia, x.CNPJ, x.CategoriaPadrao, x.SubcategoriaPadrao, x.Contato, x.Telefone, x.Email, x.Observacoes, x.Cidade, x.UF, ...tercContatosDe(x).flatMap(c => [c.n, c.tel, c.email])].some(v => String(v || "").toLowerCase().includes(q))); } finally { FORN_STATE.filter.busca = b; } } if (p) arr = arr.filter(x => p === "__sem" ? !tercPapeis(x).length : tercPapeis(x).includes(p)); return arr; };
   window.fornFiltered = fornFiltered;
   const pt0 = paintForn;
   paintForn = function () {
@@ -34521,7 +34627,7 @@ async function tercRhCpfMapa() {   /* CPF → funcionário (só quem lê "RH —
     document.querySelectorAll('input[name="gPapel"]').forEach(i => i.addEventListener("change", hint)); hint();
     /* CNPJ → nome: cadastro existente avisa (já havia); se o nome está vazio e o CNPJ é válido, consulta a Receita (BrasilAPI) */
     const d = $("gCNPJ"), nome = $("gNome");
-    if (d && nome) d.addEventListener("change", async () => { const dc = docClean(d.value); if (dc.length !== 14 || !docValido(dc) || nome.value.trim() || fornByDoc(dc)) return; const h = $("gCNPJHint"); try { h.textContent = "Consultando a Receita…"; const r = await tercReceita(dc); if (r && !nome.value.trim()) { nome.value = r.razao || r.fantasia || ""; h.textContent = `Razão social preenchida pela Receita Federal${r.fantasia && r.fantasia !== r.razao ? ` (fantasia: ${r.fantasia})` : ""} — confira`; h.className = "hint ok"; } else if (!h.textContent.startsWith("Já")) h.textContent = "Receita não respondeu — digite o nome"; } catch (e) { h.textContent = "Receita não respondeu — digite o nome"; } });
+    if (d && nome) d.addEventListener("change", async () => { const dc = docClean(d.value); if (dc.length !== 14 || !docValido(dc) || nome.value.trim() || fornByDoc(dc)) return; const h = $("gCNPJHint"); try { h.textContent = "Consultando a Receita…"; const r = await tercReceita(dc); if (r && !nome.value.trim()) { nome.value = r.razao || r.fantasia || ""; const fz = $("gFantasia"); if (fz && !fz.value.trim() && r.fantasia && r.fantasia !== r.razao && r.razao) fz.value = r.fantasia; h.textContent = `${fz && fz.value && r.fantasia ? "Razão social e nome fantasia preenchidos" : "Razão social preenchida"} pela Receita Federal — confira`; h.className = "hint ok"; } else if (!h.textContent.startsWith("Já")) h.textContent = "Receita não respondeu — digite o nome"; } catch (e) { h.textContent = "Receita não respondeu — digite o nome"; } });
     return r;
   }; window.fornWireForm = fornWireForm;
   async function tercFuncSelect() {
@@ -34546,7 +34652,7 @@ async function fornSave(existing, inline) {
   const g = id => ($(id) ? $(id).value.trim() : "");
   const showErr = (msg) => { const e = $("gErr"); e.style.display = "block"; e.textContent = msg; };
   const nome = g("gNome"), tipo = g("gTipo"), doc = docFmt(g("gCNPJ")), papeis = tercPapeisLer(), dc = docClean(doc);
-  if (!nome) { showErr("Preencha o nome."); return; }
+  if (!nome) { showErr("Preencha a Razão Social."); return; }
   if (!papeis.length) { showErr("Marque ao menos um papel (Fornecedor, Órgão público, Banco…)."); return; }
   if (!doc) { showErr("CNPJ/CPF é obrigatório — é a chave do cadastro (um por documento)."); return; }
   if (!docValido(doc)) { showErr("CNPJ/CPF com dígitos verificadores inválidos. Confira no boleto ou na NF."); return; }
@@ -34566,20 +34672,20 @@ async function fornSave(existing, inline) {
   const contas = tercContasLer();
   if ($("gOutros") && tercContatosLer().some(c => c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email))) { showErr("Outros contatos: há um e-mail inválido."); return; }
   const fields = {
-    Title: nome, CNPJ: doc, Tipo: tipo || null, Papeis: papeis,
-    Contas: contas.length ? JSON.stringify(contas) : null, OutrosContatos: (() => { const oc = $("gOutros") ? tercContatosLer() : null; return oc === null ? undefined : oc.length ? JSON.stringify(oc) : null; })(), UF: g("gUF") || null, Cidade: g("gUF") ? (tercCidadeCanon(g("gUF"), $("gCidade") && $("gCidade").disabled ? $("gCidade").dataset.v : g("gCidade")) || null) : null,   /* revisão: salvar com a lista ainda carregando mantém a cidade gravada */ CodigoBanco: g("gCodBanco") || null, FuncionarioId: papeis.includes("Funcionário") ? (g("gFunc") || null) : null,
+    Title: nome, NomeFantasia: $("gFantasia") ? (g("gFantasia") || null) : undefined, CNPJ: doc, Tipo: tipo || null, Papeis: papeis,
+    Contas: contas.length ? JSON.stringify(contas) : null, OutrosContatos: (() => { const oc = $("gOutros") ? tercContatosLer() : null; return oc === null ? undefined : oc.length ? JSON.stringify(oc) : null; })(), UF: tercUFCanon(g("gUF")) || null, Cidade: tercUFCanon(g("gUF")) ? (tercCidadeCanon(tercUFCanon(g("gUF")), $("gCidade") && $("gCidade").disabled ? $("gCidade").dataset.v : g("gCidade")) || null) : null,   /* revisão: salvar com a lista ainda carregando mantém a cidade gravada */ CodigoBanco: g("gCodBanco") || null, FuncionarioId: papeis.includes("Funcionário") ? (g("gFunc") || null) : null,
     CategoriaPadrao: (g("gCat") === "Outros" && $("gCatOutro") && g("gCatOutro")) ? g("gCatOutro") : (g("gCat") || null), SubcategoriaPadrao: g("gSub") || null,
     BancoPadrao: g("gBanco") || null, FormaPadrao: g("gForma") || null,
     DiaVencimento: dia,
     Contato: g("gContato") || null, Telefone: g("gTel") || null, Email: g("gEmail") || null,
     Ativo: g("gAtivo") === "1",
-    PastaSharePoint: $("gPasta") ? (g("gPasta") || pastaPadrao(nome, tipo)) : (existing ? undefined : pastaPadrao(nome, tipo)),
+    PastaSharePoint: undefined,   /* v0.13.4.4 (pedido de 15/10 16:23): campo retirado — os anexos vão para a pasta do fornecedor no site CAP (docPastaFornecedor), não para este texto */
     Estabelecimento: g("gEstab") || null,
     CentroCustoPadrao: g("gCC") || null,
     Observacoes: g("gObs") || null
   };
   if (FORN_STATE.cols) for (const k of Object.keys(fields)) if (k !== "Title" && !FORN_STATE.cols.has(k)) delete fields[k];   /* colunas novas só depois da Configuração */
-  if (FORN_STATE.cols && ((!FORN_STATE.cols.has("UF") && g("gUF")) || (!FORN_STATE.cols.has("OutrosContatos") && $("gOutros") && tercContatosLer().length))) toast("As colunas de Localização / Outros contatos ainda não existem: rode Sistema › Configuração (Executar tudo) para gravá-las.", 8000);
+  if (FORN_STATE.cols && ((!FORN_STATE.cols.has("UF") && g("gUF")) || (!FORN_STATE.cols.has("NomeFantasia") && g("gFantasia")) || (!FORN_STATE.cols.has("OutrosContatos") && $("gOutros") && tercContatosLer().length))) toast("As colunas de Nome Fantasia / Localização / Outros contatos ainda não existem: rode Sistema › Configuração (Executar tudo) para gravá-las.", 8000);
   if (FORN_STATE.cols && !FORN_STATE.cols.has("Papeis")) toast("A coluna Papéis ainda não existe: rode Sistema › Configuração para gravar os papéis.", 7000);
   const btn = $("gSave"); btn.disabled = true; btn.textContent = "Salvando…";
   try {
@@ -34609,7 +34715,7 @@ async function tercCidades(uf) {
 function tercLocCampo(v) {
   const uf = String((v && v.UF) || "").toUpperCase(), cid = (v && v.Cidade) || "";
   return `<div class="field full"><label>Localização</label><div class="terc-loc">
-      <select id="gUF" title="Estado" onchange="tercLocUF('')"><option value="">UF</option>${UFS_BR.map(([k, n]) => `<option value="${k}" title="${esc(n)}" ${uf === k ? "selected" : ""}>${k}</option>`).join("")}</select>
+      <input id="gUF" title="Estado: digite a sigla ou o nome" autocomplete="off" maxlength="25" value="${esc(uf)}" data-uf="${esc(uf)}" placeholder="UF" list="gUFList"><datalist id="gUFList">${UFS_BR.map(([k, n]) => `<option value="${k}" label="${esc(n)}">`).join("")}</datalist>
       <input id="gCidade" title="Cidade" autocomplete="off" data-v="${esc(cid)}" value="${esc(cid)}" placeholder="${uf ? "Cidade" : "Escolha o estado"}" ${uf ? "" : "disabled"}>
     </div><div class="hint" id="gLocHint"></div></div>`;
 }
@@ -34631,11 +34737,20 @@ async function tercLocUF(manterCidade) {   /* v0.13.4.3 (pedido de 15/10 13:14):
 /* ao salvar: grafia do IBGE se o texto casar (sem acento/maiúscula) */
 document.addEventListener("focusout", e => { const t = e.target; if (!t || t.id !== "gCidade" || t.disabled) return; const uf = $("gUF") ? $("gUF").value : "", h = $("gLocHint"), v = t.value.trim(); if (!h || !uf || !TERC_CIDADES[uf]) return;
   const c = tercCidadeCanon(uf, v); if (v && c === v && !TERC_CIDADES[uf].includes(v)) h.textContent = `"${v}" não está na lista do IBGE para ${uf} — confira a cidade.`; else { h.textContent = ""; if (c && c !== v) t.value = c; } }, true);   /* revisão: avisa cidade fora da lista ao sair do campo */
+/* v0.13.4.4 (pedido de 15/10 16:23): Estado com a mesma lista de busca da cidade — aceita a sigla ou o nome ("rj", "rio de janeiro", "espirito santo") */
+function tercUFCanon(txt) { const t = String(txt || "").trim(); if (!t) return ""; const a = UFS_BR.find(([k, n]) => k === t.toUpperCase() || normName(n) === normName(t)); return a ? a[0] : ""; }
+document.addEventListener("change", e => { const t = e.target; if (!t || t.id !== "gUF") return;
+  const v = t.value.trim(), c = tercUFCanon(v), h = $("gLocHint");
+  const ant = t.dataset.uf || "", cid = $("gCidade");
+  if (v && !c) t.value = ant;   /* revisão: texto inválido não apaga o estado (nem a cidade) já escolhidos */
+  else { t.value = c; if (c !== ant) { t.dataset.uf = c; tercLocUF(""); } else if (c && cid && cid.disabled) tercLocUF(); }   /* mesmo estado com a cidade travada (carga interrompida): recarrega mantendo a cidade */
+  if (h) { if (v && !c) h.textContent = `"${v}" não é um estado — digite a sigla (ex.: RJ) ou o nome${ant ? `; mantido ${ant}` : ""}.`; else if (h.textContent.includes("não é um estado")) h.textContent = ""; } }, true);
+window.tercUFCanon = tercUFCanon;
 function tercCidadeCanon(uf, txt) { const t = String(txt || "").trim(); if (!t) return ""; const l = TERC_CIDADES[uf]; const a = l ? l.find(n => normName(n) === normName(t)) : null; return a || t; }
 window.tercLocUF = tercLocUF;
 function tercLocPreencher(uf, cidade) {   /* da consulta do CNPJ: só preenche se a localização estiver vazia */
   const sel = $("gUF"); if (!sel || sel.value || !/^[A-Z]{2}$/.test(uf || "") || !UFS_BR.some(x => x[0] === uf)) return;
-  sel.value = uf; tercLocUF(cidade || "");
+  sel.value = uf; sel.dataset.uf = uf; tercLocUF(cidade || "");
 }
 window.tercLocPreencher = tercLocPreencher;
 const tercLocTxt = x => [x && x.Cidade, x && x.UF].filter(Boolean).join(" / ");
@@ -34784,7 +34899,7 @@ async function buscaDados() {   /* dados: só dos módulos que a pessoa pode ver
   BUSCA.carregando = true; const itens = [];
   const pode = id => canSee(MODULES.find(m => m.id === id));
   try {
-    if (pode("forn")) { try { if (!FORN_STATE.items.length) await loadForn(true); } catch (e) {} FORN_STATE.items.forEach(f => itens.push({ t: "Terceiro", n: f.Title || "", s: [f.CNPJ, tercPapeis(f).join(", "), f.CategoriaPadrao].filter(Boolean).join(" · "), ir: { forn: f._id }, chave: buscaNorm([f.Title, f.CNPJ, docClean(f.CNPJ), f.CategoriaPadrao, f.Contato, tercContasDe(f).map(c => c.n + " " + (c.id || "")).join(" ")].join(" ")) })); }
+    if (pode("forn")) { try { if (!FORN_STATE.items.length) await loadForn(true); } catch (e) {} FORN_STATE.items.forEach(f => itens.push({ t: "Terceiro", n: f.Title || "", s: [f.NomeFantasia, f.CNPJ, tercPapeis(f).join(", "), f.CategoriaPadrao].filter(Boolean).join(" · "), ir: { forn: f._id }, chave: buscaNorm([f.Title, f.NomeFantasia, f.CNPJ, docClean(f.CNPJ), f.CategoriaPadrao, f.Contato, tercContasDe(f).map(c => c.n + " " + (c.id || "")).join(" ")].join(" ")) })); }
     const divAberta = typeof DIV !== "undefined" && DIV.on;   /* Gestão de Dívidas aberta: CAP_STATE está trocado — faturas/obrigações ficam fora da busca */
     if (pode("cap") && !divAberta) { try { if (!CAP_STATE.items.length) await loadCAP({ soLeitura: true }); } catch (e) {} CAP_STATE.items.forEach(it => itens.push({ t: "Fatura", n: it.Title || "", s: [it.Fornecedor, it.ContaFornecedor, it.NumeroNF ? "NF " + it.NumeroNF : "", fmtDate(it.Vencimento), fmtBRL(it.Valor), it.Status].filter(Boolean).join(" · "), ir: { cap: it._id }, chave: buscaNorm([it.Title, it.Fornecedor, it.ContaFornecedor, it.NumeroNF, it.RefDocumento, it.CNPJ, docClean(it.CNPJ), it.NumParcelamento, it.Competencia].join(" ")) })); }
     if (pode("obr") && !divAberta) { try { if (!OBR_STATE.items.length) await loadObr(); } catch (e) {} (OBR_STATE.items || []).filter(o => { try { return obrVisivel(o); } catch (e) { return true; } }).forEach(o => itens.push({ t: "Obrigação", n: o.Title || "", s: [o.FornecedorTexto, o.Tipo, o.Status].filter(Boolean).join(" · "), ir: { obr: o._id }, chave: buscaNorm([o.Title, o.FornecedorTexto, o.RefContrato, o.NumParcelamento, o.Orgao].join(" ")) })); }
@@ -34879,6 +34994,7 @@ document.addEventListener("DOMContentLoaded", () => { try { buscaInit(); } catch
 .tcad-contas{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
 .tcad-conta{border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--soft);display:flex;flex-direction:column;gap:2px;font-size:13px}
 .tcad-conta span{color:var(--ink-2);font-size:12px}
+.tcad-fant{font-size:12.5px;color:var(--ink-2,#475569);margin-top:1px}   /* v0.13.4.4: nome fantasia abaixo da razão social */
 .tcad-obs{white-space:pre-wrap;font-size:14px;line-height:1.5;color:var(--ink);background:var(--soft);border-radius:8px;padding:10px 12px}
 .tcad-nada{margin:0;color:var(--ink-2);font-size:13.5px}
 .tcad-nota{margin:2px 2px 0;font-size:12.5px;color:var(--ink-2)}
@@ -35031,6 +35147,7 @@ window.tercRemoverFuncionarios = async () => {
 };
 { const pc1 = pageConfig; pageConfig = function () {
   let h = pc1.apply(this, arguments); if (!session.n1) return h;
+  return h;   /* v0.13.4.4: saneamento concluído — cartão removido da Configuração */
   const card = `<section class="setup-card" id="tercSanCard"><h2>Terceiros › Banco de Dados — saneamento (v0.13.4)</h2>
     <p class="desc">A lista "Fornecedores" agora fica em <b>${esc(CONFIG.spHost)}${esc(CONFIG.sites.terceiros)}</b> (aberta; sem as restrições da CAP). Ordem: 1) "Executar tudo na ordem" (cria a lista e as colunas novas: Papéis, Contas, Código do banco, Funcionário; e as colunas numéricas de fornecedor em Lançamentos e Obrigações); 2) migração dos sites (cartão acima) copia os cadastros antigos; 3) as ferramentas abaixo.</p>
     <div class="actions"><button class="btn" id="tercColBtn" onclick="tercConferirColunas()" title="Deixa os títulos das colunas do SharePoint iguais aos do ERP e lista as colunas que o ERP não usa">Conferir colunas (Fornecedores, Lançamentos, Obrigações, Carteiras)</button>

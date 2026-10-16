@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.0",
+  version: "v0.14.0.1",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -4251,8 +4251,13 @@ async function setupList(def, cb) {
     let lists = await SP.lists(site.id);
     list = lists.find(l => l.displayName === def.displayName);
     if (list && list._nomeAntigo) {   /* v0.13.4.4: lista com o nome antigo — renomeia no SharePoint */
-      const antigo = list._nomeAntigo;
-      try { await graph(`/sites/${site.id}/lists/${list.id}`, { method: "PATCH", body: { displayName: def.displayName } }); delete list._nomeAntigo; finish(s2, "ok", `Renomeada de "${antigo}" para "${def.displayName}"`); }
+      const antigo = list._nomeAntigo; let msgDup = "";
+      if (list._conflitoId) {   /* v0.14.0.1: já existe uma lista com o nome novo (criada por engano): sai só se estiver vazia */
+        try { const r = await graph(`/sites/${site.id}/lists/${list._conflitoId}/items?$select=id&$top=1`); if (Array.isArray(r.value) && !r.value.length) { await graph(`/sites/${site.id}/lists/${list._conflitoId}`, { method: "DELETE" }); msgDup = ` (a lista vazia "${def.displayName}", criada por engano, foi excluída — fica na lixeira do site por 93 dias)`; } else msgDup = "!"; } catch (e) { msgDup = "erro:" + e.message; }
+      }
+      if (msgDup === "!") finish(s2, "warn", `Há duas listas: "${antigo}" (com os dados, a que o ERP usa) e "${def.displayName}" (com itens). Nada foi excluído; confira no SharePoint.`);
+      else if (msgDup.startsWith("erro:")) finish(s2, "warn", `Há duas listas ("${antigo}", a que o ERP usa, e "${def.displayName}") e não foi possível conferir a segunda (${msgDup.slice(5)}). Nada foi excluído; rode de novo.`);
+      else try { await graph(`/sites/${site.id}/lists/${list.id}`, { method: "PATCH", body: { displayName: def.displayName } }); delete list._nomeAntigo; finish(s2, "ok", `Renomeada de "${antigo}" para "${def.displayName}"${msgDup}`); }
       catch (e) { finish(s2, "skip", `Usando a lista com o nome antigo "${antigo}" (não foi possível renomear: ${e.message}). Pode renomear no SharePoint quando quiser.`); }
     }
     else if (list) finish(s2, "skip", "Já existia — reaproveitando");
@@ -34429,16 +34434,26 @@ function hasColDef(def, name) { return def.columns.some(c => c.name === name); }
 }
 /* v0.13.4.4: listas com nome novo (LISTS[k].nomesAntigos) — enquanto o SharePoint tiver o nome antigo, o ERP enxerga a lista pelo nome novo.
    Só vale no site da própria lista (as listas antigas "Fornecedores" dos sites CAP e Financeiro não são confundidas). */
+/* v0.14.0.1: o site é reconhecido pelo id que o ERP abriu (SP.site), não só pelo endereço — o site de Terceiros responde por
+   /sites/terceiros mas o endereço real das listas é outro (/sites/terceiros-temp), e a v0.13.4.4 criou uma lista nova e vazia.
+   Se as duas existirem no mesmo site (a do nome antigo e a nova), vale a do nome antigo (é onde estão os dados); a Configuração
+   exclui a nova se estiver vazia e renomeia a antiga. */
+const SP_SITE_REL = {};
+{ const s0 = SP.site; SP.site = async function (rel) { const st = await s0.apply(this, arguments); try { if (st && st.id) SP_SITE_REL[st.id] = String(rel || "").toLowerCase(); } catch (e) {} return st; }; }
 { const l0 = SP.lists; SP.lists = async function (siteId) {
   const ls = await l0.apply(this, arguments);
   try {
     if (!Array.isArray(ls)) return ls;
     const doSite = (l, pre) => { try { return decodeURIComponent(new URL(l.webUrl).pathname).toLowerCase().startsWith(pre); } catch (e) { return false; } };
     for (const def of Object.values(LISTS)) {
-      if (!def || !Array.isArray(def.nomesAntigos) || ls.some(l => l.displayName === def.displayName)) continue;
-      const pre = String(CONFIG.sites[def.siteKey] || "").toLowerCase() + "/"; if (pre === "/") continue;
-      const i = ls.findIndex(l => def.nomesAntigos.includes(l.displayName) && doSite(l, pre));
-      if (i >= 0) ls[i] = Object.assign({}, ls[i], { displayName: def.displayName, _nomeAntigo: ls[i].displayName });
+      if (!def || !Array.isArray(def.nomesAntigos)) continue;
+      const rel = String(CONFIG.sites[def.siteKey] || "").toLowerCase(); if (!rel) continue;
+      const doMeuSite = SP_SITE_REL[siteId] ? SP_SITE_REL[siteId] === rel : null;
+      const i = ls.findIndex(l => def.nomesAntigos.includes(l.displayName) && (doMeuSite === true || (doMeuSite === null && doSite(l, rel + "/"))));
+      if (i < 0) continue;
+      const j = ls.findIndex(l => l.displayName === def.displayName);
+      if (j >= 0) { ls[j] = Object.assign({}, ls[j], { displayName: def.displayName + " (duplicada)", _duplicada: true }); }
+      ls[i] = Object.assign({}, ls[i], { displayName: def.displayName, _nomeAntigo: ls[i].displayName, _conflitoId: j >= 0 ? ls[j].id : "" });
     }
   } catch (e) {}
   return ls;

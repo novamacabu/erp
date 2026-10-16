@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.3",
+  version: "v0.14.4",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -4913,6 +4913,7 @@ function route() {
   else if (mod.id === "di_rel") { main.innerHTML = pageDiRel(); }   /* v0.14.3: Diretoria › Relatórios */
   else if (mod.id === "di_detro") { main.innerHTML = pageDiDetro(); }   /* v0.14.3: Diretoria › Detro RJ */
   else if (mod.id === "di_rj") { main.innerHTML = pageRj(); renderRj(); }   /* v0.14.3: Diretoria › RJ Consultores */
+  else if (mod.id === "ocorr") { main.innerHTML = pageOc(); renderOc(); }   /* v0.14.4: Operacional › Ocorrências */
   else if (mod.id === "rh_aval") { main.innerHTML = pageAval(); renderAval(); }
   else if (mod.id === "ti_chamados") { main.innerHTML = pageTi(); renderTi(); }
   else if (PREVIAS[mod.id]) { main.innerHTML = pagePrevia(mod); renderPrevia(mod); }
@@ -6112,7 +6113,7 @@ function capForm(it) {
   const fornOpts = fornAtivos().map(f => `<option value="${esc(f.Title)}">`).join("");
   return `<div class="modal-head"><h2>${isNew ? "Nova fatura" : "Editar fatura"}</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="modal-body"><div class="form-grid">
-      <div class="field"><label>CNPJ / CPF do favorecido</label><input id="fCNPJ" value="${esc(v.CNPJ || "")}" placeholder="Digite e o cadastro é localizado" autocomplete="off"><div class="hint" id="fCNPJHint"></div></div>
+      <div class="field"><label>CNPJ / CPF do favorecido${isNew ? '<span class="req">*</span>' : ""}</label><input id="fCNPJ" data-mask="doc" inputmode="numeric" value="${esc(v.CNPJ || "")}" placeholder="Digite e o cadastro é localizado" autocomplete="off"><div class="hint" id="fCNPJHint"></div>${isNew ? `<label class="check" style="margin-top:4px;font-size:12.5px"><input type="checkbox" id="fSemDoc"> Favorecido sem CNPJ/CPF (exterior)</label>` : ""}</div>
       <div class="field"><label>Tipo de favorecido</label><select id="fTipoFav">${opt(TIPOS_FAV, v.TipoFavorecido || "Fornecedor", false)}</select><div class="hint">Funcionário sincroniza com o RH quando a lista de Funcionários existir</div></div>
       <div class="field full"><label>Favorecido<span class="req">*</span></label><input id="fForn" list="fornList" autocomplete="off" value="${esc(v.Fornecedor || "")}" placeholder="Comece a digitar para escolher do cadastro"><datalist id="fornList">${fornOpts}</datalist><div class="hint" id="fFornHint"></div></div>
       <div class="field full"><label>Descrição<span class="req">*</span></label><input id="fTitle" value="${esc(v.Title || "")}" placeholder="Ex.: Aluguel garagem set/26"></div>
@@ -7193,7 +7194,7 @@ function capForm(it) {
   return `<div class="modal-head">${CAP_STATE.voltarId ? `<button type="button" class="btn sm ghost cap-voltar" onclick="capVoltar()" title="Voltar ao fornecedor">← Voltar</button>` : ""}<h2>${isNew ? "Nova fatura" : edita ? "Editar fatura" : "Fatura"}</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="modal-body">${somenteLeituraAviso("cap")}<div class="form-grid">
       <div class="field full form-sec">Identificação</div>
-      <div class="field"><label>CNPJ / CPF do favorecido</label><input id="fCNPJ" value="${esc(v.CNPJ || "")}" placeholder="Digite e o cadastro é localizado" autocomplete="off"><div class="hint" id="fCNPJHint"></div></div>
+      <div class="field"><label>CNPJ / CPF do favorecido${isNew ? '<span class="req">*</span>' : ""}</label><input id="fCNPJ" data-mask="doc" inputmode="numeric" value="${esc(v.CNPJ || "")}" placeholder="Digite e o cadastro é localizado" autocomplete="off"><div class="hint" id="fCNPJHint"></div>${isNew ? `<label class="check" style="margin-top:4px;font-size:12.5px"><input type="checkbox" id="fSemDoc"> Favorecido sem CNPJ/CPF (exterior)</label>` : ""}</div>
       <div class="field"><label>Tipo de favorecido</label><select id="fTipoFav">${opt(TIPOS_FAV, v.TipoFavorecido || "Fornecedor", false)}</select><div class="hint">Funcionário sincroniza com o RH quando a lista de Funcionários existir</div></div>
       <div class="field full"><label>Favorecido<span class="req">*</span></label><input id="fForn" list="fornList" autocomplete="off" value="${esc(v.Fornecedor || "")}" placeholder="Comece a digitar para escolher do cadastro"><datalist id="fornList">${fornOpts}</datalist><div class="hint" id="fFornHint"></div></div>
       <div class="field full"><label>Descrição<span class="req">*</span></label><input id="fTitle" value="${esc(v.Title || "")}" placeholder="Ex.: Aluguel garagem set/26"></div>
@@ -7334,6 +7335,13 @@ async function capSave(existing) {
   }
   if (fields.Status === "Pago") fields.Estimado = false;
   if (!capPodePagar() && (fields.Status === "Pago" || fields.DataPagamento) && !(existing && existing.Status === "Pago")) { showErr("Dar baixa (Status Pago / data do pagamento) exige a permissão \"Pagar faturas\" em Usuários e permissões."); return; }   /* v0.13.0 (revisão G1) */
+  const semDoc = !!(document.getElementById("fSemDoc") && document.getElementById("fSemDoc").checked);
+  if (!existing && semDoc) fields.Observacoes = ["[Favorecido sem CNPJ/CPF — exterior ou sem documento]", fields.Observacoes].filter(Boolean).join(" ");
+  if (!existing && !semDoc && fields.TipoLancamento !== "Transferência entre contas") {   /* v0.14.4: CNPJ / CPF obrigatório na fatura nova (transferência entre contas da própria empresa fica de fora) */
+    const dcN = docClean(fields.CNPJ || "");
+    if (!dcN) { showErr("Informe o CNPJ / CPF do favorecido."); return; }
+    if ((dcN.length !== 11 && dcN.length !== 14) || !docValido(dcN)) { showErr("CNPJ / CPF do favorecido inválido (confira os dígitos)."); return; }
+  }
   const missing = ["Title","Fornecedor","Vencimento","Valor","Status"].filter(k => !fields[k] && fields[k] !== 0);
   if (missing.length) { showErr("Preencha os campos obrigatórios: " + missing.map(k => ({Title:"Descrição",Fornecedor:"Fornecedor",Vencimento:"Vencimento",Valor:"Valor",Status:"Status"}[k])).join(", ")); return; }
   if (fields.Competencia) { const c = normComp(fields.Competencia); if (!c) { showErr("Competência inválida. Use o formato AAAA-MM (ex.: 2026-09)."); return; } fields.Competencia = c; }
@@ -9309,7 +9317,7 @@ window.pbForm = (id) => {
       <div class="field"><label>Modelo<span class="req">*</span></label><select id="pbModelo">${modelos.map(m => `<option ${v.Modelo === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
       <div class="field"><label>Nº de série<span class="req">*</span></label><input id="pbSerie" value="${esc(v.Title || "")}" placeholder="Ex.: PB3S259S71979"></div>
       <div class="field"><label>Código ID</label><input id="pbId" value="${esc(v.CodigoID || "")}" placeholder="Ex.: 93DCF729"></div>
-      <div class="field"><label>Conta (CNPJ)</label>${pbCnpjSelect(v.CNPJTitular) || `<input id="pbCnpj" value="${esc(v.CNPJTitular || "")}" placeholder="00.000.000/0000-00"><div class="hint">Cadastre os CNPJs em Diretoria › Cadastros Mestres › CNPJs</div>`}</div>
+      <div class="field"><label>Conta (CNPJ)</label>${pbCnpjSelect(v.CNPJTitular) || `<input id="pbCnpj" data-mask="doc" inputmode="numeric" value="${esc(v.CNPJTitular || "")}" placeholder="00.000.000/0000-00"><div class="hint">Cadastre os CNPJs em Diretoria › Cadastros Mestres › CNPJs</div>`}</div>
       <div class="field"><label>Status<span class="req">*</span></label><select id="pbStatus">${statusOps.map(s => `<option ${v.Status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
       <div class="field"><label>Local</label><select id="pbLocal">${locOpts}</select></div>   <!-- v0.12.48: id próprio — o filtro da página também se chamava pbLoc e o Local do formulário nunca era gravado -->
       <div class="field"><label>Responsável</label><select id="pbResp">${funcOpts}</select><div class="hint">${PB_STATE.funcs.length ? "Associado à lista RH — Funcionários." : "A lista RH — Funcionários está vazia. Cadastre funcionários antes de associar."}</div></div>
@@ -9940,7 +9948,7 @@ window.rcForm = id => {
     <div class="form-grid">
       <div class="field"><label>Número do cartão<span class="req">*</span></label><input id="rcNum" value="${esc(x ? x.Title || "" : "")}" placeholder="01.09.00000000-0" ${edita ? "" : "disabled"}></div>
       <div class="field"><label>Chip</label><input id="rcChip" value="${esc(x ? x.Chip || "" : "")}" placeholder="só números" ${edita ? "" : "disabled"}></div>
-      <div class="field"><label>CNPJ titular</label><input id="rcCnpj" value="${esc(x ? x.CNPJTitular || "" : "")}" ${edita ? "" : "disabled"}></div>
+      <div class="field"><label>CNPJ titular</label><input id="rcCnpj" data-mask="doc" inputmode="numeric" value="${esc(x ? x.CNPJTitular || "" : "")}" ${edita ? "" : "disabled"}></div>
       <div class="field"><label>Status<span class="req">*</span></label><select id="rcStatus" ${edita ? "" : "disabled"}>${["Ativo","Bloqueado","Perdido","Em uso","Em estoque"].map(st => `<option ${x && x.Status === st ? "selected" : ""}>${st}</option>`).join("")}</select></div>
       <div class="field"><label>Tipo</label><select id="rcTipo" ${edita ? "" : "disabled"}><option value="">—</option>${["Vale Transporte","Benefício","Outro"].map(t => `<option ${x && x.Tipo === t ? "selected" : ""}>${t}</option>`).join("")}</select></div>
       <div class="field"><label>Local</label><input id="rcLocal" value="${esc(x ? x.Local || "" : "")}" ${edita ? "" : "disabled"}></div>
@@ -10017,7 +10025,7 @@ window.diTabForm = id => {
     <div class="form-grid">
       <div class="field"><label>IMEI<span class="req">*</span></label><input id="dtImei" value="${esc(x ? x.Title || "" : "")}" placeholder="15 dígitos" ${edita ? "" : "disabled"}></div>
       <div class="field"><label>Status<span class="req">*</span></label><select id="dtStatus" ${edita ? "" : "disabled"}>${["Ativo","Inativo","Em manutenção","Devolvido"].map(st => `<option ${x && x.Status === st ? "selected" : ""}>${st}</option>`).join("")}</select></div>
-      <div class="field"><label>CNPJ</label><input id="dtCnpj" value="${esc(x ? x.CNPJ || "" : "")}" placeholder="00.000.000/0000-00" ${edita ? "" : "disabled"}></div>
+      <div class="field"><label>CNPJ</label><input id="dtCnpj" data-mask="doc" inputmode="numeric" value="${esc(x ? x.CNPJ || "" : "")}" placeholder="00.000.000/0000-00" ${edita ? "" : "disabled"}></div>
       <div class="field"><label>Local</label><input id="dtLocal" value="${esc(x ? x.Local || "" : "")}" placeholder="Agência Macaé, Sub-agência Jhenyfer…" ${edita ? "" : "disabled"}></div>
       <div class="field"><label>Função</label><input id="dtFun" value="${esc(x ? x.Funcao || "" : "")}" placeholder="Controle de Ponto" ${edita ? "" : "disabled"}></div>
       <div class="field"><label>Código de Acesso</label><input id="dtCod" value="${esc(x ? x.CodigoAcesso || "" : "")}" ${edita ? "" : "disabled"}></div>
@@ -35260,6 +35268,15 @@ document.addEventListener("DOMContentLoaded", () => { try { buscaInit(); } catch
 .tdoc-l{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px}.tdoc-l li{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.tdoc-l a{font-weight:600;overflow-wrap:anywhere}.tdoc-l .sup{margin-left:auto}
 .tdoc-add{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tdoc-add select{width:auto;min-width:170px}.tdoc-add input[type=file]{flex:1 1 200px;min-width:0;font-size:13px}
 .mst-cores{display:flex;flex-wrap:wrap;gap:8px;align-items:center}   /* v0.14.0 · Cadastros Mestres */
+.do-site{border:1px solid var(--line,#E3E6EA);border-radius:6px;overflow:hidden;background:#fff}.do-site-top{background:#1d2b4f;color:#fff;padding:12px 18px;display:flex;gap:14px;align-items:baseline;font-size:18px}.do-site-top b{font-style:italic;letter-spacing:1px}   /* v0.14.4 */
+.do-site-sel{margin:12px 14px;border:1px solid #d2d6de;border-radius:3px;padding:7px 10px;font-size:12px;color:#444;display:flex;justify-content:space-between}.do-site .do-detro{padding:4px 14px}.do-site-pe{background:#1d2b4f;color:#fff;text-align:center;padding:10px;font-size:12.5px}
+.oc-grav{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11.5px;font-weight:700;background:#EEF1F4;color:#4a5560}.oc-g-media{background:#FFF3D6;color:#8a5a00}.oc-g-grave{background:#FFE1D6;color:#a2300f}.oc-g-gravissima{background:#7a1010;color:#fff}
+.oc-env{display:inline-flex;flex-direction:column;background:#F2F4F7;border-radius:8px;padding:3px 8px;margin:1px 2px;font-size:12.5px;line-height:1.25;border:0;font:inherit;text-align:left}.oc-env small{font-size:10.5px;color:var(--ink-2,#5b6470)}.oc-env button{border:0;background:none;cursor:pointer;color:var(--err,#c62828);font-size:14px;padding:0 0 0 6px;align-self:flex-end;margin-top:-16px}
+.oc-env-btn{cursor:pointer}.oc-env-btn:hover{background:#E4E9F0}.oc-env-l{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}.oc-env-add{display:flex;gap:6px;flex-wrap:wrap}.oc-env-add input{flex:1 1 220px}
+.oc-rh{display:inline-block;font-size:10px;font-weight:700;background:#E6F0FA;color:#2a6496;border-radius:4px;padding:1px 5px;margin-left:4px}.oc-l{cursor:pointer}
+.oc-ind{display:inline-block;min-width:38px;text-align:center;font-weight:700;border-radius:6px;padding:2px 6px}.oc-ind-bom{background:#E3F4EA;color:#1d6b3e}.oc-ind-atencao{background:#FFF3D6;color:#8a5a00}.oc-ind-critico{background:#FFE1D6;color:#a2300f}
+.oc-bar{display:grid;grid-template-columns:minmax(140px,40%) 1fr 34px;gap:8px;align-items:center;font-size:12.5px;margin:4px 0}.oc-bar i{display:block;height:10px;border-radius:5px;background:#7aa7c7}.oc-bar b{text-align:right}
+.fv-oc{margin-top:16px}.rhv-nota{display:inline-block;font-size:11.5px;font-weight:700;border-radius:6px;padding:1px 6px;background:#EEF1F4}.rhv-nota.ok{background:#E3F4EA;color:#1d6b3e}.rhv-nota.baixa{background:#FFE1D6;color:#a2300f}.rhv-det{color:var(--ink-2,#5b6470)}
 .do-rel{margin-bottom:14px}.do-detro-link{display:inline-flex;align-items:center;gap:6px;text-decoration:none}.do-detro-link svg{width:15px;height:15px}   /* v0.14.3 · Linhas no DETRO */
 .do-detro .do-dbox{border-top:3px solid #d2d6de;background:var(--card,#fff);margin:0 0 16px;padding:10px 14px 14px;border-radius:4px;box-shadow:0 1px 1px rgba(0,0,0,.06)}
 .do-detro .do-dbox h3{font-size:15px;margin:2px 0 10px;font-weight:700}.do-detro .do-dbox h3 span{color:var(--ink-2,#5b6470);margin:0 2px}
@@ -36337,7 +36354,7 @@ window.estForm = id => {
   openModal(c ? `CNPJ ${c.cod || ""}`.trim() : "Novo CNPJ", `<div class="form-grid">
       <div class="field"><label>Código</label><input value="${esc(v.cod || "—")}" disabled><div class="hint">${c ? "Travado." : "Dado automaticamente."}</div></div>
       <div class="field"><label>Status</label><select id="estAt"><option value="1" ${v.ativo ? "selected" : ""}>Ativo</option><option value="0" ${!v.ativo ? "selected" : ""}>Inativo</option></select></div>
-      <div class="field"><label>CNPJ<span class="req">*</span></label><input id="estCnpj" value="${esc(v.cnpj)}" placeholder="00.000.000/0000-00" ${c ? "disabled" : ""}>${c ? `<div class="hint">O CNPJ é a chave gravada nos registros: não muda. Errado? Inative e cadastre o certo.</div>` : ""}</div>
+      <div class="field"><label>CNPJ<span class="req">*</span></label><input id="estCnpj" data-mask="doc" inputmode="numeric" value="${esc(v.cnpj)}" placeholder="00.000.000/0000-00" ${c ? "disabled" : ""}>${c ? `<div class="hint">O CNPJ é a chave gravada nos registros: não muda. Errado? Inative e cadastre o certo.</div>` : ""}</div>
       <div class="field"><label>Natureza</label><select id="estNat">${["Matriz", "Filial", "Agência", "Outro"].map(a => `<option ${v.nat === a ? "selected" : ""}>${a}</option>`).join("")}</select></div>
       <div class="field full"><label>Razão social<span class="req">*</span></label><input id="estRs" maxlength="160" value="${esc(v.rs)}"></div>
       <div class="field full"><label>Nome fantasia</label><input id="estNf" maxlength="160" value="${esc(v.nf)}"><div class="hint">É o nome que aparece na coluna Conta das Máquinas PagBank.</div></div>
@@ -36724,7 +36741,7 @@ const DOL = { itens: [], erro: "", sel: "", em: 0 };
 const dolOrd = () => DOL.itens.slice().sort((a, b) => (Number(a.Ordem) || 999) - (Number(b.Ordem) || 999) || String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR", { numeric: true }));
 const dolDados = x => doJson(x && x.Dados, null);
 const dolLinkSite = () => `<a class="btn sm do-detro-link" href="${DOL_URL_SITE}" target="_blank" rel="noopener noreferrer" title="Consulta oficial do DETRO/RJ: tarifas, horários e itinerários das linhas regulares">${ICONS.globe || "🌐"} <span>Consulta oficial DETRO</span></a>`;
-const dolLinkLinha = (x, txt) => x && x.CodigoDetro ? `<a class="btn sm do-detro-link" href="${esc(DOL_URL_LINHA(x.CodigoDetro))}" target="_blank" rel="noopener noreferrer" title="Registro oficial da linha ${esc(x.Title || "")} no site do DETRO (abre em outra aba)">${ICONS.globe || "🌐"} <span>${esc(txt || "Ver no DETRO")}</span></a>` : "";
+const dolLinkLinha = (x, txt) => x && /esta linha/.test(String(txt || "")) ? `<a class="btn sm do-detro-link" href="${DOL_URL_SITE}" target="_blank" rel="noopener noreferrer" title="Consulta oficial do DETRO/RJ — escolha a linha ${esc(x.Title || "")} na lista">${ICONS.globe || "🌐"} <span>Abrir a consulta no DETRO</span></a>` : x && x.CodigoDetro ? `<a class="btn sm do-detro-link" href="${esc(DOL_URL_LINHA(x.CodigoDetro))}" target="_blank" rel="noopener noreferrer" title="Registro oficial da linha ${esc(x.Title || "")} no site do DETRO (abre em outra aba)">${ICONS.globe || "🌐"} <span>${esc(txt || "Ver no DETRO")}</span></a>` : "";
 /* Aderência: a coluna Linha mostra a linha do DETRO pela correspondência da publicação vigente (1000 = B140…) */
 function doLinhaRotulo(linhaErp, I) {
   const L = String(linhaErp || "").trim().toUpperCase(), m = I && I.linhas && I.linhas[L];
@@ -36822,7 +36839,7 @@ window.dolImportar = id => {
   };
   const cola = $("dolCola");
   if (cola) { cola.addEventListener("drop", ev => ev.preventDefault()); cola.addEventListener("beforeinput", ev => ev.preventDefault()); }   /* revisão: só aceita colar (nada entra direto na página) */
-  if (cola) cola.addEventListener("paste", ev => { ev.preventDefault(); const cd = ev.clipboardData || window.clipboardData; const h = cd.getData("text/html"), t = cd.getData("text/plain") || ""; const html = h || (/<table/i.test(t) ? t : ""); cola.textContent = html ? "Página colada." : "A cópia não trouxe as tabelas: use o arquivo salvo."; previa(html); });
+  if (cola) cola.addEventListener("paste", ev => { ev.preventDefault(); const cd = ev.clipboardData || window.clipboardData; const h = cd.getData("text/html"), t = cd.getData("text/plain") || ""; const html = /<table/i.test(t) ? t : (h || "");   /* v0.14.4: código-fonte (Ctrl+U) chega como texto; a cópia formatada da página de código-fonte não serve */ cola.textContent = html ? "Página colada." : "A cópia não trouxe as tabelas: use o arquivo salvo."; previa(html); });
   const arq = $("dolArq");
   if (arq) arq.addEventListener("change", async () => { const fl = arq.files && arq.files[0]; arq.value = ""; if (!fl) return; let txt = ""; try { const buf = await fl.arrayBuffer(); txt = new TextDecoder("utf-8").decode(buf); if (/�/.test(txt.slice(0, 20000)) || /charset=["']?(iso-8859-1|windows-1252)/i.test(txt.slice(0, 3000))) txt = new TextDecoder("windows-1252").decode(buf); } catch (e) {} if (cola) cola.textContent = `Arquivo: ${fl.name}`; previa(txt); });
 };
@@ -36958,6 +36975,396 @@ window.rjForm = (id, chave) => {
     catch (e) { return err("Não foi possível gravar: " + e.message); }
   });
 };
+/* =====================================================================
+   v0.14.4 · pedido de 16/10 16:52
+   3  CNPJ / CPF: só números (no máximo 14 dígitos) em todos os campos de documento; obrigatório na fatura nova da CAP
+   1  Linhas no DETRO: visual mais próximo do site (cabeçalho, linha escolhida, rodapé), impressão, e atualização pelo
+      código-fonte da página (Ctrl+U), que traz os dias da semana (copiar a página não traz as marcações)
+   2  Operacional › Ocorrências: registro completo com envolvidos (RH), veículo, consequências, tratativa e medida aplicada;
+      aparece na Vida do ônibus (Frota › veículo) e na ficha de ocorrências de cada funcionário; indicadores por funcionário
+      (pontos, índice de conduta) prontos para a avaliação de desempenho; "Enviar ao RH" leva a ocorrência à página do funcionário
+   4  RH › Funcionários › página do funcionário: aba "Vida funcional" com as avaliações de desempenho, as ocorrências enviadas
+      pelo Operacional e os marcos (admissão, desligamento)
+   ===================================================================== */
+/* ---- 3: documento só com números ---- */
+document.addEventListener("input", ev => {
+  const t = ev.target; if (!t || !t.matches || !t.matches('input[data-mask="doc"]')) return;
+  const v = t.value, limpo = v.replace(/[^\d./\- ]/g, ""); let n = 0, out = "";
+  for (const ch of limpo) { if (/\d/.test(ch)) { if (n >= 14) continue; n++; } out += ch; }
+  if (out !== v) { t.value = out; if (t.dataset.maskOff) { delete t.dataset.maskOff; } }
+}, true);
+
+/* ---- 1: Linhas no DETRO — visual e atualização ---- */
+{ const h0 = dolHtml; dolHtml = function (x, d) {
+    const rot = [d.numero || x.Title, `${d.ligacao || x.Ligacao || ""} ${d.via || ""}`.trim(), d.caracteristica, String(d.empresa || "").replace(/^\d+\s*-\s*/, "")].filter(Boolean).join(" - ");
+    return `<div class="do-site"><div class="do-site-top"><b>DETRO</b><span>Tarifas e Itinerários das linhas regulares</span></div><div class="do-site-sel" aria-label="Linha">${esc(rot)}<span aria-hidden="true">▾</span></div>
+      ${h0.apply(this, arguments)}<div class="do-site-pe">Cópia da consulta oficial do DETRO/RJ${x.AtualizadoEm ? ` · ${esc(fmtDate(x.AtualizadoEm))}` : ""}</div></div>`;
+  }; }
+window.dolImprimir = id => {
+  const x = DOL.itens.find(i => i._id === String(id)), d = x && dolDados(x); if (!x || !d) return;
+  const css = `body{font-family:Arial,sans-serif;color:#333;margin:18px}.do-dbox{border-top:3px solid #d2d6de;margin:0 0 14px;padding:8px 0}.do-dbox h3{font-size:14px;margin:4px 0 8px}table{width:100%;border-collapse:collapse;font-size:11px}th{background:#3c8dbc!important;color:#fff;text-align:left;padding:5px 6px;-webkit-print-color-adjust:exact;print-color-adjust:exact}td{padding:4px 6px;border:1px solid #eee}td.c{text-align:center}.do-dchk{display:inline-block;width:12px;height:12px;border:1px solid #999;border-radius:2px;font-size:10px;line-height:12px}.do-site-top{background:#1d2b4f!important;color:#fff;padding:10px 14px;font-size:16px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.do-site-top b{margin-right:12px}.do-site-sel{border:1px solid #ccc;padding:6px 10px;margin:10px 0;font-size:12px}.do-site-sel span{display:none}.do-site-pe{background:#1d2b4f!important;color:#fff;padding:8px;text-align:center;font-size:11px;-webkit-print-color-adjust:exact;print-color-adjust:exact}`;
+  const w = window.open("", "_blank"); if (!w) { toast("Libere as janelas (pop-up) para imprimir."); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(x.Title || "Linha")} — DETRO</title><style>${css}</style></head><body>${dolHtml(x, d)}<script>setTimeout(function(){window.print()},300)<\/script></body></html>`); w.document.close();
+};
+{ const a0 = dolAba; dolAba = function () {
+    let h = a0.apply(this, arguments);
+    const x = DOL.itens.find(i => i._id === DOL.sel);
+    if (x && dolDados(x)) h = h.replace('<span class="grow"></span>', () => `<span class="grow"></span><button class="btn sm" onclick="dolImprimir(${esc(jsArg(x._id))})">🖨 Imprimir</button>`);
+    return h;
+  }; }
+{ const i0 = window.dolImportar; window.dolImportar = id => {
+    i0(id);
+    const x = DOL.itens.find(i => i._id === String(id)), ol = document.querySelector("#modal .do-imp-passos"); if (!x || !ol) return;
+    const link = x.CodigoDetro ? `<a href="${esc(DOL_URL_LINHA(x.CodigoDetro))}" target="_blank" rel="noopener noreferrer">página da linha ${esc(x.Title || "")} no DETRO</a>` : `<a href="${DOL_URL_SITE}" target="_blank" rel="noopener noreferrer">consulta do DETRO</a> (cadastre o código da linha para ter o link direto)`;
+    ol.innerHTML = `<li>Abra a ${link}.</li><li>Na página, aperte <b>Ctrl+U</b> (abre o código da página).</li><li>Aperte <b>Ctrl+A</b> e <b>Ctrl+C</b>, volte aqui, clique no quadro e aperte <b>Ctrl+V</b>.</li>`;
+    ol.insertAdjacentHTML("afterend", `<p class="sup" style="margin:-4px 0 10px">Copiar a página normal não traz as marcações dos dias da semana; o código da página (Ctrl+U) ou o arquivo salvo (Ctrl+S) trazem.</p>`);
+  }; }
+/* sem os dias da semana, não grava (os horários ficariam sem as marcações) */
+{ const p0 = dolParse; dolParse = function (html) { const r = p0.apply(this, arguments); if (r && r.ok && r.semDias && r.horarios.length) { r.ok = false; r.motivo = "dias"; } return r; }; window.dolParse = dolParse; }
+document.addEventListener("paste", () => { setTimeout(() => { const pv = $("dolPrev"); if (pv && DOL.imp && DOL.imp.motivo === "dias") pv.innerHTML = `<div class="err-msg" style="color:var(--err)">A cópia não trouxe os dias da semana dos horários. Use o código da página: na página da linha, <b>Ctrl+U</b>, depois Ctrl+A, Ctrl+C e cole aqui.</div>`; }, 0); }, true);
+
+/* ---- 2: Operacional › Ocorrências ---- */
+MODULES.push({ id: "ocorr", path: "#/operacional/ocorrencias", icon: "shield", name: "Ocorrências", area: "Operacional", groups: ["operacional", "diretoria"], status: "piloto", wide: true });
+const OC_TIPOS = [
+  ["Acidente de trânsito", "Grave"], ["Avaria / dano ao veículo", "Média"], ["Condução perigosa / excesso de velocidade", "Grave"], ["Uso de celular ao volante", "Grave"],
+  ["Infração de trânsito", "Média"], ["Falha mecânica em viagem", "Leve"], ["Quebra de viagem / viagem não realizada", "Média"], ["Atraso ou adiantamento de horário", "Leve"],
+  ["Desvio de itinerário", "Média"], ["Incidente com passageiro", "Grave"], ["Reclamação de passageiro", "Leve"], ["Conduta inadequada", "Média"],
+  ["Falta ou abandono de posto", "Média"], ["Embriaguez ou uso de substâncias", "Gravíssima"], ["Assalto / ocorrência policial", "Grave"],
+  ["Diferença de caixa / evasão de receita", "Média"], ["Problema na bilhetagem / validador", "Leve"], ["Outros", "Leve"]
+];
+const OC_GRAV = ["Leve", "Média", "Grave", "Gravíssima"], OC_PONTOS = { "Leve": 1, "Média": 3, "Grave": 5, "Gravíssima": 8 };
+const OC_STATUS = ["Aberta", "Em tratativa", "Concluída", "Cancelada"];
+const OC_PAPEIS = ["Responsável", "Envolvido", "Testemunha", "Vítima"];
+const OC_MEDIDAS = ["Nenhuma", "Orientação verbal", "Advertência verbal", "Advertência escrita", "Suspensão", "Treinamento / reciclagem", "Ressarcimento (art. 462 CLT)", "Desligamento"];
+LISTS.op_ocorr = {
+  key: "op_ocorr", displayName: "Operacional — Ocorrências", siteKey: "operacional", titleAs: "Protocolo",
+  description: "Operacional NMB · ocorrências da operação (acidentes, avarias, condução, horários, passageiros, conduta…) com veículo, funcionários envolvidos, consequências, tratativa e medida aplicada. Editada em Operacional › Ocorrências; as enviadas ao RH aparecem na página do funcionário.",
+  columns: [
+    { name: "DataHora",       displayName: "Data e hora",                 dateTime: { displayAs: "default", format: "dateTime" } },
+    { name: "Tipo",           displayName: "Tipo",                        choice: choice(OC_TIPOS.map(t => t[0]), true) },
+    { name: "Gravidade",      displayName: "Gravidade",                   choice: choice(OC_GRAV) },
+    { name: "Status",         displayName: "Situação",                    choice: choice(OC_STATUS), update: true },
+    { name: "Linha",          displayName: "Linha",                       text: { allowMultipleLines: false, maxLength: 60 } },
+    { name: "Local",          displayName: "Local",                       text: { allowMultipleLines: false, maxLength: 200 } },
+    { name: "Veiculo",        displayName: "Veículo (prefixo)",           text: { allowMultipleLines: false, maxLength: 30 } },
+    { name: "VeicId",         displayName: "Veículo (id na Frota)",       text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Envolvidos",     displayName: "Funcionários envolvidos (JSON)", text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "EnvolvidosTxt",  displayName: "Funcionários envolvidos",     text: { allowMultipleLines: false, maxLength: 255 } },
+    { name: "Descricao",      displayName: "O que aconteceu",             text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "VeiculoParado",  displayName: "Veículo parado",              boolean: {} },
+    { name: "HorasParado",    displayName: "Horas parado",                number: { decimalPlaces: "one", displayAs: "number" } },
+    { name: "Oficina",        displayName: "Encaminhado à oficina",       boolean: {} },
+    { name: "ManutId",        displayName: "Manutenção aberta (id)",      text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Custo",          displayName: "Custo estimado (R$)",         number: { decimalPlaces: "two", displayAs: "number" } },
+    { name: "Tratativa",      displayName: "Tratativa",                   text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Medida",         displayName: "Medida aplicada",             choice: choice(OC_MEDIDAS, true) },
+    { name: "ResponsavelTratativa", displayName: "Responsável pela tratativa", text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "Prazo",          displayName: "Prazo da tratativa",          dateTime: dateOnly },
+    { name: "Conclusao",      displayName: "Concluída em",                dateTime: dateOnly },
+    { name: "EnviadoRH",      displayName: "Enviada ao RH",               boolean: {} },
+    { name: "EnviadoRHEm",    displayName: "Enviada ao RH em",            dateTime: { displayAs: "default", format: "dateTime" } },
+    { name: "RegistradoPor",  displayName: "Registrada por",              text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "Historico",      displayName: "Histórico (JSON)",            text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+SETUP_ORDER.push("op_ocorr");
+SETUP_TEXT.op_ocorr = `Cria no site Operacional a lista "Operacional — Ocorrências" (v0.14.4): ocorrências da operação com veículo, funcionários envolvidos, consequências, tratativa e medida. Para o RH ver as ocorrências enviadas na página do funcionário, dê leitura desta lista ao grupo do RH.`;
+const OC = { site: null, list: undefined, itens: [], erro: "", em: 0, p: null, aba: "reg", f: { q: "", st: "", tipo: "", grav: "", per: "90" } };
+async function ocCarregar(force) {
+  if (!force && OC.em && Date.now() - OC.em < 120000) return OC.itens;
+  if (OC.p && !force) return OC.p;
+  OC.p = (async () => {
+    try {
+      if (!OC.site) OC.site = await SP.site(CONFIG.sites[LISTS.op_ocorr.siteKey]);
+      if (force || OC.list === undefined) OC.list = (await SP.lists(OC.site.id)).find(l => l.displayName === LISTS.op_ocorr.displayName) || null;
+      OC.itens = OC.list ? (await SP.items(OC.site.id, OC.list.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+      OC.erro = "";
+    } catch (e) { OC.erro = String((e && e.message) || e); OC.list = undefined; OC.itens = []; }
+    OC.em = Date.now(); OC.p = null; return OC.itens;
+  })();
+  return OC.p;
+}
+window.ocCarregar = ocCarregar;
+const ocEnv = x => { const a = doJson(x && x.Envolvidos, []); return Array.isArray(a) ? a.filter(e => e && (e.id || e.nome)) : []; };
+const ocData = x => { const d = x && x.DataHora ? new Date(x.DataHora) : null; if (!d || isNaN(d)) return ""; const p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };   /* revisão: dia no fuso local (22h30 de 31/10 é outubro) */
+const ocQuando = x => x.DataHora ? `${fmtDate(x.DataHora)} ${new Date(x.DataHora).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : "—";
+const ocAtiva = x => x.Status !== "Cancelada";
+const ocGravPill = g => `<span class="oc-grav oc-g-${esc(normName(g || "leve").replace(/\s/g, ""))}">${esc(g || "—")}</span>`;
+const ocStPill = s => `<span class="pill ${s === "Concluída" ? "st-pago" : s === "Cancelada" ? "" : s === "Em tratativa" ? "st-aguardando" : "st-vencido"}"><i></i>${esc(s || "Aberta")}</span>`;
+/* indicadores por funcionário (base para a avaliação de desempenho):
+   pontos = soma da gravidade (Leve 1 · Média 3 · Grave 5 · Gravíssima 8) das ocorrências dos últimos 12 meses em que a pessoa foi
+   "Responsável" (canceladas não contam); índice de conduta = 100 − 5 × pontos (mínimo 0): ≥ 90 bom · 70–89 atenção · < 70 crítico */
+function ocIndicadores(funcId, nome, itens) {
+  const lim = new Date(); lim.setFullYear(lim.getFullYear() - 1); const limS = lim.toISOString().slice(0, 10);
+  const minhas = (itens || OC.itens).filter(x => ocAtiva(x) && ocEnv(x).some(e => (funcId && String(e.id) === String(funcId)) || (!funcId && nome && normName(e.nome) === normName(nome))));
+  const papelDe = x => (ocEnv(x).find(e => (funcId && String(e.id) === String(funcId)) || (!funcId && normName(e.nome) === normName(nome))) || {}).papel || "Envolvido";
+  const ano = minhas.filter(x => ocData(x) >= limS), resp = ano.filter(x => papelDe(x) === "Responsável");
+  const pontos = resp.reduce((s, x) => s + (OC_PONTOS[x.Gravidade] || 0), 0), indice = Math.max(0, 100 - 5 * pontos);
+  const ultResp = minhas.filter(x => papelDe(x) === "Responsável").map(ocData).sort().pop() || "";
+  return { todas: minhas, ano, resp, pontos, indice, faixa: indice >= 90 ? "bom" : indice >= 70 ? "atencao" : "critico", dias: ultResp ? Math.round((dLocal(todayISO()) - dLocal(ultResp)) / 864e5) : null, graves: resp.filter(x => x.Gravidade === "Grave" || x.Gravidade === "Gravíssima").length, papelDe };
+}
+window.ocIndicadores = ocIndicadores;
+const ocIndHtml = I => `<div class="cap-kpis"><div class="kpi static"><div class="lbl">Ocorrências (12 meses)</div><div class="val">${I.ano.length}</div><div class="sub">${I.resp.length} como responsável</div></div>
+  <div class="kpi static ${I.faixa === "critico" ? "venc" : I.faixa === "atencao" ? "hoje" : "pago"}"><div class="lbl">Índice de conduta</div><div class="val">${I.indice}</div><div class="sub">${I.pontos} ponto(s) · ${I.faixa === "bom" ? "bom" : I.faixa === "atencao" ? "atenção" : "crítico"}</div></div>
+  <div class="kpi static"><div class="lbl">Graves / gravíssimas</div><div class="val">${I.graves}</div><div class="sub">como responsável, 12 meses</div></div>
+  <div class="kpi static"><div class="lbl">Dias sem ocorrência</div><div class="val">${I.dias == null ? "—" : I.dias}</div><div class="sub">desde a última como responsável</div></div></div>`;
+const ocPode = () => podeEditar("ocorr");
+function pageOc() {
+  return `<div class="page" id="ocRoot"><nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><b>Ocorrências</b></nav>
+    <div class="cap-topo"><div><h1 style="margin:0">Ocorrências</h1><p class="sup" style="margin:2px 0 0">Registro das ocorrências da operação com o veículo e os funcionários envolvidos, as consequências, a tratativa e a medida aplicada. Aparecem na vida do ônibus e na ficha de cada funcionário.</p></div><span class="grow"></span><div id="ocAcoes"></div></div>
+    <div id="ocBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`;
+}
+window.pageOc = pageOc;
+async function renderOc() { await Promise.all([ocCarregar(true), tercRhFuncs().catch(() => []), frotaGarantir(false).catch(() => null)]); paintOc(); }
+window.renderOc = renderOc;
+window.ocAba = a => { OC.aba = a; paintOc(); };
+window.ocF = (k, v) => { OC.f[k] = v; paintOc(); };
+function ocFiltrados() {
+  const F = OC.f, q = normName(F.q), lim = F.per ? (() => { const d = new Date(); d.setDate(d.getDate() - Number(F.per)); return d.toISOString().slice(0, 10); })() : "";
+  return OC.itens.filter(x => (!F.st || (F.st === "abertas" ? ["Aberta", "Em tratativa"].includes(x.Status || "Aberta") : x.Status === F.st)) && (!F.tipo || x.Tipo === F.tipo) && (!F.grav || x.Gravidade === F.grav) && (!lim || ocData(x) >= lim)
+    && (!q || normName([x.Title, x.Tipo, x.Veiculo, x.Linha, x.Local, x.EnvolvidosTxt, x.Descricao, x.Tratativa].join(" ")).includes(q)))
+    .sort((a, b) => String(b.DataHora || "").localeCompare(String(a.DataHora || "")));
+}
+function paintOc() {
+  const body = $("ocBody"); if (!body) return;
+  const ed = ocPode();
+  $("ocAcoes").innerHTML = `<button class="btn" onclick="renderOc()">Atualizar</button>${ed && OC.list ? `<button class="btn primary" onclick="ocForm('')">+ Nova ocorrência</button>` : ""}`;
+  if (OC.erro) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível ler as ocorrências</h3><p>${esc(OC.erro.slice(0, 160))}</p></div>`; return; }
+  if (!OC.list) { body.innerHTML = `<div class="cap-empty"><h3>A lista "${esc(LISTS.op_ocorr.displayName)}" ainda não existe</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › Executar tudo</a>.` : "Peça a um administrador para rodar a Configuração."}</p></div>`; return; }
+  const abas = [["reg", "Registros"], ["func", "Por funcionário"], ["veic", "Por veículo"], ["ind", "Indicadores"]];
+  const tabs = `<div class="cap-views">${abas.map(([k, n]) => `<button class="tab ${OC.aba === k ? "on" : ""}" onclick="ocAba('${k}')">${n}</button>`).join("")}</div>`;
+  body.innerHTML = tabs + (OC.aba === "func" ? ocPorFunc() : OC.aba === "veic" ? ocPorVeic() : OC.aba === "ind" ? ocIndicadoresHtml() : ocRegistros());
+  const qi = $("ocQ"); if (qi) qi.addEventListener("input", ev => { OC.f.q = ev.target.value; erpDeb("ocQ", () => keepFocus(paintOc)); });
+}
+function ocRegistros() {
+  const F = OC.f, its = ocFiltrados(), hoje = todayISO(), m = hoje.slice(0, 7);
+  const ab = OC.itens.filter(x => ["Aberta", "Em tratativa", undefined, ""].includes(x.Status)), lim90 = (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d.toISOString().slice(0, 10); })();
+  const kpi = (l, v, sub, cls, on) => `<button class="kpi ${cls || ""}" ${on ? `onclick="${on}"` : ""}><div class="lbl">${esc(l)}</div><div class="val">${esc(String(v))}</div><div class="sub">${esc(sub)}</div></button>`;
+  const kpis = `<div class="cap-kpis">${kpi("Abertas", ab.length, "aberta ou em tratativa", ab.length ? "hoje" : "", "ocF('st','abertas')")}${kpi("No mês", OC.itens.filter(x => ocData(x).startsWith(m) && ocAtiva(x)).length, compLabel(m))}${kpi("Graves e gravíssimas", OC.itens.filter(x => ocAtiva(x) && ocData(x) >= lim90 && ["Grave", "Gravíssima"].includes(x.Gravidade)).length, "últimos 90 dias", "venc")}${kpi("Veículos parados", OC.itens.filter(x => x.VeiculoParado && ["Aberta", "Em tratativa"].includes(x.Status || "Aberta")).length, "ocorrências em aberto com veículo parado")}</div>`;
+  const sel = (k, ops, vazio) => `<select onchange="ocF('${k}', this.value)"><option value="">${vazio}</option>${ops.map(o => Array.isArray(o) ? o : [o, o]).map(([v, n]) => `<option value="${esc(v)}" ${F[k] === v ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+  const filtros = `<div class="filters" role="search"><input type="search" class="span-2" id="ocQ" placeholder="Buscar: protocolo, veículo, funcionário, linha, local…" value="${esc(F.q)}">
+    ${sel("st", [["abertas", "Abertas (aberta ou em tratativa)"]].concat(OC_STATUS.map(x => [x, x])), "Todas as situações")}${sel("tipo", OC_TIPOS.map(t => t[0]), "Todos os tipos")}${sel("grav", OC_GRAV, "Todas as gravidades")}
+    ${sel("per", [["30", "Últimos 30 dias"], ["90", "Últimos 90 dias"], ["365", "Últimos 12 meses"]], "Todo o período")}</div>`;
+  const linha = x => { const env = ocEnv(x);
+    return `<tr class="oc-l" onclick="ocVer(${esc(jsArg(x._id))})" tabindex="0"><td class="nw"><b>${esc(x.Title || "—")}</b><div class="sup">${esc(ocQuando(x))}</div></td><td>${esc(x.Tipo || "—")}${x.Linha || x.Local ? `<div class="sup">${esc([x.Linha, x.Local].filter(Boolean).join(" · "))}</div>` : ""}</td><td>${ocGravPill(x.Gravidade)}</td>
+      <td class="nw">${x.Veiculo ? `<b>${esc(x.Veiculo)}</b>` : "—"}${x.VeiculoParado ? `<div class="sup">parado${x.HorasParado ? ` ${esc(String(x.HorasParado).replace(".", ","))} h` : ""}</div>` : ""}</td>
+      <td>${env.length ? env.map(e => `<span class="oc-env">${esc(e.nome || "—")}<small>${esc(e.papel || "")}</small></span>`).join(" ") : `<span class="sup">—</span>`}</td><td>${ocStPill(x.Status)}${x.EnviadoRH ? ` <span class="oc-rh" title="Enviada ao RH">RH</span>` : ""}</td></tr>`; };
+  return kpis + filtros + (its.length ? `<div class="table-wrap"><table class="cap-table oc-tab"><thead><tr><th>Protocolo</th><th>Tipo</th><th>Gravidade</th><th>Veículo</th><th>Envolvidos</th><th>Situação</th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>`
+    : `<div class="cap-empty"><h3>Nenhuma ocorrência neste filtro</h3>${ocPode() ? `<p><button class="btn primary" onclick="ocForm('')">+ Nova ocorrência</button></p>` : ""}</div>`);
+}
+function ocPorFunc() {
+  const mapa = new Map();
+  OC.itens.filter(ocAtiva).forEach(x => ocEnv(x).forEach(e => { const k = e.id ? "id:" + e.id : "n:" + normName(e.nome); if (!mapa.has(k)) mapa.set(k, { id: e.id || "", nome: e.nome || "—", funcao: e.funcao || "" }); }));
+  const linhas = [...mapa.values()].map(p => ({ p, I: ocIndicadores(p.id, p.nome) })).sort((a, b) => b.I.pontos - a.I.pontos || b.I.ano.length - a.I.ano.length || a.p.nome.localeCompare(b.p.nome, "pt-BR"));
+  if (!linhas.length) return `<div class="cap-empty"><h3>Nenhum funcionário em ocorrências</h3></div>`;
+  return `<p class="sup">Pontos = gravidade das ocorrências dos últimos 12 meses em que a pessoa foi <b>responsável</b> (Leve 1 · Média 3 · Grave 5 · Gravíssima 8). Índice de conduta = 100 − 5 × pontos. Clique para ver a ficha.</p>
+    <div class="table-wrap"><table class="cap-table"><thead><tr><th>Funcionário</th><th class="r">Ocorrências (12 m)</th><th class="r">Como responsável</th><th class="r">Pontos</th><th>Índice de conduta</th><th>Última</th></tr></thead><tbody>
+    ${linhas.map(({ p, I }) => `<tr class="oc-l" onclick="ocFicha(${esc(jsArg(p.id))}, ${esc(jsArg(p.nome))})" tabindex="0"><td><b>${esc(p.nome)}</b>${p.funcao ? `<div class="sup">${esc(p.funcao)}</div>` : ""}</td><td class="r">${I.ano.length}</td><td class="r">${I.resp.length}</td><td class="r">${I.pontos}</td>
+      <td><span class="oc-ind oc-ind-${I.faixa}">${I.indice}</span></td><td class="nw">${I.todas.length ? esc(fmtDate(I.todas.map(ocData).sort().pop())) : "—"}</td></tr>`).join("")}</tbody></table></div>`;
+}
+function ocPorVeic() {
+  const m = new Map(); OC.itens.filter(x => ocAtiva(x) && x.Veiculo).forEach(x => { const k = frotaNorm(x.Veiculo); if (!m.has(k)) m.set(k, { v: x.Veiculo, its: [] }); m.get(k).its.push(x); });
+  const linhas = [...m.values()].sort((a, b) => b.its.length - a.its.length);
+  if (!linhas.length) return `<div class="cap-empty"><h3>Nenhuma ocorrência com veículo</h3></div>`;
+  const veic = p => (FROTA.veics || []).find(v => frotaNorm(v.Title) === frotaNorm(p));
+  return `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Veículo</th><th class="r">Ocorrências</th><th class="r">Graves / gravíssimas</th><th class="r">Horas parado</th><th class="r">Custo estimado</th><th>Última</th><th></th></tr></thead><tbody>
+    ${linhas.map(l => { const v = veic(l.v); return `<tr><td><b>${esc(l.v)}</b></td><td class="r">${l.its.length}</td><td class="r">${l.its.filter(x => ["Grave", "Gravíssima"].includes(x.Gravidade)).length}</td><td class="r">${esc(String(l.its.reduce((s, x) => s + (Number(x.HorasParado) || 0), 0)).replace(".", ","))}</td><td class="r">${esc(fmtBRL(l.its.reduce((s, x) => s + (Number(x.Custo) || 0), 0)))}</td><td class="nw">${esc(fmtDate(l.its.map(ocData).sort().pop()))}</td>
+      <td>${v && canSee(MODULES.find(x => x.id === "frota")) ? `<a class="btn mini" href="#/operacional/frota/veiculo/${encodeURIComponent(v._id)}">Vida do ônibus</a>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`;
+}
+function ocIndicadoresHtml() {
+  const lim = (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); })();
+  const ano = OC.itens.filter(x => ocAtiva(x) && ocData(x) >= lim);
+  const porTipo = OC_TIPOS.map(t => [t[0], ano.filter(x => x.Tipo === t[0]).length]).concat([["(outros nomes)", ano.filter(x => !OC_TIPOS.some(t => t[0] === x.Tipo)).length]]).filter(t => t[1]).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(1, ...porTipo.map(t => t[1]));
+  const meses = []; for (let i = 5; i >= 0; i--) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); meses.push(d.toISOString().slice(0, 7)); }
+  const conc = ano.filter(x => x.Status === "Concluída" && x.Conclusao && x.DataHora), tm = conc.length ? conc.reduce((s, x) => s + Math.max(0, (dLocal(ymd(x.Conclusao)) - dLocal(ocData(x))) / 864e5), 0) / conc.length : null;
+  return `<div class="cap-kpis"><div class="kpi static"><div class="lbl">Ocorrências (12 meses)</div><div class="val">${ano.length}</div><div class="sub">${ano.filter(x => ["Grave", "Gravíssima"].includes(x.Gravidade)).length} graves ou gravíssimas</div></div>
+    <div class="kpi static"><div class="lbl">Tempo médio de tratativa</div><div class="val">${tm == null ? "—" : tm.toFixed(1).replace(".", ",") + " d"}</div><div class="sub">da ocorrência à conclusão</div></div>
+    <div class="kpi static"><div class="lbl">Horas de veículo parado</div><div class="val">${esc(String(ano.reduce((s, x) => s + (Number(x.HorasParado) || 0), 0)).replace(".", ","))}</div><div class="sub">12 meses</div></div>
+    <div class="kpi static"><div class="lbl">Custo estimado</div><div class="val">${esc(fmtBRL(ano.reduce((s, x) => s + (Number(x.Custo) || 0), 0)))}</div><div class="sub">12 meses</div></div></div>
+    <div class="fv-duo"><div class="cap-card"><div class="cap-card-h"><h3>Por tipo (12 meses)</h3></div><div style="padding:10px 16px">${porTipo.length ? porTipo.map(([t, n]) => `<div class="oc-bar"><span>${esc(t)}</span><i style="width:${Math.round(n / max * 100)}%"></i><b>${n}</b></div>`).join("") : `<p class="sup">Nada registrado.</p>`}</div></div>
+    <div class="cap-card"><div class="cap-card-h"><h3>Por mês</h3></div><div class="table-wrap"><table class="cap-table"><thead><tr><th>Mês</th>${OC_GRAV.map(g => `<th class="r">${g}</th>`).join("")}<th class="r">Total</th></tr></thead><tbody>${meses.map(mm => { const its = OC.itens.filter(x => ocAtiva(x) && ocData(x).startsWith(mm)); return `<tr><td>${esc(compLabel(mm))}</td>${OC_GRAV.map(g => `<td class="r">${its.filter(x => x.Gravidade === g).length || ""}</td>`).join("")}<td class="r"><b>${its.length}</b></td></tr>`; }).join("")}</tbody></table></div></div></div>
+    <p class="sup" style="margin-top:12px">Indicadores por funcionário (aba Por funcionário e página do funcionário no RH): pontos e índice de conduta dos últimos 12 meses, prontos para entrar na avaliação de desempenho.</p>`;
+}
+/* ficha de ocorrências do funcionário (Operacional; abre também da vida do ônibus) */
+window.ocFicha = async (funcId, nome) => {
+  if (!canSee(MODULES.find(m => m.id === "ocorr"))) return;
+  await ocCarregar();
+  const I = ocIndicadores(funcId, nome), its = I.todas.slice().sort((a, b) => String(b.DataHora || "").localeCompare(String(a.DataHora || "")));
+  const rh = funcId && canSee(MODULES.find(x => x.id === "rh_db"));
+  openModal(`Ocorrências · ${nome || "funcionário"}`, `${ocIndHtml(I)}
+    ${its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Data</th><th>Tipo</th><th>Gravidade</th><th>Papel</th><th>Veículo</th><th>Medida</th><th>Situação</th></tr></thead><tbody>${its.map(x => `<tr class="oc-l" onclick="closeModal();ocVer(${esc(jsArg(x._id))})"><td class="nw">${esc(fmtDate(x.DataHora))}</td><td>${esc(x.Tipo || "")}</td><td>${ocGravPill(x.Gravidade)}</td><td>${esc(I.papelDe(x))}</td><td>${esc(x.Veiculo || "—")}</td><td class="sup">${esc(x.Medida || "")}</td><td>${ocStPill(x.Status)}${x.EnviadoRH ? ` <span class="oc-rh">RH</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<p class="sup">Nenhuma ocorrência.</p>`}
+    ${rh ? `<p style="margin-top:10px"><a href="#/rh/banco-de-dados/funcs/${encodeURIComponent(funcId)}" onclick="closeModal()">Abrir a página do funcionário no RH</a></p>` : ""}`, async () => true);
+  const sv = $("mSave"); if (sv) sv.textContent = "Fechar";
+};
+/* ver / editar */
+function ocProtocolo() { const a = new Date().getFullYear(), n = Math.max(0, ...OC.itens.map(x => { const m = String(x.Title || "").match(new RegExp(`^OC-${a}-(\\d+)$`)); return m ? Number(m[1]) : 0; })); return `OC-${a}-${String(n + 1).padStart(4, "0")}`; }
+window.ocVer = id => { const x = OC.itens.find(i => i._id === String(id)); if (!x) return; if (ocPode()) { ocForm(x._id); return; }
+  const env = ocEnv(x);
+  openModal(`${x.Title || "Ocorrência"} · ${x.Tipo || ""}`, `<dl class="fv-dados"><dt>Data e hora</dt><dd>${esc(ocQuando(x))}</dd><dt>Gravidade</dt><dd>${ocGravPill(x.Gravidade)}</dd><dt>Situação</dt><dd>${ocStPill(x.Status)}</dd><dt>Veículo</dt><dd>${esc(x.Veiculo || "—")}</dd><dt>Linha · local</dt><dd>${esc([x.Linha, x.Local].filter(Boolean).join(" · ") || "—")}</dd>
+    <dt>Envolvidos</dt><dd>${env.map(e => `${esc(e.nome)} <span class="sup">(${esc(e.papel || "")})</span>`).join(", ") || "—"}</dd><dt>O que aconteceu</dt><dd>${esc(x.Descricao || "—")}</dd><dt>Tratativa</dt><dd>${esc(x.Tratativa || "—")}</dd><dt>Medida</dt><dd>${esc(x.Medida || "—")}</dd></dl>`, async () => true);
+  const sv = $("mSave"); if (sv) sv.textContent = "Fechar";
+};
+window.ocForm = async id => {
+  if (!ocPode() || !OC.list) return;
+  const x = id ? OC.itens.find(i => i._id === String(id)) : null;
+  const agora = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const v = x || { Status: "Aberta", Gravidade: "Leve", Tipo: "" };
+  const funcs = await tercRhFuncs().catch(() => []), veics = frotaVeiculos ? frotaVeiculos() : [];
+  OC.env = ocEnv(v).map(e => Object.assign({}, e));
+  const dtLocal = v.DataHora ? new Date(new Date(v.DataHora).getTime() - new Date(v.DataHora).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : agora;
+  const tiposOps = OC_TIPOS.map(t => t[0]).concat(v.Tipo && !OC_TIPOS.some(t => t[0] === v.Tipo) ? [v.Tipo] : []);
+  openModal(x ? `${x.Title} · ocorrência` : "Nova ocorrência", `<div class="form-grid">
+      <div class="field full form-sec">O que aconteceu</div>
+      <div class="field"><label>Data e hora<span class="req">*</span></label><input type="datetime-local" id="ocDt" value="${esc(dtLocal)}"></div>
+      <div class="field"><label>Tipo<span class="req">*</span></label><select id="ocTipo"><option value="">— escolha —</option>${tiposOps.map(t => `<option ${t === v.Tipo ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+      <div class="field"><label>Gravidade</label><select id="ocGrav">${OC_GRAV.map(g => `<option ${g === v.Gravidade ? "selected" : ""}>${g}</option>`).join("")}</select><div class="hint">Sugerida pelo tipo; ajuste se preciso</div></div>
+      <div class="field"><label>Situação</label><select id="ocSt">${OC_STATUS.map(g => `<option ${g === (v.Status || "Aberta") ? "selected" : ""}>${g}</option>`).join("")}</select></div>
+      <div class="field"><label>Veículo</label><input id="ocVeic" list="ocVeicList" autocomplete="off" maxlength="30" value="${esc(v.Veiculo || "")}" placeholder="Prefixo"><datalist id="ocVeicList">${veics.map(p => `<option value="${esc(p)}">`).join("")}</datalist></div>
+      <div class="field"><label>Linha</label><input id="ocLinha" maxlength="60" value="${esc(v.Linha || "")}"></div>
+      <div class="field full"><label>Local</label><input id="ocLocal" maxlength="200" value="${esc(v.Local || "")}" placeholder="Ex.: rua, km da rodovia, ponto"></div>
+      <div class="field full"><label>Descrição<span class="req">*</span></label><textarea id="ocDesc" rows="3" placeholder="Ex.: em alta velocidade, ao passar pelo quebra-molas, a mola do veículo quebrou">${esc(v.Descricao || "")}</textarea></div>
+      <div class="field full form-sec">Funcionários envolvidos</div>
+      <div class="field full"><div id="ocEnvLista"></div><div class="oc-env-add"><input id="ocEnvNome" list="ocFuncList" autocomplete="off" placeholder="Nome do funcionário (RH › Funcionários)"><datalist id="ocFuncList">${funcs.map(f => `<option value="${esc(f.Title)}">${esc(f.Cargo || "")}</option>`).join("")}</datalist>
+        <select id="ocEnvPapel">${OC_PAPEIS.map(p => `<option>${p}</option>`).join("")}</select><button type="button" class="btn sm" onclick="ocEnvAdd()">Adicionar</button></div><div class="hint">O responsável é quem deu causa à ocorrência; só ele recebe os pontos nos indicadores.${funcs.length ? "" : " <b>Sem leitura da lista RH — Funcionários:</b> os envolvidos ficam só com o nome e não aparecem na página do funcionário no RH."}</div></div>
+      <div class="field full form-sec">Consequências</div>
+      <div class="field"><label class="check"><input type="checkbox" id="ocParado" ${v.VeiculoParado ? "checked" : ""}> Veículo parado</label></div>
+      <div class="field"><label>Horas parado</label><input type="number" id="ocHoras" min="0" step="0.5" value="${esc(v.HorasParado ?? "")}"></div>
+      <div class="field"><label class="check"><input type="checkbox" id="ocOficina" ${v.Oficina ? "checked" : ""}> Encaminhado à oficina</label>${v.ManutId ? `<div class="hint">Manutenção aberta na Frota</div>` : frotaEd("manut") ? `<label class="check" style="margin-top:6px"><input type="checkbox" id="ocAbrirManut"> Abrir manutenção corretiva na Frota (precisa do veículo)</label>` : ""}</div>
+      <div class="field"><label>Custo estimado (R$)</label><input type="number" id="ocCusto" min="0" step="0.01" value="${esc(v.Custo ?? "")}"></div>
+      <div class="field full form-sec">Tratativa</div>
+      <div class="field full"><label>Tratativa</label><textarea id="ocTrat" rows="2" placeholder="O que foi feito / será feito">${esc(v.Tratativa || "")}</textarea></div>
+      <div class="field"><label>Medida aplicada</label><select id="ocMedida"><option value="">—</option>${OC_MEDIDAS.concat(v.Medida && !OC_MEDIDAS.includes(v.Medida) ? [v.Medida] : []).map(m => `<option ${m === v.Medida ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></div>
+      <div class="field"><label>Responsável pela tratativa</label><input id="ocRespT" maxlength="120" value="${esc(v.ResponsavelTratativa || "")}"></div>
+      <div class="field"><label>Prazo</label><input type="date" id="ocPrazo" value="${v.Prazo ? esc(ymd(v.Prazo)) : ""}"></div>
+      <div class="field"><label>Concluída em</label><input type="date" id="ocConc" value="${v.Conclusao ? esc(ymd(v.Conclusao)) : ""}"></div>
+      <div class="field full"><label class="check"><input type="checkbox" id="ocRH" ${v.EnviadoRH ? "checked" : ""}> Enviar ao RH (aparece na página dos funcionários envolvidos, aba Vida funcional)</label></div>
+    </div><div class="err" id="ocErr" style="display:none"></div>`, async () => {
+    const g = k => ($(k) ? $(k).value.trim() : ""), err = m => { const e = $("ocErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const dt = g("ocDt"), tipo = g("ocTipo"), desc = g("ocDesc");
+    if (!dt) return err("Informe a data e a hora."); if (!tipo) return err("Escolha o tipo."); if (!desc) return err("Descreva o que aconteceu.");
+    const pend = g("ocEnvNome"); if (pend) return err(`Clique em "Adicionar" para incluir ${pend} nos envolvidos (ou apague o nome).`);
+    const veicTxt = g("ocVeic"), veic = veicTxt ? (FROTA.veics || []).find(vv => frotaNorm(vv.Title) === frotaNorm(veicTxt)) : null;
+    const env = OC.env || [], st = g("ocSt"), rh = $("ocRH").checked, num = k => g(k) === "" ? null : Math.max(0, Number(g(k)) || 0);
+    const hist = doJson(v.Historico, []); hist.push({ em: new Date().toISOString(), por: (session.me && session.me.displayName) || "", acao: x ? "editada" : "registrada", st });
+    const f = { DataHora: new Date(dt).toISOString(), Tipo: tipo, Gravidade: g("ocGrav"), Status: st, Linha: g("ocLinha") || null, Local: g("ocLocal") || null, Veiculo: veicTxt ? (veic ? veic.Title : veicTxt) : null, VeicId: veic ? String(veic._id) : null,
+      Envolvidos: env.length ? JSON.stringify(env) : null, EnvolvidosTxt: env.length ? env.map(e => `${e.nome} (${e.papel})`).join(", ").slice(0, 255) : null, Descricao: desc,
+      VeiculoParado: $("ocParado").checked, HorasParado: num("ocHoras"), Oficina: $("ocOficina").checked, Custo: num("ocCusto"), Tratativa: g("ocTrat") || null, Medida: g("ocMedida") || null, ResponsavelTratativa: g("ocRespT") || null,
+      Prazo: g("ocPrazo") || null, Conclusao: st === "Concluída" ? (g("ocConc") || todayISO()) : null, EnviadoRH: rh, Historico: null };
+    if (rh && !v.EnviadoRH) f.EnviadoRHEm = new Date().toISOString(); if (!rh && v.EnviadoRH) f.EnviadoRHEm = null;
+    if (rh !== !!v.EnviadoRH && x) hist.push({ em: new Date().toISOString(), por: (session.me && session.me.displayName) || "", acao: rh ? "enviada ao RH" : "retirada do RH" });
+    f.Historico = JSON.stringify(hist.slice(-50));
+    if (!x) { await ocCarregar(true); f.Title = ocProtocolo(); f.RegistradoPor = (session.me && session.me.displayName) || null; }   /* revisão: numera com a lista relida */
+    try {
+      let r = x ? (await SP.update(OC.site.id, OC.list.id, x._id, f), x) : await SP.create(OC.site.id, OC.list.id, f);
+      const ocId = String((r && (r._id || r.id)) || "");
+      let aviso = "";
+      if (!x && ocId) { try { await ocCarregar(true); const mesmos = OC.itens.filter(i => i.Title === f.Title).sort((a, b) => Number(a._id) - Number(b._id)); if (mesmos.length > 1 && mesmos[0]._id !== ocId) { const novo = ocProtocolo(); await SP.update(OC.site.id, OC.list.id, ocId, { Title: novo }); f.Title = novo; } } catch (e) {} }   /* dois registros ao mesmo tempo: o segundo ganha o número seguinte */
+      if ($("ocAbrirManut") && $("ocAbrirManut").checked && !f.Veiculo) aviso = " Sem veículo informado, a manutenção não foi aberta.";
+      if ($("ocAbrirManut") && $("ocAbrirManut").checked && f.Veiculo) {
+        try { await frotaGarantir(false); if (!FROTA.listManut || !FROTA.site) throw new Error("lista da manutenção não encontrada");
+          const m = await SP.create(FROTA.site.id, FROTA.listManut.id, { Title: `${tipo} (${f.Title || (x && x.Title) || "ocorrência"})`.slice(0, 255), Veiculo: f.Veiculo, Tipo: "Corretiva", DataInicio: dt.slice(0, 10), Situacao: "Aberta", Observacoes: `Aberta pela ocorrência ${f.Title || (x && x.Title) || ""}: ${desc}`.slice(0, 2000) });
+          if (m && m.id && ocId) { try { await SP.update(OC.site.id, OC.list.id, ocId, { ManutId: String(m.id), Oficina: true }); } catch (e2) { aviso = " A manutenção foi aberta na Frota, mas não ficou ligada à ocorrência."; } }
+          FROTA.carregadoEm = 0;
+        } catch (e) { aviso = ` A manutenção não foi aberta na Frota (${e.message}).`; }
+      }
+      await ocCarregar(true); paintOc(); toast((x ? "Ocorrência atualizada." : `Ocorrência ${f.Title} registrada.`) + aviso, aviso ? 8000 : 3000); return true;
+    } catch (e) { return err("Não foi possível gravar: " + e.message); }
+  });
+  ocEnvPintar();
+  const tp = $("ocTipo"); if (tp) tp.addEventListener("change", () => { const t = OC_TIPOS.find(y => y[0] === tp.value); if (t && !x) $("ocGrav").value = t[1]; });
+  const en = $("ocEnvNome"); if (en) en.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); ocEnvAdd(); } });
+  if (x && podeExcluir("ocorr")) document.querySelector("#modal .modal-foot").insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="ocExcluir(${esc(jsArg(x._id))})">Excluir</button>`);
+};
+function ocEnvPintar() {
+  const el = $("ocEnvLista"); if (!el) return; const env = OC.env || [];
+  el.innerHTML = env.length ? `<div class="oc-env-l">${env.map((e, i) => `<span class="oc-env">${esc(e.nome)}<small>${esc(e.papel)}${e.funcao ? " · " + esc(e.funcao) : ""}${e.id ? "" : " · fora do RH"}</small><button type="button" title="Tirar" aria-label="Tirar ${esc(e.nome)}" onclick="ocEnvTirar(${i})">×</button></span>`).join("")}</div>` : `<p class="sup" style="margin:0 0 6px">Nenhum funcionário associado.</p>`;
+}
+window.ocEnvAdd = async () => {
+  const n = ($("ocEnvNome").value || "").trim(); if (!n) return; const papel = $("ocEnvPapel").value;
+  const fs = await tercRhFuncs().catch(() => []), f = fs.find(y => y.Title === n) || fs.find(y => normName(y.Title) === normName(n));
+  OC.env = (OC.env || []).filter(e => !(f ? String(e.id) === String(f._id) : normName(e.nome) === normName(n)));
+  OC.env.push(f ? { id: String(f._id), nome: f.Title, papel, funcao: f.Cargo || "" } : { id: "", nome: n, papel, funcao: "" });
+  $("ocEnvNome").value = ""; ocEnvPintar();
+};
+window.ocEnvTirar = i => { (OC.env || []).splice(i, 1); ocEnvPintar(); };
+window.ocExcluir = id => {
+  const x = OC.itens.find(i => i._id === String(id)); if (!x || !podeExcluir("ocorr")) return;
+  (async () => { if (!(await erpConfirmar({ titulo: "Excluir ocorrência", texto: `Excluir a ocorrência ${x.Title || ""}? Para manter o histórico, prefira a situação "Cancelada".`, sim: "Excluir", perigo: true }))) return;
+    try { await graph(`/sites/${OC.site.id}/lists/${OC.list.id}/items/${x._id}`, { method: "DELETE" }); closeModal(); await ocCarregar(true); paintOc(); toast("Ocorrência excluída"); } catch (e) { toast("Erro: " + e.message, 6000); }
+  })();
+};
+/* gravações na lista de ocorrências contam como o módulo Ocorrências */
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path) {
+    const l = OC.list;
+    if (l && /^(POST|PATCH|PUT|DELETE)$/i.test(method || "") && String(path || "").includes(l.id)) { const m0 = session.modAtual; session.modAtual = "ocorr"; try { return g0.apply(this, arguments); } finally { session.modAtual = m0; } }
+    return g0.apply(this, arguments);
+  }; }
+/* ---- vida do ônibus: ocorrências do veículo ---- */
+FROTA_VIDA_K.ocorr = "Ocorrências";
+const ocDoVeic = v => OC.itens.filter(x => (x.VeicId && String(x.VeicId) === String(v._id)) || (!x.VeicId && x.Veiculo && frotaNorm(x.Veiculo) === frotaNorm(v.Title)));
+{ const fv0 = frotaVida; frotaVida = function (v) {
+    const ev = fv0.apply(this, arguments);
+    try { if (canSee(MODULES.find(m => m.id === "ocorr"))) ocDoVeic(v).filter(ocAtiva).forEach(x => { const env = ocEnv(x); ev.push({ k: "ocorr", d: ocData(x), t: `Ocorrência ${x.Title || ""} (${x.Gravidade || "—"}): ${x.Tipo || ""}`, s: [env.length ? env.map(e => `${e.nome} (${e.papel})`).join(", ") : "", x.Tratativa ? "tratativa: " + x.Tratativa : "", x.Status || ""].filter(Boolean).join(" · ").slice(0, 300), st: x.Status === "Concluída" ? "ok" : ["Grave", "Gravíssima"].includes(x.Gravidade) ? "erro" : "aviso" }); }); } catch (e) {}
+    return ev.filter(e => e.d).sort((a, b) => b.d.localeCompare(a.d));
+  }; }
+{ const r0 = renderFrotaVeic; renderFrotaVeic = async function () { const pOc = canSee(MODULES.find(m => m.id === "ocorr")) ? ocCarregar().catch(() => null) : null; const r = await r0.apply(this, arguments); if (pOc) { const antes = OC.em; await pOc; if ($("fvBody") && OC.em !== antes) frotaVeicPintar(); } return r; }; }
+{ const r0 = window.frotaRelVeic; window.frotaRelVeic = async function () { try { await ocCarregar(); } catch (e) {} return r0.apply(this, arguments); }; }
+{ const p0 = frotaVeicPintar; frotaVeicPintar = function () {
+    const r = p0.apply(this, arguments);
+    try {
+      const v = frotaVeicPorId(FV.id), body = $("fvBody"); if (!v || !body || !OC.list || !canSee(MODULES.find(m => m.id === "ocorr"))) return r;   /* revisão: só quem vê Ocorrências */
+      const its = ocDoVeic(v).sort((a, b) => String(b.DataHora || "").localeCompare(String(a.DataHora || "")));
+      const podeOc = canSee(MODULES.find(x => x.id === "ocorr"));
+      body.insertAdjacentHTML("beforeend", `<div class="cap-card fv-oc"><div class="cap-card-h"><h3>Ocorrências</h3><span class="cap-card-s">${its.length} registro(s) · clique no funcionário para ver todas as ocorrências dele</span><span class="grow"></span>${podeOc && ocPode() ? `<button class="btn mini" onclick="ocNovaDoVeic(${esc(jsArg(v.Title || ""))})">+ Ocorrência</button>` : ""}</div>
+        ${its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Data</th><th>Ocorrência</th><th>Gravidade</th><th>Envolvidos</th><th>Tratativa</th><th>Situação</th></tr></thead><tbody>${its.map(x => `<tr><td class="nw">${esc(ocQuando(x))}</td><td><b>${esc(x.Title || "")}</b> ${esc(x.Tipo || "")}${x.VeiculoParado ? `<div class="sup">veículo parado${x.HorasParado ? " " + esc(String(x.HorasParado).replace(".", ",")) + " h" : ""}</div>` : ""}</td><td>${ocGravPill(x.Gravidade)}</td>
+          <td>${ocEnv(x).map(e => `<button type="button" class="oc-env oc-env-btn" onclick="ocFicha(${esc(jsArg(e.id || ""))}, ${esc(jsArg(e.nome || ""))})" title="Ver todas as ocorrências de ${esc(e.nome || "")}">${esc(e.nome || "—")}<small>${esc(e.papel || "")}</small></button>`).join(" ") || `<span class="sup">—</span>`}</td>
+          <td class="sup">${esc(x.Tratativa || "")}${x.Medida ? `<div>${esc(x.Medida)}</div>` : ""}</td><td>${ocStPill(x.Status)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="sup" style="padding:12px 16px">Nenhuma ocorrência com este veículo.</div>`}</div>`);
+    } catch (e) { console.warn("ocorrências no veículo", e); }
+    return r;
+  }; }
+window.ocNovaDoVeic = async pref => { await ocCarregar(); await ocForm(""); const i = $("ocVeic"); if (i) i.value = pref; };
+
+/* ---- 4: RH › página do funcionário › Vida funcional ---- */
+const RHV = { carregando: false };
+async function rhVidaCarregar() {
+  const tarefas = [ocCarregar().catch(() => null)];
+  if (canSee(MODULES.find(x => x.id === "rh_aval"))) tarefas.push(loadAval(true).catch(() => null));
+  await Promise.all(tarefas);
+}
+function rhVidaHtml(f) {
+  const veAval = canSee(MODULES.find(x => x.id === "rh_aval")), ev = [];
+  if (f.Admissao) ev.push({ d: ymd(f.Admissao), k: "marco", t: "Admissão", s: [f.Cargo, f.CNPJ].filter(Boolean).join(" · ") });
+  if (f.DataDemissao) ev.push({ d: ymd(f.DataDemissao), k: "marco", t: "Desligamento", s: "" });
+  const media = x => { const vs = ["Pontualidade", "Qualidade", "ProAtividade", "Trabequipe", "Postura"].map(k => Number(x[k] || 0)).filter(n => n > 0); return vs.length ? vs.reduce((s, n) => s + n, 0) / vs.length : (Number(x.NotaFinal) || 0); };
+  const avs = veAval ? (AVAL_STATE.itens || []).filter(x => String(x.FuncionarioLookupId || "") === String(f._id)) : [];
+  avs.forEach(x => ev.push({ d: x.DataAval ? ymd(x.DataAval) : x.Created ? ymd(x.Created) : "", k: "aval", id: x._id, t: `Avaliação de desempenho${x.Ciclo ? " · " + x.Ciclo : ""}${x.Periodo ? " (" + x.Periodo + ")" : ""}`, nota: media(x), s: [x.Avaliador ? "avaliador: " + x.Avaliador : "", x.Status || ""].filter(Boolean).join(" · "), det: [x.Pontos ? "Pontos fortes: " + x.Pontos : "", x.Melhorias ? "A desenvolver: " + x.Melhorias : ""].filter(Boolean).join(" — ") }));
+  const ocs = OC.itens.filter(x => x.EnviadoRH && ocAtiva(x) && ocEnv(x).some(e => String(e.id) === String(f._id)));
+  const I = ocIndicadores(f._id, f.Title, OC.itens.filter(x => x.EnviadoRH));
+  ocs.forEach(x => ev.push({ d: ocData(x), k: "oc", t: `Ocorrência ${x.Title || ""}: ${x.Tipo || ""}`, grav: x.Gravidade, s: [I.papelDe(x), x.Veiculo ? "veículo " + x.Veiculo : "", x.Medida ? "medida: " + x.Medida : "", x.Status || ""].filter(Boolean).join(" · "), det: x.Descricao || "" }));
+  const notas = avs.map(media).filter(n => n > 0), mediaAv = notas.length ? notas.reduce((s, n) => s + n, 0) / notas.length : null;
+  const ult = avs.slice().sort((a, b) => String(ymd(b.DataAval || "")).localeCompare(String(ymd(a.DataAval || ""))))[0];
+  const kpis = `<div class="cap-kpis">${veAval ? `<div class="kpi static"><div class="lbl">Avaliações</div><div class="val">${avs.length}</div><div class="sub">${ult ? "última em " + esc(fmtDate(ult.DataAval)) : "nenhuma ainda"}</div></div>
+    <div class="kpi static ${mediaAv == null ? "" : mediaAv >= 8 ? "pago" : mediaAv >= 6 ? "" : "hoje"}"><div class="lbl">Nota média</div><div class="val">${mediaAv == null ? "—" : mediaAv.toFixed(1).replace(".", ",")}</div><div class="sub">média dos critérios</div></div>` : ""}
+    ${OC.list ? `<div class="kpi static"><div class="lbl">Ocorrências enviadas ao RH</div><div class="val">${ocs.length}</div><div class="sub">${I.ano.length} nos últimos 12 meses</div></div><div class="kpi static ${I.faixa === "critico" ? "venc" : I.faixa === "atencao" ? "hoje" : "pago"}"><div class="lbl">Índice de conduta</div><div class="val">${I.indice}</div><div class="sub">${I.pontos} ponto(s) em 12 meses (Operacional)</div></div>` : ""}</div>`;
+  const avisos = [!veAval ? "As avaliações de desempenho aparecem para quem tem acesso a RH › Avaliação de Desempenho." : "", OC.list === null || OC.erro ? `As ocorrências do Operacional não puderam ser lidas${OC.erro ? "" : " (lista ainda não criada)"}; peça leitura da lista "${LISTS.op_ocorr.displayName}".` : ""].filter(Boolean);
+  ev.sort((a, b) => String(b.d || "").localeCompare(String(a.d || "")));
+  return kpis + (avisos.length ? `<p class="sup">${avisos.map(esc).join(" ")}</p>` : "") + (ev.length ? `<div class="cap-card"><div class="cap-card-h"><h3>Vida funcional</h3><span class="cap-card-s">admissão, avaliações de desempenho e ocorrências enviadas pelo Operacional</span></div><ol class="fv-vida rhv">
+    ${ev.map(e => `<li class="k-${e.k}"><span class="fv-vida-d">${e.d ? esc(fmtDate(e.d)) : "—"}</span><span><b>${esc(e.t)}</b>${e.k === "aval" && e.nota ? ` <span class="rhv-nota ${e.nota >= 8 ? "ok" : e.nota >= 6 ? "" : "baixa"}">${esc(e.nota.toFixed(1).replace(".", ","))}</span>` : ""}${e.k === "oc" ? " " + ocGravPill(e.grav) : ""}${e.s ? `<small>${esc(e.s)}</small>` : ""}${e.det ? `<small class="rhv-det">${esc(e.det.slice(0, 400))}</small>` : ""}${e.k === "aval" && veAval ? ` <a href="#/rh/avaliacao-desempenho" class="sup">abrir</a>` : ""}</span></li>`).join("")}</ol></div>`
+    : `<div class="cap-empty"><h3>Nada registrado ainda</h3></div>`);
+}
+{ const p0 = rhFuncPintar; rhFuncPintar = function () {
+    const vida = RHF_PAG.aba === "vida"; if (vida) RHF_PAG.aba = "cadastro";
+    const r = p0.apply(this, arguments); if (vida) RHF_PAG.aba = "vida";
+    try {
+      const tabs = document.querySelector("#rhFuncTopo .cap-views"), f = (RHDB_STATE.itens || []).find(x => String(x._id) === RHF_PAG.id); if (!tabs || !f) return r;
+      tabs.insertAdjacentHTML("beforeend", `<button class="tab ${vida ? "on" : ""}" onclick="rhfAba('vida')">Vida funcional</button>`);
+      if (vida) { tabs.querySelectorAll(".tab").forEach(b => { if (!/Vida funcional/.test(b.textContent)) b.classList.remove("on"); }); const body = $("rhFuncBody");
+        body.innerHTML = `<div class="cap-empty"><h3>Carregando…</h3></div>`; rhVidaCarregar().then(() => { if (RHF_PAG.aba === "vida" && RHF_PAG.id === String(f._id) && $("rhFuncBody")) $("rhFuncBody").innerHTML = rhVidaHtml(f); }); }
+    } catch (e) { console.warn("vida funcional", e); }
+    return r;
+  }; }
+
 /* v0.14.0: o rodapé do menu mostra sempre a versão do CONFIG (estava fixo desde a v0.13.4.3) */
 { const ev = document.getElementById("erpVer"); if (ev) { ev.textContent = CONFIG.version; ev.style.fontWeight = "inherit"; } }
 </script>

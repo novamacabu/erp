@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.0.1",
+  version: "v0.14.1",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -4285,7 +4285,7 @@ async function setupList(def, cb) {
     if (col.choiceDe && col.choice) {   /* v0.13.0: opções vindas de outro cadastro (ex.: CNPJs do RH); sem origem legível, não mexe */
       let ch = null; try { ch = await col.choiceDe(ex); } catch (e) { ch = null; }
       if (ch && ch.length) col.choice = Object.assign({}, col.choice, { choices: ch });
-      else { finish(push(`upd-${col.name}`, `${ex ? "Atualizar" : "Criar"} opções de "${col.displayName}"`), ex ? "skip" : "warn", "Origem (RH › CNPJ Ativos) não lida — " + (ex ? "opções mantidas" : "cadastre os CNPJs no RH e rode de novo")); continue; }
+      else { finish(push(`upd-${col.name}`, `${ex ? "Atualizar" : "Criar"} opções de "${col.displayName}"`), ex ? "skip" : "warn", "Origem (Diretoria › Cadastros Mestres › CNPJs) não lida — " + (ex ? "opções mantidas" : "cadastre os CNPJs na central e rode de novo")); continue; }
     }
     if (ex && col.naoObrig && ex.required) {   /* v0.12.58: coluna que deixou de ser obrigatória (ex.: classificação de custo pode ficar vazia) */
       const s = push(`req-${col.name}`, `"${col.displayName}" deixa de ser obrigatória`);
@@ -4866,6 +4866,7 @@ function route() {
   /* v0.12.28: RH › Funcionários vira o cartão Funcionários do Banco de Dados (cadastro de verdade) */
   if (hash === "#/rh/funcionarios") { const m = MODULES.find(x => x.id === "rh_db"); if (m && canSee(m)) { location.hash = "#/rh/banco-de-dados/funcs"; return; } }
   if (hash.startsWith("#/area/")) { document.body.classList.remove("wide"); $("main").innerHTML = pageArea((() => { try { return decodeURIComponent(hash.slice(7)); } catch (e) { return hash.slice(7); } })()); document.body.classList.remove("nav-open"); window.scrollTo(0, 0); return; }
+  if ((hash === "#/diretoria/cadastros-mestres" || hash.startsWith("#/diretoria/cadastros-mestres/")) && typeof mstRota === "function" && mstRota(hash)) return;   /* v0.14.1: menu e áreas da central */
   const mod = MODULES.find(m => m.path === hash) || MODULES[0];
   if (!canSee(mod)) { location.hash = "#/inicio"; return; }
   session.modAtual = mod.id;
@@ -9215,7 +9216,7 @@ function paintPb() {
   if (!PB_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>A lista "Operacional — Máquinas Pagbank" ainda não existe</h3><p>Vá em Sistema › Configuração e rode "Executar tudo na ordem" (ou só o setup "Operacional — Máquinas Pagbank").</p></div>`; return; }
   const its = PB_STATE.itens.filter(x => {
     const q = PB_STATE.q.toLowerCase();
-    const bateQ = !q || [x.Title, x.Modelo, x.CodigoID, x.Local, x.CNPJTitular].some(v => String(v || "").toLowerCase().includes(q));
+    const bateQ = !q || [x.Title, x.Modelo, x.CodigoID, x.Local, x.CNPJTitular, estRotulo(estPorCnpj(x.CNPJTitular))].some(v => String(v || "").toLowerCase().includes(q));
     const bateS = !PB_STATE.filtroStatus || x.Status === PB_STATE.filtroStatus;
     const bateL = !PB_STATE.filtroLocal || x.Local === PB_STATE.filtroLocal;
     const bateA = PB_STATE.aba === "inativas" ? pbInativa(x) : !pbInativa(x);
@@ -9257,6 +9258,7 @@ function paintPb() {
       <td class="pb-foto-td">${erpAvatar(fu, 32)}</td>
       <td class="nw"><b>${esc(x.Modelo || "—")}</b></td>
       <td class="nw"><b>${esc(x.Title || "—")}</b>${x.Title ? ` <button class="btn-copy" title="Copiar nº série" onclick="event.stopPropagation(); erpCopy(${jsArg(x.Title)})">📋</button>` : ""}${x.CodigoID ? `<div class="sup">ID ${esc(x.CodigoID)} <button class="btn-copy" title="Copiar ID" onclick="event.stopPropagation(); erpCopy(${jsArg(x.CodigoID)})">📋</button></div>` : ""}</td>
+      <td>${pbContaHtml(x.CNPJTitular)}</td>
       <td><span class="pill st-${stCls(x.Status) || "pend"}"><i></i>${esc(x.Status || "—")}</span></td>
       <td>${esc(x.Local || "—")}</td>
       <td>${resp ? esc(resp) : "<span class=sup>sem responsável</span>"}</td>
@@ -9269,7 +9271,7 @@ function paintPb() {
       ${stOpts}${locOpts}
       <button class="btn ghost" onclick="PB_STATE.q = ''; PB_STATE.filtroStatus = ''; PB_STATE.filtroLocal = ''; paintPb();">Limpar</button>
     </div>
-    ${its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th title="Foto do responsável (editável em RH › Funcionários)"><span class="sr-only">Foto</span></th><th>Modelo</th><th>Nº série</th><th>Status</th><th>Local</th><th>Responsável</th><th></th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhuma máquina no filtro</h3><p>${PB_STATE.itens.length ? "Troque o status, o local ou limpe os filtros." : (edita ? "Clique em \"Cadastrar máquina\" para começar." : "A lista está vazia.")}</p></div>`}
+    ${its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th title="Foto do responsável (editável em RH › Funcionários)"><span class="sr-only">Foto</span></th><th>Modelo</th><th>Nº série</th><th>Conta</th><th>Status</th><th>Local</th><th>Responsável</th><th></th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhuma máquina no filtro</h3><p>${PB_STATE.itens.length ? "Troque o status, o local ou limpe os filtros." : (edita ? "Clique em \"Cadastrar máquina\" para começar." : "A lista está vazia.")}</p></div>`}
     <p class="hint">Dica: você pode baixar a relação pelo painel do PagBank em "Gerenciar maquininhas" (gerencianet.pagbank.com.br). Para bloquear ou ativar remotamente, use o próprio painel do PagBank.</p>`;
   const q = $("pbQ"); if (q) q.addEventListener("input", ev => { PB_STATE.q = ev.target.value; erpDeb("pbQ", () => keepFocus(paintPb)); });
 }
@@ -9300,7 +9302,7 @@ window.pbForm = (id) => {
       <div class="field"><label>Modelo<span class="req">*</span></label><select id="pbModelo">${modelos.map(m => `<option ${v.Modelo === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
       <div class="field"><label>Nº de série<span class="req">*</span></label><input id="pbSerie" value="${esc(v.Title || "")}" placeholder="Ex.: PB3S259S71979"></div>
       <div class="field"><label>Código ID</label><input id="pbId" value="${esc(v.CodigoID || "")}" placeholder="Ex.: 93DCF729"></div>
-      <div class="field"><label>CNPJ</label><input id="pbCnpj" value="${esc(v.CNPJTitular || "")}" placeholder="00.000.000/0000-00"></div>
+      <div class="field"><label>Conta (CNPJ)</label>${pbCnpjSelect(v.CNPJTitular) || `<input id="pbCnpj" value="${esc(v.CNPJTitular || "")}" placeholder="00.000.000/0000-00"><div class="hint">Cadastre os CNPJs em Diretoria › Cadastros Mestres › CNPJs</div>`}</div>
       <div class="field"><label>Status<span class="req">*</span></label><select id="pbStatus">${statusOps.map(s => `<option ${v.Status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
       <div class="field"><label>Local</label><select id="pbLocal">${locOpts}</select></div>   <!-- v0.12.48: id próprio — o filtro da página também se chamava pbLoc e o Local do formulário nunca era gravado -->
       <div class="field"><label>Responsável</label><select id="pbResp">${funcOpts}</select><div class="hint">${PB_STATE.funcs.length ? "Associado à lista RH — Funcionários." : "A lista RH — Funcionários está vazia. Cadastre funcionários antes de associar."}</div></div>
@@ -21927,7 +21929,7 @@ RHDB_FORMS.funcs = v => {
   const dl = (id, arr) => `<datalist id="${id}">${[...new Set(arr)].sort((a, b) => a.localeCompare(b, "pt-BR")).map(c => `<option value="${esc(c)}">`).join("")}</datalist>`;
   const cnpjs = (RHF_STATE.cnpjs || []).map(c => ({ n: rhfCnpjFmt(c.CNPJ || ""), r: c.NomeFantasia || c.Title || "" })).filter(c => c.n);
   const cnpjCampo = cnpjs.length
-    ? `<select id="rdFuCNPJ"><option value="">—</option>${(v.CNPJ && !cnpjs.some(c => c.n === v.CNPJ) ? [{ n: v.CNPJ, r: "" }] : []).concat(cnpjs).map(c => `<option value="${esc(c.n)}" ${v.CNPJ === c.n ? "selected" : ""}>${esc(c.n)}${c.r ? " · " + esc(c.r) : ""}</option>`).join("")}</select><div class="hint">Da lista CNPJ Ativos</div>`
+    ? `<select id="rdFuCNPJ"><option value="">—</option>${(v.CNPJ && !cnpjs.some(c => c.n === v.CNPJ) ? [{ n: v.CNPJ, r: "" }] : []).concat(cnpjs).map(c => `<option value="${esc(c.n)}" ${v.CNPJ === c.n ? "selected" : ""}>${esc(c.n)}${c.r ? " · " + esc(c.r) : ""}</option>`).join("")}</select><div class="hint">Da Diretoria › Cadastros Mestres › CNPJs</div>`
     : `<input id="rdFuCNPJ" list="rdFuCNPJList" value="${esc(v.CNPJ || "")}" placeholder="00.000.000/0000-00" autocomplete="off">${dl("rdFuCNPJList", usados("CNPJ"))}`;
   return `<div class="form-grid">
     <div class="field full"><label>Nome<span class="req">*</span></label><input id="rdFuN" value="${esc(v.Title || "")}" autocomplete="off"></div>
@@ -35247,7 +35249,10 @@ document.addEventListener("DOMContentLoaded", () => { try { buscaInit(); } catch
 .tav-stars label:has(input:focus-visible){outline:2px solid var(--navy);outline-offset:2px;border-radius:4px}
 .tdoc-l{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px}.tdoc-l li{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.tdoc-l a{font-weight:600;overflow-wrap:anywhere}.tdoc-l .sup{margin-left:auto}
 .tdoc-add{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tdoc-add select{width:auto;min-width:170px}.tdoc-add input[type=file]{flex:1 1 200px;min-width:0;font-size:13px}
-.mst-cores{display:flex;flex-wrap:wrap;gap:8px;align-items:center}   /* v0.14.0 · Cadastros mestres */
+.mst-cores{display:flex;flex-wrap:wrap;gap:8px;align-items:center}   /* v0.14.0 · Cadastros Mestres */
+.mst-mig-sec{border-top:1px solid var(--line,#E3E6EA);margin-top:16px;padding-top:14px}.mst-mig-sec h3{margin:0 0 6px;font-size:15px}   /* v0.14.1 */
+.pc-tab tr.pc-cat td{background:var(--soft,#F7F8FA)}.pc-tab tr.pc-sub{cursor:pointer}.pc-ed{cursor:pointer}
+.pc-tg{border:0;background:none;cursor:pointer;font-size:14px;padding:0 4px;color:inherit}
 .mst-cor{position:relative;cursor:pointer}.mst-cor input{position:absolute;opacity:0;width:0;height:0}
 .mst-cor span{display:block;width:28px;height:28px;border-radius:50%;background:var(--c);border:2px solid #fff;box-shadow:0 0 0 1px #C7CCD6}
 .mst-cor input:checked+span{box-shadow:0 0 0 2px var(--navy)}.mst-cor input:focus-visible+span{outline:2px solid var(--navy);outline-offset:2px}
@@ -35436,7 +35441,7 @@ const MST_CC_SEED = [["Administrativo", "Administrativa"], ["Financeiro", "Admin
 const MST_CORES = ["#E5EBF7", "#DDEEDD", "#FFE7D6", "#F3E3F7", "#FFF1C7", "#D9EFF5", "#1E2153", "#F7D9DF", "#E0E3E8", "#E8F5E9", "#FDE2E4", "#EDE7F6"];
 LISTS.mst_cc = {
   key: "mst_cc", displayName: "Diretoria — Centros de custo", siteKey: "diretoria", titleAs: "Código",
-  description: "Cadastros mestres NMB · centros de custo, fonte única para Financeiro, RH, Terceiros, DRE e Contabilidade. Código estável (001…), travado depois de criado. Editada em Diretoria › Cadastros mestres. Dê leitura desta lista a todos da empresa.",
+  description: "Cadastros Mestres NMB · centros de custo, fonte única para Financeiro, RH, Terceiros, DRE e Contabilidade. Código estável (001…), travado depois de criado. Editada em Diretoria › Cadastros Mestres. Dê leitura desta lista a todos da empresa.",
   columns: [
     { name: "Nome",             displayName: "Centro de custo",       text: { allowMultipleLines: false, maxLength: 80 } },
     { name: "Area",             displayName: "Área",                  choice: choice(MST_AREAS), update: true },
@@ -35449,7 +35454,7 @@ LISTS.mst_cc = {
   ]
 };
 SETUP_ORDER.push("mst_cc");
-SETUP_TEXT.mst_cc = `Cria no site Diretoria a lista "Diretoria — Centros de custo" (v0.14.0): fonte única dos centros de custo (Diretoria › Cadastros mestres). Depois de criar, dê leitura desta lista a "Todos, exceto usuários externos" no SharePoint (quem lança na CAP, no RH e em Terceiros precisa ler).`;
+SETUP_TEXT.mst_cc = `Cria no site Diretoria a lista "Diretoria — Centros de custo" (v0.14.0): fonte única dos centros de custo (Diretoria › Cadastros Mestres). Depois de criar, dê leitura desta lista a "Todos, exceto usuários externos" no SharePoint (quem lança na CAP, no RH e em Terceiros precisa ler).`;
 /* colunas de código nos registros */
 const MST_FONTES = [
   { k: "cap", n: "CentroCusto", c: "CentroCustoCod", rot: "CAP — Lançamentos" },
@@ -35554,7 +35559,7 @@ const mstEsperar = () => Promise.race([mstCarregar().catch(() => null), new Prom
   loadForn = async function () { await mstEsperar(); return lf.apply(this, arguments); }; window.loadForn = loadForn;
 }
 /* ---- módulo e página ---- */
-MODULES.push({ id: "di_mestres", path: "#/diretoria/cadastros-mestres", icon: "settings", name: "Cadastros mestres", area: "Diretoria", groups: ["diretoria"], status: "piloto", wide: true });
+MODULES.push({ id: "di_mestres", path: "#/diretoria/cadastros-mestres", icon: "settings", name: "Cadastros Mestres", area: "Diretoria", groups: ["diretoria"], status: "piloto", wide: true });
 PAG_DEF.di_mestres = [{ k: "centros", n: "Centros de custo", aba: "mstAba('centros')" }];
 const mstPode = () => podeEditar("di_mestres") && pagNivel("di_mestres", "centros") !== "nenhum";   /* revisão: a guarda de escrita confere o módulo */
 const mstPodeExcluir = () => !!session.n1;   /* revisão: excluir só o administrador (grava o maior código já usado em ERP — Parâmetros) */
@@ -35562,8 +35567,8 @@ function pageMst() {
   const abas = PAG_DEF.di_mestres.filter(p => pagNivel("di_mestres", p.k) !== "nenhum").map(p => `<button class="on" data-k="${p.k}" onclick="mstAba('${p.k}')">${esc(p.n)}</button>`).join("")
     + `<button disabled title="Rodada 2">Plano de contas</button><button disabled title="Rodada 3">Estabelecimentos</button>`;
   return `<div class="page" id="mstRoot">
-    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Diretoria">Diretoria</a><span>›</span><b>Cadastros mestres</b></nav>
-    <div class="cap-topo"><div><h1 style="margin:0">Cadastros mestres</h1><p class="sup" style="margin:2px 0 0">Fonte única dos cadastros usados pelo Financeiro, RH, Terceiros, DRE e Contabilidade. Mudanças aqui valem para todo o ERP.</p></div><div id="mstAcoes"></div></div>
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Diretoria">Diretoria</a><span>›</span><b>Cadastros Mestres</b></nav>
+    <div class="cap-topo"><div><h1 style="margin:0">Cadastros Mestres</h1><p class="sup" style="margin:2px 0 0">Fonte única dos cadastros usados pelo Financeiro, RH, Terceiros, DRE e Contabilidade. Mudanças aqui valem para todo o ERP.</p></div><div id="mstAcoes"></div></div>
     <div class="cap-views" id="mstTabs">${abas}</div>
     <div id="mstBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
   </div>`;
@@ -35644,7 +35649,7 @@ async function mstVarrer(log) {
     const def = LISTS[fo.k]; if (!def) continue;
     try {
       const sk = def.siteKey; if (!sites[sk]) sites[sk] = await SP.site(CONFIG.sites[sk]); if (!listas[sk]) listas[sk] = await SP.lists(sites[sk].id);
-      const l = listas[sk].find(x => x.displayName === def.displayName); if (!l) { if (!session.n1 && fo.c) out.avisos.push(`${fo.rot}: sem acesso à lista`); if (log) log(`${fo.rot}: lista não encontrada — pulada.`); continue; }
+      const l = listas[sk].find(x => x.displayName === def.displayName); if (!l) { if (!session.n1 && fo.c) out.avisos.push(`${fo.rot}: sem acesso à lista`); if (fo.c) out.faltando = (out.faltando || 0) + 1; if (log) log(`${fo.rot}: lista não encontrada — pulada.`); continue; }
       const its = await SP.items(sites[sk].id, l.id); let n = 0;
       its.forEach(it => { const f = it.fields || {}, val = String(f[fo.n] == null ? "" : f[fo.n]).trim(), cod = fo.c ? String(f[fo.c] || "").trim() : ""; if (!val && !cod) return; n++;
         out.regs.push({ fo, siteId: sites[sk].id, listId: l.id, id: String(it.id), val, cod });
@@ -35680,7 +35685,7 @@ window.mstMigLer = async () => {
   if (!session.n1) return; const btn = $("mstMigLerBtn"), corpo = $("mstMigCorpo"); if (btn) btn.disabled = true; const lg = $("mstMigLog"); if (lg) lg.innerHTML = "";
   try {
     await mstCarregar(true);
-    if (!mstDaLista()) { mstLog(`A lista "${LISTS.mst_cc.displayName}" ${MST.fonte === "vazia" ? "está vazia: crie os centros em Diretoria › Cadastros mestres antes" : "não está disponível: rode Executar tudo antes"}.`, "warn"); return; }
+    if (!mstDaLista()) { mstLog(`A lista "${LISTS.mst_cc.displayName}" ${MST.fonte === "vazia" ? "está vazia: crie os centros em Diretoria › Cadastros Mestres antes" : "não está disponível: rode Executar tudo antes"}.`, "warn"); return; }
     mstLog("Lendo os valores em uso…"); const V = await mstVarrer(mstLog); MST.mig = { V, mapa: {} };
     const linhas = [...V.porValor.entries()].sort((a, b) => b[1].total - a[1].total);
     const ops = cod => `<option value="">— deixar como está —</option>${(MST.cc || []).map(c => `<option value="${esc(c.cod)}" ${c.cod === cod ? "selected" : ""}>${esc(c.cod)} · ${esc(c.nome)}${c.ativo ? "" : " (inativo)"}</option>`).join("")}<option value="__novo">+ criar centro novo com este nome</option>`;
@@ -35690,6 +35695,7 @@ window.mstMigLer = async () => {
         <td class="sup">${Object.entries(g.por).map(([r, n]) => `${esc(r)} (${n})`).join("<br>")}</td><td class="nw">${g.total}${g.comCod ? `<div class="sup">${g.comCod} já com código</div>` : ""}</td><td><select class="mst-para" data-i="${i}">${ops(sug)}</select></td></tr>`; }).join("")}</tbody></table></div>
       <div class="actions" style="margin-top:10px"><button class="btn" id="mstMigPrevBtn" onclick="mstMigPrevia()">Prévia</button><button class="btn primary" id="mstMigGravBtn" onclick="mstMigGravar()" disabled>Gravar</button></div><div id="mstMigPrev"></div>`;
     MST.mig.linhas = linhas;
+    mstMigConcluir("cc", V.regs.filter(r => r.fo.c && (!r.cod || normName(mstNomePorCod(r.cod)) !== normName(r.val))).length, V.avisos.length + (V.faltando || 0), mstLog, V.regs.some(r => r.fo.c));
     corpo.querySelectorAll(".mst-para").forEach(s => s.addEventListener("change", () => { $("mstMigGravBtn").disabled = true; $("mstMigPrev").innerHTML = ""; }));
     mstLog(`Pronto: ${linhas.length} valor(es) diferente(s). Confira o "para" de cada um e clique em Prévia.`, "ok");
   } catch (e) { mstLog("Interrompido: " + e.message, "warn"); }
@@ -35731,34 +35737,39 @@ window.mstMigGravar = async () => {
 };
 /* Departamentos (RH): exportar (.xlsx) e excluir a lista */
 async function mstDeptosLista() { const st = await SP.site(CONFIG.sites[LISTS.rh_depts.siteKey]); const l = (await SP.lists(st.id)).find(x => x.displayName === LISTS.rh_depts.displayName) || null; return { st, l }; }
+function mstDepLog(t, cls) { const el = $("mstDepLog"); if (!el) return; el.style.display = "block"; el.insertAdjacentHTML("beforeend", `<div class="${cls || ""}">${esc(t)}</div>`); el.scrollTop = el.scrollHeight; }
 window.mstDeptosExportar = async () => {
   if (!session.n1) return;
   try {
-    const { st, l } = await mstDeptosLista(); if (!l) { mstLog(`A lista "${LISTS.rh_depts.displayName}" não existe (já foi excluída?).`, "warn"); return; }
+    const { st, l } = await mstDeptosLista(); if (!l) { mstDepLog(`A lista "${LISTS.rh_depts.displayName}" não existe (já foi excluída?).`, "warn"); return; }
     const its = (await SP.items(st.id, l.id)).map(i => i.fields || {});
     await erpLib("xlsx");
     const aoa = [["Código", "Departamento", "Responsável", "Status", "Criado em", "Id"]].concat(its.map(f => [f.Codigo || "", f.Title || "", f.Responsavel || "", f.Ativo === false ? "Inativo" : "Ativo", f.Created ? String(f.Created).slice(0, 10) : "", f.id || ""]));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "Departamentos");
     XLSX.writeFile(wb, `RH-Departamentos-copia-${todayISO()}.xlsx`);
-    MST.deptosExportado = true; mstLog(`Cópia exportada (${its.length} departamento(s)). Guarde o arquivo e mande para o projeto.`, "ok");
-  } catch (e) { mstLog("Não foi possível exportar: " + e.message, "warn"); }
+    MST.deptosExportado = true; mstDepLog(`Cópia exportada (${its.length} departamento(s)). O arquivo foi baixado pelo navegador (pasta Downloads): mande para o projeto.`, "ok");
+  } catch (e) { mstDepLog("Não foi possível exportar: " + e.message, "warn"); }
 };
 window.mstDeptosExcluir = async () => {
   if (!session.n1) return;
-  if (!MST.deptosExportado) { mstLog("Exporte a cópia (.xlsx) antes de excluir.", "warn"); return; }
+  if (!MST.deptosExportado) { mstDepLog("Exporte a cópia (.xlsx) antes de excluir.", "warn"); return; }
   try {
-    const { st, l } = await mstDeptosLista(); if (!l) { mstLog("A lista já não existe.", "ok"); return; }
-    if (!(await erpConfirmar({ titulo: "Excluir a lista Departamentos", texto: `Excluir do SharePoint a lista "${LISTS.rh_depts.displayName}" (site RH)? A cópia em .xlsx já foi exportada. Os centros de custo ficam em Diretoria › Cadastros mestres. Não dá para desfazer pelo ERP (a lista vai para a lixeira do site).`, sim: "Excluir a lista", perigo: true }))) return;
+    const { st, l } = await mstDeptosLista(); if (!l) { mstDepLog("A lista já não existe.", "ok"); return; }
+    if (!(await erpConfirmar({ titulo: "Excluir a lista Departamentos", texto: `Excluir do SharePoint a lista "${LISTS.rh_depts.displayName}" (site RH)? A cópia em .xlsx já foi exportada. Os centros de custo ficam em Diretoria › Cadastros Mestres. Não dá para desfazer pelo ERP (a lista vai para a lixeira do site).`, sim: "Excluir a lista", perigo: true }))) return;
     await graph(`/sites/${st.id}/lists/${l.id}`, { method: "DELETE" });
-    mstLog(`Lista "${LISTS.rh_depts.displayName}" excluída (fica na lixeira do site RH por 93 dias).`, "ok");
-  } catch (e) { mstLog("Não foi possível excluir: " + e.message, "warn"); }
+    mstDepLog(`Lista "${LISTS.rh_depts.displayName}" excluída (fica na lixeira do site RH por 93 dias).`, "ok");
+  } catch (e) { mstDepLog("Não foi possível excluir: " + e.message, "warn"); }
 };
 { const pc = pageConfig; pageConfig = function () {
     let h = pc.apply(this, arguments); if (!session.n1) return h;
-    const card = `<section class="setup-card" id="mstMigCard"><h2>Cadastros mestres — centros de custo (v0.14.0)</h2>
-      <p class="desc">1) "Executar tudo na ordem" cria a lista "${esc(LISTS.mst_cc.displayName)}" (site Diretoria) e as colunas de código. 2) Em Diretoria › Cadastros mestres, crie os centros (há um botão para os 9 iniciais). 3) <b>Ler os valores em uso</b> → escolher o "de → para" → <b>Prévia</b> → <b>Gravar</b>. 4) Exporte a cópia dos Departamentos e exclua a lista do RH. 5) No SharePoint, dê leitura da lista de centros a "Todos, exceto usuários externos".</p>
-      <div class="actions"><button class="btn" id="mstMigLerBtn" onclick="mstMigLer()">Ler os valores em uso</button><button class="btn" onclick="mstDeptosExportar()">Exportar Departamentos (.xlsx)</button><button class="btn" onclick="mstDeptosExcluir()">Excluir a lista Departamentos</button></div>
-      <div id="mstMigCorpo"></div><div class="setup-log checks" id="mstMigLog" style="display:none;max-height:300px;overflow:auto"></div></section>`;
+    const card = `<section class="setup-card" id="mstMigCard"><h2>Cadastros Mestres — migração (administrador)</h2>
+      <p class="desc">Ferramentas para levar os cadastros antigos para Diretoria › Cadastros Mestres. Podem rodar de novo sem duplicar; nada é gravado antes da prévia e da sua confirmação.</p>
+      <div class="mst-mig-sec" data-sec="cc"><h3>Centros de custo (v0.14.0)</h3><p class="desc">1) "Executar tudo na ordem" cria a lista "${esc(LISTS.mst_cc.displayName)}" (site Diretoria) e as colunas de código. 2) Em Diretoria › Cadastros Mestres › Centros de Custo, crie os centros (há um botão para os 9 iniciais). 3) <b>Ler os valores em uso</b> → escolher o "de → para" → <b>Prévia</b> → <b>Gravar</b>. 4) No SharePoint, dê leitura da lista de centros a "Todos, exceto usuários externos".</p>
+      <div class="actions"><button class="btn" id="mstMigLerBtn" onclick="mstMigLer()">Ler os valores em uso</button></div>
+      <div id="mstMigCorpo"></div><div class="setup-log checks" id="mstMigLog" style="display:none;max-height:300px;overflow:auto"></div></div>
+      <div class="mst-mig-sec" data-sec="dep"><h3>Departamentos (RH) — cópia e exclusão</h3><p class="desc">A lista "${esc(LISTS.rh_depts.displayName)}" (site RH) saiu do ERP. 1) <b>Exportar</b>: o navegador baixa o arquivo .xlsx (pasta Downloads) — mande para o projeto. 2) <b>Excluir</b> a lista (vai para a lixeira do site RH).</p>
+      <div class="actions"><button class="btn" onclick="mstDeptosExportar()">Exportar Departamentos (.xlsx)</button><button class="btn" onclick="mstDeptosExcluir()">Excluir a lista Departamentos</button></div><div class="setup-log checks" id="mstDepLog" style="display:none;max-height:200px;overflow:auto"></div></div>
+    </section>`;
     return h.replace("<h1>Configuração</h1>", "<h1>Configuração</h1>" + card);
   }; window.pageConfig = pageConfig; }
 /* ---- RH: Departamentos saem; Funcionários › Departamento vira Centro de custo ---- */
@@ -35772,7 +35783,7 @@ RHF_SETORES.splice(0, RHF_SETORES.length, "Oficina", "Guichê", "Garagem", "Trá
   RHDB_FORMS.funcs = v => {
     let html = f1(v); const atual = String(v.Departamento || ""), ativos = (MST.cc || []).filter(c => c.ativo);
     const fora = atual && !ativos.some(c => c.nome === atual) ? `<option value="${esc(atual)}" selected>${esc(atual)}${MST.porNome && MST.porNome.get(normName(atual)) ? " (inativo)" : " (fora do cadastro)"}</option>` : "";
-    const sel = `<select id="rdFuDep"><option value="">—</option>${fora}${ativos.map(c => `<option value="${esc(c.nome)}" ${c.nome === atual ? "selected" : ""}>${esc(c.cod)} · ${esc(c.nome)}</option>`).join("")}</select><div class="hint">Da Diretoria › Cadastros mestres</div>`;
+    const sel = `<select id="rdFuDep"><option value="">—</option>${fora}${ativos.map(c => `<option value="${esc(c.nome)}" ${c.nome === atual ? "selected" : ""}>${esc(c.cod)} · ${esc(c.nome)}</option>`).join("")}</select><div class="hint">Da Diretoria › Cadastros Mestres</div>`;
     html = html.replace(/<select id="rdFuDep">[\s\S]*?<\/select>(\s*<div class="hint">[\s\S]*?<\/div>)?/, () => sel).replace(/<input id="rdFuDep"[^>]*>\s*<datalist id="rdFuDepList">[\s\S]*?<\/datalist>/, () => sel);
     return html.replace(/<label>Departamento<\/label>(\s*<select id="rdFuDep")/, (m, a) => "<label>Centro de custo</label>" + a);
   };
@@ -35785,6 +35796,689 @@ RHF_SETORES.splice(0, RHF_SETORES.length, "Oficina", "Guichê", "Garagem", "Trá
     const fora = atual && !nomes.includes(atual) ? `<option selected>${esc(atual)}</option>` : "";
     return { html: `<option value="">—</option>${fora}${nomes.map(n => `<option ${n === atual ? "selected" : ""}>${esc(n)}</option>`).join("")}`, n: nomes.length };
   }; window.rhCltRespOpcoes = rhCltRespOpcoes; }
+
+/* =====================================================================
+   v0.14.1 · CADASTROS MESTRES — R2: PLANO DE CONTAS (categorias e subcategorias em árvore) + DRE
+   Lista "Diretoria — Plano de contas" (site Diretoria): categoria "07", subcategoria "07.03" (código travado); centro de custo
+   sugerido, natureza (vazia = regra automática), grupo de OPEX, linha da DRE (vazia = regra), classificação de custo sugerida.
+   - Fonte única: substitui PLANO_CONTAS, CC_POR_CATEGORIA e o "dre.mapa" (o Plano de contas da DRE lê e grava aqui).
+   - Registros gravam CategoriaCod/SubcategoriaCod (e ...PadraoCod nos Terceiros) ao lado dos nomes; ao ler, o nome vem do cadastro.
+   - Subcategoria passa a ser escolhida da lista (sem texto livre); as "aprendidas" da v0.13.4.4 deixam de ser criadas.
+   - Item do plano não é excluído: é inativado (some das escolhas, fica nos registros antigos).
+   - Sem a lista: o ERP segue com o plano do código (e a subcategoria continua livre), como antes.
+   ===================================================================== */
+const PC_SEED = JSON.parse(JSON.stringify(PLANO_CONTAS));
+const PC_CC_SEED = Object.assign({}, CC_POR_CATEGORIA);
+const PC_OPEX0 = opexGrupo, PC_NAT0 = dreNatRegra;
+LISTS.mst_pc = {
+  key: "mst_pc", displayName: "Diretoria — Plano de contas", siteKey: "diretoria", titleAs: "Código",
+  description: "Cadastros Mestres NMB · plano de contas (categorias e subcategorias), fonte única para CAP, Obrigações, Terceiros, Fluxo de Caixa, CAPEX/OPEX e DRE. Categoria = 2 dígitos; subcategoria = categoria.NN. Código travado; itens são inativados, nunca excluídos. Editada em Diretoria › Cadastros Mestres. Dê leitura desta lista a todos da empresa.",
+  columns: [
+    { name: "Nivel",         displayName: "Nível",                       choice: choice(["Categoria", "Subcategoria"]), update: true },
+    { name: "Nome",          displayName: "Nome",                        text: { allowMultipleLines: false, maxLength: 100 } },
+    { name: "Pai",           displayName: "Categoria (código)",          text: { allowMultipleLines: false, maxLength: 10 } },
+    { name: "CentroCusto",   displayName: "Centro de custo sugerido (código)", text: { allowMultipleLines: false, maxLength: 10 } },
+    { name: "Natureza",      displayName: "Natureza do gasto",           text: { allowMultipleLines: false, maxLength: 30 } },
+    { name: "GrupoOpex",     displayName: "Grupo de OPEX (chave)",       text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "LinhaDRE",      displayName: "Linha da DRE (chave)",        text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Classificacao", displayName: "Classificação de custo sugerida", text: { allowMultipleLines: false, maxLength: 60 } },
+    { name: "Status",        displayName: "Status",                      choice: choice(["Ativo", "Inativo"]), update: true },
+    { name: "Observacoes",   displayName: "Observações",                 text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+SETUP_ORDER.push("mst_pc");
+SETUP_TEXT.mst_pc = `Cria no site Diretoria a lista "Diretoria — Plano de contas" (v0.14.1): categorias e subcategorias com código, fonte única do plano de contas (Diretoria › Cadastros Mestres). Depois de criar, dê leitura desta lista a "Todos, exceto usuários externos" no SharePoint.`;
+const PC_FONTES = [
+  { k: "cap", c: "Categoria", s: "Subcategoria", cc: "CategoriaCod", sc: "SubcategoriaCod", rot: "CAP — Lançamentos" },
+  { k: "div_cap", c: "Categoria", s: "Subcategoria", cc: "CategoriaCod", sc: "SubcategoriaCod", rot: "Dívidas — Parcelas" },
+  { k: "obr", c: "Categoria", s: "Subcategoria", cc: "CategoriaCod", sc: "SubcategoriaCod", rot: "Obrigações" },
+  { k: "div_obr", c: "Categoria", s: "Subcategoria", cc: "CategoriaCod", sc: "SubcategoriaCod", rot: "Dívidas — Obrigações" },
+  { k: "forn", c: "CategoriaPadrao", s: "SubcategoriaPadrao", cc: "CategoriaPadraoCod", sc: "SubcategoriaPadraoCod", rot: "Terceiros (padrões)" }
+];
+PC_FONTES.forEach(f => { const d = LISTS[f.k]; if (!d || !Array.isArray(d.columns)) return; [[f.cc, "Categoria (código)"], [f.sc, "Subcategoria (código)"]].forEach(([n, dn]) => { if (!d.columns.some(c => c.name === n)) d.columns.push({ name: n, displayName: dn, text: { allowMultipleLines: false, maxLength: 10 } }); });
+  const cat = d.columns.find(c => c.name === f.c); if (cat && cat.choice) cat.choice.allowTextEntry = true; });   /* categoria nova do cadastro é aceita pela coluna (Executar tudo atualiza as opções) */
+const PC_PARES = PC_FONTES.slice(0, 1).concat([PC_FONTES[4]]).map(f => [f.c, f.cc, f.s, f.sc]);   /* [Categoria, CategoriaCod, Subcategoria, SubcategoriaCod] e os "Padrão" dos Terceiros */
+const PC = { itens: null, fonte: "", erro: "", p: null, list: undefined, porCod: null, catPorNome: null, filtro: { q: "", st: "ativos", abertos: {} }, mig: null };
+const PC_CACHE_K = "erp.mst.pc.v1";
+const pcDaLista = () => PC.fonte === "lista" || PC.fonte === "cache";
+function pcDeItem(x) { const n = String(x.Nivel || "") === "Subcategoria" ? "sub" : "cat"; return { _id: String(x._id || ""), cod: String(x.Title || "").trim(), nivel: n, nome: String(x.Nome || "").trim(), pai: String(x.Pai || "").trim(), cc: String(x.CentroCusto || "").trim(), nat: CPX_NAT.includes(x.Natureza) ? x.Natureza : "", grupo: OPEX_GRUPO[x.GrupoOpex] ? x.GrupoOpex : "", dre: DRE_CONTA[x.LinhaDRE] || x.LinhaDRE === "auto" ? x.LinhaDRE : "", cls: FORN_CLASSES.some(c => c[0] === x.Classificacao) ? x.Classificacao : "", ativo: x.Status !== "Inativo", obs: x.Observacoes || "" }; }
+const pcCodOrd = (a, b) => a.cod.localeCompare(b.cod, "pt-BR", { numeric: true });
+function pcSeedItens(dreMapa, extras) {
+  const out = []; let i = 0; const cc = n => (typeof mstCodPorNome === "function" && mstCodPorNome(n)) || "";
+  Object.entries(PC_SEED).forEach(([cat, subs]) => {
+    i++; const cc2 = String(i).padStart(2, "0"), natC = PC_NAT0(cat, "");
+    out.push({ cod: cc2, nivel: "cat", nome: cat, pai: "", cc: cc(PC_CC_SEED[cat]), nat: natC !== "OPEX" ? natC : "", grupo: PC_OPEX0(cat, ""), dre: (dreMapa || {})[dreChave(cat, "")] || "", cls: "", ativo: true, obs: "" });
+    const todas = subs.concat(((extras || {})[cat] || []).filter(x => !subs.some(s => normName(s) === normName(x))));
+    const dreCat = (dreMapa || {})[dreChave(cat, "")] || "";
+    const dreAuto = () => dreCat ? "auto" : "";   /* revisão: com ajuste só no "(sem subcategoria)", a subcategoria segue a regra automática (não herda — a folha depende do centro de custo) */
+    todas.forEach((s, j) => { const n = PC_NAT0(cat, s); out.push({ cod: `${cc2}.${String(j + 1).padStart(2, "0")}`, nivel: "sub", nome: s, pai: cc2, cc: "", nat: n !== "OPEX" && n !== natC ? n : "", grupo: PC_OPEX0(cat, s), dre: (dreMapa || {})[dreChave(cat, s)] || dreAuto(), cls: "", ativo: true, obs: "" }); });
+  });
+  return out;
+}
+async function pcLista(force) {
+  if (PC.list !== undefined && !force) return PC.list;
+  if (!MST.site) MST.site = await SP.site(CONFIG.sites[LISTS.mst_pc.siteKey]);
+  const ls = await SP.lists(MST.site.id); PC.list = ls.find(l => l.displayName === LISTS.mst_pc.displayName) || null; return PC.list;
+}
+function pcCarregar(force) {
+  if (PC.itens && !force) return Promise.resolve(PC.itens);
+  if (PC.p && !force) return PC.p;
+  const p = (async () => {
+    let itens = null, fonte = "", erro = "";
+    try { const l = await pcLista(force); if (l) { const raw = await SP.items(MST.site.id, l.id); itens = raw.map(i => pcDeItem(Object.assign({ _id: i.id }, i.fields))).filter(c => c.cod && c.nome); fonte = itens.length ? "lista" : "vazia"; } else fonte = "sem-lista"; }
+    catch (e) { erro = e.message || String(e); }
+    if (fonte === "lista") { try { localStorage.setItem(PC_CACHE_K, JSON.stringify(itens)); } catch (e) {} }
+    else if (erro) { try { const c = JSON.parse(localStorage.getItem(PC_CACHE_K) || "null"); if (Array.isArray(c) && c.length) { itens = c; fonte = "cache"; } } catch (e) {} }
+    if (!itens || !itens.length) { itens = pcSeedItens(); if (!fonte) fonte = "codigo"; }
+    try { await mstEsperar(); } catch (e) {}   /* revisão: o centro sugerido precisa do cadastro de centros lido */
+    PC.itens = itens.slice().sort(pcCodOrd); PC.fonte = fonte; PC.erro = erro; pcAplicar(); return PC.itens;
+  })();
+  PC.p = p; p.finally(() => { if (PC.p === p) PC.p = null; });
+  return p;
+}
+window.pcCarregar = pcCarregar;
+const pcCats = () => (PC.itens || []).filter(x => x.nivel === "cat");
+const pcSubsDe = cod => (PC.itens || []).filter(x => x.nivel === "sub" && x.pai === cod);
+function pcAplicar() {
+  const it = PC.itens || []; PC.porCod = new Map(it.map(x => [x.cod, x])); PC.catPorNome = new Map();
+  pcCats().forEach(c => { const k = normName(c.nome); if (!PC.catPorNome.has(k) || c.ativo) PC.catPorNome.set(k, c); });
+  if (!pcDaLista()) return;   /* sem a lista, o plano do código continua valendo */
+  Object.keys(PLANO_CONTAS).forEach(k => { delete PLANO_CONTAS[k]; });
+  const ativas = pcCats().filter(c => c.ativo); ativas.forEach(c => { PLANO_CONTAS[c.nome] = pcSubsDe(c.cod).filter(s => s.ativo).map(s => s.nome); });
+  CATEGORIAS.splice(0, CATEGORIAS.length, ...ativas.map(c => c.nome), ...pcCats().filter(c => !c.ativo).map(c => c.nome));   /* inativas no fim (só aparecem quando já gravadas — ver pcCampos) */
+  SUBCATEGORIAS.splice(0, SUBCATEGORIAS.length, ...new Set(Object.values(PLANO_CONTAS).flat()));
+  it.filter(x => x.nivel === "sub").forEach(s => { const k = normName(s.nome); if (!SUBCAT_CANON.has(k) || s.ativo) SUBCAT_CANON.set(k, s.nome); });
+  pcAplicarCC();
+}
+function pcAplicarCC() {   /* revisão: sem o cadastro de centros lido, mantém o mapa (não zera a sugestão) */
+  if (!pcDaLista() || !MST.porCod) return;
+  Object.keys(CC_POR_CATEGORIA).forEach(k => { delete CC_POR_CATEGORIA[k]; });
+  pcCats().forEach(c => { const n = c.cc ? mstNomePorCod(c.cc) : ""; if (n) CC_POR_CATEGORIA[c.nome] = n; });
+}
+{ const a0 = mstAplicar; mstAplicar = function () { const r = a0.apply(this, arguments); try { pcAplicarCC(); } catch (e) {} return r; }; }
+const pcCatDe = nome => PC.catPorNome && PC.catPorNome.get(normName(nome)) || null;
+function pcSubDe(cat, sub) {
+  const k = normName(sub); if (!k || !PC.itens) return null;
+  const c = cat ? pcCatDe(cat) : null;
+  if (c) { const l = pcSubsDe(c.cod).filter(s => normName(s.nome) === k); return l.find(s => s.ativo) || l[0] || null; }
+  if (cat) return null;
+  const l = PC.itens.filter(s => s.nivel === "sub" && normName(s.nome) === k); return l.length === 1 ? l[0] : null;
+}
+const pcAttr = (cat, sub, campo) => { const s = pcSubDe(cat, sub), c = pcCatDe(cat); return (s && s[campo]) || (c && c[campo]) || ""; };
+/* leitura: nomes pelo código */
+{ const i0 = SP.items; SP.items = async function () {
+    const r = await i0.apply(this, arguments);
+    try { if (!pcDaLista() && Array.isArray(r) && r.some(it => it && it.fields && PC_PARES.some(([, cc, , sc]) => it.fields[cc] || it.fields[sc]))) await Promise.race([pcCarregar().catch(() => null), new Promise(x => setTimeout(x, 2500))]); } catch (e) {}
+    try { if (PC.porCod && pcDaLista() && Array.isArray(r)) r.forEach(it => { const f = it && it.fields; if (!f) return; PC_PARES.forEach(([cn, cc, sn, sc]) => { const c = f[cc] && PC.porCod.get(String(f[cc])); if (c) f[cn] = c.nome; const s = f[sc] && PC.porCod.get(String(f[sc])); if (s) f[sn] = s.nome; }); }); } catch (e) {}
+    return r;
+  }; }
+/* gravação: com a coluna de código, grava sempre o código (vazio quando o nome não está no plano lido) */
+async function pcCodsPreencher(siteId, listId, fields) {
+  if (!fields || typeof fields !== "object") return;
+  const tem = k => Object.prototype.hasOwnProperty.call(fields, k);
+  const pares = PC_PARES.filter(([cn, cc, sn, sc]) => (tem(cn) && !tem(cc)) || (tem(sn) && !tem(sc))); if (!pares.length) return;
+  const cols = await mstColsDe(siteId, listId); if (!pares.some(([, cc, , sc]) => cols.has(cc) || cols.has(sc))) return;
+  if (!pcDaLista()) await Promise.race([pcCarregar().catch(() => null), new Promise(x => setTimeout(x, 2500))]);
+  const ok = pcDaLista();
+  pares.forEach(([cn, cc, sn, sc]) => {
+    if (tem(cn) && !tem(cc) && cols.has(cc)) { const c = ok && fields[cn] ? pcCatDe(fields[cn]) : null; fields[cc] = c ? c.cod : null; }
+    if (tem(sn) && !tem(sc) && cols.has(sc)) { const s = ok && fields[sn] ? pcSubDe(tem(cn) ? fields[cn] : "", fields[sn]) : null; fields[sc] = s ? s.cod : null; }
+  });
+}
+{ const c0 = SP.create, u0 = SP.update;
+  SP.create = async function (siteId, listId, fields) { try { await pcCodsPreencher(siteId, listId, fields); } catch (e) {} return c0.apply(this, arguments); };
+  SP.update = async function (siteId, listId, itemId, fields) { try { await pcCodsPreencher(siteId, listId, fields); } catch (e) {} return u0.apply(this, arguments); };
+}
+{ const m0 = mstColsDe; mstColsDe = async function (siteId, listId) { const cols = await m0.apply(this, arguments); const k = MST.colsLista[listId]; if (k && !k.temCod && PC_PARES.some(([, cc, , sc]) => cols.has(cc) || cols.has(sc))) k.temCod = true; return cols; }; }
+/* natureza, grupo de OPEX e linha da DRE pelo plano (vazio = regra automática de antes) */
+{ const n0 = cpxNat; cpxNat = function (it, ctx) {
+    const r = n0.apply(this, arguments); if (!r || !r.auto || !pcDaLista()) return r;
+    if (["ligada a um bem do Imobilizado", "transferência entre contas", "lançamento do tipo Parcela de dívida"].includes(r.motivo)) return r;
+    const nat = pcAttr(it.Categoria, it.Subcategoria, "nat"); if (!nat) return r;
+    return nat === r.nat ? Object.assign({}, r, { motivo: "plano de contas" }) : { nat, auto: true, motivo: `plano de contas (${String(it.Categoria || "").trim()}${it.Subcategoria ? " › " + it.Subcategoria : ""})`, revisar: r.revisar && nat === "OPEX" ? r.revisar : undefined };
+  }; window.cpxNat = cpxNat; }
+{ const g0 = opexGrupo; opexGrupo = function (cat, sub) { if (pcDaLista()) { const g = pcAttr(cat, sub, "grupo"); if (g) return g; } return g0.apply(this, arguments); }; window.opexGrupo = opexGrupo; }
+{ const d0 = dreNatRegra; dreNatRegra = function (cat, sub) { if (pcDaLista()) { const n = pcAttr(cat, sub, "nat"); if (n) return n; } return d0.apply(this, arguments); }; }
+function pcDreMapa() {
+  const m = {};
+  pcCats().forEach(c => { const subs = pcSubsDe(c.cod); if (c.dre) { m[dreChave(c.nome, "")] = c.dre; subs.forEach(s => { if (!s.dre) m[dreChave(c.nome, s.nome)] = c.dre; }); } subs.forEach(s => { if (s.dre && s.dre !== "auto") m[dreChave(c.nome, s.nome)] = s.dre; }); });
+  return m;
+}
+{ const c0 = dreMapaCarregar; dreMapaCarregar = async function (force) {
+    const r = await c0.apply(this, arguments);
+    try { await pcCarregar(!!force); if (pcDaLista()) { DRE.mapa = pcDreMapa(); DRE.mapaErro = ""; DRE.mapaLido = true; DRE.mapaPc = true; } else DRE.mapaPc = false; } catch (e) {}
+    return r;
+  }; }
+{ const s0 = window.dreMapaSalvar; window.dreMapaSalvar = async () => {
+    if (!DRE.mapaPc || !pcDaLista()) return s0();
+    if (!session.n1 || !DRE.rasc || DRE.salvando) return;
+    const novo = DRE.rasc, antes = DRE.mapa || {}, chaves = [...new Set(Object.keys(novo).concat(Object.keys(antes)))].filter(k => (novo[k] || "") !== (antes[k] || ""));
+    DRE.salvando = true; paintDre(); let ok = 0; const fora = [];
+    try {
+      const l = await pcLista(true);
+      for (const ch of chaves) {
+        const i = ch.indexOf("|"), cat = ch.slice(0, i), subN = ch.slice(i + 1), c = pcCatDe(cat);
+        const alvo = !c ? null : subN ? pcSubsDe(c.cod).find(s => normName(s.nome) === subN) : c;
+        if (!alvo || !alvo._id) { fora.push(ch.replace("|", " › ")); continue; }
+        await SP.update(MST.site.id, l.id, alvo._id, { LinhaDRE: novo[ch] || null }); ok++;
+      }
+      await pcCarregar(true); DRE.mapa = pcDreMapa(); DRE.rasc = null;
+      toast(`Plano de contas da DRE salvo no cadastro (${ok} item(ns))${fora.length ? ` — fora do plano de contas, não salvos: ${fora.slice(0, 4).join("; ")}${fora.length > 4 ? "…" : ""}. Corrija a subcategoria dessas faturas (migração em Configuração).` : ""}`, fora.length ? 10000 : 4000);
+    } catch (e) { toast("Não foi possível salvar: " + e.message, 7000); }
+    finally { DRE.salvando = false; paintDre(); }
+  }; }
+/* ---- formulários: subcategoria escolhida da lista; categorias inativas só quando já gravadas ---- */
+const PC_SUB_CAMPOS = [["fSub", "fCat"], ["oSubcat", "oCat"], ["gSub", "gCat"]];
+function pcSubPreencher(sel, cat, atual) {
+  if (atual == null && sel.dataset.cat === String(cat || "")) atual = sel.value;   /* mesma categoria (ex.: abertura do formulário): mantém o valor gravado */
+  sel.dataset.cat = String(cat || "");
+  const c = pcCatDe(cat), subs = c ? pcSubsDe(c.cod).filter(s => s.ativo) : [];
+  const v = atual != null ? String(atual) : sel.value, dentro = subs.some(s => s.nome === v);
+  const canon = !dentro && v ? subs.find(s => normName(s.nome) === normName(v)) : null;
+  const val = canon ? canon.nome : (atual == null && !dentro ? "" : v);   /* revisão: "fora do plano" só na abertura (valor já gravado); ao trocar de categoria, limpa */
+  sel.innerHTML = `<option value="">${subs.length ? "— escolha —" : "— sem subcategorias —"}</option>${val && !dentro && !canon ? `<option value="${esc(val)}">${esc(val)} (fora do plano)</option>` : ""}${subs.map(s => `<option value="${esc(s.nome)}">${esc(s.nome)}</option>`).join("")}`;
+  sel.value = val || "";
+}
+function pcCampos(root) {
+  if (!pcDaLista() || !root) return;
+  PC_SUB_CAMPOS.forEach(([s, c]) => {
+    const inp = root.querySelector("input#" + s), cs = root.querySelector("#" + c);
+    if (inp) { const sel = document.createElement("select"); sel.id = s; sel.className = inp.className; const v = inp.value; inp.removeAttribute("id"); inp.hidden = true; inp.insertAdjacentElement("afterend", sel); inp.remove(); pcSubPreencher(sel, cs ? cs.value : "", v); }
+    if (cs && cs.tagName === "SELECT") [...cs.options].forEach(o => { const cat = o.value && pcCatDe(o.value); if (cat && !cat.ativo && !o.selected) o.remove(); else if (cat && !cat.ativo) o.textContent = o.value + " (inativa)"; });
+  });
+}
+{ const m0 = modal; modal = function () { const r = m0.apply(this, arguments); try { pcCampos($("modal")); } catch (e) { console.warn("pcCampos", e); } return r; }; window.modal = modal; }
+{ const s0 = subcatOptions; subcatOptions = function (cat) {
+    const r = s0.apply(this, arguments);
+    if (pcDaLista()) PC_SUB_CAMPOS.forEach(([s, c]) => { const sel = $(s), cs = $(c); if (sel && sel.tagName === "SELECT" && cs && cs.value === cat) pcSubPreencher(sel, cat); });
+    return r;
+  }; window.subcatOptions = subcatOptions; }
+{ const a0 = subcatAlvo; subcatAlvo = function () { return pcDaLista() ? null : a0.apply(this, arguments); }; }   /* subcategoria nova só pelo cadastro */
+document.addEventListener("change", e => { const t = e.target; if (!t || t.id !== "gSub" || !pcDaLista()) return; const tp = $("gTipo"); if (!tp || tp.value) return; const cls = pcAttr(($("gCat") || {}).value, t.value, "cls"); if (cls && [...tp.options].some(o => o.value === cls)) { tp.value = cls; tp.dispatchEvent(new Event("change", { bubbles: true })); } });
+{ const lc = loadCAP, lo = loadObr, lf = loadForn, esp = () => Promise.race([pcCarregar().catch(() => null), new Promise(r => setTimeout(r, 2500))]);
+  loadCAP = async function () { await esp(); return lc.apply(this, arguments); }; window.loadCAP = loadCAP;
+  loadObr = async function () { await esp(); return lo.apply(this, arguments); }; window.loadObr = loadObr;
+  loadForn = async function () { await esp(); return lf.apply(this, arguments); }; window.loadForn = loadForn;
+}
+{ const r0 = route; route = function () { if (typeof APP_PRONTO !== "undefined" && APP_PRONTO && !PC.iniciou) { PC.iniciou = true; pcCarregar().catch(() => {}); } return r0.apply(this, arguments); }; }
+/* ---- página: aba Plano de contas ---- */
+PAG_DEF.di_mestres.push({ k: "plano", n: "Plano de Contas", aba: "mstAba('plano')" });
+MST.aba = "centros";
+const pcPode = () => podeEditar("di_mestres") && pagNivel("di_mestres", "plano") !== "nenhum";
+const pcGrupoNome = k => OPEX_GRUPO[k] ? OPEX_GRUPO[k].n : "";
+const pcDreNome = k => k === "auto" ? "Regra automática (não herda)" : DRE_CONTA[k] ? DRE_CONTA[k].n : "";
+function paintPc() {
+  const body = $("mstBody"); if (!body) return;
+  const ed = pcPode(), F = PC.filtro, q = normName(F.q), cats = pcCats();
+  const aviso = PC.fonte === "lista" ? "" : PC.fonte === "vazia" ? `<div class="import-help" style="margin-bottom:14px"><b>A lista está vazia.</b> Enquanto isso, o ERP usa o plano que estava no código (subcategoria livre). ${ed ? `<button class="btn" onclick="pcSemear()">Criar o plano inicial (${Object.keys(PC_SEED).length} categorias)</button> <span class="sup">leva junto o centro de custo sugerido, a natureza, o grupo de OPEX e os ajustes do Plano de contas da DRE</span>` : "Peça a quem edita os cadastros para criar o plano."}</div>`
+    : PC.fonte === "sem-lista" ? `<div class="import-help" style="margin-bottom:14px"><b>A lista "${esc(LISTS.mst_pc.displayName)}" ainda não existe.</b> Um administrador cria em Sistema › Configuração › Executar tudo. Enquanto isso vale o plano do código.</div>`
+    : `<div class="import-help" style="margin-bottom:14px"><b>Não foi possível ler a lista agora</b> (${esc(PC.erro || "sem acesso")}). ${PC.fonte === "cache" ? "Mostrando a última cópia conhecida." : "Mostrando o plano do código."}</div>`;
+  const vis = x => (F.st === "todos" || (F.st === "ativos" ? x.ativo : !x.ativo));
+  const casa = x => !q || normName([x.cod, x.nome, x.obs].join(" ")).includes(q);
+  const cel = x => `<td class="sup">${esc(x.cc ? (mstNomePorCod(x.cc) || x.cc) : "")}</td><td class="sup">${esc(x.nat || "")}</td><td class="sup">${esc(pcGrupoNome(x.grupo))}</td><td class="sup">${esc(pcDreNome(x.dre))}</td><td class="sup">${esc(x.cls || "")}</td><td>${x.ativo ? `<span class="pill st-pago"><i></i>Ativo</span>` : `<span class="pill st-vencido"><i></i>Inativo</span>`}</td>`;
+  let linhas = "", nCat = 0;
+  cats.forEach(c => {
+    const subs = pcSubsDe(c.cod).filter(vis), subsQ = subs.filter(casa), mostraCat = (vis(c) && casa(c)) || subsQ.length; if (!mostraCat) return; nCat++;
+    const aberto = q ? true : !!F.abertos[c.cod];
+    linhas += `<tr class="pc-cat"><td class="nw"><button type="button" class="pc-tg" onclick="pcAbrir(${jsArg(c.cod)})" aria-expanded="${aberto}" title="${aberto ? "Fechar" : "Abrir"}">${aberto ? "▾" : "▸"}</button> <b class="tcad-mono">${esc(c.cod)}</b></td><td ${ed && c._id ? `class="pc-ed" onclick="pcForm(${jsArg(c.cod)})" title="Editar"` : ""}><b>${esc(c.nome)}</b> <span class="sup">${pcSubsDe(c.cod).filter(s => s.ativo).length} subcategoria(s)</span>${ed && c._id && c.ativo ? ` <button type="button" class="btn mini" onclick="event.stopPropagation();pcForm('', ${jsArg(c.cod)})">+ subcategoria</button>` : ""}</td>${cel(c)}</tr>`;
+    if (aberto) (q ? subsQ : subs).forEach(s => { linhas += `<tr class="pc-sub" ${ed && s._id ? `onclick="pcForm(${jsArg(s.cod)})" title="Editar"` : ""}><td class="nw tcad-mono" style="padding-left:34px">${esc(s.cod)}</td><td style="padding-left:22px">${esc(s.nome)}</td>${cel(s)}</tr>`; });
+  });
+  const kpi = (l, v, s) => `<div class="kpi static"><div class="lbl">${esc(l)}</div><div class="val">${esc(String(v))}</div><div class="sub">${esc(s)}</div></div>`;
+  $("mstAcoes").innerHTML = ed && pcDaLista() ? `<button class="btn primary" onclick="pcForm('')">Nova categoria</button>` : "";
+  body.innerHTML = aviso + `<div class="cap-kpis">${kpi("Categorias", cats.filter(c => c.ativo).length, "ativas")}${kpi("Subcategorias", (PC.itens || []).filter(x => x.nivel === "sub" && x.ativo).length, "ativas — as únicas que aparecem nas faturas")}${kpi("Inativos", (PC.itens || []).filter(x => !x.ativo).length, "só nos registros antigos")}${kpi("Com linha da DRE própria", (PC.itens || []).filter(x => x.dre && x.dre !== "auto").length, "os demais seguem a regra automática")}</div>
+    <div class="filters" role="search"><input type="search" class="span-2" id="pcBusca" placeholder="Buscar categoria, subcategoria ou código" value="${esc(F.q)}">
+      <select id="pcSt"><option value="ativos" ${F.st === "ativos" ? "selected" : ""}>Só ativos</option><option value="todos" ${F.st === "todos" ? "selected" : ""}>Ativos e inativos</option><option value="inativos" ${F.st === "inativos" ? "selected" : ""}>Só inativos</option></select>
+      <button type="button" class="btn" onclick="pcAbrirTodos()">${Object.values(F.abertos).some(Boolean) ? "Fechar todas" : "Abrir todas"}</button></div>
+    ${nCat ? `<div class="table-wrap"><table class="cap-table mst-tab pc-tab"><thead><tr><th>Código</th><th>Categoria / subcategoria</th><th>Centro de custo sugerido</th><th>Natureza</th><th>Grupo de OPEX</th><th>Linha da DRE</th><th>Classificação sugerida</th><th>Status</th></tr></thead><tbody>${linhas}</tbody></table></div>` : `<div class="cap-empty"><h3>Nada neste filtro</h3></div>`}
+    <p class="sup" style="margin-top:12px">Natureza, grupo de OPEX e linha da DRE vazios seguem a regra automática (na subcategoria vazia, vale o da categoria). O código não muda; renomear muda o nome em todas as telas. Itens do plano não são excluídos: inative-os.</p>`;
+  $("pcBusca").addEventListener("input", ev => { F.q = ev.target.value; erpDeb("pcBusca", () => keepFocus(paintPc)); });
+  $("pcSt").addEventListener("change", ev => { F.st = ev.target.value; paintPc(); });
+}
+window.pcAbrir = cod => { PC.filtro.abertos[cod] = !PC.filtro.abertos[cod]; paintPc(); };
+window.pcAbrirTodos = () => { const algum = Object.values(PC.filtro.abertos).some(Boolean); PC.filtro.abertos = {}; if (!algum) pcCats().forEach(c => { PC.filtro.abertos[c.cod] = true; }); paintPc(); };
+{ const p0 = paintMst; paintMst = function () { if (MST.aba === "plano") return paintPc(); return p0.apply(this, arguments); }; window.paintMst = paintMst; }
+const pcProxCat = () => String(Math.max(0, ...pcCats().map(c => parseInt(c.cod, 10) || 0)) + 1).padStart(2, "0");
+const pcProxSub = cat => `${cat}.${String(Math.max(0, ...pcSubsDe(cat).map(s => parseInt(s.cod.split(".")[1], 10) || 0)) + 1).padStart(2, "0")}`;
+window.pcSemear = async () => {
+  if (!pcPode()) return;
+  try {
+    const l = await pcLista(true); if (!l) { toast("A lista ainda não existe: rode Sistema › Configuração › Executar tudo.", 7000); return; }
+    const ja = await SP.items(MST.site.id, l.id); if (ja.length) { toast("A lista já tem itens — nada foi criado."); await renderMst(); return; }
+    await mstCarregar();
+    const pm = await erpParamLer("dre.mapa", true), px = await erpParamLer("subcats_extra", true);
+    if (pm === undefined || px === undefined) { toast("Não foi possível ler os ajustes do Plano de contas da DRE e as subcategorias aprendidas (ERP — Parâmetros). Nada foi criado; tente de novo.", 9000); return; }   /* revisão: não semeia sem os ajustes */
+    const mapa = dreMapaSanear(pm && pm.valor), extras = px && px.valor && typeof px.valor === "object" ? px.valor : {};
+    const itens = pcSeedItens(mapa, extras), b = $("mstBody"); let n = 0, falhas = 0;
+    if (!(await erpConfirmar({ titulo: "Criar o plano de contas inicial", texto: `Criar ${itens.filter(x => x.nivel === "cat").length} categorias e ${itens.filter(x => x.nivel === "sub").length} subcategorias a partir do plano atual (com os ajustes do Plano de contas da DRE)? A partir daí o plano passa a ser editado só aqui.`, sim: "Criar" }))) return;
+    const f = x => ({ Title: x.cod, Nivel: x.nivel === "sub" ? "Subcategoria" : "Categoria", Nome: x.nome, Pai: x.pai || null, CentroCusto: x.cc || null, Natureza: x.nat || null, GrupoOpex: x.grupo || null, LinhaDRE: x.dre || null, Status: "Ativo" });
+    const catsOk = new Set(), lote = async (arr, ok) => { for (let i = 0; i < arr.length; i += 5) { await Promise.all(arr.slice(i, i + 5).map(x => SP.create(MST.site.id, l.id, f(x)).then(() => { n++; if (ok) ok.add(x.cod); }).catch(() => { falhas++; }))); if (b) b.innerHTML = `<div class="cap-empty"><h3>Criando o plano… ${n} de ${itens.length}</h3></div>`; } };
+    await lote(itens.filter(x => x.nivel === "cat"), catsOk);
+    await lote(itens.filter(x => x.nivel === "sub" && catsOk.has(x.pai)));   /* revisão: subcategoria só com a categoria criada (sem órfãs) */
+    toast(`Plano de contas criado: ${n} item(ns)${falhas ? `, ${falhas} falha(s) — complete pela tela (+ subcategoria / Nova categoria)` : ""}`, 8000); await renderMst();
+  } catch (e) { toast("Não foi possível criar: " + e.message, 8000); }
+};
+window.pcForm = (cod, novoSubDe) => {
+  if (!pcPode()) return;
+  const x = cod ? PC.porCod.get(cod) : null, pai = x ? (x.nivel === "sub" ? PC.porCod.get(x.pai) : null) : (novoSubDe ? PC.porCod.get(novoSubDe) : null);
+  const nivel = x ? x.nivel : (novoSubDe ? "sub" : "cat");
+  const v = x || { cod: nivel === "sub" ? pcProxSub(novoSubDe) : pcProxCat(), nivel, nome: "", pai: novoSubDe || "", cc: "", nat: "", grupo: "", dre: "", cls: "", ativo: true, obs: "" };
+  const regraCat = pai ? `vale o da categoria (${pai.nome})` : "regra automática";
+  const sel = (id, ops, at, vazio) => `<select id="${id}"><option value="">${esc(vazio)}</option>${ops.map(([k, n]) => `<option value="${esc(k)}" ${k === at ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+  const ccs = (MST.cc || []).filter(c => c.ativo || c.cod === v.cc).map(c => [c.cod, `${c.cod} · ${c.nome}`]);
+  openModal(x ? `${nivel === "sub" ? "Subcategoria" : "Categoria"} ${x.cod}` : (nivel === "sub" ? `Nova subcategoria em ${pai ? pai.nome : ""}` : "Nova categoria"), `<div class="form-grid">
+      <div class="field"><label>Código</label><input value="${esc(v.cod)}" disabled><div class="hint">Travado: não muda depois de criado.</div></div>
+      <div class="field"><label>Status</label><select id="pcSt2"><option value="Ativo" ${v.ativo ? "selected" : ""}>Ativo</option><option value="Inativo" ${!v.ativo ? "selected" : ""}>Inativo</option></select></div>
+      ${pai ? `<div class="field full"><label>Categoria</label><input value="${esc(pai.cod + " · " + pai.nome)}" disabled></div>` : ""}
+      <div class="field full"><label>${nivel === "sub" ? "Subcategoria" : "Categoria"}<span class="req">*</span></label><input id="pcNome" maxlength="100" value="${esc(v.nome)}"></div>
+      <div class="field"><label>Centro de custo sugerido</label>${sel("pcCc", ccs, v.cc, nivel === "sub" ? "— o da categoria —" : "—")}</div>
+      <div class="field"><label>Natureza do gasto</label>${sel("pcNat", CPX_NAT.map(n => [n, n]), v.nat, `— ${regraCat} —`)}</div>
+      <div class="field"><label>Grupo de OPEX</label>${sel("pcGrupo", OPEX_GRUPOS.map(g => [g.k, g.n]), v.grupo, `— ${regraCat} —`)}</div>
+      <div class="field"><label>Linha da DRE</label>${sel("pcDre", (pai ? [["auto", "Regra automática (não herda da categoria)"]] : []).concat(DRE_CONTAS.map(c => [c.k, c.n])), v.dre, `— ${regraCat} —`)}</div>
+      <div class="field full"><label>Classificação de custo sugerida</label>${sel("pcCls", FORN_CLASSES.map(c => [c[0], c[0]]), v.cls, "—")}<div class="hint">Preenche a classificação do terceiro quando esta subcategoria é escolhida no cadastro (se estiver vazia).</div></div>
+      <div class="field full"><label>Observações</label><textarea id="pcObs" rows="2">${esc(v.obs)}</textarea></div>
+    </div><div class="err" id="pcErr" style="display:none"></div>`, async () => {
+    const err = m => { const e = $("pcErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const nome = subcatCapitaliza($("pcNome").value); if (!nome) return err("Preencha o nome.");
+    try {
+      const l = await pcLista(true); if (!l) return err("A lista ainda não existe: rode Sistema › Configuração › Executar tudo.");
+      await pcCarregar(true);
+      const irmaos = nivel === "sub" ? pcSubsDe(v.pai) : pcCats(), dup = irmaos.find(y => normName(y.nome) === normName(nome) && (!x || y._id !== x._id));
+      if (dup) return err(`Já existe ${dup.cod} — ${dup.nome}${nivel === "sub" ? " nesta categoria" : ""}.`);
+      const f = { Nome: nome, CentroCusto: $("pcCc").value || null, Natureza: $("pcNat").value || null, GrupoOpex: $("pcGrupo").value || null, LinhaDRE: $("pcDre").value || null, Classificacao: $("pcCls").value || null, Status: $("pcSt2").value, Observacoes: $("pcObs").value.trim() || null };
+      if (x && x._id) await SP.update(MST.site.id, l.id, x._id, f);
+      else await SP.create(MST.site.id, l.id, Object.assign({ Title: nivel === "sub" ? pcProxSub(v.pai) : pcProxCat(), Nivel: nivel === "sub" ? "Subcategoria" : "Categoria", Pai: nivel === "sub" ? v.pai : null }, f));
+      if (nivel === "sub" && v.pai) PC.filtro.abertos[v.pai] = true;
+      toast(x ? (x.nome !== nome ? `Renomeado: "${x.nome}" → "${nome}" em todas as telas` : "Atualizado") : "Criado"); await pcCarregar(true); paintPc(); return true;
+    } catch (e) { return err("Não foi possível salvar: " + e.message); }
+  });
+};
+/* ---- migração do plano de contas (Configuração, administrador) ---- */
+function pcLog(t, cls) { const el = $("pcMigLog"); if (!el) return; el.style.display = "block"; el.insertAdjacentHTML("beforeend", `<div class="${cls || ""}">${esc(t)}</div>`); el.scrollTop = el.scrollHeight; }
+function pcSugestao(cat, sub) {
+  const c = pcCatDe(cat) || (cat && fornCatConta(cat) === "Outros" && cat !== "Outros" ? null : null);
+  if (!sub) return c ? { v: "cat:" + c.cod, tipo: normName(c.nome) === normName(cat) ? "igual" : "sug" } : { v: "", tipo: "sem" };
+  const s = pcSubDe(cat, sub); if (s) return { v: "sub:" + s.cod, tipo: s.nome === sub && c && c.nome === cat ? "igual" : "sug" };
+  const u = pcSubDe("", sub); if (u) return { v: "", tipo: "outra" };   /* revisão: não muda de categoria sozinho — escolha à mão */
+  return { v: "", tipo: "sem" };
+}
+window.pcMigLer = async () => {
+  if (!session.n1) return; const btn = $("pcMigLerBtn"), corpo = $("pcMigCorpo"); if (btn) btn.disabled = true; const lg = $("pcMigLog"); if (lg) lg.innerHTML = "";
+  try {
+    await Promise.all([pcCarregar(true), mstCarregar(true)]);
+    if (!pcDaLista()) { pcLog(`A lista "${LISTS.mst_pc.displayName}" ${PC.fonte === "vazia" ? "está vazia: crie o plano em Diretoria › Cadastros Mestres antes" : "não está disponível: rode Executar tudo antes"}.`, "warn"); return; }
+    pcLog("Lendo categorias e subcategorias em uso…");
+    const regs = [], grupos = new Map(), sites = {}, listas = {}; let naoLidas = 0;
+    for (const fo of PC_FONTES) {
+      const def = LISTS[fo.k]; if (!def) continue;
+      try {
+        const sk = def.siteKey; if (!sites[sk]) sites[sk] = await SP.site(CONFIG.sites[sk]); if (!listas[sk]) listas[sk] = await SP.lists(sites[sk].id);
+        const l = listas[sk].find(x => x.displayName === def.displayName); if (!l) { naoLidas++; pcLog(`${fo.rot}: lista não encontrada — pulada.`); continue; }
+        const cols = await mstColsDe(sites[sk].id, l.id), its = await SP.items(sites[sk].id, l.id); let n = 0;
+        its.forEach(it => { const f = it.fields || {}, cat = String(f[fo.c] || "").trim(), sub = String(f[fo.s] || "").trim(); if (!cat && !sub) return; n++;
+          regs.push({ fo, siteId: sites[sk].id, listId: l.id, id: String(it.id), cat, sub, cc: String(f[fo.cc] || ""), sc: String(f[fo.sc] || ""), temCols: cols.has(fo.cc) && cols.has(fo.sc) });
+          const k = normName(cat) + "|" + normName(sub); if (!grupos.has(k)) grupos.set(k, { cat, sub, total: 0, por: {} }); const g = grupos.get(k); g.total++; g.por[fo.rot] = (g.por[fo.rot] || 0) + 1; });
+        pcLog(`${fo.rot}: ${its.length} registro(s), ${n} com categoria.${cols.has(fo.cc) ? "" : " (sem as colunas de código: rode Executar tudo)"}`, cols.has(fo.cc) ? "" : "warn");
+      } catch (e) { naoLidas++; pcLog(`${fo.rot}: não foi possível ler (${e.message}).`, "warn"); }
+    }
+    const linhas = [...grupos.entries()].sort((a, b) => b[1].total - a[1].total); PC.mig = { regs, linhas };
+    mstMigConcluir("pc", regs.filter(r => !r.temCols || !r.cc || !PC.porCod.get(r.cc) || (r.sub && (!r.sc || !PC.porCod.get(r.sc)))).length, naoLidas, pcLog, regs.length > 0);
+    const ops = (sug, cat) => `<option value="">— deixar como está —</option>${pcCats().map(c => `<optgroup label="${esc(c.cod + " · " + c.nome)}${c.ativo ? "" : " (inativa)"}"><option value="cat:${esc(c.cod)}" ${sug === "cat:" + c.cod ? "selected" : ""}>${esc(c.nome)} (só a categoria)</option>${pcSubsDe(c.cod).map(s => `<option value="sub:${esc(s.cod)}" ${sug === "sub:" + s.cod ? "selected" : ""}>${esc(c.nome)} › ${esc(s.nome)}${s.ativo ? "" : " (inativa)"}</option>`).join("")}</optgroup>`).join("")}${pcCatDe(cat) ? `<option value="__novo">+ criar esta subcategoria em ${esc(pcCatDe(cat).nome)}</option>` : ""}`;
+    const pill = t => t === "igual" ? `<span class="pill st-pago"><i></i>igual ao cadastro</span>` : t === "sug" ? `<span class="pill"><i></i>sugestão</span>` : t === "outra" ? `<span class="pill st-aguardando"><i></i>em outra categoria</span>` : `<span class="pill st-vencido"><i></i>sem correspondência</span>`;
+    corpo.innerHTML = `<p class="desc" style="margin-top:12px"><b>${linhas.length}</b> combinação(ões) categoria › subcategoria em uso. Escolha o "para" de cada uma; nada é gravado antes da prévia e da sua confirmação.</p>
+      <div class="table-wrap"><table class="cap-table mst-mig"><thead><tr><th>Em uso</th><th>Onde</th><th>Registros</th><th>Para</th></tr></thead><tbody>
+      ${linhas.map(([, g], i) => { const s = pcSugestao(g.cat, g.sub); return `<tr><td><b>${esc(g.cat || "(sem categoria)")}</b>${g.sub ? ` › ${esc(g.sub)}` : ""} ${pill(s.tipo)}</td><td class="sup">${Object.entries(g.por).map(([r, n]) => `${esc(r)} (${n})`).join("<br>")}</td><td class="nw">${g.total}</td><td><select class="pc-para" data-i="${i}">${ops(s.v, g.cat)}</select></td></tr>`; }).join("")}</tbody></table></div>
+      <div class="actions" style="margin-top:10px"><button class="btn" id="pcMigPrevBtn" onclick="pcMigPrevia()">Prévia</button><button class="btn primary" id="pcMigGravBtn" onclick="pcMigGravar()" disabled>Gravar</button></div><div id="pcMigPrev"></div>`;
+    corpo.querySelectorAll(".pc-para").forEach(s => s.addEventListener("change", () => { $("pcMigGravBtn").disabled = true; $("pcMigPrev").innerHTML = ""; }));
+    pcLog(`Pronto: ${linhas.length} combinação(ões). Confira o "para" e clique em Prévia.`, "ok");
+  } catch (e) { pcLog("Interrompido: " + e.message, "warn"); }
+  finally { if (btn) btn.disabled = false; }
+};
+function pcMigAlvo(m, g) {
+  if (!m) return null;
+  if (m === "__novo") { const c = pcCatDe(g.cat); const s = c && pcSubsDe(c.cod).find(y => normName(y.nome) === normName(g.sub)); return s ? { c, s } : (c ? { c, novo: subcatCapitaliza(g.sub) } : null); }
+  const x = PC.porCod.get(m.slice(4)); if (!x) return null;
+  return x.nivel === "sub" ? { c: PC.porCod.get(x.pai), s: x } : { c: x, s: null };
+}
+window.pcMigPrevia = () => {
+  const M = PC.mig; if (!M) return; const mapa = {};
+  document.querySelectorAll("#pcMigCorpo .pc-para").forEach(s => { if (s.value) mapa[+s.dataset.i] = s.value; });
+  const idx = new Map(M.linhas.map(([k], i) => [k, i])), ops = [], novos = new Set(), semCols = new Set();
+  M.regs.forEach(r => { const i = idx.get(normName(r.cat) + "|" + normName(r.sub)); const m = mapa[i]; if (!m) return; const g = M.linhas[i][1], a = pcMigAlvo(m, g); if (!a || !a.c) return;
+    if (a.novo) novos.add(a.c.cod + "|" + a.novo);
+    const nc = a.c.nome, ns = a.s ? a.s.nome : (a.novo || r.sub);   /* revisão: "(sem subcategoria)" mantém o texto, como a gravação */
+    const muda = r.cat !== nc || (r.sub || "") !== (ns || "") || (r.temCols && (r.cc !== a.c.cod || (a.s && r.sc !== a.s.cod) || (!a.s && !a.novo && r.sc)));
+    if (!r.temCols) semCols.add(r.fo.rot);
+    if (muda) ops.push({ r, m, g }); });
+  const porLista = {}; ops.forEach(o => { porLista[o.r.fo.rot] = (porLista[o.r.fo.rot] || 0) + 1; });
+  M.plano = { mapa, ops, novos: [...novos] };
+  $("pcMigPrev").innerHTML = `<div class="import-help" style="margin-top:10px"><b>Prévia:</b> ${ops.length} registro(s) recebem a categoria e a subcategoria do cadastro (nome e código)${novos.size ? `; ${novos.size} subcategoria(s) nova(s): ${[...novos].map(x => esc(x.split("|")[1])).join(", ")}` : ""}.<br>${Object.entries(porLista).map(([r, n]) => `${esc(r)}: ${n}`).join(" · ") || "Nada a gravar."}${semCols.size ? `<br><b>Sem as colunas de código</b> (${[...semCols].map(esc).join(", ")}): só o nome é corrigido; rode Executar tudo e grave de novo.` : ""}</div>`;
+  $("pcMigGravBtn").disabled = !ops.length && !novos.size;
+};
+window.pcMigGravar = async () => {
+  const P = PC.mig && PC.mig.plano; if (!P || !session.n1) return;
+  if (!(await erpConfirmar({ titulo: "Gravar a migração do plano de contas", texto: `Gravar ${P.ops.length} registro(s)${P.novos.length ? ` e criar ${P.novos.length} subcategoria(s)` : ""}? Pode rodar de novo depois.`, sim: "Gravar" }))) return;
+  const btn = $("pcMigGravBtn"); btn.disabled = true; let ok = 0, falhas = 0;
+  try {
+    const l = await pcLista(true);
+    for (const x of P.novos) { const [cat, nome] = [x.slice(0, x.indexOf("|")), x.slice(x.indexOf("|") + 1)]; await pcCarregar(true); if (pcSubsDe(cat).some(s => normName(s.nome) === normName(nome))) continue; const cod = pcProxSub(cat); await SP.create(MST.site.id, l.id, { Title: cod, Nivel: "Subcategoria", Nome: nome, Pai: cat, Status: "Ativo" }); pcLog(`Subcategoria nova: ${cod} — ${nome}`, "ok"); }
+    await pcCarregar(true);
+    const lote = P.ops.map(o => () => { const a = pcMigAlvo(o.m, o.g); if (!a || !a.c) return Promise.resolve(); const s = a.s || (a.novo ? pcSubsDe(a.c.cod).find(y => normName(y.nome) === normName(a.novo)) : null);
+      const f = { [o.r.fo.c]: a.c.nome }; if (s) f[o.r.fo.s] = s.nome; else if (o.m.startsWith("cat:")) f[o.r.fo.s] = o.r.sub || null;
+      if (o.r.temCols) { f[o.r.fo.cc] = a.c.cod; f[o.r.fo.sc] = s ? s.cod : null; }
+      return SP.update(o.r.siteId, o.r.listId, o.r.id, f).then(() => { ok++; }).catch(e => { falhas++; if (falhas <= 5) pcLog(`${o.r.fo.rot} #${o.r.id}: ${e.message}`, "warn"); }); });
+    for (let i = 0; i < lote.length; i += 5) { await Promise.all(lote.slice(i, i + 5).map(f => f())); if (i % 50 === 0) pcLog(`… ${Math.min(i + 5, lote.length)} de ${lote.length}`); }
+    try { await erpParamGravar("mst_pc_migracao", { em: new Date().toISOString(), por: (session.me && session.me.displayName) || "", gravados: ok, falhas }); } catch (e) {}
+    pcLog(`Concluído: ${ok} registro(s) gravado(s)${falhas ? `, ${falhas} falha(s) (rode de novo)` : ""}.`, falhas ? "warn" : "ok");
+    CAP_STATE.list = null; FORN_STATE.list = null; FORN_STATE.cols = null; OBR_STATE.list = null;
+  } catch (e) { pcLog("Interrompido: " + e.message, "warn"); }
+  finally { btn.disabled = true; PC.mig.plano = null; }
+};
+{ const pc = pageConfig; pageConfig = function () {
+    let h = pc.apply(this, arguments); if (!session.n1) return h;
+    const bloco = `<div class="mst-mig-sec" data-sec="pc"><h3>Plano de contas (v0.14.1)</h3><p class="desc">1) "Executar tudo na ordem" cria a lista "${esc(LISTS.mst_pc.displayName)}" e as colunas de código. 2) Em Diretoria › Cadastros Mestres › Plano de Contas, crie o plano inicial. 3) <b>Ler categorias em uso</b> → escolher o "para" → <b>Prévia</b> → <b>Gravar</b>. 4) No SharePoint, dê leitura da lista do plano a "Todos, exceto usuários externos".</p>
+      <div class="actions"><button class="btn" id="pcMigLerBtn" onclick="pcMigLer()">Ler categorias em uso</button></div><div id="pcMigCorpo"></div><div class="setup-log checks" id="pcMigLog" style="display:none;max-height:300px;overflow:auto"></div></div>`;
+    return h.replace(/(<section class="setup-card" id="mstMigCard">[\s\S]*?)(<\/section>)/, (m, a, b) => a + bloco + b);
+  }; window.pageConfig = pageConfig; }
+
+/* =====================================================================
+   v0.14.1 · CADASTROS MESTRES — R3: CNPJs (estabelecimentos da NMB) + menu da central
+   - A lista dos CNPJs sai do site RH ("RH — CNPJs ativos") e passa para o site Diretoria ("Diretoria — CNPJs"), editada em
+     Diretoria › Cadastros Mestres › CNPJs. O CNPJ continua sendo a chave gravada nos registros (CAP, Funcionários, PagBank):
+     nada muda neles.
+   - Enquanto a lista nova estiver vazia ou não existir, o ERP lê a antiga do RH (nada some). A cópia é feita na própria tela
+     (botão "Copiar do RH"); depois, em Configuração, exportar (.xlsx) e excluir a lista do RH.
+   - CNPJ não é excluído: é inativado (some das escolhas, continua nos registros).
+   - Menu da central: #/diretoria/cadastros-mestres mostra os cartões Centros de Custo, Plano de Contas e CNPJs.
+   ===================================================================== */
+LISTS.rh_cnpjs_rh = Object.assign({}, LISTS.rh_cnpjs, { key: "rh_cnpjs_rh", columns: LISTS.rh_cnpjs.columns.slice() });   /* a antiga (site RH): só leitura, cópia e exclusão — não é criada */
+Object.assign(LISTS.rh_cnpjs, {
+  siteKey: "diretoria", displayName: "Diretoria — CNPJs",
+  description: "Cadastros Mestres NMB · CNPJs da empresa (matriz, filiais e agências), fonte única do campo Estabelecimento (CAP, RH, Terceiros) e da Conta das Máquinas PagBank. CNPJ é a chave; itens são inativados, nunca excluídos. Editada em Diretoria › Cadastros Mestres. Dê leitura desta lista a todos da empresa."
+});
+if (!LISTS.rh_cnpjs.columns.some(c => c.name === "Codigo")) LISTS.rh_cnpjs.columns = [{ name: "Codigo", displayName: "Código", text: { allowMultipleLines: false, maxLength: 10 } }].concat(LISTS.rh_cnpjs.columns);
+SETUP_TEXT.rh_cnpjs = `Cria no site Diretoria a lista "Diretoria — CNPJs" (v0.14.1): CNPJs da empresa, fonte única do Estabelecimento (Diretoria › Cadastros Mestres › CNPJs). Substitui "RH — CNPJs ativos" (site RH). Depois de criar, dê leitura desta lista a "Todos, exceto usuários externos" no SharePoint.`;
+const EST = { itens: null, fonte: "", erro: "", p: null, site: null, list: undefined, antiga: undefined, siteRh: null, nAntiga: 0, filtro: { q: "", st: "ativos" } };
+const EST_CACHE_K = "erp.mst.cnpj.v1";
+const estDig = v => String(v || "").replace(/\D/g, "");
+function estDeItem(x) { return { _id: String(x._id || ""), cod: String(x.Codigo || "").trim(), rs: String(x.Title || "").trim(), cnpj: rhfCnpjFmt(x.CNPJ || ""), nf: String(x.NomeFantasia || "").trim(), nat: x.Natureza || "", ie: x.InscricaoEstadual || "", im: x.InscricaoMunicipal || "", end: x.Endereco || "", ativo: x.Ativo !== false }; }
+const estDaLista = () => EST.fonte === "lista" || EST.fonte === "antiga" || EST.fonte === "cache";
+const estOrd = (a, b) => (a.nat === "Matriz" ? 0 : 1) - (b.nat === "Matriz" ? 0 : 1) || a.cod.localeCompare(b.cod, "pt-BR", { numeric: true }) || a.rs.localeCompare(b.rs, "pt-BR");
+async function estListas(force) {
+  if (EST.list !== undefined && EST.antiga !== undefined && !force) return;
+  let erro = null;
+  try { if (!EST.site) EST.site = await SP.site(CONFIG.sites[LISTS.rh_cnpjs.siteKey]); EST.list = (await SP.lists(EST.site.id)).find(l => l.displayName === LISTS.rh_cnpjs.displayName) || null; } catch (e) { EST.list = undefined; erro = e; }
+  try { if (!EST.siteRh) EST.siteRh = await SP.site(CONFIG.sites[LISTS.rh_cnpjs_rh.siteKey]); EST.antiga = (await SP.lists(EST.siteRh.id)).find(l => l.displayName === LISTS.rh_cnpjs_rh.displayName) || null; } catch (e) { EST.antiga = undefined; }
+  if (erro && EST.antiga === undefined) throw erro;
+}
+function estCarregar(force) {
+  if (EST.itens && !force) return Promise.resolve(EST.itens);
+  if (EST.p && !force) return EST.p;
+  const p = (async () => {
+    let itens = null, fonte = "", erro = "";
+    try {
+      await estListas(force);
+      if (EST.list) { const raw = await SP.items(EST.site.id, EST.list.id); itens = raw.map(i => estDeItem(Object.assign({ _id: i.id }, i.fields))).filter(c => c.cnpj); if (itens.length) fonte = "lista"; }
+      EST.nAntiga = 0;
+      if (EST.antiga) { try { const raw = await SP.items(EST.siteRh.id, EST.antiga.id); const ant = raw.map(i => estDeItem(Object.assign({ _id: "" }, i.fields, { Codigo: "" }))).filter(c => c.cnpj); EST.nAntiga = ant.length; EST.itensAntiga = ant; if (!fonte && ant.length) { itens = ant; fonte = "antiga"; } } catch (e) { EST.itensAntiga = []; } }
+      if (fonte === "lista" && (EST.itensAntiga || []).length) { const falta = EST.itensAntiga.filter(a => !itens.some(c => estDig(c.cnpj) === estDig(a.cnpj))); itens = itens.concat(falta.map(a => Object.assign({}, a, { soRh: true }))); }   /* revisão: cópia pela metade não encolhe as escolhas */
+      if (!fonte) fonte = EST.list ? "vazia" : (EST.list === null ? "sem-lista" : "");
+      if (!fonte && EST.list === undefined) erro = "sem acesso ao site Diretoria";
+    } catch (e) { erro = e.message || String(e); }
+    if (fonte === "lista" || fonte === "antiga") { try { localStorage.setItem(EST_CACHE_K, JSON.stringify(itens)); } catch (e) {} }
+    else if (erro) { try { const c = JSON.parse(localStorage.getItem(EST_CACHE_K) || "null"); if (Array.isArray(c) && c.length) { itens = c; fonte = "cache"; } } catch (e) {} }
+    EST.itens = (itens || []).slice().sort(estOrd); EST.fonte = fonte || "erro"; EST.erro = erro; return EST.itens;
+  })();
+  EST.p = p; p.finally(() => { if (EST.p === p) EST.p = null; });
+  return p;
+}
+window.estCarregar = estCarregar;
+const estPorCnpj = v => { const d = estDig(v); return d ? (EST.itens || []).find(c => estDig(c.cnpj) === d) || null : null; };
+const estRotulo = c => c ? (c.nf || c.rs) : "";
+/* leitores de sempre: Estabelecimento (CAP / Obrigações / Terceiros / Dívidas) e o campo CNPJ dos Funcionários */
+async function nmbEstabsCarregar(force) {
+  if (NMB_EST.lista && !force) return NMB_EST.lista;
+  if (NMB_EST.prom && !force) return NMB_EST.prom;
+  NMB_EST.prom = (async () => {
+    let out = null, origem = "";
+    try { await estCarregar(!!force); if (estDaLista()) { out = EST.itens.filter(c => c.ativo).sort(estOrd).map(c => c.cnpj).filter(Boolean); origem = EST.fonte === "antiga" ? "rh" : EST.fonte === "lista" ? "cad" : "cache"; } } catch (e) { out = null; }   /* a matriz vem primeiro (é o padrão) */
+    if (!out || !out.length) {
+      try {
+        const siteCap = await SP.site(CONFIG.sites[LISTS.cap.siteKey]);
+        const listaCap = (await SP.lists(siteCap.id)).find(x => x.displayName === LISTS.cap.displayName) || null;
+        if (listaCap) { const cols = await graphAll(`/sites/${siteCap.id}/lists/${listaCap.id}/columns?$select=name,choice`); const c = cols.find(x => x.name === "Estabelecimento"); const ch = (c && c.choice && c.choice.choices) || []; if (ch.length) { out = ch.slice(); origem = "cap"; } }
+      } catch (e) {}
+    }
+    NMB_EST.lista = [...new Set(out || [])]; NMB_EST.origem = NMB_EST.lista.length ? origem : ""; NMB_EST.prom = null; return NMB_EST.lista;
+  })();
+  return NMB_EST.prom;
+}
+function nmbEstabHint() { return NMB_EST.origem === "cache" ? "Última cópia conhecida do cadastro de CNPJs (sem leitura agora)" : NMB_EST.origem === "cad" ? "Do cadastro Diretoria › Cadastros Mestres › CNPJs" : NMB_EST.origem === "rh" ? "Do cadastro antigo RH › CNPJ Ativos (copie para Diretoria › Cadastros Mestres › CNPJs)" : nmbEstabs().length ? "Opções da coluna da CAP (sem leitura do cadastro de CNPJs)" : "Nenhum CNPJ lido — cadastre em Diretoria › Cadastros Mestres › CNPJs e rode a Configuração"; }
+async function nmbEstabChoices() { const l = await nmbEstabsCarregar(true); return (NMB_EST.origem === "cad" || NMB_EST.origem === "rh") && l.length ? l : null; }
+{ const r1 = renderRhDbSub; renderRhDbSub = async function (sub) {
+    await r1.apply(this, arguments);
+    if (sub !== "funcs") return;
+    try { await estCarregar(true); if (estDaLista()) RHF_STATE.cnpjs = EST.itens.filter(c => c.ativo).map(c => ({ CNPJ: c.cnpj, NomeFantasia: c.nf, Title: c.rs })); } catch (e) {}
+  }; }
+/* RH › Banco de Dados perde o cartão CNPJ Ativos (o endereço antigo abre a central) */
+{ const i = RHDB_CARDS.findIndex(c => c.id === "cnpjs"); if (i >= 0) RHDB_CARDS.splice(i, 1); if (PAG_DEF.rh_db) PAG_DEF.rh_db = PAG_DEF.rh_db.filter(p => p.k !== "cnpjs"); }
+
+/* ---- página CNPJs ---- */
+PAG_DEF.di_mestres.push({ k: "est", n: "CNPJs", aba: "mstAba('est')" });
+const estPode = () => podeEditar("di_mestres") && pagNivel("di_mestres", "est") !== "nenhum";
+function paintEst() {
+  const body = $("mstBody"); if (!body) return;
+  const ed = estPode(), F = EST.filtro, q = normName(F.q), its = EST.itens || [];
+  const podeCopiar = ed && EST.list && EST.nAntiga > 0;
+  const faltam = podeCopiar ? (EST.itensAntiga || []).filter(a => !(EST.fonte === "lista" ? its.filter(c => !c.soRh) : []).some(c => estDig(c.cnpj) === estDig(a.cnpj))).length : 0;
+  const copiar = faltam ? ` <button class="btn" onclick="estCopiarRh()">Copiar ${faltam} CNPJ(s) do RH</button>` : "";
+  const aviso = EST.fonte === "lista" ? (faltam ? `<div class="import-help" style="margin-bottom:14px">A lista antiga "${esc(LISTS.rh_cnpjs_rh.displayName)}" (site RH) tem ${faltam} CNPJ(s) que ainda não estão aqui.${copiar}</div>` : "")
+    : EST.fonte === "antiga" ? `<div class="import-help" style="margin-bottom:14px"><b>Mostrando a lista antiga do RH</b> ("${esc(LISTS.rh_cnpjs_rh.displayName)}"). ${EST.list ? (ed ? `A lista nova está vazia: copie os CNPJs para ela.${copiar}` : "Peça a quem edita os cadastros para copiar os CNPJs do RH.") : `A lista "${esc(LISTS.rh_cnpjs.displayName)}" ainda não existe: um administrador cria em Sistema › Configuração › Executar tudo.`}</div>`
+    : EST.fonte === "vazia" ? `<div class="import-help" style="margin-bottom:14px"><b>Nenhum CNPJ cadastrado.</b> ${ed ? "Use “Novo CNPJ”." : ""}</div>`
+    : EST.fonte === "sem-lista" ? `<div class="import-help" style="margin-bottom:14px"><b>A lista "${esc(LISTS.rh_cnpjs.displayName)}" ainda não existe.</b> Um administrador cria em Sistema › Configuração › Executar tudo.</div>`
+    : `<div class="import-help" style="margin-bottom:14px"><b>Não foi possível ler a lista agora</b> (${esc(EST.erro || "sem acesso")}). ${EST.fonte === "cache" ? "Mostrando a última cópia conhecida." : ""} Quem não tem leitura no site Diretoria precisa de leitura nesta lista.</div>`;
+  const lista = its.filter(c => (F.st === "todos" || (F.st === "ativos" ? c.ativo : !c.ativo)) && (!q || normName([c.cod, c.rs, c.nf, c.cnpj, estDig(c.cnpj), c.nat, c.end].join(" ")).includes(q)));
+  const kpi = (l, v, s) => `<div class="kpi static"><div class="lbl">${esc(l)}</div><div class="val">${esc(String(v))}</div><div class="sub">${esc(s)}</div></div>`;
+  const editavel = ed && EST.fonte === "lista";
+  $("mstAcoes").innerHTML = ed && EST.list && (EST.fonte === "lista" || EST.fonte === "vazia") ? `<button class="btn primary" onclick="estForm('')">Novo CNPJ</button>` : "";
+  body.innerHTML = aviso + `<div class="cap-kpis">${kpi("Ativos", its.filter(c => c.ativo).length, "aparecem no campo Estabelecimento")}${kpi("Inativos", its.filter(c => !c.ativo).length, "só nos registros antigos")}${kpi("Matriz", (its.find(c => c.ativo && c.nat === "Matriz") || {}).cnpj || "—", "vem primeiro (é o padrão)")}</div>
+    <div class="filters" role="search"><input type="search" class="span-2" id="estBusca" placeholder="Buscar por CNPJ, razão social, nome fantasia ou código" value="${esc(F.q)}">
+      <select id="estSt"><option value="ativos" ${F.st === "ativos" ? "selected" : ""}>Só ativos</option><option value="todos" ${F.st === "todos" ? "selected" : ""}>Ativos e inativos</option><option value="inativos" ${F.st === "inativos" ? "selected" : ""}>Só inativos</option></select></div>
+    ${lista.length ? `<div class="table-wrap"><table class="cap-table mst-tab"><thead><tr><th>Código</th><th>CNPJ</th><th>Razão social</th><th>Nome fantasia</th><th>Natureza</th><th>Insc. estadual</th><th>Insc. municipal</th><th>Status</th></tr></thead><tbody>
+      ${lista.map(c => `<tr ${editavel && c._id ? `onclick="estForm(${jsArg(c._id)})" title="Editar"` : ""}><td class="nw"><b class="tcad-mono">${esc(c.cod || "—")}</b>${c.soRh ? ` <span class="pill st-aguardando"><i></i>só no RH</span>` : ""}</td><td class="nw tcad-mono">${esc(c.cnpj)}</td><td>${esc(c.rs || "—")}</td><td>${esc(c.nf || "")}</td><td>${esc(c.nat || "")}</td><td class="sup">${esc(c.ie || "")}</td><td class="sup">${esc(c.im || "")}</td>
+        <td>${c.ativo ? `<span class="pill st-pago"><i></i>Ativo</span>` : `<span class="pill st-vencido"><i></i>Inativo</span>`}</td></tr>`).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhum CNPJ neste filtro</h3></div>`}
+    <p class="sup" style="margin-top:12px">Os registros (CAP, Funcionários, Máquinas PagBank) gravam o CNPJ; trocar a razão social ou o nome fantasia aqui muda o nome em todas as telas. CNPJ usado não é excluído: inative-o.</p>`;
+  $("estBusca").addEventListener("input", ev => { F.q = ev.target.value; erpDeb("estBusca", () => keepFocus(paintEst)); });
+  $("estSt").addEventListener("change", ev => { F.st = ev.target.value; paintEst(); });
+}
+function estProxCodigo(itens) { const n = Math.max(0, ...itens.map(c => /^\d+$/.test(c.cod) ? parseInt(c.cod, 10) : 0)); return String(n + 1).padStart(2, "0"); }
+async function estLerNova() { await estListas(true); if (!EST.list) throw new Error("A lista ainda não existe: rode Sistema › Configuração › Executar tudo."); return (await SP.items(EST.site.id, EST.list.id)).map(i => estDeItem(Object.assign({ _id: i.id }, i.fields))); }
+window.estCopiarRh = async () => {
+  if (!estPode()) return;
+  try {
+    const nova = await estLerNova(), ant = EST.itensAntiga || [];
+    const faltam = ant.filter(a => !nova.some(c => estDig(c.cnpj) === estDig(a.cnpj)));
+    if (!faltam.length) { toast("Todos os CNPJs do RH já estão aqui."); await renderMst(); return; }
+    if (!(await erpConfirmar({ titulo: "Copiar CNPJs do RH", texto: `Copiar ${faltam.length} CNPJ(s) de "${LISTS.rh_cnpjs_rh.displayName}" para "${LISTS.rh_cnpjs.displayName}"? A lista do RH não é alterada.`, sim: "Copiar" }))) return;
+    const todos = nova.slice(); let n = 0, falhas = 0;
+    for (const a of faltam.sort(estOrd)) {
+      const cod = estProxCodigo(todos);
+      try { await SP.create(EST.site.id, EST.list.id, { Title: a.rs || a.cnpj, Codigo: cod, CNPJ: a.cnpj, NomeFantasia: a.nf || null, Natureza: a.nat || null, InscricaoEstadual: a.ie || null, InscricaoMunicipal: a.im || null, Endereco: a.end || null, Ativo: a.ativo }); todos.push(Object.assign({}, a, { cod })); n++; }
+      catch (e) { falhas++; }
+    }
+    toast(`${n} CNPJ(s) copiado(s)${falhas ? `, ${falhas} falha(s) — clique de novo para completar` : ""}. Depois, em Configuração, exporte e exclua a lista do RH.`, 8000);
+    NMB_EST.lista = null; await renderMst();
+  } catch (e) { toast("Não foi possível copiar: " + e.message, 8000); }
+};
+window.estForm = id => {
+  if (!estPode()) return;
+  const c = id ? (EST.itens || []).find(x => x._id === String(id)) : null;
+  const v = c || { cod: estProxCodigo(EST.itens || []), rs: "", cnpj: "", nf: "", nat: "Filial", ie: "", im: "", end: "", ativo: true };
+  openModal(c ? `CNPJ ${c.cod || ""}`.trim() : "Novo CNPJ", `<div class="form-grid">
+      <div class="field"><label>Código</label><input value="${esc(v.cod || "—")}" disabled><div class="hint">${c ? "Travado." : "Dado automaticamente."}</div></div>
+      <div class="field"><label>Status</label><select id="estAt"><option value="1" ${v.ativo ? "selected" : ""}>Ativo</option><option value="0" ${!v.ativo ? "selected" : ""}>Inativo</option></select></div>
+      <div class="field"><label>CNPJ<span class="req">*</span></label><input id="estCnpj" value="${esc(v.cnpj)}" placeholder="00.000.000/0000-00" ${c ? "disabled" : ""}>${c ? `<div class="hint">O CNPJ é a chave gravada nos registros: não muda. Errado? Inative e cadastre o certo.</div>` : ""}</div>
+      <div class="field"><label>Natureza</label><select id="estNat">${["Matriz", "Filial", "Agência", "Outro"].map(a => `<option ${v.nat === a ? "selected" : ""}>${a}</option>`).join("")}</select></div>
+      <div class="field full"><label>Razão social<span class="req">*</span></label><input id="estRs" maxlength="160" value="${esc(v.rs)}"></div>
+      <div class="field full"><label>Nome fantasia</label><input id="estNf" maxlength="160" value="${esc(v.nf)}"><div class="hint">É o nome que aparece na coluna Conta das Máquinas PagBank.</div></div>
+      <div class="field"><label>Insc. estadual</label><input id="estIe" maxlength="40" value="${esc(v.ie)}"></div>
+      <div class="field"><label>Insc. municipal</label><input id="estIm" maxlength="40" value="${esc(v.im)}"></div>
+      <div class="field full"><label>Endereço</label><textarea id="estEnd" rows="2">${esc(v.end)}</textarea></div>
+    </div><div class="err" id="estErr" style="display:none"></div>`, async () => {
+    const err = m => { const e = $("estErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const rs = $("estRs").value.trim().replace(/\s+/g, " "), cnpj = c ? c.cnpj : rhfCnpjFmt($("estCnpj").value);
+    if (!c) { if (!estDig(cnpj)) return err("Preencha o CNPJ."); if (estDig(cnpj).length !== 14 || !docValido(cnpj)) return err("CNPJ inválido (confira os dígitos)."); }
+    if (!rs) return err("Preencha a razão social.");
+    try {
+      const todos = await estLerNova();   /* relê: outra pessoa pode ter cadastrado */
+      const dup = todos.find(x => estDig(x.cnpj) === estDig(cnpj) && (!c || x._id !== c._id)); if (dup) return err(`Este CNPJ já está cadastrado (${dup.cod ? dup.cod + " — " : ""}${dup.rs}).`);
+      const nat = $("estNat").value, ativo = $("estAt").value === "1";
+      if (nat === "Matriz" && ativo) { const m = todos.find(x => x.ativo && x.nat === "Matriz" && (!c || x._id !== c._id)); if (m) return err(`Já existe uma matriz ativa (${m.cnpj}). Mude a natureza dela antes.`); }
+      const f = { Title: rs, NomeFantasia: $("estNf").value.trim() || null, Natureza: nat, InscricaoEstadual: $("estIe").value.trim() || null, InscricaoMunicipal: $("estIm").value.trim() || null, Endereco: $("estEnd").value.trim() || null, Ativo: ativo };
+      if (c && c._id) await SP.update(EST.site.id, EST.list.id, c._id, Object.assign(c.cod ? {} : { Codigo: estProxCodigo(todos) }, f));
+      else await SP.create(EST.site.id, EST.list.id, Object.assign({ Codigo: estProxCodigo(todos), CNPJ: cnpj }, f));
+      toast(c ? "CNPJ atualizado" : "CNPJ cadastrado — rode “Executar tudo” para ele entrar nas opções da coluna Estabelecimento da CAP", c ? 3000 : 7000);
+      NMB_EST.lista = null; await renderMst(); return true;
+    } catch (e) { return err("Não foi possível salvar: " + e.message); }
+  });
+};
+
+/* ---- página da central: abas (Centros de Custo · Plano de Contas · CNPJs) e menu ---- */
+const MST_BASE = "#/diretoria/cadastros-mestres";
+const MST_ROTAS = { centros: "centros-de-custo", plano: "plano-de-contas", est: "cnpjs" };
+PAG_DEF.di_mestres.forEach(p => { if (MST_ROTAS[p.k]) p.rota = MST_BASE + "/" + MST_ROTAS[p.k]; if (p.k === "centros") p.n = "Centros de Custo"; if (p.k === "plano") p.n = "Plano de Contas"; });
+const MST_CARTOES = {
+  centros: { icon: "chart", d: "Código, responsável, área e cor de cada centro. Fonte do campo Centro de custo em todo o ERP (CAP, Obrigações, Terceiros, RH, DRE)." },
+  plano: { icon: "dre", d: "Categorias e subcategorias em árvore, com centro de custo sugerido, natureza, grupo de OPEX e linha da DRE." },
+  est: { icon: "building", d: "CNPJs da empresa (matriz, filiais e agências). Fonte do campo Estabelecimento e da Conta das Máquinas PagBank." }
+};
+const mstAbasVis = () => PAG_DEF.di_mestres.filter(p => session.n1 || pagNivel("di_mestres", p.k) !== "nenhum");
+function pageMstHub() {
+  const tiles = mstAbasVis().map(p => { const c = MST_CARTOES[p.k] || {}; return `<a class="tile" href="${p.rota}"><span class="tile-ico">${ICONS[c.icon] || ICONS.settings}</span><h3>${esc(p.n)}</h3><div class="area">${esc(c.d || "")}</div></a>`; }).join("");
+  return `<div class="page" id="mstHub"><nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Diretoria">Diretoria</a><span>›</span><b>Cadastros Mestres</b></nav>
+    <h1>Cadastros Mestres</h1><p class="lead">Fonte única dos cadastros usados pelo Financeiro, RH, Terceiros, DRE e Contabilidade. Mudanças aqui valem para todo o ERP.</p>
+    ${tiles ? `<div class="tiles">${tiles}</div>` : `<div class="cap-empty"><h3>Sem acesso às páginas desta central</h3></div>`}</div>`;
+}
+function pageMst() {
+  const abas = mstAbasVis(), at = abas.find(p => p.k === MST.aba) || abas[0] || { n: "" };
+  return `<div class="page" id="mstRoot">
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Diretoria">Diretoria</a><span>›</span><a href="${MST_BASE}">Cadastros Mestres</a><span>›</span><b id="mstCrumb">${esc(at.n)}</b></nav>
+    <div class="cap-topo"><div><h1 style="margin:0">Cadastros Mestres</h1><p class="sup" style="margin:2px 0 0">Fonte única dos cadastros usados pelo Financeiro, RH, Terceiros, DRE e Contabilidade. Mudanças aqui valem para todo o ERP.</p></div><div id="mstAcoes"></div></div>
+    <div class="cap-views" id="mstTabs">${abas.map(p => `<button class="${p.k === at.k ? "on" : ""}" data-k="${p.k}" onclick="mstAba('${p.k}')">${esc(p.n)}</button>`).join("")}</div>
+    <div id="mstBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
+  </div>`;
+}
+window.pageMst = pageMst;
+window.mstAba = k => {
+  if (k && PAG_DEF.di_mestres.some(p => p.k === k)) MST.aba = k;
+  const p = PAG_DEF.di_mestres.find(x => x.k === MST.aba);
+  document.querySelectorAll("#mstTabs button[data-k]").forEach(b => b.classList.toggle("on", b.dataset.k === MST.aba));
+  const cr = $("mstCrumb"); if (cr && p) cr.textContent = p.n;
+  session.pagAtual = "di_mestres." + MST.aba;
+  try { if (p && p.rota && location.hash.split("?")[0] !== p.rota) history.replaceState(null, "", p.rota); } catch (e) {}
+  const b = $("mstBody"); if (b) b.innerHTML = `<div class="cap-empty"><h3>Carregando…</h3></div>`; $("mstAcoes").innerHTML = "";
+  renderMst();
+};
+async function renderMst() {
+  const ok = mstAbasVis(); if (!ok.some(p => p.k === MST.aba) && ok.length) MST.aba = ok[0].k;
+  const aba = MST.aba;
+  try { if (aba === "plano") await Promise.all([mstCarregar(true), pcCarregar(true)]); else if (aba === "est") await estCarregar(true); else await mstCarregar(true); } catch (e) {}
+  if (aba !== MST.aba) return;   /* trocou de aba enquanto carregava */
+  document.querySelectorAll("#mstTabs button[data-k]").forEach(b => b.classList.toggle("on", b.dataset.k === aba));
+  paintMst();
+}
+window.renderMst = renderMst;
+{ const p0 = paintMst; paintMst = function () { if (MST.aba === "est") return paintEst(); return p0.apply(this, arguments); }; window.paintMst = paintMst; }
+/* rotas: o menu (cartões) e uma rota por área; chamado pela rota base (os demais embrulhos da rota continuam valendo) */
+function mstRota(hash) {
+  const m = MODULES.find(x => x.id === "di_mestres"); if (!m) return false;
+  if (!canSee(m)) { location.hash = "#/inicio"; return true; }
+  const sub = hash === MST_BASE ? "" : hash.slice(MST_BASE.length + 1);
+  const p = sub ? PAG_DEF.di_mestres.find(x => MST_ROTAS[x.k] === sub) : null;
+  if (sub && !p) { location.replace(MST_BASE); return true; }
+  session.modAtual = "di_mestres"; navAtivo("di_mestres"); document.body.classList.remove("nav-open", "lista-aberta"); document.body.classList.toggle("wide", !!p);
+  if (p) { MST.aba = p.k; session.pagAtual = "di_mestres." + p.k; $("main").innerHTML = pageMst(); renderMst(); }
+  else $("main").innerHTML = pageMstHub();
+  window.scrollTo(0, 0); return true;
+}
+{ const r0 = route; route = function () {
+    const h = (location.hash || "").split("?")[0];
+    if (h === "#/rh/banco-de-dados/cnpjs") { location.replace(MST_BASE + "/cnpjs"); return; }   /* CNPJ Ativos saiu do RH */
+    if (h === "#/rh/banco-de-dados/deptos") { location.replace(MST_BASE + "/centros-de-custo"); return; }
+    return r0.apply(this, arguments);
+  }; }
+
+/* ---- Máquinas PagBank: coluna Conta (o CNPJ titular, do cadastro de CNPJs) ---- */
+function pbContaHtml(v) {
+  const d = estDig(v); if (!d) return `<span class="sup">—</span>`;
+  const c = estPorCnpj(v);
+  return c ? `<b>${esc(estRotulo(c))}</b><div class="sup tcad-mono">${esc(c.cnpj)}${c.ativo ? "" : " · inativo"}</div>` : `<span class="tcad-mono">${esc(rhfCnpjFmt(v))}</span><div class="sup">${estDaLista() ? "fora do cadastro" : "sem leitura do cadastro de CNPJs"}</div>`;
+}
+{ const r0 = renderPb; renderPb = async function () { try { await Promise.race([estCarregar().catch(() => null), new Promise(r => setTimeout(r, 2500))]); } catch (e) {} return r0.apply(this, arguments); }; window.renderPb = renderPb; }
+window.pbCnpjSelect = atual => {
+  const ativos = (EST.itens || []).filter(c => c.ativo), d = estDig(atual), noCad = d && ativos.some(c => estDig(c.cnpj) === d);
+  if (!ativos.length) return null;
+  const fora = d && !noCad ? `<option value="${esc(atual)}" selected>${esc(rhfCnpjFmt(atual))}${estPorCnpj(atual) ? " (inativo)" : " (fora do cadastro)"}</option>` : "";
+  return `<select id="pbCnpj"><option value="">—</option>${fora}${ativos.map(c => `<option value="${esc(c.cnpj)}" ${estDig(c.cnpj) === d ? "selected" : ""}>${esc(estRotulo(c))} · ${esc(c.cnpj)}</option>`).join("")}</select><div class="hint">Da Diretoria › Cadastros Mestres › CNPJs</div>`;
+};
+
+/* ---- Configuração: CNPJs — exportar e excluir a lista antiga do RH ---- */
+function estLog(t, cls) { const el = $("estMigLog"); if (!el) return; el.style.display = "block"; el.insertAdjacentHTML("beforeend", `<div class="${cls || ""}">${esc(t)}</div>`); el.scrollTop = el.scrollHeight; }
+window.estRhExportar = async () => {
+  if (!session.n1) return;
+  try {
+    await estListas(true); if (!EST.antiga) { estLog(`A lista "${LISTS.rh_cnpjs_rh.displayName}" não existe (já foi excluída?).`, "warn"); return; }
+    const its = (await SP.items(EST.siteRh.id, EST.antiga.id)).map(i => i.fields || {});
+    await erpLib("xlsx");
+    const aoa = [["Razão social", "CNPJ", "Nome fantasia", "Natureza", "Insc. estadual", "Insc. municipal", "Endereço", "Ativo"]].concat(its.map(f => [f.Title || "", f.CNPJ || "", f.NomeFantasia || "", f.Natureza || "", f.InscricaoEstadual || "", f.InscricaoMunicipal || "", f.Endereco || "", f.Ativo === false ? "Não" : "Sim"]));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "CNPJs");
+    XLSX.writeFile(wb, `RH-CNPJs-ativos-copia-${todayISO()}.xlsx`);
+    EST.exportado = true; estLog(`Cópia exportada (${its.length} CNPJ(s)) — o arquivo foi baixado pelo navegador (pasta Downloads). Mande para o projeto.`, "ok");
+  } catch (e) { estLog("Não foi possível exportar: " + e.message, "warn"); }
+};
+window.estRhExcluir = async () => {
+  if (!session.n1) return;
+  if (!EST.exportado) { estLog("Exporte a cópia (.xlsx) antes de excluir.", "warn"); return; }
+  try {
+    await estListas(true); if (!EST.antiga) { estLog("A lista do RH já não existe.", "ok"); return; }
+    if (!EST.list) { estLog(`A lista "${LISTS.rh_cnpjs.displayName}" ainda não existe: rode Executar tudo e copie os CNPJs antes.`, "warn"); return; }
+    const ant = (await SP.items(EST.siteRh.id, EST.antiga.id)).map(i => rhfCnpjFmt((i.fields || {}).CNPJ || "")).filter(Boolean);
+    const nova = new Set((await SP.items(EST.site.id, EST.list.id)).map(i => estDig((i.fields || {}).CNPJ)));
+    const faltam = ant.filter(c => !nova.has(estDig(c)));
+    if (faltam.length) { estLog(`${faltam.length} CNPJ(s) do RH ainda não estão na Diretoria (${faltam.slice(0, 3).join(", ")}${faltam.length > 3 ? "…" : ""}). Copie em Diretoria › Cadastros Mestres › CNPJs antes.`, "warn"); return; }
+    if (!(await erpConfirmar({ titulo: "Excluir a lista CNPJs do RH", texto: `Excluir do SharePoint a lista "${LISTS.rh_cnpjs_rh.displayName}" (site RH)? Todos os ${ant.length} CNPJ(s) já estão em "${LISTS.rh_cnpjs.displayName}" e a cópia .xlsx foi exportada. A lista vai para a lixeira do site RH.`, sim: "Excluir a lista", perigo: true }))) return;
+    await graph(`/sites/${EST.siteRh.id}/lists/${EST.antiga.id}`, { method: "DELETE" });
+    EST.antiga = null; EST.nAntiga = 0; EST.itensAntiga = []; NMB_EST.lista = null;
+    estLog(`Lista "${LISTS.rh_cnpjs_rh.displayName}" excluída (fica na lixeira do site RH por 93 dias).`, "ok");
+  } catch (e) { estLog("Não foi possível excluir: " + e.message, "warn"); }
+};
+{ const pc = pageConfig; pageConfig = function () {
+    let h = pc.apply(this, arguments); if (!session.n1) return h;
+    const bloco = `<div class="mst-mig-sec" data-sec="est"><h3>CNPJs (v0.14.1)</h3><p class="desc">1) "Executar tudo na ordem" cria a lista "${esc(LISTS.rh_cnpjs.displayName)}" (site Diretoria). 2) Em Diretoria › Cadastros Mestres › CNPJs, clique em <b>Copiar do RH</b>. 3) <b>Exportar</b> a cópia da lista antiga e <b>excluir</b> "${esc(LISTS.rh_cnpjs_rh.displayName)}" (só depois de todos os CNPJs copiados). 4) No SharePoint, dê leitura da lista de CNPJs a "Todos, exceto usuários externos".</p>
+      <div class="actions"><button class="btn" onclick="estRhExportar()">Exportar CNPJs do RH (.xlsx)</button><button class="btn" onclick="estRhExcluir()">Excluir a lista CNPJs do RH</button></div><div class="setup-log checks" id="estMigLog" style="display:none;max-height:200px;overflow:auto"></div></div>`;
+    setTimeout(() => { mstMigAjustar().catch(() => {}); }, 0);
+    return h.replace(/(<section class="setup-card" id="mstMigCard">[\s\S]*?)(<\/section>)/, (m, a, b) => a + bloco + b);
+  }; window.pageConfig = pageConfig; }
+/* Configuração: cada ferramenta de migração sai sozinha quando não tem mais o que fazer
+   cc/pc: a leitura não encontrou registro sem o código do cadastro (fica gravado em ERP — Parâmetros) · dep/est: a lista antiga já foi excluída */
+const MST_MIG_CONCL = { cc: "mst_cc_concluida", pc: "mst_pc_concluida" };
+async function mstMigConcluir(k, pendentes, avisos, log, leuAlgo) {
+  if (!session.n1) return;
+  if (!pendentes && !leuAlgo) { log("Nenhum registro lido — a ferramenta continua aqui.", "warn"); return; }   /* revisão: lista errada ou setup não rodado não conclui */
+  if (!pendentes && avisos) { log(`Nada a migrar nas listas lidas, mas ${avisos} lista(s) não foram encontradas ou lidas (veja acima).`, "warn"); const el = $(k === "cc" ? "mstMigLog" : "pcMigLog"); if (el) el.insertAdjacentHTML("beforeend", `<div><button class="btn mini" onclick="mstMigConcluir('${k}', 0, 0, ${k === "cc" ? "mstLog" : "pcLog"}, true)">Dar por concluída mesmo assim</button> <span class="sup">se essas listas não existem ou não têm o campo</span></div>`); return; }
+  if (!pendentes && !avisos) {
+    try { await erpParamGravar(MST_MIG_CONCL[k], { em: new Date().toISOString(), por: (session.me && session.me.displayName) || "" }); } catch (e) { log("Nada mais a migrar, mas não deu para registrar a conclusão: " + e.message, "warn"); return; }
+    log("Nada mais a migrar: todos os registros já têm o código do cadastro. Esta ferramenta sai da Configuração.", "ok");
+    setTimeout(() => { mstMigAjustar().catch(() => {}); }, 2500);
+  } else log(`${pendentes} registro(s) ainda sem o código do cadastro${avisos ? " (e listas que não puderam ser lidas)" : ""} — a ferramenta continua aqui até não restar nenhum.`);
+}
+async function mstMigAjustar() {
+  const card = $("mstMigCard"); if (!card || !session.n1) return;
+  const tira = k => { const el = card.querySelector(`.mst-mig-sec[data-sec="${k}"]`); if (el) el.remove(); };
+  for (const k of Object.keys(MST_MIG_CONCL)) { try { const p = await erpParamLer(MST_MIG_CONCL[k], true); if (p && p.valor) tira(k); } catch (e) {} }
+  try { const { l } = await mstDeptosLista(); if (l === null) tira("dep"); } catch (e) {}
+  try { await estListas(true); if (EST.antiga === null) tira("est"); } catch (e) {}
+  if (!card.querySelector(".mst-mig-sec")) card.remove();
+}
 
 /* v0.14.0: o rodapé do menu mostra sempre a versão do CONFIG (estava fixo desde a v0.13.4.3) */
 { const ev = document.getElementById("erpVer"); if (ev) { ev.textContent = CONFIG.version; ev.style.fontWeight = "inherit"; } }

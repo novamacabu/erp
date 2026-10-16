@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.1",
+  version: "v0.14.2",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -5561,7 +5561,7 @@ function capEstimado(it) { return !!(it && (it.Estimado === true || it.Estimado 
 function capHist(it) { try { const h = JSON.parse(it && it.Historico || "[]"); return Array.isArray(h) ? h : []; } catch (e) { return []; } }
 function capHistQuem() { return String((session.me && (session.me.displayName || session.me.mail)) || "").slice(0, 80); }
 function capHistAdd(it, acao, detalhe) { const h = capHist(it); h.push({ t: new Date().toISOString(), por: capHistQuem(), a: acao, d: detalhe ? String(detalhe).slice(0, 300) : undefined }); return JSON.stringify(h.slice(-60)); }
-const CAP_HIST_CAMPOS = { Title: "Descrição", Fornecedor: "Fornecedor", Valor: "Valor", Vencimento: "Vencimento", Competencia: "Competência", Status: "Status", DataPagamento: "Pago em", Categoria: "Categoria", CentroCusto: "Centro de custo", Banco: "Banco", NumeroNF: "NF", Isenta: "N/A", Estimado: "Estimado", Natureza: "Natureza" };
+const CAP_HIST_CAMPOS = { FavBanco: "Banco do funcionário", FavAgencia: "Agência do funcionário", FavConta: "Conta do funcionário", Title: "Descrição", Fornecedor: "Fornecedor", Valor: "Valor", Vencimento: "Vencimento", Competencia: "Competência", Status: "Status", DataPagamento: "Pago em", Categoria: "Categoria", CentroCusto: "Centro de custo", Banco: "Banco", NumeroNF: "NF", Isenta: "N/A", Estimado: "Estimado", Natureza: "Natureza" };
 function capHistDiff(antes, depois) { const d = []; Object.keys(CAP_HIST_CAMPOS).forEach(k => { if (!(k in depois)) return; const a = antes[k], b = depois[k]; const na = a == null || a === "" ? "" : (/^\d{4}-\d{2}-\d{2}/.test(String(a)) ? ymd(a) : String(a)), nb = b == null || b === "" ? "" : (/^\d{4}-\d{2}-\d{2}/.test(String(b)) ? ymd(b) : String(b)); if (na !== nb && !(k === "Valor" && Number(a || 0) === Number(b || 0)) && !((k === "Isenta" || k === "Estimado") && !!a === !!b)) d.push(`${CAP_HIST_CAMPOS[k]}: ${na || "—"} → ${nb || "—"}`); }); return d.join("; "); }
 function classifyItem(it) {
   const today = new Date(); today.setHours(0,0,0,0);
@@ -6170,13 +6170,14 @@ function capApplyForn(isNew) {
 window.capCadastrarForn = () => {
   if (!podeEditar("forn")) { toast("Seu acesso a Fornecedores é só de leitura — peça o cadastro a quem edita Fornecedores."); return; }
   const nome = $("fForn").value.trim(), doc = $("fCNPJ").value.trim();
-  const draft = {}; ["fForn","fTitle","fCNPJ","fNF","fCat","fSub","fVenc","fComp","fVal","fSt","fPag","fBanco","fForma","fParc","fTipoL","fEstab","fNumParc","fRef","fObs","fTipoFav","fCC","fNat"].forEach(id => { const el = $(id); if (el) draft[id] = el.value; });
+  const draft = {}; ["fForn","fTitle","fCNPJ","fNF","fCat","fSub","fVenc","fComp","fVal","fSt","fPag","fBanco","fForma","fParc","fTipoL","fEstab","fNumParc","fRef","fObs","fTipoFav","fCC","fNat","fFavBanco","fFavAg","fFavConta"].forEach(id => { const el = $(id); if (el) draft[id] = el.value; });
   const ckIsenta = $("fIsenta") ? $("fIsenta").checked : null;   /* v0.12.81: centro de custo, natureza e isenta também voltam */
   const wasNew = !CAP_STATE.editing, filaDocs = CAP_STATE.docFila ? CAP_STATE.docFila.slice() : null;   /* v0.12.81: os arquivos já escolhidos não se perdem */
   const voltar = () => {
     modal(capForm(CAP_STATE.editing)); capWireForm(wasNew);
     if (filaDocs && filaDocs.length) { CAP_STATE.docFila = filaDocs; if (typeof capFilaPinta === "function") { try { capFilaPinta(); } catch (e) {} } }
     Object.entries(draft).forEach(([id, v]) => { const el = $(id); if (el && v) el.value = v; });
+    if ($("fFavWrap") && $("fTipoFav")) $("fFavWrap").hidden = $("fTipoFav").value !== "Funcionário";   /* v0.14.2 */
     if (ckIsenta != null && $("fIsenta")) { $("fIsenta").checked = ckIsenta; $("fIsenta").dispatchEvent(new Event("change", { bubbles: true })); }
     $("modal").dataset.sujo = "1";   /* o que foi preenchido continua contando como digitado */
   };
@@ -7216,6 +7217,7 @@ function capForm(it) {
       <div class="field full form-sec">Pagamento e dados bancários</div>
       <div class="field"><label>Banco</label><select id="fBanco">${opt(BANCOS, v.Banco, true)}</select></div>
       <div class="field"><label>Forma de pagamento</label><select id="fForma">${opt(FORMAS, v.FormaPagamento, true)}</select></div>
+      ${CAP_STATE.cols && CAP_STATE.cols.has("FavBanco") ? capFavBancoHtml(v) : ""}
       <div class="field"><label>Status<span class="req">*</span></label><select id="fSt" ${(!capPodePagar() && v.Status === "Pago") || v.Status === "Cancelada" ? "disabled" : ""}>${opt((capPodePagar() || v.Status === "Pago" ? STATUS_CAP : STATUS_CAP.filter(x => x !== "Pago")).filter(x => x !== "Cancelada" || v.Status === "Cancelada"), v.Status || "Pendente", false)}</select>${capPodePagar() ? "" : `<div class="hint">Dar baixa exige a permissão "Pagar faturas"</div>`}</div>
       <div class="field" ${capPodePagar() || v.DataPagamento ? "" : 'style="display:none"'}><label>Data do pagamento</label><input type="date" id="fPag" value="${v.DataPagamento ? ymd(v.DataPagamento) : ""}" ${capPodePagar() ? "" : "disabled"}></div>
       <div class="field full form-sec">Referências e observações</div>
@@ -7315,14 +7317,16 @@ async function capSave(existing) {
     TipoLancamento: g("fTipoL") || "Despesa", Estabelecimento: g("fEstab") || null, NumParcelamento: g("fNumParc") || null, TipoFavorecido: g("fTipoFav") || "Fornecedor",
     Natureza: document.getElementById("fNat") ? (g("fNat") || null) : undefined,   /* v0.12.73: natureza do gasto (vazia = regra automática) */
     Estimado: !!(document.getElementById("fEst") && document.getElementById("fEst").checked),   /* v0.13.2 (item 7) */
-    ContaFornecedor: document.getElementById("fConta") ? (g("fConta") || null) : undefined   /* v0.13.4 · 2g: conta do fornecedor (unidade/contrato do mesmo CNPJ) */
+    ContaFornecedor: document.getElementById("fConta") ? (g("fConta") || null) : undefined,   /* v0.13.4 · 2g: conta do fornecedor (unidade/contrato do mesmo CNPJ) */
+    ...capFavBancoLer(g)   /* v0.14.2: dados bancários do funcionário (só com as colunas criadas e o tipo Funcionário) */
   };
   if (existing && existing.Status === "Cancelada") { showErr("Fatura cancelada: use «Reativar fatura» para voltar a editá-la."); return; }   /* v0.13.2 (item 5) */
   if (existing && existing.Status === "Pago" && !session.n1) {   /* v0.13.2 (item 6): fatura paga tem valor, vencimento, competência e fornecedor travados — só observações, anexos e classificação mudam */
     const trav = { Valor: Number(existing.Valor || 0), Vencimento: existing.Vencimento ? ymd(existing.Vencimento) : "", Competencia: normComp(existing.Competencia || "") || compFromDate(existing.Vencimento) || "", Fornecedor: String(existing.Fornecedor || "").trim() };
     const novo = { Valor: Number(fields.Valor || 0), Vencimento: fields.Vencimento || "", Competencia: fields.Competencia ? (normComp(fields.Competencia) || fields.Competencia) : (compFromDate(fields.Vencimento) || ""), Fornecedor: String(fields.Fornecedor || "").trim() };
+    if ("FavBanco" in fields) ["FavBanco", "FavAgencia", "FavConta"].forEach(k => { trav[k] = String(existing[k] || ""); novo[k] = String(fields[k] || ""); });   /* v0.14.2: conta do funcionário também trava na fatura paga */
     const mudou = Object.keys(trav).filter(k => k === "Valor" ? Math.abs(novo.Valor - trav.Valor) >= 0.005 : String(novo[k]) !== String(trav[k]));
-    if (mudou.length) { showErr("Fatura paga: " + mudou.map(k => ({ Valor: "valor", Vencimento: "vencimento", Competencia: "competência", Fornecedor: "fornecedor" }[k])).join(", ") + " não muda(m). Estorne o pagamento primeiro (ou peça a um administrador)."); return; }
+    if (mudou.length) { showErr("Fatura paga: " + mudou.map(k => ({ Valor: "valor", Vencimento: "vencimento", Competencia: "competência", Fornecedor: "fornecedor", FavBanco: "banco do funcionário", FavAgencia: "agência do funcionário", FavConta: "conta do funcionário" }[k])).join(", ") + " não muda(m). Estorne o pagamento primeiro (ou peça a um administrador)."); return; }
     if (fields.Status !== "Pago") { showErr("Fatura paga: para reabrir, use «Estornar pagamento»."); return; }
   }
   if (fields.Status === "Pago") fields.Estimado = false;
@@ -14800,7 +14804,7 @@ function fornForm(x) {
       <div class="field full form-sec">Contatos</div>
       <div class="field"><label>Contato principal</label><input id="gContato" value="${esc(v.Contato || "")}"></div>
       <div class="field"><label>Telefone</label><input id="gTel" data-mask="tel" value="${esc(v.Telefone || "")}"></div>
-      <div class="field"><label>E-mail</label><input id="gEmail" type="email" value="${esc(v.Email || "")}"></div>
+      <div class="field"><label>E-mail</label><input id="gEmail" type="email" inputmode="email" autocomplete="off" placeholder="contato@empresa.com.br" value="${esc(v.Email || "")}"><div class="hint" id="gEmailHint"></div></div>
       <div class="field full form-sec">Observações</div>
       <div class="field full"><textarea id="gObs" aria-label="Observações">${esc(v.Observacoes || "")}</textarea></div>
     </div><div class="err-msg" id="gErr" style="display:none;color:var(--err);margin-top:12px;font-size:13px;"></div></div>
@@ -18381,6 +18385,7 @@ window.cxImportGo = async () => {
   try { await loadCx(); } catch (e) { if (b) { b.disabled = false; b.textContent = "Importar"; } toast("Não foi possível conferir o caixa antes de importar: " + e.message, 7000); return; }   /* v0.12.81: o botão não fica preso em "Importando…" */
   const jaTem = new Set(CX.mov.map(x => x._d)); const novos = imp.dias.filter(d => jaTem.has(d));
   if (novos.length) { toast("Alguém lançou nesses dias enquanto a prévia estava aberta: " + novos.map(fmtDate).join(", ") + ". Refaça a prévia.", 7000); CX.imp = null; paintCx(); return; }
+  try { for (const x of imp.mov) { if (x.Grupo && pcDaLista()) { const c = pcCatDe(x.Grupo); if (c) x.Grupo = c.nome; const sb = x.Categoria ? pcSubDe(x.Grupo, x.Categoria) : null; if (sb) x.Categoria = sb.nome; } await pcCodsPreencher(CX.site.id, CX.lists.cx_mov.id, x); } } catch (e) {}   /* v0.14.2: a importação grava em lote (sem SP.create) — nomes do plano e códigos aqui */
   const reqs = imp.mov.map(x => ({ method: "POST", url: `/sites/${CX.site.id}/lists/${CX.lists.cx_mov.id}/items`, body: { fields: Object.assign({}, x, { Data: x.Data + "T00:00:00Z" }) } }))
     .concat(imp.fech.map(x => ({ method: "POST", url: `/sites/${CX.site.id}/lists/${CX.lists.cx_fech.id}/items`, body: { fields: Object.assign({}, x, { Data: x.Data + "T00:00:00Z" }) } })));
   const log = $("cxImpLog");
@@ -23095,7 +23100,7 @@ window.rhPesMigrar = () => {
       if (!falhas.length) {   /* 3. apagar as colunas da lista principal */
         box.innerHTML = `<p><b>Apagando as colunas da lista principal…</b></p>`;
         const cs = await graphAll(`/sites/${RHDB_STATE.site.id}/lists/${RHDB_STATE.list.id}/columns?$select=id,name`);
-        for (const k of RH_PES_CAMPOS) { const c = cs.find(y => y.name === k); if (!c) continue;
+        for (const k of RH_PES_CAMPOS.filter(k => !["Banco", "Agencia", "Conta"].includes(k))) { const c = cs.find(y => y.name === k); if (!c) continue;   /* v0.14.2: banco/agência/conta nunca estiveram na principal — não apaga coluna com esse nome */
           try { await graph(`/sites/${RHDB_STATE.site.id}/lists/${RHDB_STATE.list.id}/columns/${c.id}`, { method: "DELETE" }); } catch (e) { falhas.push(`coluna ${k}: ${e.message}`); } }
         RHF_STATE.colsDe = null;
       }
@@ -34219,7 +34224,7 @@ window.capReativar = async (id) => {
 { const e0 = window.capEdit;
   window.capEdit = function (id) {
     const r = e0.apply(this, arguments);
-    try { const it = CAP_STATE.items.find(x => String(x._id) === String(id)); if (it && it.Status === "Pago" && !session.n1) ["fVal", "fVenc", "fComp", "fForn"].forEach(k => { const el = $(k); if (el) { el.disabled = true; el.title = "Fatura paga: estorne o pagamento para alterar"; } });
+    try { const it = CAP_STATE.items.find(x => String(x._id) === String(id)); if (it && it.Status === "Pago" && !session.n1) ["fVal", "fVenc", "fComp", "fForn", "fFavBanco", "fFavAg", "fFavConta"].forEach(k => { const el = $(k); if (el) { el.disabled = true; el.title = "Fatura paga: estorne o pagamento para alterar"; } });
       if (it && it.Status === "Cancelada") { document.querySelectorAll("#modal input, #modal select, #modal textarea").forEach(el => { el.disabled = true; }); const sv = $("fSave"); if (sv) sv.style.display = "none"; } } catch (e) {}
     return r;
   };
@@ -34692,6 +34697,7 @@ async function fornSave(existing, inline) {
   if (dia !== null && (dia < 1 || dia > 31)) { showErr("Dia de vencimento precisa estar entre 1 e 31."); return; }
   const contas = tercContasLer();
   if ($("gOutros") && tercContatosLer().some(c => c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email))) { showErr("Outros contatos: há um e-mail inválido."); return; }
+  if (g("gEmail") && !erpEmailOk(g("gEmail")) && g("gEmail") !== String((existing && existing.Email) || "").trim()) { showErr("E-mail inválido. Use o formato contato@empresa.com.br."); return; }   /* v0.14.2 */
   const fields = {
     Title: nome, NomeFantasia: $("gFantasia") ? (g("gFantasia") || null) : undefined, Produtos: $("gProdutos") ? (() => { const pr = tercProdLer(); return pr.length ? JSON.stringify(pr) : null; })() : undefined, CNPJ: doc, Tipo: tipo || null, Papeis: papeis,
     Contas: contas.length ? JSON.stringify(contas) : null, OutrosContatos: (() => { const oc = $("gOutros") ? tercContatosLer() : null; return oc === null ? undefined : oc.length ? JSON.stringify(oc) : null; })(), UF: tercUFCanon(g("gUF")) || null, Cidade: tercUFCanon(g("gUF")) ? (tercCidadeCanon(tercUFCanon(g("gUF")), $("gCidade") && $("gCidade").disabled ? $("gCidade").dataset.v : g("gCidade")) || null) : null,   /* revisão: salvar com a lista ainda carregando mantém a cidade gravada */ CodigoBanco: g("gCodBanco") || null, FuncionarioId: papeis.includes("Funcionário") ? (g("gFunc") || null) : null,
@@ -35250,6 +35256,8 @@ document.addEventListener("DOMContentLoaded", () => { try { buscaInit(); } catch
 .tdoc-l{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px}.tdoc-l li{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.tdoc-l a{font-weight:600;overflow-wrap:anywhere}.tdoc-l .sup{margin-left:auto}
 .tdoc-add{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tdoc-add select{width:auto;min-width:170px}.tdoc-add input[type=file]{flex:1 1 200px;min-width:0;font-size:13px}
 .mst-cores{display:flex;flex-wrap:wrap;gap:8px;align-items:center}   /* v0.14.0 · Cadastros Mestres */
+.cap-fav-banco{border:1px solid var(--line,#E3E6EA);border-radius:10px;padding:10px 12px;background:var(--soft,#F7F8FA)}.cap-fav-t{font-weight:600;font-size:13px;margin-bottom:6px}.cap-fav-banco .form-grid{margin:0}   /* v0.14.2 */
+input.campo-erro{border-color:var(--err,#C62828)!important}
 .mst-mig-sec{border-top:1px solid var(--line,#E3E6EA);margin-top:16px;padding-top:14px}.mst-mig-sec h3{margin:0 0 6px;font-size:15px}   /* v0.14.1 */
 .pc-tab tr.pc-cat td{background:var(--soft,#F7F8FA)}.pc-tab tr.pc-sub{cursor:pointer}.pc-ed{cursor:pointer}
 .pc-tg{border:0;background:none;cursor:pointer;font-size:14px;padding:0 4px;color:inherit}
@@ -36114,14 +36122,14 @@ window.pcMigLer = async () => {
         const sk = def.siteKey; if (!sites[sk]) sites[sk] = await SP.site(CONFIG.sites[sk]); if (!listas[sk]) listas[sk] = await SP.lists(sites[sk].id);
         const l = listas[sk].find(x => x.displayName === def.displayName); if (!l) { naoLidas++; pcLog(`${fo.rot}: lista não encontrada — pulada.`); continue; }
         const cols = await mstColsDe(sites[sk].id, l.id), its = await SP.items(sites[sk].id, l.id); let n = 0;
-        its.forEach(it => { const f = it.fields || {}, cat = String(f[fo.c] || "").trim(), sub = String(f[fo.s] || "").trim(); if (!cat && !sub) return; n++;
+        its.forEach(it => { const f = it.fields || {}, cat = String(f[fo.c] || "").trim(), sub = String(f[fo.s] || "").trim(); if ((!cat && !sub) || (fo.soComCat && !cat)) return; n++;
           regs.push({ fo, siteId: sites[sk].id, listId: l.id, id: String(it.id), cat, sub, cc: String(f[fo.cc] || ""), sc: String(f[fo.sc] || ""), temCols: cols.has(fo.cc) && cols.has(fo.sc) });
           const k = normName(cat) + "|" + normName(sub); if (!grupos.has(k)) grupos.set(k, { cat, sub, total: 0, por: {} }); const g = grupos.get(k); g.total++; g.por[fo.rot] = (g.por[fo.rot] || 0) + 1; });
         pcLog(`${fo.rot}: ${its.length} registro(s), ${n} com categoria.${cols.has(fo.cc) ? "" : " (sem as colunas de código: rode Executar tudo)"}`, cols.has(fo.cc) ? "" : "warn");
       } catch (e) { naoLidas++; pcLog(`${fo.rot}: não foi possível ler (${e.message}).`, "warn"); }
     }
     const linhas = [...grupos.entries()].sort((a, b) => b[1].total - a[1].total); PC.mig = { regs, linhas };
-    mstMigConcluir("pc", regs.filter(r => !r.temCols || !r.cc || !PC.porCod.get(r.cc) || (r.sub && (!r.sc || !PC.porCod.get(r.sc)))).length, naoLidas, pcLog, regs.length > 0);
+    mstMigConcluir("pc", regs.filter(r => { if (!r.temCols || !r.cc || !PC.porCod.get(r.cc)) return true; if (!r.sub || (r.sc && PC.porCod.get(r.sc))) return false; return !!pcSubDe(PC.porCod.get(r.cc).nome, r.sub); }).length, naoLidas, pcLog, regs.length > 0);   /* v0.14.2: subcategoria digitada que não existe no plano não segura a ferramenta (aparece como "fora do plano" ao editar) */
     const ops = (sug, cat) => `<option value="">— deixar como está —</option>${pcCats().map(c => `<optgroup label="${esc(c.cod + " · " + c.nome)}${c.ativo ? "" : " (inativa)"}"><option value="cat:${esc(c.cod)}" ${sug === "cat:" + c.cod ? "selected" : ""}>${esc(c.nome)} (só a categoria)</option>${pcSubsDe(c.cod).map(s => `<option value="sub:${esc(s.cod)}" ${sug === "sub:" + s.cod ? "selected" : ""}>${esc(c.nome)} › ${esc(s.nome)}${s.ativo ? "" : " (inativa)"}</option>`).join("")}</optgroup>`).join("")}${pcCatDe(cat) ? `<option value="__novo">+ criar esta subcategoria em ${esc(pcCatDe(cat).nome)}</option>` : ""}`;
     const pill = t => t === "igual" ? `<span class="pill st-pago"><i></i>igual ao cadastro</span>` : t === "sug" ? `<span class="pill"><i></i>sugestão</span>` : t === "outra" ? `<span class="pill st-aguardando"><i></i>em outra categoria</span>` : `<span class="pill st-vencido"><i></i>sem correspondência</span>`;
     corpo.innerHTML = `<p class="desc" style="margin-top:12px"><b>${linhas.length}</b> combinação(ões) categoria › subcategoria em uso. Escolha o "para" de cada uma; nada é gravado antes da prévia e da sua confirmação.</p>
@@ -36175,7 +36183,7 @@ window.pcMigGravar = async () => {
 };
 { const pc = pageConfig; pageConfig = function () {
     let h = pc.apply(this, arguments); if (!session.n1) return h;
-    const bloco = `<div class="mst-mig-sec" data-sec="pc"><h3>Plano de contas (v0.14.1)</h3><p class="desc">1) "Executar tudo na ordem" cria a lista "${esc(LISTS.mst_pc.displayName)}" e as colunas de código. 2) Em Diretoria › Cadastros Mestres › Plano de Contas, crie o plano inicial. 3) <b>Ler categorias em uso</b> → escolher o "para" → <b>Prévia</b> → <b>Gravar</b>. 4) No SharePoint, dê leitura da lista do plano a "Todos, exceto usuários externos".</p>
+    const bloco = `<div class="mst-mig-sec" data-sec="pc"><h3>Plano de contas (v0.14.1 · Caixa na v0.14.2)</h3><p class="desc">1) "Executar tudo na ordem" cria a lista "${esc(LISTS.mst_pc.displayName)}" e as colunas de código. 2) Em Diretoria › Cadastros Mestres › Plano de Contas, crie o plano inicial. 3) <b>Ler categorias em uso</b> → escolher o "para" → <b>Prévia</b> → <b>Gravar</b>. 4) No SharePoint, dê leitura da lista do plano a "Todos, exceto usuários externos".</p>
       <div class="actions"><button class="btn" id="pcMigLerBtn" onclick="pcMigLer()">Ler categorias em uso</button></div><div id="pcMigCorpo"></div><div class="setup-log checks" id="pcMigLog" style="display:none;max-height:300px;overflow:auto"></div></div>`;
     return h.replace(/(<section class="setup-card" id="mstMigCard">[\s\S]*?)(<\/section>)/, (m, a, b) => a + bloco + b);
   }; window.pageConfig = pageConfig; }
@@ -36460,7 +36468,7 @@ window.estRhExcluir = async () => {
   }; window.pageConfig = pageConfig; }
 /* Configuração: cada ferramenta de migração sai sozinha quando não tem mais o que fazer
    cc/pc: a leitura não encontrou registro sem o código do cadastro (fica gravado em ERP — Parâmetros) · dep/est: a lista antiga já foi excluída */
-const MST_MIG_CONCL = { cc: "mst_cc_concluida", pc: "mst_pc_concluida" };
+const MST_MIG_CONCL = { cc: "mst_cc_concluida", pc: "mst_pc_concluida_v2" };   /* v0.14.2: o plano reabre uma vez para incluir o Caixa */
 async function mstMigConcluir(k, pendentes, avisos, log, leuAlgo) {
   if (!session.n1) return;
   if (!pendentes && !leuAlgo) { log("Nenhum registro lido — a ferramenta continua aqui.", "warn"); return; }   /* revisão: lista errada ou setup não rodado não conclui */
@@ -36480,6 +36488,157 @@ async function mstMigAjustar() {
   if (!card.querySelector(".mst-mig-sec")) card.remove();
 }
 
+
+/* =====================================================================
+   v0.14.2 · Caixa — Movimento ligado ao Plano de Contas (pendência da R2)
+   No Caixa, "Grupo (plano de contas)" é a categoria e "Categoria" é a subcategoria. Os lançamentos passam a gravar os códigos
+   (GrupoCod / CategoriaSubCod, criados pelo Executar tudo); o nome vem do plano pelo código; a categoria do lançamento é
+   escolhida da lista do plano, como na CAP. Lançamento sem grupo (entradas, depósitos, ajustes da importação) não muda.
+   ===================================================================== */
+{ const d = LISTS.cx_mov; [["GrupoCod", "Grupo (código do plano)"], ["CategoriaSubCod", "Categoria (código do plano)"]].forEach(([n, dn]) => { if (!d.columns.some(c => c.name === n)) d.columns.push({ name: n, displayName: dn, text: { allowMultipleLines: false, maxLength: 10 } }); }); }
+PC_FONTES.push({ k: "cx_mov", c: "Grupo", s: "Categoria", cc: "GrupoCod", sc: "CategoriaSubCod", rot: "Caixa — Movimento", soComCat: true });
+PC_PARES.push(["Grupo", "GrupoCod", "Categoria", "CategoriaSubCod"]);
+PC_SUB_CAMPOS.push(["cxCat", "cxGrupo"]);
+{ const l0 = loadCx; loadCx = async function () { try { await Promise.race([pcCarregar().catch(() => null), new Promise(r => setTimeout(r, 2500))]); } catch (e) {} return l0.apply(this, arguments); }; window.loadCx = loadCx; }
+{ const g0 = window.cxMovGrupo; window.cxMovGrupo = function () { const r = g0.apply(this, arguments); try { const sel = $("cxCat"); if (sel && sel.tagName === "SELECT") pcSubPreencher(sel, ($("cxGrupo") || {}).value || ""); } catch (e) {} return r; }; }
+{ const f0 = window.cxMovForm; window.cxMovForm = function (id) {
+    const r = f0.apply(this, arguments);
+    try {   /* grupo gravado que não está mais no plano ativo (inativo ou fora do plano) continua no formulário */
+      const x = id ? (CX.mov || []).find(i => i._id === String(id)) : null, gs = $("cxGrupo");
+      if (x && x.Grupo && gs && $("modalBack").classList.contains("on") && ![...gs.options].some(o => o.value === x.Grupo)) {
+        const c = pcDaLista() ? pcCatDe(x.Grupo) : null, ok = c && c.ativo && [...gs.options].some(o => o.value === c.nome);
+        if (ok) gs.value = c.nome;   /* revisão: mesmo nome com outra grafia (ex.: "PESSOAL" importado) */
+        else { gs.insertAdjacentHTML("beforeend", `<option value="${esc(x.Grupo)}">${esc(x.Grupo)} ${c && !c.ativo ? "(inativa)" : "(fora do plano)"}</option>`); gs.value = x.Grupo; }
+        const sel = $("cxCat"); if (sel && sel.tagName === "SELECT") pcSubPreencher(sel, gs.value, x.Categoria || "");
+      }
+    } catch (e) {}
+    return r;
+  }; }
+
+/* =====================================================================
+   v0.14.2 · pedido de 16/10 11:21
+   1a CAP: Valor da fatura como valor monetário (R$ 0,00 · R$ 245,87) — máscara de centavos
+   1b CAP: fatura de Funcionário traz Banco, Agência e Conta do cadastro RH › Funcionários (lista restrita dos dados pessoais);
+      na fatura, editáveis por quem edita a CAP
+   2  Terceiros: e-mail com modelo (contato@empresa.com.br) e validação, como o telefone
+   ===================================================================== */
+const erpEmailOk = v => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v || "").trim());
+const erpMoedaFmt = n => "R$ " + (Number(n) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/* campo de valor: o visível mostra "R$ 1.234,56" (digitar empurra os centavos, como no app do banco); o original fica escondido
+   com o número ("1234.56") — quem lê ou grava $(id).value continua funcionando, e o visível acompanha */
+function erpMoeda(inp) {
+  if (!inp || inp._moeda) return; inp._moeda = true;
+  const PV = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value"), PD = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "disabled");
+  const vis = document.createElement("input"); vis.type = "text"; vis.inputMode = "numeric"; vis.autocomplete = "off"; vis.id = inp.id + "Txt"; vis.className = inp.className; vis.placeholder = "R$ 0,00"; vis.setAttribute("aria-label", "Valor em reais");
+  const pinta = () => { const v = PV.get.call(inp); vis.value = v === "" || v == null || isNaN(Number(v)) ? "" : erpMoedaFmt(v); };
+  inp.type = "hidden"; inp.insertAdjacentElement("beforebegin", vis);
+  Object.defineProperty(inp, "value", { configurable: true, get() { return PV.get.call(this); }, set(v) { PV.set.call(this, v == null ? "" : String(v)); pinta(); } });
+  Object.defineProperty(inp, "disabled", { configurable: true, get() { return PD.get.call(this); }, set(v) { PD.set.call(this, v); vis.disabled = !!v; setTimeout(() => { vis.title = inp.title || ""; }, 0); } });
+  vis.disabled = PD.get.call(inp); pinta();
+  const avisa = () => { inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); };
+  vis.addEventListener("paste", e => {   /* colar "1.234,56", "245,87", "1500" ou "1234.5": lê como número (não empurra centavos) */
+    const t = ((e.clipboardData || window.clipboardData) && (e.clipboardData || window.clipboardData).getData("text")) || ""; if (!t.trim()) return;
+    let x = t.replace(/[^\d,.-]/g, ""); if (x.includes(",")) x = x.replace(/\./g, "").replace(",", "."); else if (/\.\d{3}$/.test(x) && (x.match(/\./g) || []).length >= 1 && !/\.\d{1,2}$/.test(x)) x = x.replace(/\./g, "");
+    const n = Number(x); if (!isFinite(n)) return; e.preventDefault();
+    PV.set.call(inp, Math.abs(n).toFixed(2)); pinta(); avisa();
+  });
+  vis.addEventListener("input", () => {
+    const raw = vis.value.replace(/\D/g, "").slice(0, 15), dig = raw.replace(/^0+/, "");
+    PV.set.call(inp, raw ? (Number(dig || "0") / 100).toFixed(2) : ""); pinta();   /* revisão: "0" vale R$ 0,00 */
+    try { vis.setSelectionRange(vis.value.length, vis.value.length); } catch (e) {}
+    avisa();
+  });
+  vis.addEventListener("focus", () => { setTimeout(() => { try { vis.setSelectionRange(vis.value.length, vis.value.length); } catch (e) {} }, 0); });
+}
+window.erpMoeda = erpMoeda;
+{ const m0 = modal; modal = function () {
+    const r = m0.apply(this, arguments);
+    try {
+      const m = $("modal"), fv = m && m.querySelector("input#fVal"); if (fv) { erpMoeda(fv); const lb = fv.closest(".field") && fv.closest(".field").querySelector("label"); if (lb && lb.firstChild && lb.firstChild.nodeType === 3) lb.firstChild.nodeValue = "Valor"; }
+      const em = m && m.querySelector("input#gEmail"); if (em && !em._ok) { em._ok = true; const h = () => { const ht = $("gEmailHint"), v = em.value.trim(), ok = !v || erpEmailOk(v); em.classList.toggle("campo-erro", !ok); if (ht) { ht.textContent = ok ? "" : "E-mail inválido — use o formato contato@empresa.com.br"; ht.style.color = ok ? "" : "var(--err)"; } }; em.addEventListener("blur", h); em.addEventListener("input", () => { if (em.classList.contains("campo-erro")) h(); }); }
+    } catch (e) { console.warn("v0.14.2 modal", e); }
+    return r;
+  }; window.modal = modal; }
+/* ---- 1b: dados bancários do funcionário ---- */
+const ERP_BANCOS_BR = ["001 · Banco do Brasil", "104 · Caixa Econômica Federal", "237 · Bradesco", "341 · Itaú", "033 · Santander", "260 · Nubank", "077 · Inter", "336 · C6 Bank", "290 · PagBank", "323 · Mercado Pago", "380 · PicPay", "756 · Sicoob", "748 · Sicredi", "212 · Banco Original", "422 · Safra", "041 · Banrisul", "070 · BRB", "655 · Votorantim (Neon)", "208 · BTG Pactual"];
+const ERP_BANCOS_DL = id => `<datalist id="${id}">${ERP_BANCOS_BR.map(b => `<option value="${esc(b)}">`).join("")}</datalist>`;
+const RH_BANCO_CAMPOS = ["Banco", "Agencia", "Conta"];
+LISTS.rh_func_pes.columns.push(
+  { name: "Banco",   displayName: "Banco",   text: { allowMultipleLines: false, maxLength: 80 } },
+  { name: "Agencia", displayName: "Agência", text: { allowMultipleLines: false, maxLength: 20 } },
+  { name: "Conta",   displayName: "Conta",   text: { allowMultipleLines: false, maxLength: 30 } });
+RH_PES_CAMPOS.push(...RH_BANCO_CAMPOS);   /* ficam na lista restrita, com CPF, nascimento, PIS e telefone */
+Object.assign(RH_PES_ROT, { Banco: "banco", Agencia: "agência", Conta: "conta" });
+LISTS.cap.columns.push(
+  { name: "FavBanco",   displayName: "Banco do favorecido",   text: { allowMultipleLines: false, maxLength: 80 } },
+  { name: "FavAgencia", displayName: "Agência do favorecido", text: { allowMultipleLines: false, maxLength: 20 } },
+  { name: "FavConta",   displayName: "Conta do favorecido",   text: { allowMultipleLines: false, maxLength: 30 } });
+/* gravação na lista restrita: sem as colunas novas (antes do Executar tudo), banco/agência/conta não vão — o resto grava */
+{ const g0 = rhPesGravar; rhPesGravar = async function (funcId, nome, pes) {
+    try { if (pes && RH_BANCO_CAMPOS.some(k => k in pes)) { const cols = await mstColsDe(RH_PES.site.id, RH_PES.list.id); const fora = cols.size ? RH_BANCO_CAMPOS.filter(k => k in pes && !cols.has(k)) : []; if (fora.length) { const tinha = fora.some(k => !rhPesVazio(pes[k])); fora.forEach(k => delete pes[k]); if (tinha) setTimeout(() => toast(`Banco, agência e conta não foram gravados: rode Sistema › Configuração › Executar tudo (colunas novas em "${LISTS.rh_func_pes.displayName}").`, 8000), 300); } } } catch (e) {}
+    return g0.apply(this, arguments);
+  }; }
+{ const f0 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = v => {
+    const h = f0(v); if (!rhPesAtivo()) return h;   /* sem acesso à lista restrita, os dados bancários não aparecem */
+    const sec = `<div class="field full form-sec">Dados bancários</div>
+    <div class="field"><label>Banco</label><input id="rdFuBanco" list="rdFuBancoList" autocomplete="off" maxlength="80" value="${esc(v.Banco || "")}" placeholder="Ex.: 001 · Banco do Brasil">${ERP_BANCOS_DL("rdFuBancoList")}</div>
+    <div class="field"><label>Agência</label><input id="rdFuAg" maxlength="20" autocomplete="off" value="${esc(v.Agencia || "")}" placeholder="0000-0"></div>
+    <div class="field"><label>Conta</label><input id="rdFuConta" maxlength="30" autocomplete="off" value="${esc(v.Conta || "")}" placeholder="00000-0"><div class="hint">Usados nas faturas de funcionário da CAP</div></div>`;
+    return h.includes('<div class="field full"><label>Observações</label>') ? h.replace('<div class="field full"><label>Observações</label>', () => sec + '<div class="field full"><label>Observações</label>') : h.replace(/<\/div>\s*$/, () => sec + "</div>");
+  }; }
+{ const r0 = RHDB_READ.funcs; RHDB_READ.funcs = () => {
+    const r = r0(); if (!r || typeof r !== "object" || !$("rdFuBanco")) return r;
+    const g = id => ($(id) ? $(id).value : "").trim();
+    return Object.assign(r, { Banco: g("rdFuBanco") || null, Agencia: g("rdFuAg") || null, Conta: g("rdFuConta") || null });
+  }; }
+function capFavBancoHtml(v) {
+  const fun = (v.TipoFavorecido || "") === "Funcionário";
+  return `<div class="field full" id="fFavWrap" ${fun ? "" : "hidden"}><div class="cap-fav-banco"><div class="cap-fav-t">Dados bancários do funcionário <span class="sup" id="fFavHint">${fun && (v.FavBanco || v.FavConta) ? "gravados nesta fatura" : ""}</span></div>
+    <div class="form-grid"><div class="field"><label>Banco</label><input id="fFavBanco" list="fFavBancoList" autocomplete="off" maxlength="80" value="${esc(v.FavBanco || "")}">${ERP_BANCOS_DL("fFavBancoList")}</div>
+    <div class="field"><label>Agência</label><input id="fFavAg" maxlength="20" autocomplete="off" value="${esc(v.FavAgencia || "")}"></div>
+    <div class="field"><label>Conta</label><input id="fFavConta" maxlength="30" autocomplete="off" value="${esc(v.FavConta || "")}"></div></div></div></div>`;
+}
+function capFavBancoLer(g) {
+  if (!document.getElementById("fFavBanco")) return {};
+  const fun = (g("fTipoFav") || "") === "Funcionário";
+  return { FavBanco: fun ? (g("fFavBanco") || null) : null, FavAgencia: fun ? (g("fFavAg") || null) : null, FavConta: fun ? (g("fFavConta") || null) : null };
+}
+async function capFavBancoDoRh(forcar) {
+  const w = $("fFavWrap"), tipo = $("fTipoFav"), forn = $("fForn"), hint = $("fFavHint"); if (!w || !tipo || !forn) return;
+  const fun = tipo.value === "Funcionário"; w.hidden = !fun; if (!fun) return;
+  if (forcar && w.dataset.nome === forn.value.trim()) return;   /* mesmo funcionário (change repetido ao sair do campo): não mexe */
+  w.dataset.nome = forn.value.trim();
+  const tk = (capFavBancoDoRh.tk = (capFavBancoDoRh.tk || 0) + 1), edita = podeEditar("cap");
+  const ids = { Banco: "fFavBanco", Agencia: "fFavAg", Conta: "fFavConta" };
+  if (forcar && edita) RH_BANCO_CAMPOS.forEach(k => { const el = $(ids[k]); if (el && !el.disabled) el.value = ""; });   /* revisão: trocar o funcionário não deixa a conta do anterior */
+  const nome = forn.value.trim(); if (!nome) { if (hint) hint.textContent = "escolha o funcionário"; return; }
+  let fs = []; try { fs = await tercRhFuncs(); } catch (e) {}
+  if (tk !== capFavBancoDoRh.tk) return;
+  const f = fs.find(x => x.Title === nome) || fs.find(x => normName(x.Title) === normName(nome));
+  if (!f) { if (hint) hint.textContent = "funcionário não encontrado no RH — preencha à mão"; return; }
+  try { await rhPesCarregar(); } catch (e) {}
+  if (tk !== capFavBancoDoRh.tk) return;
+  if (!rhPesAtivo()) { if (hint) hint.textContent = "sem acesso aos dados pessoais do RH — preencha à mão"; return; }
+  const pes = RH_PES.map.get(String(f._id)) || {}, tem = RH_BANCO_CAMPOS.some(k => !rhPesVazio(pes[k]));
+  if (!tem) { if (hint) hint.textContent = "o cadastro do funcionário no RH ainda não tem dados bancários"; return; }
+  const vazio = RH_BANCO_CAMPOS.every(k => !($(ids[k]) || {}).value);
+  let encheu = false; if (forcar || vazio) RH_BANCO_CAMPOS.forEach(k => { const el = $(ids[k]); if (el && !el.disabled && edita) { el.value = pes[k] || ""; encheu = true; } });
+  if (hint) hint.textContent = encheu ? "do cadastro RH › Funcionários (pode ajustar aqui)" : vazio ? "" : "gravados nesta fatura";
+}
+window.capFavBancoDoRh = capFavBancoDoRh;
+{ const cw0 = capWireForm; capWireForm = function () {
+    const r = cw0.apply(this, arguments);
+    try {
+      const tipo = $("fTipoFav"), forn = $("fForn");
+      if ($("fFavWrap")) {
+        if (tipo) tipo.addEventListener("change", () => capFavBancoDoRh(false));
+        if (forn) forn.addEventListener("change", () => capFavBancoDoRh(true));
+        const ed = CAP_STATE.editing; if (forn) $("fFavWrap").dataset.nome = forn.value.trim();
+        if (tipo && tipo.value === "Funcionário" && !(ed && (ed.FavBanco || ed.FavConta || ed.Status === "Pago" || ed.Status === "Cancelada"))) capFavBancoDoRh(false);   /* revisão: fatura paga não recebe a conta de hoje */
+      }
+    } catch (e) {}
+    return r;
+  }; window.capWireForm = capWireForm; }
 /* v0.14.0: o rodapé do menu mostra sempre a versão do CONFIG (estava fixo desde a v0.13.4.3) */
 { const ev = document.getElementById("erpVer"); if (ev) { ev.textContent = CONFIG.version; ev.style.fontWeight = "inherit"; } }
 </script>

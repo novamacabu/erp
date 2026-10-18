@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.9",
+  version: "v0.14.9.1",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -37648,6 +37648,7 @@ window.capLoteDesfazer = async (lote) => {
    Uma coluna por tipo de dia (Segunda a sexta, Sábados, Domingos e feriados; Especiais só se tiver horário),
    com os blocos Macabu × Macaé, Fretamento e Madalena. A folha é reduzida até caber (sem o limite de 50% das outras impressões).
    ===================================================================== */
+let HOR_FOLHA_CSS_EXTRA = "";
 const HOR_FOLHA_CSS = `
   .hf-grid{display:grid;gap:0 10px;align-items:start}
   .hf-col{min-width:0;border:.6px solid #C9CFD8;border-radius:4px;overflow:hidden}
@@ -37678,7 +37679,7 @@ window.horImprimirFolha = async () => {
   try { toast("Buscando os horários…", 2000); await loadHor(HOR_STATE.ready); }   /* revisão B1: sempre lê de novo (alguém pode ter editado) */
   catch (e) { HOR_STATE.erro = e.message; HOR_STATE.itens = HOR_SEED.map((r, i) => Object.assign({ _id: "seed" + i }, r)); HOR_STATE.ready = false; }   /* revisão M1: como a tela de Horários */
   if (!HOR_STATE.ready) toast("A lista de horários não está disponível: a folha sai com o quadro embutido.", 6000);
-  printDoc({ titulo: "Tabela de Horários", html: horFolhaHtml(), fonte: 10, css: HOR_PRINT_CSS + HOR_FOLHA_CSS, umaPagina: true, paisagem: true });
+  printDoc({ titulo: "Tabela de Horários", html: horFolhaHtml(), fonte: 10, css: HOR_PRINT_CSS + HOR_FOLHA_CSS + (typeof HOR_FOLHA_CSS_EXTRA === "string" ? HOR_FOLHA_CSS_EXTRA : ""), umaPagina: true, paisagem: true });
 };
 /* a folha única pode precisar de mais redução que as outras impressões (que param em 50%); revisão M2: reconhecida pelo conteúdo, sem flag global */
 { const c0 = printCaber; printCaber = function (doc, paisagem) {
@@ -37690,7 +37691,30 @@ window.horImprimirFolha = async () => {
   }; }
 { const p0 = paintHor; paintHor = function () { const r = p0.apply(this, arguments); const a = $("horActions"); if (a && !a.querySelector(".hor-folha")) { const t = [...a.querySelectorAll("button")].find(b => /Imprimir tudo/.test(b.textContent)); const h = `<button class="btn hor-folha" onclick="horImprimirFolha()" title="Todos os tipos de dia numa folha A4 deitada">Tudo numa folha</button>`; if (t) t.insertAdjacentHTML("afterend", h); else a.insertAdjacentHTML("afterbegin", h); } return r; }; window.paintHor = paintHor; }
 { const p0 = paintTar; paintTar = function () { const r = p0.apply(this, arguments); const a = $("tarActions"); if (a && !a.querySelector(".hor-folha")) { const t = [...a.querySelectorAll("button")].find(b => /Imprimir/.test(b.textContent)); const h = `<button class="btn hor-folha" onclick="horImprimirFolha()" title="Todos os horários (todos os tipos de dia) numa folha A4 deitada">Horários numa folha</button>`; if (t) t.insertAdjacentHTML("afterend", h); else a.insertAdjacentHTML("afterbegin", h); } return r; }; window.paintTar = paintTar; }
-CONFIG.version = "v0.14.9";
+
+/* =====================================================================
+   v0.14.9.1 · Pedido de 18/10 (19:51): na impressão dos horários não vai a observação de dias ("Segunda a Sábado",
+   "Segunda a Quinta"…) — não será usada; e a etiqueta da Linha (Linha 1000/1001/2000) nunca é cortada.
+   Vale para Imprimir (PDF), Imprimir tudo, Tudo numa folha e Horários numa folha (Tarifas). A tela e o Excel não mudam.
+   Ficam na impressão: horário, serviço (Parador/Direto/Fretamento), Saída de Madalena / Ponto Final Madalena, via Madalena e a Linha.
+   ===================================================================== */
+horPrintLinha = function (z, comServ) {
+  if (!z) return `<div class="hr"></div>`;
+  const via = horViaMad(z);
+  const pill = comServ && z.Servico ? `<span class="hp ${horServCls(z.Servico)}">${esc(horServRot(z.Servico))}</span>` : "";
+  const madP = z.Madalena ? `<span class="hp mad">${esc(z.Madalena)}</span>` : via ? `<span class="hp mad">via Madalena</span>` : "";
+  const linP = z.Linha ? `<span class="hp lin ${horLinhaCls(z.Linha)}">${esc(z.Linha)}</span>` : "";
+  return `<div class="hr"><span class="h">${esc(z.Horario)}</span>${pill}${madP}${linP}</div>`;
+};
+window.horPrintLinha = horPrintLinha;
+/* a Linha não encolhe; se faltar espaço, quem encolhe (com reticências) é a etiqueta de Madalena */
+{ const extra = `
+  .hr .hp.lin{flex-shrink:0;margin-left:auto}
+  .hr .hp.mad{flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis}`;
+  const hp0 = window.horImprimir;
+  window.horImprimir = function (tudo) { const p0 = printDoc; printDoc = o => { printDoc = p0; return p0(Object.assign({}, o, { css: (o.css || "") + extra })); }; try { return hp0.apply(this, arguments); } finally { printDoc = p0; } };
+  HOR_FOLHA_CSS_EXTRA = extra; }
+CONFIG.version = "v0.14.9.1";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

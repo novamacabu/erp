@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.6",
+  version: "v0.14.7",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -37366,7 +37366,7 @@ function rhVidaHtml(f) {
   }; }
 
 /* ADQ:INICIO =====================================================================
-   v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL
+   v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL
    - Todo o código do módulo fica entre ADQ:INICIO e ADQ:FIM (prefixo adq/ADQ_). Lê outros módulos; nunca grava neles.
    - Liga/desliga: chave "adequacao" em "ERP — Parâmetros" ({ ativo, promulgacao, prazo1, lim, ausencias… }). Desligado: some do
      menu, das rotas e da matriz de permissões (nada é apagado).
@@ -37586,7 +37586,7 @@ async function adqCriarDesfaz(k, obj, msg) {
 { const r0 = route; route = function () {
     const h = (location.hash || "").split("?")[0];
     if (!ADQ.paramLido && !ADQ.paramCarregando && typeof APP_PRONTO !== "undefined" && APP_PRONTO && session.me) { ADQ.paramCarregando = true; adqParamCarregar().catch(() => {}).finally(() => { ADQ.paramCarregando = false; }); }
-    adqLateralFechar();
+    adqLateralFechar(); if (typeof adqEscPopFechar === "function") adqEscPopFechar();
     if (h === ADQ_BASE || h.startsWith(ADQ_BASE + "/")) {
       const m = MODULES.find(x => x.id === "adq");
       if (!ADQ_ON) {
@@ -37600,7 +37600,7 @@ async function adqCriarDesfaz(k, obj, msg) {
       ADQ.aba = p.k; session.modAtual = "adq"; session.pagAtual = "adq." + p.k;
       document.body.classList.remove("nav-open", "lista-aberta"); document.body.classList.add("wide");
       $("main").innerHTML = adqPage(); navAtivo("adq"); window.scrollTo(0, 0);
-      adqCarregar().then(() => { adqRender(); if (ADQ.aba === "painel" || ADQ.aba === "escala") return adqFontes().then(adqRender); });
+      adqCarregar().then(() => { adqRender(); if (ADQ.aba === "painel" || ADQ.aba === "escala") return Promise.all([adqFontes(), ADQ.aba === "escala" ? adqEscCarregar() : null]).then(adqRender); });
       adqRender();
       return;
     }
@@ -37727,11 +37727,6 @@ window.adqSemear = async () => {
 };
 
 /* ---------- ESCALA (R3) ---------- */
-function adqEscalaHtml() {
-  const S = ADQF.em ? adqSetores() : [];
-  return `<div class="cap-card"><div class="adq-head"><div><h3>Escala da semana</h3><p class="sup">A grade da semana (pessoa × dia, com a janela, a folga e a interjornada conferidas na hora) chega na próxima versão. Já dá para cadastrar a demanda de cada setor: os serviços que precisam de gente em cada tipo de dia.</p></div></div>
-    ${ADQF.em ? `<div class="chips">${S.map(s => `<button type="button" class="chip" onclick="adqDemanda(${jsArg(s.n)})">Demanda · ${esc(s.n)} <small>(${ADQF.serv.filter(x => x.setor === s.n).length})</small></button>`).join("") || `<span class="sup">Nenhum setor lido do RH.</span>`}</div>` : `<p class="sup">Lendo os setores…</p>`}</div>`;
-}
 
 /* ---------- PLANO ---------- */
 function adqGrupos(L) { const g = adqJanOrd().map(j => ({ j, L: L.filter(t => t.jan === j.cod) })).filter(x => x.L.length); const o = L.filter(t => !adqJanCod(t.jan)); if (o.length) g.push({ j: null, L: o }); return g; }
@@ -38229,7 +38224,7 @@ async function adqServMudar(e) {
   const f = {}; const k = t.dataset.k, v = String(t.value || "").trim();
   if (!adqPodeEd("escala")) return;
   if (ADQ.ocupado) { toast("Aguarde a gravação anterior terminar."); adqDemanda(s.setor, s.tipo); return; }
-  if (k === "cod") { if (!v) { toast("Informe o código."); return; } if (adqServDe(s.setor, s.tipo, true).some(x => x !== s && x.cod === v)) { toast("Código repetido neste tipo de dia."); return; } f.Title = v; }
+  if (k === "cod") { if (!v) { toast("Informe o código."); return; } if (/^(res|fe)$/i.test(v)) { toast("RES e FE são reservados (reserva e férias)."); return; } if (adqServDe(s.setor, s.tipo, true).some(x => x !== s && x.cod === v)) { toast("Código repetido neste tipo de dia."); return; } f.Title = v; }
   if (k === "ini") { if (adqMin(v) == null) { toast("Início no formato HH:MM."); return; } f.Inicio = v; }
   if (k === "dur") { if (v && !(adqNum(v) >= 1 && adqNum(v) <= 16)) { toast("Duração entre 1 e 16 h (ou vazia)."); return; } f.Duracao = v ? adqNum(v) : null; }
   if (k === "desc") f.Descricao = v;
@@ -38276,6 +38271,228 @@ window.adqPartidas = async () => {
     el.innerHTML = L.length ? `<div class="table-wrap" style="max-height:260px;overflow:auto;margin-top:6px"><table class="cap-table adq-tbl" style="min-width:0"><thead><tr><th>Partida</th><th>Origem</th><th>Linha</th><th>Serviço</th></tr></thead><tbody>${L.map(h => `<tr><td class="nw">${esc(h.Horario)}</td><td>${esc(h.Origem || "")}</td><td>${esc(h.Linha || h.Bloco || "")}</td><td>${esc(h.Servico || "")}</td></tr>`).join("")}</tbody></table></div><p class="adq-note">${L.length} partidas. Use para montar os blocos de viagens de cada motorista (a Tabela não tem duração nem veículo).</p>` : `<p class="sup">Nenhuma partida para este tipo de dia.</p>`;
   } catch (e) { el.innerHTML = `<p class="adq-aviso">Tabela de Horários: ${esc(e.semLista ? "lista não criada" : "não foi possível ler")}.</p>`; }
 };
+
+
+/* ---------- R3 · ESCALA (planejar a semana pela demanda; grava só o rascunho na Diretoria) ---------- */
+const ADQE = { em: 0, p: null, rasc: {}, setor: "", wk: 0, jan: "", janUser: false, ger: 0 };
+async function adqEscCarregar(force) {
+  if (!force && !ADQE.erro && ADQE.em && Date.now() - ADQE.em < 60000) return;
+  if (ADQE.p && !force) return ADQE.p;
+  const ger = ++ADQE.ger;
+  const pr = (async () => {
+    try { const its = ADQ.lists.adq_esc ? await adqItens("adq_esc") : []; if (ger !== ADQE.ger) return; const r = {};
+      its.sort((a, b) => Number(a._id) - Number(b._id));   /* registro repetido do mesmo setor|semana: vale o mais novo */
+      its.forEach(f => { const g = adqJson(f.Grade, null); if (g && typeof g === "object" && Object.keys(g).length) r[String(f.Setor || "") + "|" + adqIso(f.Semana)] = { _id: f._id, grade: g, jan: String(f.Janela || ""), por: String(f.AtualizadoPor || ""), em: String(f.AtualizadoEm || "") };
+        else r[String(f.Setor || "") + "|" + adqIso(f.Semana)] = { _id: f._id, grade: null }; });
+      ADQE.rasc = r; ADQE.em = Date.now(); ADQE.erro = ""; } catch (e) { if (ger === ADQE.ger) ADQE.erro = String((e && e.message) || e); }
+  })().finally(() => { if (ADQE.p === pr) ADQE.p = null; });
+  ADQE.p = pr;
+  return pr;
+}
+const adqSeg = d => adqAdd(d, -((adqD(d).getDay() + 6) % 7));
+function adqEscSemanas() {   /* 4 semanas a partir da virada (próxima janela com data); sem virada, a partir desta semana */
+  const pj = adqProx(), base = adqSeg(pj ? pj.ini : adqHoje());
+  return [0, 1, 2, 3].map(i => adqAdd(base, 7 * i));
+}
+const adqEscJ = () => adqJanCod(ADQE.jan) || adqProx() || adqJanOrd()[0];
+const adqEscPessoas = setor => ADQF.pessoas.filter(p => p.setor === setor).sort((a, b) => (adqPIni(a) ?? 9999) - (adqPIni(b) ?? 9999) || a.nome.localeCompare(b.nome, "pt-BR"));
+function adqPIni(p) {   /* entrada típica da pessoa (previsto, ou marcações para quem não tem escala) */
+  if (p.ini0 !== undefined) return p.ini0;
+  const ds = ADQF.semanas.flatMap(s => adqDiasSem(p, s)), v = ds.map(d => p.semEscala ? d.ini : d.pIni).filter(x => x != null).map(x => x % 1440).sort((a, b) => a - b);
+  return (p.ini0 = v.length ? v[Math.floor(v.length / 2)] : null);
+}
+const adqSvc = (setor, w, d) => adqServDe(setor, adqTipoDia(adqAdd(adqEscSemanas()[w], d)));
+function adqCel(setor, w, d, v, J, p) {
+  if (v == null || v === "FE") return null;
+  if (v === "RES") { const i = adqPIni(p); return { cod: "RES", ini: i == null ? 360 : i, dur: J.h / J.dias, res: true }; }
+  const s = adqSvc(setor, w, d).find(x => x.cod === v); if (s) return { cod: s.cod, ini: s.ini, dur: adqServDur(s, J), desc: s.desc };
+  const i = adqPIni(p); return { cod: v, ini: i == null ? 360 : i, dur: J.h / J.dias, inexistente: true };   /* código que não existe mais naquele dia: conta como dia de trabalho */
+}
+function adqEscAtual(setor, w, J) {   /* padrão de hoje: a última semana completa do previsto, repetida; dias de trabalho recebem os serviços por ordem de entrada */
+  const L = adqEscPessoas(setor), E = {};
+  L.forEach(p => { const sU = ADQF.semanas.slice().reverse().find(s => { const x = adqDiasSem(p, s); return x.filter(d => d.aus).length < 5 && x.filter(d => d.vazio).length < 5; });   /* a última semana "normal" da pessoa */
+    const ds = sU ? adqDiasSem(p, sU) : [];
+    E[p.id] = [0, 1, 2, 3, 4, 5, 6].map(i => (w === 0 && /f[ée]rias|afastad/i.test(p.sit)) ? "FE" : (ds[i] && (p.semEscala ? ds[i].trab : ds[i].plan)) ? "W" : null);
+    if (p.regBase === "12x36") E[p.id] = E[p.id].map((v, i) => v === "W" && i > 0 && E[p.id][i - 1] === "W" ? null : v); });
+  for (let d = 0; d < 7; d++) { const sv = adqSvc(setor, w, d).slice().sort((a, b) => a.ini - b.ini);
+    L.filter(p => E[p.id][d] === "W").sort((a, b) => (adqPIni(a) ?? 9999) - (adqPIni(b) ?? 9999)).forEach((p, k) => { E[p.id][d] = sv[k] ? sv[k].cod : "RES"; }); }
+  return E;
+}
+function adqEscSugerida(setor, w, J) {   /* serviços do dia por ordem de início; quem está livre, respeitando dias, carga, 11 h e férias */
+  const L = adqEscPessoas(setor), E = {}, st = {}, atual = adqEscGrade(setor, w, J), lim = adqParam().lim.interj * 60;
+  L.forEach(p => { const fe = (atual[p.id] || []).every(v => v === "FE"); E[p.id] = Array(7).fill(fe ? "FE" : null); st[p.id] = { dias: 0, h: 0, fim: -1e9 }; });
+  for (let d = 0; d < 7; d++) {
+    adqSvc(setor, w, d).slice().sort((a, b) => a.ini - b.ini).forEach(s => {
+      const a0 = d * 1440 + s.ini, dur = adqServDur(s, J);
+      const C = L.filter(p => { const x = st[p.id]; if (E[p.id][d] !== null) return false;
+        if (p.regBase === "12x36") { if (d > 0 && E[p.id][d - 1] && E[p.id][d - 1] !== "FE") return false; } else if (x.dias >= J.dias) return false;
+        return a0 - x.fim >= lim && x.h + dur <= J.h + 0.01; });
+      if (!C.length) return;
+      const per = q => adqPeriodo(adqPIni(q)) === adqPeriodo(s.ini) ? 0 : 1;
+      C.sort((a, b) => per(a) - per(b) || st[a.id].dias - st[b.id].dias || Math.abs((adqPIni(a) ?? 720) - s.ini) - Math.abs((adqPIni(b) ?? 720) - s.ini) || st[a.id].h - st[b.id].h);
+      const p = C[0], x = st[p.id]; E[p.id][d] = s.cod; x.dias++; x.h += dur; x.fim = a0 + dur * 60;
+    });
+  }
+  return E;
+}
+const adqEscChave = (setor, w) => setor + "|" + adqEscSemanas()[w];
+function adqEscGrade(setor, w, J) {
+  const r = ADQE.rasc[adqEscChave(setor, w)], base = adqEscAtual(setor, w, J);
+  if (!r || !r.grade) return base;
+  const out = {}; Object.keys(base).forEach(id => { const g = r.grade[id]; out[id] = Array.isArray(g) && g.length === 7 ? g.map(v => v == null || v === "" ? null : String(v)) : base[id]; });
+  return out;
+}
+function adqEscAval(setor, w, J) {
+  const E = adqEscGrade(setor, w, J), L = adqEscPessoas(setor), lim = adqParam().lim.interj;
+  const P = L.map(p => { const row = E[p.id] || Array(7).fill(null), inf = row.map((v, d) => adqCel(setor, w, d, v, J, p));
+    if (row.every(v => v === "FE")) return { p, row, inf, st: "ferias", mot: [], dias: 0, h: 0, ij: Array(7).fill(false) };
+    const dias = inf.filter(Boolean).length, h = inf.reduce((a, x) => a + (x ? x.dur : 0), 0);
+    const ij = inf.map((x, d) => !!(d > 0 && x && inf[d - 1] && (1440 + x.ini - (inf[d - 1].ini + inf[d - 1].dur * 60)) / 60 < lim));
+    const mot = [], is12 = p.regBase === "12x36";
+    if (!is12 && dias > J.dias) mot.push(["fora", `${dias} dias (limite ${J.dias})`]);
+    if (dias === 7) mot.push(["fora", "Sem folga"]);
+    if (is12 && inf.some((x, d) => d > 0 && x && inf[d - 1])) mot.push(["fora", "12x36 em dias seguidos"]);
+    if (ij.some(Boolean)) mot.push(["fora", `Interjornada < ${lim} h`]);
+    if (h > J.h + 0.01) mot.push(["atencao", "HE prevista " + adqHfmt(h - J.h)]);
+    if (inf.some(x => x && x.inexistente)) mot.push(["atencao", "serviço que não existe mais"]);
+    return { p, row, inf, st: mot.some(m => m[0] === "fora") ? "fora" : mot.length ? "atencao" : "ok", mot, dias, h, ij }; });
+  const dias = [0, 1, 2, 3, 4, 5, 6].map(d => { const sv = adqSvc(setor, w, d), usados = new Set(P.map(x => x.row[d])); return { sv, desc: sv.filter(s => !usados.has(s.cod)) }; });
+  return { P, dias };
+}
+function adqEscPrevia(setor, w, J, p, row, d, val) {   /* efeito de uma troca, antes de escolher */
+  const r2 = row.slice(); r2[d] = val; const inf = r2.map((v, k) => adqCel(setor, w, k, v, J, p)), lim = adqParam().lim.interj;
+  const dias = inf.filter(Boolean).length, h = inf.reduce((a, x) => a + (x ? x.dur : 0), 0), out = [];
+  if (p.regBase !== "12x36" && dias > J.dias) out.push(["st-vencido", dias + "º dia"]);
+  if (p.regBase === "12x36" && [d, d + 1].some(k => k > 0 && k < 7 && inf[k] && inf[k - 1])) out.push(["st-vencido", "dias seguidos"]);
+  if ([d, d + 1].some(k => k > 0 && k < 7 && inf[k] && inf[k - 1] && (1440 + inf[k].ini - (inf[k - 1].ini + inf[k - 1].dur * 60)) / 60 < lim)) out.push(["st-vencido", "interjornada"]);
+  if (h > J.h + 0.01) out.push(["st-pendente", "HE " + adqHfmt(h - J.h)]);
+  return out;
+}
+const adqTag = w => w.length ? w.map(z => `<span class="pill ${z[0]}">${z[1]}</span>`).join(" ") : `<span class="pill st-pago">dentro</span>`;
+const adqCelCls = (x, v) => v === "FE" ? "c-fe" : v == null ? "c-f" : v === "RES" ? "c-r" : !x || x.inexistente ? "c-x" : x.ini < 660 ? "c-m" : x.ini < 1080 ? "c-t" : "c-n";
+function adqEscalaHtml() {
+  adqEscPopFechar();
+  if (!ADQF.em || (ADQE.p && !ADQE.em)) return `<div class="cap-card"><p class="sup">Lendo pessoas, demanda e rascunhos…</p></div>`;
+  const S = adqSetores(); if (!S.length) return `<div class="cap-card"><h3>Escala da semana</h3><p class="sup">Nenhum funcionário lido do RH.</p></div>`;
+  if (ADQ.esetor && S.some(s => s.n === ADQ.esetor)) ADQE.setor = ADQ.esetor;   /* veio do Painel: "Planejar a escala do setor" */
+  if (!ADQE.setor || !S.some(s => s.n === ADQE.setor)) ADQE.setor = S[0].n;
+  ADQ.esetor = "";
+  const r0 = ADQE.rasc[adqEscChave(ADQE.setor, Math.min(ADQE.wk, 3))];
+  if (!ADQE.janUser && r0 && r0.grade && adqJanCod(r0.jan)) ADQE.jan = r0.jan;   /* abre conferindo contra a janela gravada no rascunho */
+  const J = adqEscJ(); if (!J) return adqComecarHtml(false);
+  if (!adqJanCod(ADQE.jan)) ADQE.jan = J.cod;
+  const W = adqEscSemanas(), w = Math.min(ADQE.wk, 3), setor = ADQE.setor, ed = adqPodeEd("escala") && !ADQE.erro && !!ADQE.em;
+  const A = adqEscAval(setor, w, J), r = ADQE.rasc[adqEscChave(setor, w)], ajust = !!(r && r.grade);
+  const tot = A.dias.reduce((a, x) => a + x.sv.length, 0), des = A.dias.reduce((a, x) => a + x.desc.length, 0);
+  const act = A.P.filter(x => x.st !== "ferias"), fora = act.filter(x => x.st === "fora").length, comHe = act.filter(x => x.h > J.h + 0.01).length, he = act.reduce((a, x) => a + Math.max(0, x.h - J.h), 0);
+  const res = A.P.reduce((a, x) => a + x.row.filter(v => v === "RES").length, 0), fer = A.P.filter(x => x.st === "ferias").length;
+  let g = `<thead><tr><th class="nm">Colaborador</th>`;
+  A.dias.forEach((x, d) => { const dt = adqAdd(W[w], d), fe = ADQF.fer.get(dt);
+    g += `<th${fe ? ' class="fer"' : ""}><b>${ADQ_DIAS[adqD(dt).getDay()]} ${esc(adqFmt(dt))}</b>${fe ? esc(fe) : esc(adqTipoDia(dt))}<br><span class="pill ${x.desc.length ? "st-vencido" : "st-pago"}">${x.sv.length - x.desc.length}/${x.sv.length}</span></th>`; });
+  g += `<th>Dias</th><th>Horas</th><th>Situação</th></tr></thead><tbody>`;
+  A.P.forEach(x => {
+    g += `<tr><td class="nm">${esc(x.p.nome)}<small>${esc(x.p.regBase || x.p.reg)}${x.p.turno && x.p.turno !== "D" ? " · " + ADQ_TN[x.p.turno] : ""}</small></td>`;
+    x.row.forEach((v, d) => { const inf = x.inf[d]; let c;
+      if (v === "FE") c = "Férias"; else if (v == null) c = "Folga"; else if (v === "RES") c = `Reserva<small>${adqHHMM(inf.ini)}</small>`; else if (!inf || inf.inexistente) c = `${esc(v)}<small>não existe</small>`; else c = `${esc(v)}<small>${adqHHMM(inf.ini)}–${adqHHMM(inf.ini + inf.dur * 60)}</small>`;
+      g += `<td><button type="button" class="adq-ec ${adqCelCls(inf, v)}${x.ij[d] ? " ij" : ""}" data-p="${esc(x.p.id)}" data-d="${d}" ${ed ? "" : "disabled"} aria-label="${esc(x.p.nome)}, ${ADQ_DIAS[adqD(adqAdd(W[w], d)).getDay()]}: ${v == null ? "folga" : v === "FE" ? "férias" : v === "RES" ? "reserva" : esc(v)}">${c}</button></td>`; });
+    const dOver = x.p.regBase !== "12x36" && x.dias > J.dias, hOver = x.h > J.h + 0.01;
+    g += `<td class="tot"${dOver ? ' style="color:var(--err);font-weight:800"' : ""}>${x.st === "ferias" ? "—" : x.dias}</td><td class="tot"${hOver ? ' style="color:var(--warn);font-weight:800"' : ""}>${x.st === "ferias" ? "—" : adqHfmt(x.h)}</td>
+      <td class="tot"><span class="pill ${x.st === "ok" ? "st-pago" : ADQ_ST_TXT[x.st][0]}">${x.st === "ok" ? "Dentro" : ADQ_ST_TXT[x.st][1]}</span>${x.mot.length ? `<div class="sup adq-mot">${esc(x.mot.map(m => m[1]).join(" · "))}</div>` : ""}</td></tr>`; });
+  g += `</tbody><tfoot><tr><td class="nm">Descobertos</td>${A.dias.map(x => `<td${x.desc.length ? ' style="color:var(--err)"' : ""}>${x.desc.length}</td>`).join("")}<td colspan="3"></td></tr></tfoot>`;
+  const dd = A.dias.map((x, d) => ({ x, d })).filter(o => o.x.desc.length);
+  const descHtml = dd.length ? dd.map(({ x, d }) => { const dt = adqAdd(W[w], d);
+    return `<div class="adq-dday"><h4>${ADQ_DIAS[adqD(dt).getDay()]} ${esc(adqFmt(dt))}${ADQF.fer.get(dt) ? " · " + esc(ADQF.fer.get(dt)) : ""} <span class="pill st-vencido">${x.desc.length} descoberto${x.desc.length > 1 ? "s" : ""}</span></h4>` + x.desc.map(s => {
+      const C = A.P.filter(q => q.st !== "ferias" && (q.row[d] == null || q.row[d] === "RES")).map(q => ({ q, w: adqEscPrevia(setor, w, J, q.p, q.row, d, s.cod) }))
+        .sort((a, b) => a.w.filter(z => z[0] === "st-vencido").length - b.w.filter(z => z[0] === "st-vencido").length || a.w.length - b.w.length || (a.q.row[d] === "RES" ? -1 : 1) - (b.q.row[d] === "RES" ? -1 : 1) || a.q.dias - b.q.dias).slice(0, 4);
+      return `<div class="adq-drow"><div><b>${esc(s.cod)}</b> ${adqHHMM(s.ini)}–${adqHHMM(s.ini + adqServDur(s, J) * 60)} · ${adqHfmt(adqServDur(s, J))}<div class="sup">${esc(s.desc)}</div></div><div class="adq-cand">${C.length ? C.map(({ q, w: ww }) => `<button type="button" ${ed ? "" : "disabled"} onclick="adqEscSet(${jsArg(q.p.id)}, ${d}, ${jsArg(s.cod)})">${esc(q.p.nome)}${q.row[d] === "RES" ? ' <span class="pill st-aguardando">reserva</span>' : ""} ${adqTag(ww)}</button>`).join("") : `<span class="sup">Ninguém livre neste dia: precisa de contratação ou de hora extra.</span>`}</div></div>`; }).join("") + `</div>`; }).join("") : `<p class="sup">Toda a demanda da semana está coberta.</p>`;
+  return `<div class="cap-card"><div class="adq-head"><div><h3>Escala da semana</h3><p class="sup">Monte a escala a partir da demanda: cada dia traz os serviços que precisam de gente, e o ERP confere na hora a janela, a folga e a interjornada.${ed ? " Toque numa célula para trocar." : ""}</p></div></div>
+    <div class="adq-controls"><div class="adq-field">Setor<div class="chips">${S.map(s => `<button type="button" class="chip${s.n === setor ? " on" : ""}" onclick="adqEscSetor(${jsArg(s.n)})">${esc(s.n)}</button>`).join("")}</div></div></div>
+    <div class="adq-controls"><div class="adq-field">Semana<div class="adq-seg">${W.map((s, i) => { const vir = ADQ.jan.some(j => j.ini && j.ini >= s && j.ini <= adqAdd(s, 6)); return `<button type="button" aria-pressed="${i === w}" onclick="adqEscWk(${i})">${esc(adqFmt(s))}–${esc(adqFmt(adqAdd(s, 6)))}${vir ? " · virada" : ""}</button>`; }).join("")}</div></div>
+      <label class="adq-field">Conferir contra<select onchange="adqEscJan(this.value)">${adqJanOrd().map(j => `<option value="${esc(j.cod)}"${j.cod === J.cod ? " selected" : ""}>${esc(j.nome)} · ${adqH(j.h)} h, até ${j.dias} dias</option>`).join("")}</select></label>
+      ${ed ? `<button class="btn primary" type="button" onclick="adqEscAuto()">Montar escala sugerida</button><button class="btn" type="button" onclick="adqEscReset()">Voltar à escala atual</button>` : ""}
+      ${adqPodeVer("escala") ? `<button class="btn" type="button" onclick="adqDemanda(${jsArg(setor)})">Demanda do setor</button>` : ""}</div>
+    <div class="adq-estat">${ajust ? `<span class="pill st-aprovado">Rascunho ajustado</span><span class="sup">gravado em "${esc(LISTS.adq_esc.displayName)}"${r.por ? " por " + esc(r.por) : ""}</span>` : `<span class="pill st-aguardando">Escala atual</span><span class="sup">padrão de hoje do setor (última semana do Ponto), sem ajustes</span>`}
+      <span class="sup">· ${A.P.length} pessoas${fer ? ` (${fer} de férias)` : ""} · ${tot} serviços na semana · ${res} reservas</span></div>
+    ${ADQE.erro ? `<p class="adq-aviso">Não foi possível ler os rascunhos (${esc(ADQE.erro)}). Para não sobrescrever o que já foi gravado, a edição fica travada até a leitura funcionar: recarregue a página.</p>` : ""}
+    ${!adqTemDemanda(setor) ? `<p class="adq-aviso">Este setor ainda não tem demanda cadastrada: use "Demanda do setor".</p>` : ""}</div>
+    <div class="cap-kpis adq-kpis">${adqKpi(des ? "venc" : "pago", "Serviços cobertos", `${tot - des}/${tot}`, des ? des + " sem ninguém" : "demanda toda coberta")}${adqKpi(fora ? "venc" : "pago", "Fora da janela", String(fora), "pessoas com dias, folga ou interjornada fora")}${adqKpi(comHe ? "hoje" : "pago", "Com hora extra", String(comHe), "acima de " + adqH(J.h) + " h na semana")}${adqKpi(he > 0 ? "hoje" : "pago", "HE prevista", adqHfmt(he), "soma da semana")}</div>
+    <div class="cap-card"><div class="adq-gridwrap"><table class="adq-eg" id="adqGrid">${g}</table></div>
+      <div class="adq-legend"><span><i class="sw c-m"></i>Manhã</span><span><i class="sw c-t"></i>Tarde</span><span><i class="sw c-n"></i>Noite</span><span><i class="sw c-r"></i>Reserva (sem serviço)</span><span><i class="sw c-f"></i>Folga</span><span><i class="sw c-fe"></i>Férias</span><span><i class="sw" style="box-shadow:inset 0 0 0 2px var(--err)"></i>Interjornada &lt; ${adqParam().lim.interj} h</span></div></div>
+    <div class="cap-card"><div class="adq-head"><div><h3>Serviços descobertos</h3><p class="sup">Para cada serviço sem ninguém, quem está de folga ou de reserva naquele dia e o que acontece se for escalado.</p></div></div>${descHtml}
+      <p class="adq-note">Lê, sem alterar: RH › Funcionários, RH › Feriados, Controle de Ponto (padrão de hoje) e a demanda cadastrada no módulo. Grava só o rascunho da semana na Diretoria; a escala oficial continua onde está hoje (Flit, Garagem, Agência).</p></div>`;
+}
+const adqEscJanPadrao = () => { const r = ADQE.rasc[adqEscChave(ADQE.setor, ADQE.wk)]; if (!(r && r.grade && adqJanCod(r.jan))) ADQE.jan = ""; };
+window.adqEscSetor = n => { if (ADQ.ocupado) return; ADQE.setor = n; ADQE.janUser = false; adqEscJanPadrao(); adqEscPopFechar(); adqRender(); };
+window.adqEscWk = i => { if (ADQ.ocupado) return; ADQE.wk = i; ADQE.janUser = false; adqEscJanPadrao(); adqEscPopFechar(); adqRender(); };
+window.adqEscJan = c => { ADQE.jan = c; ADQE.janUser = true; adqEscPopFechar(); adqRender(); };
+async function adqEscGravar(msg, setor, w, J, mudar) {   /* write-first: relê o rascunho, aplica só a mudança e grava; desfazer volta a grade lida */
+  if (ADQ.ocupado) { toast("Aguarde a gravação anterior terminar."); return false; }   /* trava única do módulo (desfazer incluso) */
+  if (!ADQ.lists.adq_esc) { toast(`A lista "${LISTS.adq_esc.displayName}" não existe: rode o Executar tudo.`); return false; }
+  if (ADQE.erro || !ADQE.em) { toast("Os rascunhos não foram lidos: recarregue a página antes de editar."); return false; }
+  const ch = adqEscChave(setor, w), sem = adqEscSemanas()[w];
+  const campos = g => ({ Grade: g ? JSON.stringify(g) : "", Janela: J.cod, Situacao: "Rascunho", AtualizadoPor: (session.me && session.me.displayName) || "", AtualizadoEm: new Date().toISOString() });
+  ADQ.ocupado = true; ADQ.undo = null;
+  try {
+    await adqEscCarregar(true); if (ADQE.erro) throw new Error("não foi possível reler os rascunhos (" + ADQE.erro + ")");
+    const r = ADQE.rasc[ch], antes = r ? r.grade : null, nova = mudar(adqEscGrade(setor, w, J));
+    if (nova === undefined) throw Object.assign(new Error("a escala mudou enquanto você escolhia (outra pessoa gravou). Confira e tente de novo."), { mudou: true });
+    let id = r && r._id;
+    if (id) await adqAtualizar("adq_esc", id, campos(nova));
+    else id = await adqCriar("adq_esc", Object.assign({ Title: ch, Setor: setor, Semana: sem }, campos(nova)));
+    await adqEscCarregar(true); adqRender();
+    adqToast(msg, async () => { await adqAtualizar("adq_esc", id, campos(antes)); await adqEscCarregar(true); });
+    return true;
+  } catch (e) { toast("Não foi possível gravar: " + ((e && e.message) || e), 6000); await adqEscCarregar(true); adqRender(); return false; }
+  finally { ADQ.ocupado = false; }
+}
+window.adqEscAuto = () => { const J = adqEscJ(); if (!adqPodeEd("escala")) return; const st = ADQE.setor, wk = ADQE.wk; adqEscGravar(`Escala sugerida montada para ${st} (${adqH(J.h)} h, até ${J.dias} dias)`, st, wk, J, () => adqEscSugerida(st, wk, J)); };
+window.adqEscReset = async () => {
+  const r = ADQE.rasc[adqEscChave(ADQE.setor, ADQE.wk)]; if (!r || !r.grade) { toast("Esta semana já está na escala atual."); return; }
+  if (!(await erpConfirmar({ titulo: "Voltar à escala atual", texto: `Descartar os ajustes da semana de ${adqFmt(adqEscSemanas()[ADQE.wk])} em ${ADQE.setor}? Dá para desfazer logo depois.`, sim: "Descartar ajustes", perigo: true }))) return;
+  adqEscGravar("Escala atual restaurada", ADQE.setor, ADQE.wk, adqEscJ(), () => null);
+};
+window.adqEscSet = (pid, d, val, troca) => {
+  if (!adqPodeEd("escala")) return;
+  const J = adqEscJ(), setor = ADQE.setor, w = ADQE.wk, p = ADQF.pessoas.find(x => x.id === pid); if (!p) return;
+  const mudar = G => { const E = JSON.parse(JSON.stringify(G)); if (!E[pid]) return E;   /* aplica a troca sobre a grade relida */
+    const old = E[pid][d];
+    if (troca && (!E[troca] || E[troca][d] !== val)) return undefined;   /* a troca não vale mais: outra pessoa mudou o dia */
+    if (!troca && val && val !== "RES" && val !== "FE" && Object.keys(E).some(k => k !== pid && E[k][d] === val)) return undefined;   /* serviço já foi dado a outra pessoa */
+    if (val === "FE") E[pid] = E[pid].map(() => "FE");
+    else { if (E[pid].every(v => v === "FE")) E[pid] = E[pid].map(() => null); E[pid][d] = val; }
+    if (troca && E[troca]) E[troca][d] = old === "FE" || old === undefined ? null : old;
+    return E; };
+  adqEscPopFechar();
+  const dt = adqAdd(adqEscSemanas()[w], d), q = troca && ADQF.pessoas.find(x => x.id === troca);
+  adqEscGravar(q ? `Troca feita entre ${p.nome} e ${q.nome}` : `${p.nome}: ${val == null ? "folga" : val === "FE" ? "férias na semana" : val === "RES" ? "reserva" : val} em ${ADQ_DIAS[adqD(dt).getDay()]} ${adqFmt(dt)}`, setor, w, J, mudar);
+};
+function adqEscPopFechar() { const p = $("adqPop"); if (p) p.remove(); document.querySelectorAll(".adq-ec.sel").forEach(x => x.classList.remove("sel")); }
+window.adqEscPopFechar = adqEscPopFechar;
+function adqEscPop(btn) {
+  adqEscPopFechar(); btn.classList.add("sel");
+  const J = adqEscJ(), setor = ADQE.setor, w = ADQE.wk, A = adqEscAval(setor, w, J), pid = btn.dataset.p, d = +btn.dataset.d, me = A.P.find(x => x.p.id === pid); if (!me) return;
+  const cur = me.row[d], dt = adqAdd(adqEscSemanas()[w], d), sv = A.dias[d].sv.slice().sort((a, b) => a.ini - b.ini), dono = {};
+  A.P.forEach(x => { const v = x.row[d]; if (v && v !== "RES" && v !== "FE") dono[v] = x; });
+  const opt = (v, rot, extra, tag) => `<button type="button" class="o" data-v="${v == null ? "" : esc(v)}"${extra || ""}${v === cur ? ' aria-current="true"' : ""}><span>${rot}</span>${tag || ""}</button>`;
+  const livres = sv.filter(s => !dono[s.cod]), ocup = sv.filter(s => dono[s.cod] && dono[s.cod].p.id !== pid);
+  let h = `<h4>${esc(me.p.nome)} · ${ADQ_DIAS[adqD(dt).getDay()]} ${esc(adqFmt(dt))}</h4>` + opt(null, "Folga") + opt("RES", "Reserva <small>sem serviço fixo</small>", "", adqTag(adqEscPrevia(setor, w, J, me.p, me.row, d, "RES"))) + opt("FE", "Férias <small>a semana toda</small>");
+  h += `<div class="lbl">Serviços livres (${livres.length})</div>` + (livres.map(s => opt(s.cod, `<b>${esc(s.cod)}</b> ${adqHHMM(s.ini)}–${adqHHMM(s.ini + adqServDur(s, J) * 60)} <small>${esc(s.desc)}</small>`, "", adqTag(adqEscPrevia(setor, w, J, me.p, me.row, d, s.cod)))).join("") || `<p class="sup" style="margin:4px 8px">Nenhum serviço livre neste dia.</p>`);
+  if (ocup.length) h += `<div class="lbl">Trocar com quem já está escalado</div>` + ocup.map(s => opt(s.cod, `<b>${esc(s.cod)}</b> ${adqHHMM(s.ini)} <small>com ${esc(dono[s.cod].p.nome)}</small>`, ` data-troca="${esc(dono[s.cod].p.id)}"`, adqTag(adqEscPrevia(setor, w, J, me.p, me.row, d, s.cod)))).join("");
+  const pop = document.createElement("div"); pop.className = "adq-pop"; pop.id = "adqPop"; pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", "Escolher serviço"); pop.innerHTML = h;
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight, vw = document.documentElement.clientWidth;
+  let left = r.left + window.scrollX; if (left + pw > window.scrollX + vw - 12) left = window.scrollX + vw - pw - 12;
+  let top = r.bottom + window.scrollY + 4; if (r.bottom + ph > window.innerHeight - 8 && r.top - ph > 8) top = r.top + window.scrollY - ph - 4;
+  pop.style.left = Math.max(8, left) + "px"; pop.style.top = top + "px";
+  pop.querySelectorAll("button.o").forEach(b => b.onclick = () => { const v = b.dataset.v === "" ? null : b.dataset.v; if (v === cur && !b.dataset.troca) { adqEscPopFechar(); return; } adqEscSet(pid, d, v, b.dataset.troca || ""); });
+  const f = pop.querySelector("button.o"); if (f) f.focus();
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest && e.target.closest(".adq-ec"); if (b && !b.disabled && session.modAtual === "adq") { e.stopPropagation(); adqEscPop(b); return; }
+  if ($("adqPop") && !(e.target.closest && e.target.closest("#adqPop"))) adqEscPopFechar();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && $("adqPop")) adqEscPopFechar(); });
+window.addEventListener("resize", () => { if ($("adqPop")) adqEscPopFechar(); });
 
 /* ---------- estilo (só tokens do ERP) ---------- */
 document.head.insertAdjacentHTML("beforeend", `<style id="adqCss">
@@ -38371,6 +38588,33 @@ body.adq-off #pMatriz tr[data-mod="adq"],body.adq-off #pMatriz tr[data-pai="adq"
 .adq-ed .adq-seg button small{font-weight:500}
 .adq-ed .cap-table{min-width:0}
 .adq-ed .adq-dem input{width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:var(--radius-sm);padding:5px 7px;min-width:0}
+.adq .adq-estat{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:13px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.adq .adq-gridwrap{overflow:auto;max-height:72vh;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:var(--radius)}
+.adq .adq-eg{border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums;min-width:1080px;width:100%}
+.adq .adq-eg th,.adq .adq-eg td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:0;text-align:center}
+.adq .adq-eg thead th{background:var(--soft);font-weight:700;padding:6px 4px;font-size:11px;color:var(--ink-2);position:sticky;top:0;z-index:2}
+.adq .adq-eg thead th b{display:block;font-size:12px;color:var(--ink)}.adq .adq-eg thead th.fer b{color:var(--orange-ink)}
+.adq .adq-eg td.nm,.adq .adq-eg th.nm{position:sticky;left:0;z-index:3;background:var(--surface);text-align:left;padding:6px 10px;white-space:nowrap;min-width:190px}
+.adq .adq-eg thead th.nm{z-index:4;background:var(--soft)}.adq .adq-eg td.nm small{display:block;color:var(--ink-2);font-size:11px}
+.adq .adq-eg td.tot{padding:4px 8px;white-space:nowrap}.adq .adq-eg .adq-mot{font-size:11px;max-width:180px;white-space:normal}
+.adq .adq-eg tfoot td{background:var(--soft);font-weight:700;padding:6px 4px}.adq .adq-eg tfoot td.nm{background:var(--soft)}
+.adq-ec{width:100%;min-width:84px;height:44px;border:0;font:inherit;font-size:12px;font-weight:700;cursor:pointer;color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.2;background:var(--surface)}
+.adq-ec small{font-weight:500;font-size:10.5px;color:var(--ink-2)}.adq-ec:disabled{cursor:default}
+.adq-ec.c-m,.adq-legend .sw.c-m{background:#E4EDF8}.adq-ec.c-t,.adq-legend .sw.c-t{background:#FDEADB}.adq-ec.c-n,.adq-legend .sw.c-n{background:#E9E5F6}
+.adq-ec.c-f,.adq-legend .sw.c-f{background:var(--soft);color:var(--ink-2);font-weight:600}.adq-ec.c-fe,.adq-legend .sw.c-fe{background:#E4F3EA;color:var(--ok)}
+.adq-ec.c-r,.adq-legend .sw.c-r{background:repeating-linear-gradient(135deg,var(--surface),var(--surface) 5px,var(--soft) 5px,var(--soft) 10px);color:var(--ink-2)}
+.adq-ec.c-x{background:#FBEDEC;color:var(--err)}
+.adq-ec.ij{box-shadow:inset 0 0 0 2px var(--err)}.adq-ec.sel{box-shadow:inset 0 0 0 2px var(--orange)}
+.adq-pop{position:absolute;z-index:57;width:330px;max-width:calc(100vw - 32px);max-height:380px;overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 12px 28px rgba(11,22,40,.18);padding:8px}
+.adq-pop h4{margin:4px 6px 8px;font-size:13px;color:var(--navy)}.adq-pop .lbl{font-size:11px;font-weight:800;color:var(--ink-2);margin:8px 6px 4px;text-transform:uppercase;letter-spacing:.04em}
+.adq-pop button.o{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--ink);padding:7px 8px;border-radius:var(--radius-sm);cursor:pointer;text-align:left}
+.adq-pop button.o:hover{background:var(--soft)}.adq-pop button.o[aria-current="true"]{background:#E7EFFB}.adq-pop .o small{color:var(--ink-2);font-weight:500}
+.adq .adq-dday{margin-top:8px}.adq .adq-dday h4{margin:0 0 6px;font-size:14px;font-weight:800;color:var(--navy)}
+.adq .adq-drow{display:grid;grid-template-columns:200px minmax(0,1fr);gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+@media (max-width:640px){.adq .adq-drow{grid-template-columns:1fr}}
+.adq .adq-cand{display:flex;flex-wrap:wrap;gap:6px}
+.adq .adq-cand button{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius);padding:5px 9px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;color:var(--ink);display:inline-flex;gap:6px;align-items:center}
+.adq .adq-cand button:hover{border-color:var(--navy)}
 .adq-toast button{background:none;border:0;color:var(--orange-soft);font:inherit;font-weight:800;cursor:pointer}
 </style>`);
 /* ADQ:FIM ===================================================================== */

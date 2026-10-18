@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.4",
+  version: "v0.14.5",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -37364,6 +37364,630 @@ function rhVidaHtml(f) {
     } catch (e) { console.warn("vida funcional", e); }
     return r;
   }; }
+
+/* ADQ:INICIO =====================================================================
+   v0.14.5 · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL
+   - Todo o código do módulo fica entre ADQ:INICIO e ADQ:FIM (prefixo adq/ADQ_). Lê outros módulos; nunca grava neles.
+   - Liga/desliga: chave "adequacao" em "ERP — Parâmetros" ({ ativo, promulgacao, prazo1, lim, ausencias… }). Desligado: some do
+     menu, das rotas e da matriz de permissões (nada é apagado).
+   - Listas no site Diretoria: "Diretoria — Adequação 6x1 · Janelas", "· Fases", "· Serviços" e "· Escalas" (criadas ao Ligar e,
+     enquanto ligado, pelo Executar tudo).
+   - Remover: Configuração › Adequação 6x1 › Exportar (.xlsx) → Remover (listas para a lixeira do site, chave apagada) → numa
+     versão seguinte, tirar este bloco do código.
+   ================================================================================= */
+const ADQ_BASE = "#/diretoria/adequacao-6x1";
+const ADQ_PAGS = [{ k: "painel", n: "Painel", d: "como estamos" }, { k: "escala", n: "Escala", d: "planejar a semana" }, { k: "plano", n: "Plano", d: "o que falta fazer" }];
+const ADQ_LS = "erp.adq.ativo";
+const ADQ_PARAM_PADRAO = { ativo: false, promulgacao: "2026-10-16", prazo1: 60, lim: { critPct: 60, atPct: 90, critTurnos: 2, critContr: 2, heDia: 2, interj: 11, ferDias: 5 }, ausencias: 8, tolMin: 0, diasMediaMes: false };
+const ADQ_SIT_JAN = ["Em vigor", "Programada", "A confirmar"];
+const ADQ_ST = ["A fazer", "Em andamento", "Aguardando", "Bloqueado", "Concluído"];
+const ADQ_ST_CLS = { "A fazer": "st-aguardando", "Em andamento": "st-aprovado", "Aguardando": "st-pendente", "Bloqueado": "st-vencido", "Concluído": "st-pago" };
+const ADQ_AREAS = ["Diretoria", "RH", "Jurídico", "Operacional", "Financeiro", "Desenvolvimento"];
+const ADQ_KEYS = ["adq_jan", "adq_fase", "adq_serv", "adq_esc"];
+let ADQ_ON = (() => { try { return localStorage.getItem(ADQ_LS) === "1"; } catch (e) { return false; } })();
+const ADQ = { param: null, paramLido: false, paramErro: false, site: null, lists: {}, jan: [], fase: [], erro: "", em: 0, p: null,
+  aba: "painel", jsel: "", editJan: false, planoVis: "lista", soAtr: false, undo: null, ocupado: false, exportado: false };
+
+MODULES.push({ id: "adq", path: ADQ_BASE, icon: "calendar", name: "Adequação 6x1", area: "Diretoria", groups: ["diretoria"], status: "piloto", wide: true });
+PAG_DEF.adq = ADQ_PAGS.map(p => ({ k: p.k, n: p.n, rota: ADQ_BASE + "/" + p.k }));
+
+/* ---------- listas ---------- */
+const adqTxt = n => ({ allowMultipleLines: false, maxLength: n });
+LISTS.adq_jan = { key: "adq_jan", displayName: "Diretoria — Adequação 6x1 · Janelas", siteKey: "diretoria", titleAs: "Janela",
+  description: "Diretoria NMB · Adequação 6x1: janelas de jornada (carga semanal, dias por semana, início). Editada pelo ERP (Diretoria › Adequação 6x1). Módulo removível.",
+  columns: [
+    { name: "Codigo", displayName: "Código", text: adqTxt(20) },
+    { name: "Inicio", displayName: "Início", dateTime: dateOnly },
+    { name: "Carga", displayName: "Carga semanal (h)", number: { decimalPlaces: "one", displayAs: "number" } },
+    { name: "Dias", displayName: "Dias por semana", number: integer(1, 7) },
+    { name: "Situacao", displayName: "Situação", choice: choice(ADQ_SIT_JAN) },
+    { name: "Ordem", displayName: "Ordem", number: integer(0, 999) }
+  ] };
+LISTS.adq_fase = { key: "adq_fase", displayName: "Diretoria — Adequação 6x1 · Fases", siteKey: "diretoria", titleAs: "Fase",
+  description: "Diretoria NMB · Adequação 6x1: plano de adequação (fases com responsável, prazo, janela, setor e subtarefas). Editada pelo ERP. Módulo removível.",
+  columns: [
+    { name: "Area", displayName: "Área", text: adqTxt(60) },
+    { name: "Responsavel", displayName: "Responsável", text: adqTxt(80) },
+    { name: "Inicio", displayName: "Início", dateTime: dateOnly },
+    { name: "Prazo", displayName: "Prazo", dateTime: dateOnly },
+    { name: "Situacao", displayName: "Situação", choice: choice(ADQ_ST) },
+    { name: "Janela", displayName: "Janela (código)", text: adqTxt(20) },
+    { name: "Setor", displayName: "Setor (vazio = todos)", text: adqTxt(80) },
+    { name: "Subtarefas", displayName: "Subtarefas (JSON)", text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Anotacoes", displayName: "Anotações", text: { allowMultipleLines: true, textType: "plain" } }
+  ] };
+LISTS.adq_serv = { key: "adq_serv", displayName: "Diretoria — Adequação 6x1 · Serviços", siteKey: "diretoria", titleAs: "Código",
+  description: "Diretoria NMB · Adequação 6x1: demanda em serviços por setor e tipo de dia (motoristas: blocos de viagens; demais: postos por turno). Editada pelo ERP. Módulo removível.",
+  columns: [
+    { name: "Setor", displayName: "Setor", text: adqTxt(80) },
+    { name: "TipoDia", displayName: "Tipo de dia", choice: choice(["Útil", "Sábado", "Domingo e feriado"]) },
+    { name: "Inicio", displayName: "Início (HH:MM)", text: adqTxt(5) },
+    { name: "Duracao", displayName: "Duração (h; vazio = pela janela)", number: { decimalPlaces: "two", displayAs: "number" } },
+    { name: "Descricao", displayName: "Descrição", text: adqTxt(200) },
+    { name: "Ordem", displayName: "Ordem", number: integer(0, 9999) }
+  ] };
+LISTS.adq_esc = { key: "adq_esc", displayName: "Diretoria — Adequação 6x1 · Escalas", siteKey: "diretoria", titleAs: "Setor e semana",
+  description: "Diretoria NMB · Adequação 6x1: rascunhos de escala por setor e semana (grade em JSON). Não é a escala oficial. Módulo removível.",
+  columns: [
+    { name: "Setor", displayName: "Setor", text: adqTxt(80) },
+    { name: "Semana", displayName: "Semana (segunda)", dateTime: dateOnly },
+    { name: "Janela", displayName: "Janela conferida (código)", text: adqTxt(20) },
+    { name: "Grade", displayName: "Grade (JSON)", text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Situacao", displayName: "Situação", choice: choice(["Rascunho", "Publicada"]) },
+    { name: "AtualizadoPor", displayName: "Atualizado por", text: adqTxt(120) },
+    { name: "AtualizadoEm", displayName: "Atualizado em", dateTime: { displayAs: "default", format: "dateTime" } }
+  ] };
+ADQ_KEYS.forEach(k => { SETUP_TEXT[k] = `Adequação 6x1 (Diretoria, módulo removível): cria no site Diretoria a lista "${LISTS[k].displayName}". Só entra no "Executar tudo" enquanto o módulo estiver ligado.`; });
+function adqSetupOrdem() {   /* as listas do módulo só entram no Executar tudo enquanto ele estiver ligado */
+  ADQ_KEYS.forEach(k => { const i = SETUP_ORDER.indexOf(k); if (i >= 0) SETUP_ORDER.splice(i, 1); });
+  if (ADQ_ON) { const i = SETUP_ORDER.indexOf("acessos"); ADQ_KEYS.forEach((k, j) => i >= 0 ? SETUP_ORDER.splice(i + j, 0, k) : SETUP_ORDER.push(k)); }
+}
+adqSetupOrdem();
+
+/* ---------- datas e números ---------- */
+const adqIsoD = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const adqHoje = () => adqIsoD(new Date());
+const adqD = s => { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+const adqIso = v => { const s = String(v || ""); if (!s) return ""; const m = s.match(/^(\d{4}-\d{2}-\d{2})(?:T00:00:00(?:\.0+)?Z)?$/); if (m) return m[1]; const d = new Date(s); return isNaN(d) ? "" : adqIsoD(d); };
+const adqAdd = (s, n) => { const d = adqD(s); if (!d) return ""; d.setDate(d.getDate() + n); return adqIsoD(d); };
+const adqDiff = (a, b) => Math.round((adqD(a) - adqD(b)) / 864e5);
+const adqFmt = s => { const d = adqD(s); return d ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—"; };
+const adqFmtL = s => { const d = adqD(s); return d ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "a confirmar"; };
+const adqNum = v => { const n = Number(String(v ?? "").replace(",", ".")); return isFinite(n) ? n : 0; };
+const adqH = h => String(Math.round(adqNum(h) * 10) / 10).replace(".", ",");
+function adqJson(s, def) { try { const v = JSON.parse(s || ""); return v == null ? def : v; } catch (e) { return def; } }
+
+/* ---------- liga/desliga (chave "adequacao") ---------- */
+function adqParam() { const p = (ADQ.param && typeof ADQ.param === "object") ? ADQ.param : {}; return Object.assign({}, ADQ_PARAM_PADRAO, p, { lim: Object.assign({}, ADQ_PARAM_PADRAO.lim, p.lim || {}) }); }
+function adqAplicarAtivo(v) {
+  const mudou = ADQ_ON !== !!v; ADQ_ON = !!v;
+  try { localStorage.setItem(ADQ_LS, ADQ_ON ? "1" : "0"); } catch (e) {}
+  adqSetupOrdem(); adqBodyClasse();
+  if (mudou && typeof APP_PRONTO !== "undefined" && APP_PRONTO) { try { navRedesenhar(); } catch (e) {}
+    const h = (location.hash || "").split("?")[0]; if (h.startsWith(ADQ_BASE) || h === "#/area/Diretoria" || h === "#/configuracao") route(); }
+}
+async function adqParamCarregar(force) {
+  const p = await erpParamLer("adequacao", force);
+  if (p === undefined) { ADQ.paramErro = true; return ADQ.param; }   /* leitura falhou: fica o último estado conhecido */
+  ADQ.paramErro = false; ADQ.paramLido = true; ADQ.param = p && p.valor && typeof p.valor === "object" ? p.valor : null;
+  adqAplicarAtivo(!!(ADQ.param && ADQ.param.ativo));
+  return ADQ.param;
+}
+async function adqParamGravar(mud) {
+  if (!session.n1) throw new Error("Só administradores alteram os parâmetros do ERP.");
+  const atual = await erpParamLer("adequacao", true); if (atual === undefined) throw new Error("Não foi possível ler a chave \"adequacao\".");
+  const v = Object.assign({}, ADQ_PARAM_PADRAO, (atual && atual.valor) || {}, mud);
+  await erpParamGravar("adequacao", v); ADQ.param = v; ADQ.paramLido = true;
+  adqAplicarAtivo(!!v.ativo);
+}
+{ const cs = canSee; canSee = function (mod) { if (mod && mod.id === "adq" && !ADQ_ON) return false; return cs.apply(this, arguments); }; }
+/* a matriz de permissões continua com o módulo (para não apagar as permissões ao salvar um usuário com ele desligado);
+   desligado, as linhas dele só ficam escondidas (classe adq-off no body) */
+function adqBodyClasse() { document.body.classList.toggle("adq-off", !ADQ_ON); }
+adqBodyClasse();
+
+/* ---------- guarda: as listas do módulo seguem a página aberta do módulo ---------- */
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path) {
+    const ids = Object.values(ADQ.lists).filter(Boolean).map(l => l.id);
+    if (/^(POST|PATCH|PUT|DELETE)$/i.test(method || "") && ids.some(id => String(path || "").includes(id))) {
+      if (typeof vcAtivo === "function" && vcAtivo()) throw vcErro();
+      if (/^DELETE$/i.test(method) && ADQ.desfazendo && new RegExp("/items/" + ADQ.desfazendo + "$").test(String(path).split("?")[0]) && podeEditar("adq")) return;   /* desfazer a inclusão que a própria pessoa acabou de fazer */
+      const m0 = session.modAtual; session.modAtual = "adq";
+      try { return g0.apply(this, arguments); } finally { session.modAtual = m0; }
+    }
+    return g0.apply(this, arguments);
+  }; }
+
+/* ---------- carga ---------- */
+async function adqListas() {
+  if (!ADQ.site) ADQ.site = await SP.site(CONFIG.sites.diretoria);
+  const ls = await SP.lists(ADQ.site.id);
+  ADQ_KEYS.forEach(k => { ADQ.lists[k] = ls.find(l => l.displayName === LISTS[k].displayName) || null; });
+  return ADQ.lists;
+}
+const adqItens = async k => ADQ.lists[k] ? (await SP.items(ADQ.site.id, ADQ.lists[k].id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+function adqJanDe(f) { return { _id: f._id, cod: String(f.Codigo || "J" + f._id), nome: String(f.Title || "Janela"), ini: adqIso(f.Inicio), h: adqNum(f.Carga) || 44, dias: Math.round(adqNum(f.Dias)) || 6, sit: ADQ_SIT_JAN.includes(f.Situacao) ? f.Situacao : "A confirmar", ordem: adqNum(f.Ordem) }; }
+function adqFaseDe(f) { const subs = adqJson(f.Subtarefas, []); return { _id: f._id, nome: String(f.Title || ""), area: String(f.Area || ""), resp: String(f.Responsavel || ""), ini: adqIso(f.Inicio), fim: adqIso(f.Prazo), st: ADQ_ST.includes(f.Situacao) ? f.Situacao : "A fazer", jan: String(f.Janela || ""), setor: String(f.Setor || ""), subs: Array.isArray(subs) ? subs.filter(s => s && typeof s === "object").map(s => ({ t: String(s.t || ""), ok: !!s.ok })) : [], notas: String(f.Anotacoes || "") }; }
+async function adqCarregar(force) {
+  if (!force && ADQ.em && Date.now() - ADQ.em < 60000) return;
+  if (ADQ.p && !force) return ADQ.p;
+  const ger = ADQ.ger = (ADQ.ger || 0) + 1;   /* só a carga mais nova vale */
+  const pr = (async () => {
+    try {
+      if (!force && ADQ.em) { await adqParamCarregar(true); if (!ADQ_ON) return; }   /* cache vencido: confere se o módulo continua ligado */
+      await adqListas();
+      const [j, f] = await Promise.all([adqItens("adq_jan"), adqItens("adq_fase")]);
+      if (ger !== ADQ.ger) return;
+      ADQ.erro = ""; ADQ.jan = j.map(adqJanDe); ADQ.fase = f.map(adqFaseDe); ADQ.em = Date.now();
+    } catch (e) { if (ger === ADQ.ger) ADQ.erro = String((e && e.message) || e); }
+    finally { if (ADQ.p === pr) ADQ.p = null; }
+  })();
+  ADQ.p = pr;
+  return pr;
+}
+
+/* ---------- janelas ---------- */
+const adqJanOrd = () => ADQ.jan.slice().sort((a, b) => a.sit === "Em vigor" ? -1 : b.sit === "Em vigor" ? 1 : (a.ini || "9999") < (b.ini || "9999") ? -1 : (a.ini || "9999") > (b.ini || "9999") ? 1 : a.ordem - b.ordem);
+const adqJanCod = c => ADQ.jan.find(j => j.cod === c) || null;
+const adqProx = () => adqJanOrd().find(j => j.ini && j.ini > adqHoje()) || null;
+const adqJanSel = () => adqJanCod(ADQ.jsel) || adqJanOrd()[0] || null;
+function adqFaseProg(x) { if (x.st === "Concluído") return 1; if (!x.subs.length) return x.st === "Em andamento" ? 0.3 : 0; return x.subs.filter(s => s.ok).length / x.subs.length; }
+function adqFaseAtr(x) { if (x.st === "Concluído") return false; if (x.fim && x.fim < adqHoje()) return true; const j = adqJanCod(x.jan); return !!(j && j.ini && x.fim && x.fim >= j.ini); }
+
+/* ---------- permissões ---------- */
+const adqPag = k => session.n1 ? "proprietario" : pagNivel("adq", k);
+const adqPodeEd = k => adqPag(k) === "editar" || adqPag(k) === "proprietario";
+const adqPodeEx = k => adqPag(k) === "proprietario";
+const adqPagsVis = () => ADQ_PAGS.filter(p => adqPag(p.k) !== "nenhum");
+
+/* ---------- gravação (write-first) e desfazer ---------- */
+async function adqCriar(k, campos) { const it = await SP.create(ADQ.site.id, ADQ.lists[k].id, campos); return String((it && it.id) || ""); }
+async function adqAtualizar(k, id, campos) { await SP.update(ADQ.site.id, ADQ.lists[k].id, id, campos); }
+async function adqApagar(k, id) { await graph(`/sites/${ADQ.site.id}/lists/${ADQ.lists[k].id}/items/${id}`, { method: "DELETE" }); }
+function adqToast(msg, desfazer) {
+  ADQ.undo = desfazer ? { msg, fn: desfazer } : null;
+  let el = $("adqToast"); if (!el) { document.body.insertAdjacentHTML("beforeend", `<div id="adqToast" class="adq-toast" role="status" hidden></div>`); el = $("adqToast"); }
+  el.innerHTML = `<span>${esc(msg)}</span>${desfazer ? `<button type="button" onclick="adqDesfazer()">Desfazer</button>` : ""}`; el.hidden = false;
+  clearTimeout(el._t); el._t = setTimeout(() => { el.hidden = true; }, desfazer ? 9000 : 4000);
+}
+window.adqDesfazer = async () => {
+  if (ADQ.ocupado) { toast("Aguarde a gravação anterior terminar."); return; }
+  const u = ADQ.undo; ADQ.undo = null; const el = $("adqToast"); if (el) el.hidden = true; if (!u) return;
+  ADQ.ocupado = true;
+  try { await u.fn(); await adqCarregar(true); adqRender(); adqToast("Desfeito"); } catch (e) { toast("Não foi possível desfazer: " + e.message, 6000); await adqCarregar(true); adqRender(); }
+  finally { ADQ.ocupado = false; }
+};
+async function adqGravar(msg, fn, desfazer) {   /* grava no SharePoint primeiro; a tela só muda depois que gravou */
+  if (ADQ.ocupado) { toast("Aguarde a gravação anterior terminar."); adqRender(); return false; }
+  ADQ.ocupado = true;
+  try { await fn(); await adqCarregar(true); adqRender(); adqToast(msg, desfazer || null); return true; }
+  catch (e) { toast((e && e.semAcesso ? "" : "Não foi possível gravar: ") + ((e && e.message) || e), 6000); await adqCarregar(true); adqRender(); return false; }
+  finally { ADQ.ocupado = false; }
+}
+const adqJanCampos = j => ({ Title: j.nome, Codigo: j.cod, Inicio: j.ini || null, Carga: j.h, Dias: j.dias, Situacao: j.sit, Ordem: j.ordem || 0 });
+const adqFaseCampos = x => ({ Title: x.nome, Area: x.area, Responsavel: x.resp, Inicio: x.ini || null, Prazo: x.fim || null, Situacao: x.st, Janela: x.jan, Setor: x.setor, Subtarefas: JSON.stringify(x.subs || []), Anotacoes: x.notas || "" });
+async function adqAtualizarDesfaz(k, antes, depois, msg) {   /* grava só os campos que mudaram; desfazer volta esses campos */
+  const camposDe = k === "adq_jan" ? adqJanCampos : adqFaseCampos, a = camposDe(antes), d = camposDe(depois), mud = {}, vol = {};
+  Object.keys(d).forEach(c => { if (JSON.stringify(a[c] ?? null) !== JSON.stringify(d[c] ?? null)) { mud[c] = d[c]; vol[c] = a[c]; } });
+  if (!Object.keys(mud).length) { adqRender(); return true; }
+  return adqGravar(msg, () => adqAtualizar(k, depois._id, mud), () => adqAtualizar(k, antes._id, vol));
+}
+async function adqCriarDesfaz(k, obj, msg) {
+  let id = "";
+  return adqGravar(msg, async () => { id = await adqCriar(k, (k === "adq_jan" ? adqJanCampos : adqFaseCampos)(obj)); },
+    async () => { ADQ.desfazendo = id; try { await adqApagar(k, id); } finally { ADQ.desfazendo = ""; } });
+}
+
+/* ---------- rota ---------- */
+{ const r0 = route; route = function () {
+    const h = (location.hash || "").split("?")[0];
+    if (!ADQ.paramLido && !ADQ.paramCarregando && typeof APP_PRONTO !== "undefined" && APP_PRONTO && session.me) { ADQ.paramCarregando = true; adqParamCarregar().catch(() => {}).finally(() => { ADQ.paramCarregando = false; }); }
+    adqLateralFechar();
+    if (h === ADQ_BASE || h.startsWith(ADQ_BASE + "/")) {
+      const m = MODULES.find(x => x.id === "adq");
+      if (!ADQ_ON) {
+        if (!ADQ.paramLido && !ADQ.paramErro) { $("main").innerHTML = `<div class="page"><div class="cap-empty"><h3>Carregando…</h3></div></div>`; adqParamCarregar().then(() => { if ((location.hash || "").startsWith(ADQ_BASE)) route(); }).catch(() => {}); return; }
+        location.replace("#/area/Diretoria"); return;
+      }
+      if (!canSee(m)) return r0.apply(this, arguments);
+      const vis = adqPagsVis(); if (!vis.length) return r0.apply(this, arguments);
+      const sub = h.slice(ADQ_BASE.length + 1), p = vis.find(x => x.k === sub) || null;
+      if (!p) { location.replace(ADQ_BASE + "/" + (vis.find(x => x.k === ADQ.aba) || vis[0]).k); return; }
+      ADQ.aba = p.k; session.modAtual = "adq"; session.pagAtual = "adq." + p.k;
+      document.body.classList.remove("nav-open", "lista-aberta"); document.body.classList.add("wide");
+      $("main").innerHTML = adqPage(); navAtivo("adq"); window.scrollTo(0, 0);
+      adqCarregar().then(adqRender);
+      adqRender();
+      return;
+    }
+    return r0.apply(this, arguments);
+  }; }
+
+/* ---------- página ---------- */
+function adqPage() {
+  const vis = adqPagsVis();
+  return `<div class="page adq" id="adqRoot"><nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Diretoria">Diretoria</a><span>›</span><b>Adequação 6x1</b></nav>
+    <div class="cap-topo"><div><h1 style="margin:0">Adequação 6x1</h1><p class="sup" style="margin:2px 0 0">Fim da escala 6x1 (EC 141/2026): jornada, escala e plano de adequação.</p></div></div>
+    <div class="adq-views" role="tablist" aria-label="Visões">${vis.map(p => `<a role="tab" href="${ADQ_BASE}/${p.k}" class="adq-view${p.k === ADQ.aba ? " on" : ""}" aria-selected="${p.k === ADQ.aba}">${esc(p.n)}<small>${esc(p.d)}</small></a>`).join("")}</div>
+    <div id="adqBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`;
+}
+function adqRender() {
+  const body = $("adqBody"); if (!body || session.modAtual !== "adq") return;
+  if (ADQ.p && !ADQ.em) return;
+  if (ADQ.erro) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível ler as listas do módulo</h3><p>${esc(ADQ.erro)}</p></div>`; return; }
+  if (!ADQ.lists.adq_jan || !ADQ.lists.adq_fase) { body.innerHTML = `<div class="cap-empty"><h3>Listas ainda não criadas</h3><p>Um administrador precisa clicar em <b>Ligar</b> em Sistema › Configuração › Adequação 6x1 (cria as listas no site Diretoria), ou rodar o "Executar tudo na ordem".</p></div>`; return; }
+  if (ADQ.aba === "painel") body.innerHTML = adqPainelHtml();
+  else if (ADQ.aba === "plano") body.innerHTML = adqPlanoHtml();
+  else body.innerHTML = adqEscalaHtml();
+  if (ADQ.aba === "plano" && ADQ.planoVis === "gantt") adqGanttLigar();
+}
+window.adqRender = adqRender;
+const adqKpi = (cls, l, v, d) => `<div class="kpi static ${cls}"><div class="lbl">${esc(l)}</div><div class="val">${v}</div><div class="sub">${d}</div></div>`;
+
+/* ---------- PAINEL (R1: janelas e linha do plano) ---------- */
+function adqComecarHtml(ed) {
+  return `<div class="cap-card"><div class="cap-card-h"><h3>Começar</h3></div><p class="sup">Nenhuma janela cadastrada. ${ed ? `O botão cria as 3 janelas da EC 141/2026 (atual 6x1 44 h · transição 5x2 42 h, 60 dias após a promulgação · final 5x2 40 h, data a confirmar) e um plano inicial de fases, que você ajusta depois.` : "Peça a quem edita o módulo para criar as janelas."}</p>
+    ${ed ? `<div class="actions" style="margin-top:10px"><button class="btn primary" type="button" onclick="adqSemear()">Criar janelas e plano inicial</button></div>` : ""}</div>`;
+}
+function adqPainelHtml() {
+  const ed = adqPodeEd("painel"), P = adqParam();
+  if (!ADQ.jan.length) return adqComecarHtml(ed && adqPodeEd("plano"));
+  const J = adqJanSel(), pj = adqProx(), hoje = adqHoje();
+  if (!ADQ.jsel || !adqJanCod(ADQ.jsel)) ADQ.jsel = J ? J.cod : "";
+  const kpis = `<div class="cap-kpis adq-kpis">${adqKpi("hoje", "Dias até a virada", pj ? String(adqDiff(pj.ini, hoje)) : "—", pj ? `${esc(pj.nome)} · ${adqH(pj.h)} h em ${esc(adqFmtL(pj.ini))}` : "nenhuma janela com data")}
+    ${adqKpi("", "Pessoas aderentes", "—", `contra ${esc(J ? J.nome : "—")} · leitura do Ponto na próxima versão`)}${adqKpi("", "Contratações", "—", "depende da demanda (próxima versão)")}</div>`;
+  const cards = adqJanOrd().map(j => { const q = j.sit === "Em vigor" ? "<b>Em vigor hoje</b>" : j.ini ? `<b>${esc(adqFmtL(j.ini))}</b> · ${adqDiff(j.ini, hoje) >= 0 ? "faltam " + adqDiff(j.ini, hoje) + " dias" : "começou há " + (-adqDiff(j.ini, hoje)) + " dias"}` : "<b>Data a confirmar</b>";
+    return `<button type="button" class="adq-jan" aria-pressed="${j.cod === ADQ.jsel}" onclick="adqJanSelec(${jsArg(j.cod)})"><span class="k"><span>${esc(j.nome)}</span>${j === pj ? `<span class="pill st-pendente">próxima</span>` : ""}</span><span class="h">${adqH(j.h)} h <small>· até ${j.dias} dias/semana</small></span><span class="w">${q}</span></button>`; }).join("");
+  const tot = ADQ.fase.length, pc = tot ? ADQ.fase.reduce((a, x) => a + adqFaseProg(x), 0) / tot : 0, atr = ADQ.fase.filter(adqFaseAtr).length, concl = ADQ.fase.filter(x => x.st === "Concluído").length;
+  const plano = adqPodeVer("plano") ? `<div class="adq-planline"><b>Plano</b><span class="adq-pl-b"><span class="adq-prog" style="width:120px"><i style="width:${Math.round(pc * 100)}%"></i></span>${Math.round(pc * 100)}% concluído</span><span>${concl} de ${tot} fases</span>${atr ? `<span class="pill st-vencido">${atr} atrasada${atr > 1 ? "s" : ""}</span>` : `<span class="pill st-pago">nada atrasado</span>`}<a class="adq-lnk" href="${ADQ_BASE}/plano" onclick="ADQ.soAtr=${atr > 0}">Abrir o plano →</a></div>` : "";
+  return kpis + `<div class="cap-card"><div class="adq-head"><div><h3>Janelas de adequação</h3><p class="sup">Toque numa janela para ver o painel contra ela: a atual mostra se a jornada de hoje está sendo cumprida; as próximas mostram quem precisa mudar.</p></div>
+      ${ed ? `<button class="btn sm" type="button" aria-expanded="${ADQ.editJan}" onclick="adqJanEditar()">${ADQ.editJan ? "Fechar edição" : "Editar janelas"}</button>` : ""}</div>
+    <div class="adq-jans">${cards}</div>
+    ${ADQ.editJan && ed ? adqJanForm(P) : ""}${plano}</div>
+    <div class="cap-card"><div class="cap-card-h"><h3>Setores</h3></div><p class="sup">Aderência por setor (Controle de Ponto), cobertura e contratações entram na próxima versão do módulo.</p></div>`;
+}
+const adqPodeVer = k => adqPag(k) !== "nenhum";
+window.adqJanSelec = c => { ADQ.jsel = c; adqRender(); };
+window.adqJanEditar = () => { ADQ.editJan = !ADQ.editJan; adqRender(); };
+function adqJanForm(P) {
+  const adm = !!session.n1, ex = adqPodeEx("painel");
+  return `<div class="adq-janform"><div class="adq-controls"><label class="adq-field">Promulgação<input type="date" id="adqPromul" value="${esc(P.promulgacao || "")}" ${adm ? "" : "disabled"} onchange="adqParamCampo('promulgacao', this.value)"></label>
+      <label class="adq-field">Prazo da 1ª etapa (dias)<input type="number" id="adqPrazo" min="0" max="730" value="${esc(P.prazo1)}" style="width:110px" ${adm ? "" : "disabled"} onchange="adqParamCampo('prazo1', +this.value)"></label>
+      <button class="btn" type="button" onclick="adqRecalc()">Recalcular 1ª etapa</button><button class="btn primary" type="button" onclick="adqJanIncluir()">Incluir janela</button></div>
+    ${adm ? "" : `<p class="sup">Promulgação e prazo ficam na chave "adequacao" (ERP — Parâmetros): só um administrador altera.</p>`}
+    <div class="table-wrap"><table class="cap-table adq-tbl" style="min-width:720px"><thead><tr><th>Janela</th><th>Início</th><th>Carga semanal (h)</th><th>Dias/semana</th><th>Situação</th><th>Fases</th><th></th></tr></thead><tbody>
+    ${adqJanOrd().map(j => `<tr data-j="${esc(j._id)}"><td><input data-k="nome" value="${esc(j.nome)}" maxlength="40" aria-label="Nome"></td><td><input type="date" data-k="ini" value="${esc(j.ini)}" aria-label="Início" ${j.sit === "Em vigor" ? "disabled" : ""}></td>
+      <td><input type="number" data-k="h" value="${esc(j.h)}" min="20" max="48" step="0.5" style="width:80px" aria-label="Carga"></td><td><input type="number" data-k="dias" value="${esc(j.dias)}" min="3" max="6" style="width:70px" aria-label="Dias"></td>
+      <td><select data-k="sit" aria-label="Situação">${ADQ_SIT_JAN.map(o => `<option${o === j.sit ? " selected" : ""}>${o}</option>`).join("")}</select></td><td>${ADQ.fase.filter(x => x.jan === j.cod).length}</td>
+      <td>${ex ? `<button type="button" class="btn sm adq-danger" onclick="adqJanExcluir(${jsArg(j._id)})">Excluir</button>` : ""}</td></tr>`).join("")}</tbody></table></div></div>`;
+}
+document.addEventListener("change", e => {
+  const t = e.target; if (!t || !t.closest || !t.closest(".adq-janform tbody") || !t.dataset.k) return;
+  const j = ADQ.jan.find(x => x._id === t.closest("tr").dataset.j); if (!j) return;
+  const k = t.dataset.k; let v = t.value;
+  if (k === "h" || k === "dias") { v = adqNum(v); if (k === "h" && (v < 20 || v > 48)) { toast("Carga entre 20 e 48 h."); adqRender(); return; } if (k === "dias" && (v < 3 || v > 6 || v !== Math.round(v))) { toast("Dias por semana entre 3 e 6."); adqRender(); return; } }
+  if (k === "nome" && !String(v).trim()) { adqRender(); return; }
+  adqJanMudar(j, { [k]: k === "nome" ? String(v).trim() : v });
+});
+async function adqJanMudar(j, mud) {
+  const depois = Object.assign({}, j, mud);
+  if (mud.sit === "Em vigor") {
+    depois.ini = "";
+    const outras = ADQ.jan.filter(o => o !== j && o.sit === "Em vigor").map(o => [Object.assign({}, o), Object.assign({}, o, { sit: "Programada" })]);
+    return adqGravar(`Janela "${j.nome}" em vigor`, async () => { await adqAtualizar("adq_jan", j._id, adqJanCampos(depois)); for (const [, d] of outras) await adqAtualizar("adq_jan", d._id, adqJanCampos(d)); },
+      async () => { await adqAtualizar("adq_jan", j._id, adqJanCampos(j)); for (const [a] of outras) await adqAtualizar("adq_jan", a._id, adqJanCampos(a)); });
+  }
+  return adqAtualizarDesfaz("adq_jan", Object.assign({}, j), depois, `Janela "${depois.nome}" atualizada`);
+}
+window.adqJanIncluir = () => { const n = ADQ.jan.reduce((a, j) => Math.max(a, +(String(j.cod).match(/\d+/) || [0])[0]), 0) + 1;
+  adqCriarDesfaz("adq_jan", { nome: "Nova janela", cod: "J" + n, ini: "", h: 40, dias: 5, sit: "A confirmar", ordem: n }, "Janela incluída"); };
+window.adqJanExcluir = async id => {
+  const j = ADQ.jan.find(x => x._id === id); if (!j) return;
+  if (ADQ.jan.length <= 1) { toast("Mantenha pelo menos uma janela."); return; }
+  const nf = ADQ.fase.filter(x => x.jan === j.cod).length;
+  if (!(await erpConfirmar({ titulo: "Excluir janela", texto: `Excluir a janela "${j.nome}"?${nf ? ` ${nf} fase(s) ficam "Sem janela".` : ""}`, sim: "Excluir", perigo: true }))) return;
+  const copia = Object.assign({}, j);
+  adqGravar(`Janela "${j.nome}" excluída`, () => adqApagar("adq_jan", id), () => adqCriar("adq_jan", adqJanCampos(copia)));
+};
+window.adqParamCampo = async (k, v) => {
+  if (!session.n1) return;
+  if (k === "prazo1" && (!(v >= 0) || v > 730)) { toast("Prazo entre 0 e 730 dias."); adqRender(); return; }
+  try { await adqParamGravar({ [k]: v }); adqToast(k === "promulgacao" ? "Promulgação atualizada" : "Prazo atualizado"); } catch (e) { toast("Não foi possível gravar: " + e.message, 6000); }
+  adqRender();
+};
+window.adqRecalc = () => {
+  const P = adqParam(), j = ADQ.jan.filter(x => x.sit !== "Em vigor").sort((a, b) => a.ordem - b.ordem || (a.cod < b.cod ? -1 : 1))[0];
+  if (!P.promulgacao) { toast("Informe a data da promulgação."); return; }
+  if (!j) { toast("Não há janela além da que está em vigor."); return; }
+  const ini = adqAdd(P.promulgacao, +P.prazo1 || 0);
+  adqAtualizarDesfaz("adq_jan", Object.assign({}, j), Object.assign({}, j, { ini, sit: "Programada" }), `1ª etapa em ${adqFmtL(ini)}`);
+};
+window.adqSemear = async () => {
+  if (!adqPodeEd("painel") || !adqPodeEd("plano") || ADQ.jan.length) return;
+  const P = adqParam(); if (!P.promulgacao) { toast("A data da promulgação não está na chave \"adequacao\"."); return; }
+  const j2 = adqAdd(P.promulgacao, Number.isFinite(+P.prazo1) ? +P.prazo1 : 60), hoje = adqHoje();
+  const J = [{ cod: "J1", nome: "Atual · 6x1", ini: "", h: 44, dias: 6, sit: "Em vigor", ordem: 1 }, { cod: "J2", nome: "Transição · 5x2", ini: j2, h: 42, dias: 5, sit: "Programada", ordem: 2 }, { cod: "J3", nome: "Final · 5x2", ini: "", h: 40, dias: 5, sit: "A confirmar", ordem: 3 }];
+  const f = (nome, area, resp, di, df, jan, setor, subs) => ({ nome, area, resp, ini: adqAdd(hoje, di), fim: adqAdd(hoje, df), st: "A fazer", jan, setor, subs: subs.map(t => ({ t, ok: false })), notas: "" });
+  const F = [
+    f("Levantamento e proposta", "Diretoria", "Diretoria", 0, 10, "J2", "", ["Inventário do ERP", "Proposta de decisões", "Aprovação da Diretoria"]),
+    f("Confirmar texto promulgado e convenção", "Jurídico", "Jurídico", 0, 20, "J2", "", ["Datas e etapas da transição", "Regras do transporte rodoviário", "Convenção dos rodoviários"]),
+    f("Diagnóstico por setor", "RH", "RH", 3, 17, "J2", "", ["Regimes por setor", "HE média do Ponto"]),
+    f("Novas escalas 5x2 por setor", "RH", "Gestores de área", 14, 40, "J2", "", []),
+    f("Contratações", "RH", "RH", 30, 55, "J2", "", ["Abrir vagas", "Seleção", "Admissão e ASO"]),
+    f("Ponto e folha (parâmetros)", "Financeiro", "Financeiro", 35, 50, "J2", "", []),
+    f("Comunicação às equipes", "RH", "RH", 40, 50, "J2", "", []),
+    f("Escalas de virada publicadas", "Operacional", "Gestores de área", 45, 55, "J2", "", []),
+    f("Planejamento da janela 40 h", "Diretoria", "Diretoria", 90, 130, "J3", "", [])
+  ].map(x => { if (x.fim >= j2 && x.jan === "J2") x.fim = adqAdd(j2, -1); if (x.ini > x.fim) x.ini = x.fim; return x; });
+  await adqGravar("Janelas e plano inicial criados", async () => { for (const j of J) await adqCriar("adq_jan", adqJanCampos(j)); for (const x of F) await adqCriar("adq_fase", adqFaseCampos(x)); }, null);
+};
+
+/* ---------- ESCALA (R3) ---------- */
+function adqEscalaHtml() { return `<div class="cap-empty"><h3>Escala da semana</h3><p>Planejar a semana pela demanda (serviços por tipo de dia), conferindo janela, folgas e interjornada. Chega numa próxima versão do módulo.</p></div>`; }
+
+/* ---------- PLANO ---------- */
+function adqGrupos(L) { const g = adqJanOrd().map(j => ({ j, L: L.filter(t => t.jan === j.cod) })).filter(x => x.L.length); const o = L.filter(t => !adqJanCod(t.jan)); if (o.length) g.push({ j: null, L: o }); return g; }
+const adqVisiveis = () => ADQ.fase.filter(x => !ADQ.soAtr || adqFaseAtr(x)).sort((a, b) => (a.ini || "") < (b.ini || "") ? -1 : (a.ini || "") > (b.ini || "") ? 1 : 0);
+function adqPlanoHtml() {
+  const ed = adqPodeEd("plano");
+  if (!ADQ.jan.length && !ADQ.fase.length) return adqComecarHtml(adqPodeEd("painel") && ed);
+  const atr = ADQ.fase.filter(adqFaseAtr).length;
+  return `<div class="cap-card"><div class="adq-head"><div><h3>Plano de adequação</h3><p class="sup">Toque numa fase para ${ed ? "editar" : "ver"}.${ed ? " No cronograma, arraste a barra para mover e puxe a ponta para mudar o prazo." : ""}</p></div>
+      <div class="adq-seg" role="group" aria-label="Visão"><button type="button" aria-pressed="${ADQ.planoVis === "lista"}" onclick="adqPlanoVis('lista')">Lista</button><button type="button" aria-pressed="${ADQ.planoVis === "gantt"}" onclick="adqPlanoVis('gantt')">Cronograma</button></div></div>
+    <div class="adq-quick">${ed ? `<label class="adq-field" style="flex:1 1 320px">Lançamento rápido (Enter)<input id="adqQuick" maxlength="200" placeholder="Ex.: Treinar gestores @RH 01/12 a 10/12 #RH" onkeydown="if(event.key==='Enter'){event.preventDefault();adqRapido(this)}"></label>
+      <button class="btn primary" type="button" onclick="adqEditor(null)">Incluir fase</button>` : ""}
+      <button class="btn${ADQ.soAtr ? " primary" : ""}" type="button" aria-pressed="${ADQ.soAtr}" onclick="adqSoAtr()">Só atrasadas${atr ? ` (${atr})` : ""}</button></div>
+    ${ADQ.planoVis === "lista" ? adqListaHtml() : `<div class="adq-gwrap" id="adqGantt">${adqGanttHtml()}</div>`}
+    <p class="adq-note">Atrasada: prazo vencido ou fase que termina no início da janela a que pertence (ou depois). Progresso: subtarefas concluídas.</p></div>`;
+}
+window.adqPlanoVis = v => { ADQ.planoVis = v; adqRender(); };
+window.adqSoAtr = () => { ADQ.soAtr = !ADQ.soAtr; adqRender(); };
+function adqListaHtml() {
+  const G = adqGrupos(adqVisiveis());
+  return `<div class="table-wrap"><table class="cap-table adq-tbl" style="min-width:820px"><thead><tr><th>Fase</th><th>Responsável</th><th>Setor</th><th>Início</th><th>Prazo</th><th>Situação</th><th>Progresso</th></tr></thead><tbody>
+    ${G.map(({ j, L }) => `<tr class="adq-grp"><td colspan="7">${j ? `${esc(j.nome)} · ${adqH(j.h)} h${j.ini ? " · a partir de " + esc(adqFmt(j.ini)) : ""}` : "Sem janela"}</td></tr>` + L.map(t => { const late = adqFaseAtr(t);
+      return `<tr onclick="adqEditor(${jsArg(t._id)})"><td><b>${esc(t.nome)}</b>${t.subs.length ? `<div class="sup">${t.subs.filter(s => s.ok).length}/${t.subs.length} subtarefas</div>` : ""}</td><td>${esc(t.resp || "—")}<div class="sup">${esc(t.area)}</div></td><td>${esc(t.setor || "Todos")}</td><td class="nw">${esc(adqFmt(t.ini))}</td><td class="nw">${esc(adqFmt(t.fim))}</td>
+        <td><span class="pill ${late ? "st-vencido" : ADQ_ST_CLS[t.st]}">${late ? "Atrasada" : esc(t.st)}</span></td><td><span class="adq-prog"><i style="width:${Math.round(adqFaseProg(t) * 100)}%"></i></span></td></tr>`; }).join("")).join("")
+      || `<tr><td colspan="7" class="sup">Nenhuma fase${ADQ.soAtr ? " atrasada" : ""}.</td></tr>`}</tbody></table></div>`;
+}
+const ADQ_PX = 10;
+function adqGanttFaixa() {
+  const ds = ADQ.fase.flatMap(x => [x.ini, x.fim]).concat(ADQ.jan.filter(j => j.ini).map(j => j.ini), [adqHoje()]).filter(Boolean).sort();
+  return { t0: adqAdd(ds[0], -5), t1: adqAdd(ds[ds.length - 1], 14) };
+}
+function adqGanttHtml() {
+  const L = adqVisiveis(), F = adqGanttFaixa(), W = (adqDiff(F.t1, F.t0) + 1) * ADQ_PX, x = d => adqDiff(d, F.t0) * ADQ_PX, ed = adqPodeEd("plano");
+  let ticks = ""; for (let d = F.t0; d <= F.t1; d = adqAdd(d, 1)) if (adqD(d).getDay() === 1) ticks += `<span class="adq-g-tick" style="left:${x(d)}px">${esc(adqFmt(d))}</span>`;
+  let h = `<div class="adq-g" style="min-width:${250 + W}px"><div class="adq-g-row adq-g-head"><div class="adq-g-name"></div><div class="adq-g-tr" style="width:${W}px">${ticks}</div></div>`;
+  adqGrupos(L).forEach(({ j, L: g }) => {
+    h += `<div class="adq-g-row adq-g-grp"><div class="adq-g-name">${j ? `${esc(j.nome)} · ${adqH(j.h)} h` : "Sem janela"}</div><div class="adq-g-tr" style="width:${W}px"></div></div>`;
+    g.forEach(t => { const a = t.ini || t.fim || adqHoje(), b = t.fim || a, pg = adqFaseProg(t), late = adqFaseAtr(t);
+      h += `<div class="adq-g-row"><div class="adq-g-name" role="button" tabindex="0" onclick="adqEditor(${jsArg(t._id)})" onkeydown="if(event.key==='Enter')adqEditor(${jsArg(t._id)})">${esc(t.nome)}<small>${esc(t.resp || "—")} · ${esc(adqFmt(a))}–${esc(adqFmt(b))}</small></div>
+        <div class="adq-g-tr" style="width:${W}px"><div class="adq-g-bar${late ? " late" : ""}${t.st === "Concluído" ? " done" : ""}${ed ? " mov" : ""}" data-id="${esc(t._id)}" style="left:${x(a)}px;width:${Math.max(ADQ_PX, (adqDiff(b, a) + 1) * ADQ_PX)}px"><div class="pr" style="width:${Math.round(pg * 100)}%"></div><span class="lb">${Math.round(pg * 100)}%</span>${ed ? `<div class="hd" data-h="1"></div>` : ""}</div></div></div>`; });
+  });
+  if (!L.length) h += `<p class="sup" style="padding:16px 0">Nenhuma fase${ADQ.soAtr ? " atrasada" : ""}.</p>`;
+  h += `<div class="adq-g-ov" style="left:250px;width:${W}px"><div class="adq-g-ln" style="left:${x(adqHoje())}px"><span>Hoje</span></div>${ADQ.jan.filter(j => j.ini).map(j => `<div class="adq-g-ln j" style="left:${x(j.ini)}px"><span>${adqH(j.h)} h · ${esc(adqFmt(j.ini))}</span></div>`).join("")}</div></div>`;
+  return h;
+}
+function adqGanttLigar() {
+  const g = document.querySelector("#adqGantt .adq-g"); if (!g || !adqPodeEd("plano")) return;
+  g.querySelectorAll(".adq-g-bar.mov").forEach(bar => bar.addEventListener("pointerdown", e => {
+    e.preventDefault(); const t = ADQ.fase.find(z => z._id === bar.dataset.id); if (!t) return;
+    const modo = e.target.dataset.h ? "res" : "mov", sx = e.clientX, l0 = parseFloat(bar.style.left), w0 = parseFloat(bar.style.width); let dd = 0;
+    try { bar.setPointerCapture(e.pointerId); } catch (er) {}
+    const mv = ev => { dd = Math.round((ev.clientX - sx) / ADQ_PX); if (modo === "mov") bar.style.left = (l0 + dd * ADQ_PX) + "px"; else bar.style.width = Math.max(ADQ_PX, w0 + dd * ADQ_PX) + "px"; };
+    const up = () => { bar.removeEventListener("pointermove", mv); bar.removeEventListener("pointerup", up); bar.removeEventListener("pointercancel", up);
+      if (dd === 0) { if (modo === "mov") adqEditor(t._id); return; }
+      const d = Object.assign({}, t);
+      if (modo === "mov") { d.ini = adqAdd(t.ini || t.fim, dd); d.fim = adqAdd(t.fim || t.ini, dd); } else { const nf = adqAdd(t.fim || t.ini, dd); d.fim = nf < (t.ini || nf) ? t.ini : nf; }
+      adqAtualizarDesfaz("adq_fase", Object.assign({}, t), d, modo === "mov" ? `"${t.nome}" movida ${dd > 0 ? "+" : ""}${dd} dia(s)` : `Prazo de "${t.nome}" alterado`); };
+    bar.addEventListener("pointermove", mv); bar.addEventListener("pointerup", up); bar.addEventListener("pointercancel", up);
+  }));
+}
+function adqLerRapido(v) {   /* "Nome @responsável dd/mm a dd/mm #área" (lógica copiada da Central de Tarefas, adaptada) */
+  const hoje = adqHoje(), ano = +hoje.slice(0, 4);
+  const ds = [...v.matchAll(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/g)].map(m => { let y = m[3] ? +m[3] : ano; if (y < 100) y += 2000; const dd = +m[1], mm = +m[2]; const x = new Date(y, mm - 1, dd); if (x.getMonth() !== mm - 1 || x.getDate() !== dd) return ""; let d = adqIsoD(x); if (!m[3] && d < adqAdd(hoje, -30)) d = adqIsoD(new Date(y + 1, mm - 1, dd)); return d; }).filter(Boolean);
+  const r = v.match(/@(\S+)/), a = v.match(/#(\S+)/);
+  const area = a ? (ADQ_AREAS.find(x => normName(x) === normName(a[1])) || a[1].slice(0, 60)) : "Diretoria";
+  const nome = v.replace(/\d{1,2}\/\d{1,2}(\/\d{2,4})?\s+a\s+(?=\d{1,2}\/)/gi, " ").replace(/@\S+|#\S+|\d{1,2}\/\d{1,2}(\/\d{2,4})?/g, "").replace(/\s+a\s*$/i, "").replace(/\s{2,}/g, " ").trim() || "Nova fase";
+  const ini = ds[0] || hoje; let fim = ds[1] || adqAdd(ini, 7); if (fim < ini) fim = ini;
+  return { nome: nome.slice(0, 120), area, resp: r ? r[1].slice(0, 80) : "A definir", ini, fim };
+}
+window.adqRapido = inp => {
+  const v = String(inp.value || "").trim(); if (!v || !adqPodeEd("plano")) return;
+  const q = adqLerRapido(v), pj = adqProx() || adqJanOrd()[0];
+  adqCriarDesfaz("adq_fase", Object.assign(q, { st: "A fazer", jan: pj ? pj.cod : "", setor: "", subs: [], notas: "" }), `Fase "${q.nome}" incluída`).then(ok => { if (ok) { const i = $("adqQuick"); if (i) { i.value = ""; i.focus(); } } });
+};
+
+/* ---------- painel lateral (editor de fase) ---------- */
+function adqLateral(html, cls) {
+  adqLateralFechar();
+  document.body.insertAdjacentHTML("beforeend", `<div class="adq-ov" id="adqOv"><div class="adq-ed${cls ? " " + cls : ""}" role="dialog" aria-modal="true">${html}</div></div>`);
+  const ov = $("adqOv"); ov.addEventListener("click", e => { if (e.target === ov) adqLateralFechar(); });
+  ADQ.escK = e => { if (e.key === "Escape") adqLateralFechar(); }; document.addEventListener("keydown", ADQ.escK);
+}
+function adqLateralFechar() { const ov = $("adqOv"); if (ov) ov.remove(); if (ADQ.escK) document.removeEventListener("keydown", ADQ.escK); ADQ.escK = null; }
+window.adqLateralFechar = adqLateralFechar;
+window.adqEditor = (id, setorPre) => {
+  const t = id ? ADQ.fase.find(z => z._id === id) : null; if (id && !t) return;
+  const ed = adqPodeEd("plano"), pj = adqProx() || adqJanOrd()[0], hoje = adqHoje();
+  if (!t && !ed) return;
+  const x = t ? JSON.parse(JSON.stringify(t)) : { nome: "", area: "Diretoria", resp: "", ini: hoje, fim: adqAdd(hoje, 7), st: "A fazer", jan: pj ? pj.cod : "", setor: setorPre || "", subs: [], notas: "" };
+  ADQ.edX = x; ADQ.edT = t;
+  const dis = ed ? "" : "disabled";
+  const opt = (arr, v) => arr.map(o => `<option${o === v ? " selected" : ""}>${esc(o)}</option>`).join("");
+  const setores = adqSetoresNomes(); if (x.setor && !setores.includes(x.setor)) setores.push(x.setor);
+  adqLateral(`<form id="adqEdForm" onsubmit="event.preventDefault();adqEditorSalvar()"><div class="adq-ed-h"><h3>${t ? (ed ? "Editar fase" : "Fase") : "Nova fase"}</h3><button type="button" class="btn sm" onclick="adqLateralFechar()" aria-label="Fechar">✕</button></div>
+    <label class="adq-field">Nome<input id="adqENome" required maxlength="120" value="${esc(x.nome)}" ${dis}></label>
+    <div class="adq-g2"><label class="adq-field">Área<select id="adqEArea" ${dis}>${opt(ADQ_AREAS.includes(x.area) ? ADQ_AREAS : ADQ_AREAS.concat(x.area), x.area)}</select></label><label class="adq-field">Responsável<input id="adqEResp" maxlength="80" list="adqResps" value="${esc(x.resp)}" ${dis}></label></div>
+    <datalist id="adqResps">${[...new Set(ADQ.fase.map(z => z.resp).filter(Boolean))].map(r => `<option value="${esc(r)}">`).join("")}</datalist>
+    <div class="adq-g2"><label class="adq-field">Início<input type="date" id="adqEIni" value="${esc(x.ini)}" required ${dis}></label><label class="adq-field">Prazo<input type="date" id="adqEFim" value="${esc(x.fim)}" required ${dis}></label></div>
+    <div class="adq-g2"><label class="adq-field">Situação<select id="adqESt" ${dis}>${opt(ADQ_ST, x.st)}</select></label><label class="adq-field">Janela<select id="adqEJan" ${dis}><option value="">Sem janela</option>${adqJanOrd().map(j => `<option value="${esc(j.cod)}"${j.cod === x.jan ? " selected" : ""}>${esc(j.nome)} · ${adqH(j.h)} h</option>`).join("")}</select></label></div>
+    <label class="adq-field">Setor<select id="adqESetor" ${dis}><option value="">Todos</option>${setores.map(s => `<option${s === x.setor ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
+    <div class="adq-field">Subtarefas<div class="adq-subs" id="adqESubs"></div>${ed ? `<button type="button" class="btn sm" style="align-self:flex-start" onclick="adqSubAdd()">Incluir subtarefa</button>` : ""}</div>
+    <label class="adq-field">Anotações<textarea id="adqENotas" maxlength="2000" ${dis}>${esc(x.notas)}</textarea></label>
+    <p id="adqEErr" class="adq-err" hidden></p>
+    <div class="adq-ed-foot"><div>${t && adqPodeEx("plano") ? `<button type="button" class="btn adq-danger" onclick="adqEditorExcluir()">Excluir</button>` : ""}</div><div class="adq-controls"><button type="button" class="btn" onclick="adqLateralFechar()">${ed ? "Cancelar" : "Fechar"}</button>${ed ? `<button type="submit" class="btn primary">Salvar</button>` : ""}</div></div></form>`);
+  adqSubsPintar();
+  setTimeout(() => { const n = $("adqENome"); if (n && ed) n.focus(); }, 30);
+};
+function adqSubsPintar() {
+  const el = $("adqESubs"), x = ADQ.edX; if (!el || !x) return; const dis = adqPodeEd("plano") ? "" : "disabled";
+  el.innerHTML = x.subs.map((s, i) => `<label><input type="checkbox" data-i="${i}"${s.ok ? " checked" : ""} aria-label="Concluída" ${dis}><input type="text" data-i="${i}" value="${esc(s.t)}" maxlength="120" aria-label="Subtarefa" ${dis}>${dis ? "" : `<button type="button" class="btn sm" data-del="${i}" aria-label="Remover">✕</button>`}</label>`).join("") || `<span class="sup">Nenhuma subtarefa.</span>`;
+  el.oninput = e => { const i = +e.target.dataset.i; if (isNaN(i) || !x.subs[i]) return; if (e.target.type === "checkbox") x.subs[i].ok = e.target.checked; else x.subs[i].t = e.target.value; };
+  el.onclick = e => { const d = e.target.dataset.del; if (d !== undefined) { x.subs.splice(+d, 1); adqSubsPintar(); } };
+}
+window.adqSubAdd = () => { if (!ADQ.edX) return; ADQ.edX.subs.push({ t: "", ok: false }); adqSubsPintar(); const ins = document.querySelectorAll("#adqESubs input[type=text]"); if (ins.length) ins[ins.length - 1].focus(); };
+window.adqEditorSalvar = async () => {
+  if (!adqPodeEd("plano")) return;
+  const x = ADQ.edX, t = ADQ.edT, err = $("adqEErr"), nome = $("adqENome").value.trim(), ini = $("adqEIni").value, fim = $("adqEFim").value;
+  if (!nome || !ini || !fim) { err.hidden = false; err.textContent = "Preencha o nome, o início e o prazo."; return; }
+  if (fim < ini) { err.hidden = false; err.textContent = "O prazo não pode ser antes do início."; return; }
+  Object.assign(x, { nome, area: $("adqEArea").value, resp: $("adqEResp").value.trim() || "A definir", ini, fim, st: $("adqESt").value, jan: $("adqEJan").value, setor: $("adqESetor").value, notas: $("adqENotas").value, subs: x.subs.filter(s => String(s.t).trim()).map(s => ({ t: String(s.t).trim().slice(0, 120), ok: !!s.ok })) });
+  const ok = t ? await adqAtualizarDesfaz("adq_fase", JSON.parse(JSON.stringify(t)), Object.assign({ _id: t._id }, x), "Fase salva") : await adqCriarDesfaz("adq_fase", x, `Fase "${x.nome}" incluída`);
+  if (ok) adqLateralFechar(); else if ($("adqEErr")) { err.hidden = false; err.textContent = "Não foi gravado. Confira a mensagem e tente de novo."; }
+};
+window.adqEditorExcluir = async () => {
+  const t = ADQ.edT; if (!t || !adqPodeEx("plano")) return;
+  if (!(await erpConfirmar({ titulo: "Excluir fase", texto: `Excluir a fase "${t.nome}"?`, sim: "Excluir", perigo: true }))) return;
+  const copia = JSON.parse(JSON.stringify(t));
+  if (await adqGravar(`Fase "${t.nome}" excluída`, () => adqApagar("adq_fase", t._id), () => adqCriar("adq_fase", adqFaseCampos(copia)))) adqLateralFechar();
+};
+function adqSetoresNomes() { return [...new Set(ADQ.fase.map(x => x.setor).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")); }   /* R2: setores do RH/Ponto */
+
+/* ---------- Configuração › Adequação 6x1 (administrador) ---------- */
+{ const pc = pageConfig; pageConfig = function () {
+    const h = pc.apply(this, arguments); if (!session.n1) return h;
+    const card = `<section class="setup-card" id="adqCfg"><h2>Adequação 6x1 (Diretoria) — módulo removível</h2>
+      <p class="desc">Módulo isolado: lê Funcionários, Controle de Ponto, Feriados e Tabela de Horários, e grava só nas próprias listas do site Diretoria. Desligado, some do menu e da matriz de permissões, sem apagar dados.</p>
+      <div id="adqCfgCorpo"><p class="desc">Lendo a chave "adequacao"…</p></div><div class="setup-log checks" id="adqCfgLog" style="display:none;max-height:260px;overflow:auto"></div></section>`;
+    setTimeout(() => { adqCfgPintar(true).catch(() => {}); }, 0);
+    return h.replace(/(<div class="setup-all">)/, card + "$1");
+  }; window.pageConfig = pageConfig; }
+function adqCfgLog(t, cls) { const el = $("adqCfgLog"); if (!el) return; el.style.display = "block"; el.insertAdjacentHTML("beforeend", `<div class="${cls || ""}">${esc(t)}</div>`); el.scrollTop = el.scrollHeight; }
+async function adqCfgPintar(ler) {
+  const c = $("adqCfgCorpo"); if (!c) return;
+  if (ler) { await adqParamCarregar(true); try { await adqListas(); } catch (e) {} }
+  const ex = ADQ_KEYS.filter(k => ADQ.lists[k]).length;
+  c.innerHTML = `<div class="setup-meta"><span><b>Situação</b> ${ADQ.paramErro ? "não foi possível ler a chave" : ADQ_ON ? "ligado" : "desligado"}</span><span><b>Listas</b> ${ex} de ${ADQ_KEYS.length} no site Diretoria</span><span><b>Chave</b> ${ADQ.param ? "existe" : "não existe"}</span></div>
+    <div class="actions">${ADQ_ON ? `<button class="btn" type="button" onclick="adqCfgLigar(false)">Desligar</button>` : `<button class="btn primary" type="button" onclick="adqCfgLigar(true)">Ligar (cria as listas)</button>`}
+      <button class="btn" type="button" onclick="adqCfgExportar()" ${ex ? "" : "disabled"}>Exportar dados (.xlsx)</button>
+      <button class="btn" type="button" style="color:var(--err)" onclick="adqCfgRemover()" ${ex || ADQ.param ? "" : "disabled"}>Remover Adequação 6x1</button></div>
+    <p class="desc" style="margin-top:10px">Remover: 1) exporta Janelas, Fases, Serviços e Escalas num .xlsx; 2) manda as listas para a lixeira do site Diretoria (93 dias) e apaga a chave; 3) numa versão seguinte, o bloco sai do código. Permissões padrão: Diretoria Proprietário; RH Editar (em Usuários e permissões).</p>`;
+}
+window.adqCfgLigar = async v => {
+  if (!session.n1) return;
+  try {
+    if (v) { adqCfgLog("Criando as listas no site Diretoria…");
+      for (const k of ADQ_KEYS) { const steps = await setupList(LISTS[k], () => {}); const er = steps.find(s => s.state === "err"); if (er) throw new Error(`${LISTS[k].displayName}: ${er.label}${er.note ? " — " + er.note : ""}`); adqCfgLog(`✓ ${LISTS[k].displayName}`, "ok"); } }
+    await adqParamGravar({ ativo: !!v }); adqCfgLog(v ? "Módulo ligado. Ele aparece em Diretoria › Adequação 6x1." : "Módulo desligado (dados mantidos).", "ok");
+  } catch (e) { adqCfgLog("Não foi possível: " + e.message, "warn"); }
+  ADQ.em = 0; adqCfgPintar(true).catch(() => {});
+};
+window.adqCfgExportar = async () => {
+  if (!session.n1) return;
+  try {
+    await adqListas(); await erpLib("xlsx");
+    const wb = XLSX.utils.book_new(); let n = 0;
+    for (const k of ADQ_KEYS) {
+      const def = LISTS[k], cols = ["Title"].concat(def.columns.map(c => c.name));
+      const its = ADQ.lists[k] ? await adqItens(k) : [];
+      const aoa = [[def.titleAs].concat(def.columns.map(c => c.displayName)).concat(["Id", "Criado em"])].concat(its.map(f => cols.map(c => f[c] == null ? "" : String(f[c])).concat([f._id, f.Created ? String(f.Created).slice(0, 10) : ""])));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), def.displayName.split("· ")[1] || k); n += its.length;
+    }
+    const P = await erpParamLer("adequacao", true);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Chave", "Valor"], ["adequacao", P && P.valor ? JSON.stringify(P.valor) : ""]]), "Parâmetros");
+    XLSX.writeFile(wb, `Adequacao-6x1-copia-${adqHoje()}.xlsx`);
+    ADQ.exportado = true; adqCfgLog(`Cópia exportada (${n} registro(s)). O arquivo foi baixado pelo navegador (pasta Downloads).`, "ok");
+  } catch (e) { adqCfgLog("Não foi possível exportar: " + e.message, "warn"); }
+};
+window.adqCfgRemover = async () => {
+  if (!session.n1) return;
+  try { await adqListas(); } catch (e) { adqCfgLog("Não foi possível ler as listas: " + e.message, "warn"); return; }
+  const temListas = ADQ_KEYS.some(k => ADQ.lists[k]);
+  if (temListas && !ADQ.exportado) { adqCfgLog("Exporte a cópia (.xlsx) antes de remover.", "warn"); return; }
+  if (!(await erpConfirmar({ titulo: "Remover Adequação 6x1", texto: `Excluir do site Diretoria as listas ${ADQ_KEYS.map(k => `"${LISTS[k].displayName}"`).join(", ")} e apagar a chave "adequacao"? A cópia em .xlsx já foi exportada. As listas ficam na lixeira do site por 93 dias.`, sim: "Remover", perigo: true }))) return;
+  try {
+    const P0 = await erpParamLer("adequacao", true); if (P0 === undefined) throw new Error('não foi possível ler a chave "adequacao"');
+    if (P0) { await adqParamGravar({ ativo: false }); adqCfgLog("Módulo desligado.", "ok"); }
+    for (const k of ADQ_KEYS) if (ADQ.lists[k]) { await graph(`/sites/${ADQ.site.id}/lists/${ADQ.lists[k].id}`, { method: "DELETE" }); adqCfgLog(`Lista "${LISTS[k].displayName}" excluída.`, "ok"); ADQ.lists[k] = null; }
+    const P = await erpParamLer("adequacao", true); if (P === undefined) throw new Error('não foi possível ler a chave "adequacao" para apagá-la');
+    if (P && P.id) { await navParamLista(true); await graph(`/sites/${NAV_PARAM.site.id}/lists/${NAV_PARAM.list.id}/items/${P.id}`, { method: "DELETE" }); delete ERP_PARAM_CACHE.adequacao; adqCfgLog('Chave "adequacao" apagada.', "ok"); }
+    ADQ.param = null; ADQ.jan = []; ADQ.fase = []; ADQ.em = 0; adqAplicarAtivo(false);
+    adqCfgLog("Pronto. Para terminar, o bloco do módulo sai do código numa versão seguinte.", "ok");
+  } catch (e) { adqCfgLog("Não foi possível remover: " + e.message, "warn"); }
+  adqCfgPintar(true).catch(() => {});
+};
+
+/* ---------- estilo (só tokens do ERP) ---------- */
+document.head.insertAdjacentHTML("beforeend", `<style id="adqCss">
+.adq .adq-views{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:14px 0 16px;overflow-x:auto}
+.adq .adq-view{color:var(--ink-2);font-weight:600;font-size:14px;padding:10px 14px;border-bottom:3px solid transparent;white-space:nowrap;text-decoration:none}
+.adq .adq-view small{font-weight:500;font-size:12px;margin-left:6px;color:var(--ink-2)}
+.adq .adq-view.on{color:var(--ink);border-bottom-color:var(--orange);font-weight:800}
+@media (max-width:760px){.adq .adq-view small{display:none}}
+.adq .adq-kpis{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.adq .adq-head{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;justify-content:space-between;margin-bottom:12px}
+.adq .adq-head h3{font-size:15px;font-weight:800;color:var(--navy);margin:0}
+.adq .adq-jans{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.adq .adq-jan{border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;background:var(--surface);text-align:left;font:inherit;color:inherit;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.adq .adq-jan[aria-pressed="true"]{border-color:var(--orange);box-shadow:0 0 0 1px var(--orange)}
+.adq .adq-jan .k{font-size:12px;color:var(--ink-2);font-weight:700;display:flex;justify-content:space-between;gap:6px;align-items:center}
+.adq .adq-jan .h{font-size:22px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums}.adq .adq-jan .h small{font-size:13px;font-weight:500;color:var(--ink-2)}
+.adq .adq-jan .w{font-size:12px;color:var(--ink-2)}.adq .adq-jan .w b{color:var(--ink)}
+.adq .adq-planline{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.adq .adq-pl-b{display:inline-flex;align-items:center;gap:8px}
+.adq .adq-prog{display:inline-block;height:6px;background:var(--soft);border-radius:3px;overflow:hidden;min-width:80px;vertical-align:middle;border:1px solid var(--line)}
+.adq .adq-prog i{display:block;height:100%;background:var(--navy)}
+.adq .adq-lnk{font-weight:700;color:var(--navy)}
+.adq .adq-janform{margin-top:14px}
+.adq .adq-controls,.adq-ed .adq-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:10px}
+.adq-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink-2);font-weight:600;min-width:0}
+.adq-field input,.adq-field select,.adq-field textarea,.adq .adq-tbl input,.adq .adq-tbl select{font:inherit;font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:7px 9px;min-width:0}
+.adq-field textarea{min-height:80px;resize:vertical}
+.adq .adq-tbl tr.adq-grp td{background:var(--soft);font-size:12px;font-weight:800;color:var(--ink-2);cursor:default}
+.adq .adq-tbl input,.adq .adq-tbl select{width:100%;padding:5px 7px;font-size:13px}
+.adq .adq-seg,.adq-seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;flex-wrap:wrap;background:var(--surface)}
+.adq-seg button{border:0;background:none;color:var(--ink-2);font:inherit;font-weight:700;font-size:12px;padding:7px 11px;cursor:pointer}
+.adq-seg button[aria-pressed="true"]{background:var(--navy);color:#fff}
+.adq .adq-quick{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end}
+.adq .adq-note{font-size:12px;color:var(--ink-2);border-left:3px solid var(--line);padding-left:10px;margin:10px 0 0}
+.adq .adq-danger,.adq-ed .adq-danger{color:var(--err);border-color:var(--err)}
+.adq .adq-gwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:var(--radius)}
+.adq .adq-g{position:relative}
+.adq .adq-g-row{display:flex;min-height:46px;border-bottom:1px solid var(--line)}
+.adq .adq-g-head{min-height:30px;font-size:11px;color:var(--ink-2)}
+.adq .adq-g-name{position:sticky;left:0;z-index:3;width:250px;flex:none;background:var(--surface);padding:6px 10px;font-size:13px;border-right:1px solid var(--line);cursor:pointer}
+.adq .adq-g-name small{display:block;color:var(--ink-2);font-size:11px}
+@media (max-width:760px){.adq .adq-g-name{width:130px;font-size:12px}.adq .adq-g-ov{left:130px!important}}
+body.adq-off #pMatriz tr[data-mod="adq"],body.adq-off #pMatriz tr[data-pai="adq"]{display:none!important}
+.adq .adq-g-grp{background:var(--soft);font-size:12px;font-weight:800;color:var(--ink-2);min-height:28px;align-items:center}.adq .adq-g-grp .adq-g-name{background:var(--soft);cursor:default}
+.adq .adq-g-tr{position:relative;flex:none}
+.adq .adq-g-tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--line);padding-left:4px;line-height:30px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.adq .adq-g-bar{position:absolute;top:11px;height:24px;border-radius:var(--radius-sm);background:var(--soft);border:1px solid var(--navy);overflow:hidden;display:flex;align-items:center;touch-action:none}
+.adq .adq-g-bar.mov{cursor:grab}
+.adq .adq-g-bar .pr{position:absolute;inset:0 auto 0 0;background:var(--navy);opacity:.85;pointer-events:none}
+.adq .adq-g-bar .lb{position:relative;font-size:11px;font-weight:700;padding:0 8px;white-space:nowrap;pointer-events:none;mix-blend-mode:difference;color:#fff}
+.adq .adq-g-bar .hd{position:absolute;right:0;top:0;bottom:0;width:10px;cursor:ew-resize;background:var(--orange);opacity:.7}
+.adq .adq-g-bar.late{border-color:var(--err);box-shadow:0 0 0 1px var(--err)}.adq .adq-g-bar.done{opacity:.55}
+.adq .adq-g-ov{position:absolute;top:30px;bottom:0;pointer-events:none;z-index:2}
+.adq .adq-g-ln{position:absolute;top:0;bottom:0;border-left:2px dashed var(--ink-2)}.adq .adq-g-ln.j{border-left:2px solid var(--orange)}
+.adq .adq-g-ln span{position:absolute;top:2px;left:4px;font-size:10px;font-weight:700;white-space:nowrap;background:var(--surface);padding:0 3px;color:var(--ink-2)}
+.adq .adq-g-ln.j span{color:var(--orange-ink)}
+.adq-ov{position:fixed;inset:0;background:rgba(11,22,40,.45);z-index:58;display:flex;justify-content:flex-end}
+.adq-ed{width:min(480px,100%);height:100%;background:var(--surface);overflow-y:auto;padding:18px;padding-top:calc(18px + env(safe-area-inset-top,0px));padding-bottom:calc(18px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px}
+.adq-ed form{display:flex;flex-direction:column;gap:12px;min-height:100%}
+.adq-ed.ficha{width:min(760px,100%)}
+.adq-ed h3{margin:0;font-size:18px;font-weight:800;color:var(--navy)}
+.adq-ed-h{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.adq-g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.adq-subs{display:flex;flex-direction:column;gap:6px}.adq-subs label{display:flex;gap:8px;align-items:center;font-size:13px}.adq-subs label input[type=text]{flex:1;font:inherit;font-size:14px;border:1px solid var(--line);border-radius:var(--radius-sm);padding:6px 8px;min-width:0}
+.adq-ed-foot{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;margin-top:auto;padding-top:10px;border-top:1px solid var(--line)}
+.adq-err{color:var(--err);font-size:13px;margin:0}
+.adq-toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 14px;border-radius:var(--radius);display:flex;gap:12px;align-items:center;z-index:80;font-size:13px;max-width:calc(100% - 32px)}
+.adq-toast button{background:none;border:0;color:var(--orange-soft);font:inherit;font-weight:800;cursor:pointer}
+</style>`);
+/* ADQ:FIM ===================================================================== */
 
 /* v0.14.0: o rodapé do menu mostra sempre a versão do CONFIG (estava fixo desde a v0.13.4.3) */
 { const ev = document.getElementById("erpVer"); if (ev) { ev.textContent = CONFIG.version; ev.style.fontWeight = "inherit"; } }

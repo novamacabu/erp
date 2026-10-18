@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.5",
+  version: "v0.14.6",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -37366,7 +37366,7 @@ function rhVidaHtml(f) {
   }; }
 
 /* ADQ:INICIO =====================================================================
-   v0.14.5 · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL
+   v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL
    - Todo o código do módulo fica entre ADQ:INICIO e ADQ:FIM (prefixo adq/ADQ_). Lê outros módulos; nunca grava neles.
    - Liga/desliga: chave "adequacao" em "ERP — Parâmetros" ({ ativo, promulgacao, prazo1, lim, ausencias… }). Desligado: some do
      menu, das rotas e da matriz de permissões (nada é apagado).
@@ -37378,7 +37378,7 @@ function rhVidaHtml(f) {
 const ADQ_BASE = "#/diretoria/adequacao-6x1";
 const ADQ_PAGS = [{ k: "painel", n: "Painel", d: "como estamos" }, { k: "escala", n: "Escala", d: "planejar a semana" }, { k: "plano", n: "Plano", d: "o que falta fazer" }];
 const ADQ_LS = "erp.adq.ativo";
-const ADQ_PARAM_PADRAO = { ativo: false, promulgacao: "2026-10-16", prazo1: 60, lim: { critPct: 60, atPct: 90, critTurnos: 2, critContr: 2, heDia: 2, interj: 11, ferDias: 5 }, ausencias: 8, tolMin: 0, diasMediaMes: false };
+const ADQ_PARAM_PADRAO = { ativo: false, promulgacao: "2026-10-16", prazo1: 60, lim: { critPct: 60, atPct: 90, critTurnos: 2, critContr: 2, heDia: 2, interj: 11, ferDias: 5 }, ausencias: 8, tolMin: 0, diasMediaMes: false, municipio: "Conceição de Macabu" };
 const ADQ_SIT_JAN = ["Em vigor", "Programada", "A confirmar"];
 const ADQ_ST = ["A fazer", "Em andamento", "Aguardando", "Bloqueado", "Concluído"];
 const ADQ_ST_CLS = { "A fazer": "st-aguardando", "Em andamento": "st-aprovado", "Aguardando": "st-pendente", "Bloqueado": "st-vencido", "Concluído": "st-pago" };
@@ -37386,7 +37386,7 @@ const ADQ_AREAS = ["Diretoria", "RH", "Jurídico", "Operacional", "Financeiro", 
 const ADQ_KEYS = ["adq_jan", "adq_fase", "adq_serv", "adq_esc"];
 let ADQ_ON = (() => { try { return localStorage.getItem(ADQ_LS) === "1"; } catch (e) { return false; } })();
 const ADQ = { param: null, paramLido: false, paramErro: false, site: null, lists: {}, jan: [], fase: [], erro: "", em: 0, p: null,
-  aba: "painel", jsel: "", editJan: false, planoVis: "lista", soAtr: false, undo: null, ocupado: false, exportado: false };
+  aba: "painel", jsel: "", editJan: false, setor: "", psit: "", cw: null, esetor: "", planoVis: "lista", soAtr: false, undo: null, ocupado: false, exportado: false };
 
 MODULES.push({ id: "adq", path: ADQ_BASE, icon: "calendar", name: "Adequação 6x1", area: "Diretoria", groups: ["diretoria"], status: "piloto", wide: true });
 PAG_DEF.adq = ADQ_PAGS.map(p => ({ k: p.k, n: p.n, rota: ADQ_BASE + "/" + p.k }));
@@ -37478,6 +37478,7 @@ async function adqParamGravar(mud) {
   const atual = await erpParamLer("adequacao", true); if (atual === undefined) throw new Error("Não foi possível ler a chave \"adequacao\".");
   const v = Object.assign({}, ADQ_PARAM_PADRAO, (atual && atual.valor) || {}, mud);
   await erpParamGravar("adequacao", v); ADQ.param = v; ADQ.paramLido = true;
+  if (typeof ADQF !== "undefined") ADQF.calc = {};
   adqAplicarAtivo(!!v.ativo);
 }
 { const cs = canSee; canSee = function (mod) { if (mod && mod.id === "adq" && !ADQ_ON) return false; return cs.apply(this, arguments); }; }
@@ -37492,8 +37493,10 @@ adqBodyClasse();
     if (/^(POST|PATCH|PUT|DELETE)$/i.test(method || "") && ids.some(id => String(path || "").includes(id))) {
       if (typeof vcAtivo === "function" && vcAtivo()) throw vcErro();
       if (/^DELETE$/i.test(method) && ADQ.desfazendo && new RegExp("/items/" + ADQ.desfazendo + "$").test(String(path).split("?")[0]) && podeEditar("adq")) return;   /* desfazer a inclusão que a própria pessoa acabou de fazer */
-      const m0 = session.modAtual; session.modAtual = "adq";
-      try { return g0.apply(this, arguments); } finally { session.modAtual = m0; }
+      const m0 = session.modAtual, p0 = session.pagAtual, L = ADQ.lists;   /* a página que governa a gravação é a da lista (não a aberta) */
+      const pag = L.adq_fase && String(path).includes(L.adq_fase.id) ? "plano" : L.adq_jan && String(path).includes(L.adq_jan.id) ? "painel" : "escala";
+      session.modAtual = "adq"; if (!/\/lists\/[^/]+$/.test(String(path).split("?")[0])) session.pagAtual = "adq." + pag;
+      try { return g0.apply(this, arguments); } finally { session.modAtual = m0; session.pagAtual = p0; }
     }
     return g0.apply(this, arguments);
   }; }
@@ -37519,6 +37522,7 @@ async function adqCarregar(force) {
       const [j, f] = await Promise.all([adqItens("adq_jan"), adqItens("adq_fase")]);
       if (ger !== ADQ.ger) return;
       ADQ.erro = ""; ADQ.jan = j.map(adqJanDe); ADQ.fase = f.map(adqFaseDe); ADQ.em = Date.now();
+      if (typeof ADQF !== "undefined") ADQF.calc = {};   /* janelas podem ter mudado: refaz a aderência */
     } catch (e) { if (ger === ADQ.ger) ADQ.erro = String((e && e.message) || e); }
     finally { if (ADQ.p === pr) ADQ.p = null; }
   })();
@@ -37596,7 +37600,7 @@ async function adqCriarDesfaz(k, obj, msg) {
       ADQ.aba = p.k; session.modAtual = "adq"; session.pagAtual = "adq." + p.k;
       document.body.classList.remove("nav-open", "lista-aberta"); document.body.classList.add("wide");
       $("main").innerHTML = adqPage(); navAtivo("adq"); window.scrollTo(0, 0);
-      adqCarregar().then(adqRender);
+      adqCarregar().then(() => { adqRender(); if (ADQ.aba === "painel" || ADQ.aba === "escala") return adqFontes().then(adqRender); });
       adqRender();
       return;
     }
@@ -37635,7 +37639,7 @@ function adqPainelHtml() {
   const J = adqJanSel(), pj = adqProx(), hoje = adqHoje();
   if (!ADQ.jsel || !adqJanCod(ADQ.jsel)) ADQ.jsel = J ? J.cod : "";
   const kpis = `<div class="cap-kpis adq-kpis">${adqKpi("hoje", "Dias até a virada", pj ? String(adqDiff(pj.ini, hoje)) : "—", pj ? `${esc(pj.nome)} · ${adqH(pj.h)} h em ${esc(adqFmtL(pj.ini))}` : "nenhuma janela com data")}
-    ${adqKpi("", "Pessoas aderentes", "—", `contra ${esc(J ? J.nome : "—")} · leitura do Ponto na próxima versão`)}${adqKpi("", "Contratações", "—", "depende da demanda (próxima versão)")}</div>`;
+    ${adqKpisR2(J, P)}</div>`;
   const cards = adqJanOrd().map(j => { const q = j.sit === "Em vigor" ? "<b>Em vigor hoje</b>" : j.ini ? `<b>${esc(adqFmtL(j.ini))}</b> · ${adqDiff(j.ini, hoje) >= 0 ? "faltam " + adqDiff(j.ini, hoje) + " dias" : "começou há " + (-adqDiff(j.ini, hoje)) + " dias"}` : "<b>Data a confirmar</b>";
     return `<button type="button" class="adq-jan" aria-pressed="${j.cod === ADQ.jsel}" onclick="adqJanSelec(${jsArg(j.cod)})"><span class="k"><span>${esc(j.nome)}</span>${j === pj ? `<span class="pill st-pendente">próxima</span>` : ""}</span><span class="h">${adqH(j.h)} h <small>· até ${j.dias} dias/semana</small></span><span class="w">${q}</span></button>`; }).join("");
   const tot = ADQ.fase.length, pc = tot ? ADQ.fase.reduce((a, x) => a + adqFaseProg(x), 0) / tot : 0, atr = ADQ.fase.filter(adqFaseAtr).length, concl = ADQ.fase.filter(x => x.st === "Concluído").length;
@@ -37644,7 +37648,7 @@ function adqPainelHtml() {
       ${ed ? `<button class="btn sm" type="button" aria-expanded="${ADQ.editJan}" onclick="adqJanEditar()">${ADQ.editJan ? "Fechar edição" : "Editar janelas"}</button>` : ""}</div>
     <div class="adq-jans">${cards}</div>
     ${ADQ.editJan && ed ? adqJanForm(P) : ""}${plano}</div>
-    <div class="cap-card"><div class="cap-card-h"><h3>Setores</h3></div><p class="sup">Aderência por setor (Controle de Ponto), cobertura e contratações entram na próxima versão do módulo.</p></div>`;
+    ${adqPainelSetoresHtml(J, P)}`;
 }
 const adqPodeVer = k => adqPag(k) !== "nenhum";
 window.adqJanSelec = c => { ADQ.jsel = c; adqRender(); };
@@ -37723,7 +37727,11 @@ window.adqSemear = async () => {
 };
 
 /* ---------- ESCALA (R3) ---------- */
-function adqEscalaHtml() { return `<div class="cap-empty"><h3>Escala da semana</h3><p>Planejar a semana pela demanda (serviços por tipo de dia), conferindo janela, folgas e interjornada. Chega numa próxima versão do módulo.</p></div>`; }
+function adqEscalaHtml() {
+  const S = ADQF.em ? adqSetores() : [];
+  return `<div class="cap-card"><div class="adq-head"><div><h3>Escala da semana</h3><p class="sup">A grade da semana (pessoa × dia, com a janela, a folga e a interjornada conferidas na hora) chega na próxima versão. Já dá para cadastrar a demanda de cada setor: os serviços que precisam de gente em cada tipo de dia.</p></div></div>
+    ${ADQF.em ? `<div class="chips">${S.map(s => `<button type="button" class="chip" onclick="adqDemanda(${jsArg(s.n)})">Demanda · ${esc(s.n)} <small>(${ADQF.serv.filter(x => x.setor === s.n).length})</small></button>`).join("") || `<span class="sup">Nenhum setor lido do RH.</span>`}</div>` : `<p class="sup">Lendo os setores…</p>`}</div>`;
+}
 
 /* ---------- PLANO ---------- */
 function adqGrupos(L) { const g = adqJanOrd().map(j => ({ j, L: L.filter(t => t.jan === j.cod) })).filter(x => x.L.length); const o = L.filter(t => !adqJanCod(t.jan)); if (o.length) g.push({ j: null, L: o }); return g; }
@@ -37853,7 +37861,14 @@ window.adqEditorExcluir = async () => {
   const copia = JSON.parse(JSON.stringify(t));
   if (await adqGravar(`Fase "${t.nome}" excluída`, () => adqApagar("adq_fase", t._id), () => adqCriar("adq_fase", adqFaseCampos(copia)))) adqLateralFechar();
 };
-function adqSetoresNomes() { return [...new Set(ADQ.fase.map(x => x.setor).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")); }   /* R2: setores do RH/Ponto */
+function adqSetoresNomes() { return [...new Set(ADQ.fase.map(x => x.setor).concat((ADQF.pessoas || []).map(p => p.setor)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")); }
+function adqKpisR2(J, P) {
+  if (!ADQF.em) return adqKpi("", "Pessoas aderentes", "…", "lendo o Controle de Ponto") + adqKpi("", "Contratações", "…", "");
+  let ok = 0, n = 0, contr = 0, semDem = 0; adqSetores().forEach(S => { const A = adqAderSetor(S, J, P); ok += A.ok + A.at; n += A.n; const c = adqContrat(S.n, J, P); if (c == null) semDem++; else contr += c; });
+  const pc = n ? Math.round(ok / n * 100) : null;
+  return adqKpi(pc == null ? "" : pc >= P.lim.atPct ? "pago" : pc >= P.lim.critPct ? "hoje" : "venc", "Pessoas aderentes", pc == null ? "—" : pc + "%", `${ok} de ${n} contra ${esc(J.nome)} · ${adqH(J.h)} h`)
+    + adqKpi(contr ? "venc" : "pago", "Contratações", contr ? "+" + contr : "0", `para cobrir os serviços em ${esc(J.nome)}${semDem ? ` · ${semDem} setor(es) sem demanda` : ""}`);
+}
 
 /* ---------- Configuração › Adequação 6x1 (administrador) ---------- */
 { const pc = pageConfig; pageConfig = function () {
@@ -37917,6 +37932,349 @@ window.adqCfgRemover = async () => {
     adqCfgLog("Pronto. Para terminar, o bloco do módulo sai do código numa versão seguinte.", "ok");
   } catch (e) { adqCfgLog("Não foi possível remover: " + e.message, "warn"); }
   adqCfgPintar(true).catch(() => {});
+};
+
+
+/* ---------- R2 · fontes (só leitura): RH › Funcionários, Controle de Ponto, Feriados, Tabela de Horários ---------- */
+const ADQF = { em: 0, p: null, avisos: [], pessoas: [], semanas: [], serv: [], fer: new Map(), horarios: null, calc: {}, ger: 0 };
+const ADQ_TIPOS = ["Útil", "Sábado", "Domingo e feriado"];
+const ADQ_TN = { M: "Manhã", T: "Tarde", N: "Noite", D: "12x36" };
+const adqMin = t => { const m = String(t || "").match(/^(\d{1,2}):(\d{2})$/); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+const adqHHMM = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
+const adqHfmt = h => { const m = Math.round(Math.abs(adqNum(h)) * 60); return (h < 0 ? "−" : "") + Math.floor(m / 60) + "h" + String(m % 60).padStart(2, "0"); };
+const adqPeriodo = min => min == null ? "" : min < 11 * 60 ? "M" : min < 18 * 60 ? "T" : "N";
+const adqMatNorm = v => String(v || "").replace(/\D/g, "").replace(/^0+/, "");
+const ADQ_AUS_RE = /f[ée]rias|afastad|atestad|licen[çc]a|suspens/i;
+async function adqLerLista(chave, sel) {
+  const def = LISTS[chave]; const st = await SP.site(CONFIG.sites[def.siteKey]);
+  const l = (await SP.lists(st.id)).find(x => x.displayName === def.displayName);
+  if (!l) { const e = new Error(`a lista "${def.displayName}" não existe`); e.semLista = true; throw e; }
+  return (await SP.items(st.id, l.id, sel ? `($select=${sel})` : "")).map(it => Object.assign({ _id: String(it.id) }, it.fields || {}));
+}
+/* um dia do DetalheJson do Ponto → previsto (escala do Flit) e realizado (marcações) */
+function adqDia(x) {
+  const pT = (String(x.p || "").match(/\d{2}:\d{2}/g) || []).map(adqMin), rT = (String(x.r || "").match(/\d{2}:\d{2}/g) || []).map(adqMin);
+  const pares = ts => { let s = 0; for (let i = 0; i + 1 < ts.length; i += 2) { let a = ts[i], b = ts[i + 1]; if (b < a) b += 1440; s += b - a; } return s; };
+  const fimDe = ts => { if (ts.length < 2) return null; let f = ts[ts.length - 1]; if (f < ts[0]) f += 1440; return f; };
+  const v = Array.isArray(x.v) ? x.v.map(n => adqNum(n)) : [];
+  const plan = pT.length >= 2, trab = rT.length >= 2 || (v[9] || 0) > 0;
+  const aus = ADQ_AUS_RE.test(String(x.p || "")) || ADQ_AUS_RE.test(String(x.r || ""));
+  return { d: String(x.d || ""), pTxt: String(x.p || ""), rTxt: String(x.r || ""), plan, trab: trab && !(!rT.length && aus), aus,
+    pIni: plan ? pT[0] : null, pFim: plan ? fimDe(pT) : null, hPlan: plan ? pares(pT) / 60 : 0,
+    ini: rT.length ? rT[0] : null, fim: fimDe(rT), hReal: (v[9] || 0) > 0 ? v[9] / 60 : rT.length >= 2 ? pares(rT) / 60 : 0, he: (v[8] || 0) / 60,
+    fer: /feriado/i.test(String(x.p || "")) };
+}
+function adqSetorDe(f, m) { const cargo = String((f && f.Cargo) || (m && m.Cargo) || ""); if (/motorist/i.test(cargo)) return "Motoristas"; return String((f && f.Setor) || (m && m.Setor) || "Sem setor").trim() || "Sem setor"; }
+async function adqServRecarregar() {   /* depois de gravar na demanda: só a lista de serviços (não relê RH e Ponto) */
+  const its = ADQ.lists.adq_serv ? await adqItens("adq_serv") : [];
+  ADQF.serv = adqServDe0(its); ADQF.calc = {};
+}
+function adqServDe0(serv) { return serv.map(s => ({ _id: s._id, cod: String(s.Title || ""), setor: String(s.Setor || ""), tipo: ADQ_TIPOS.includes(s.TipoDia) ? s.TipoDia : "Útil", ini: adqMin(s.Inicio), iniTxt: String(s.Inicio || ""), dur: s.Duracao === null || s.Duracao === undefined || s.Duracao === "" ? null : adqNum(s.Duracao), desc: String(s.Descricao || ""), ordem: adqNum(s.Ordem) })).filter(s => s.cod); }
+async function adqFontes(force) {
+  if (!force && ADQF.em && Date.now() - ADQF.em < 600000) return;   /* RH e Ponto mudam pouco (importação mensal): 10 min */
+  if (ADQF.p && !force) return ADQF.p;
+  const ger = ++ADQF.ger;
+  ADQF.p = (async () => {
+    const av = [], aviso = (lista, e) => av.push(`${lista}: ${e && e.semLista ? "lista não criada" : "não foi possível ler (peça leitura da lista)"}`);
+    let func = null, marc = [], ferL = [], serv = [];
+    await Promise.all([
+      adqLerLista("rh_func").then(r => { func = r; }).catch(e => aviso("RH — Funcionários", e)),
+      adqLerLista("rh_ponto_marc", "Title,Competencia,Matricula,Funcionario,Cargo,Setor,Escala,DetalheJson").then(r => { marc = r; }).catch(e => aviso("RH — Ponto · Marcações", e)),
+      adqLerLista("rh_feriados").then(r => { ferL = r; }).catch(e => aviso("RH — Feriados", e)),
+      (ADQ.lists.adq_serv ? adqItens("adq_serv") : Promise.resolve([])).then(r => { serv = r; }).catch(e => aviso("Adequação 6x1 · Serviços", e))
+    ]);
+    /* feriados: lista do RH + nacionais e do RJ calculados (ponto facultativo não muda a demanda) */
+    const fer = new Map(); const anos = new Set([new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1]);
+    anos.forEach(a => { try { feriadosDoAno(a).forEach((n, d) => fer.set(d, n)); } catch (e) {} });
+    const mun = normName(adqParam().municipio || "");
+    ferL.forEach(f => { const d = adqIso(f.Data), e = String(f.Esfera || ""); if (!d || /facultativo/i.test(e)) return; if (/municipal/i.test(e) && mun && !normName(e).includes(mun)) return; fer.set(d, String(f.Title || "Feriado")); });   /* municipal: só o do município da operação (chave "adequacao".municipio) */
+    /* Ponto: as duas últimas competências importadas */
+    const comps = [...new Set(marc.map(m => String(m.Competencia || "")).filter(c => /^\d{6}$/.test(c)))].sort().slice(-2);
+    const rows = marc.filter(m => comps.includes(String(m.Competencia))).map(m => { const dj = adqJson(m.DetalheJson, null); return { m, dias: dj && Array.isArray(dj.dias) ? dj.dias.map(adqDia).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d.d)) : [] }; });
+    /* semanas (segunda a domingo) inteiras dentro dos meses importados: as 4 últimas */
+    const datas = rows.flatMap(r => r.dias.map(d => d.d)).sort(), ontem = adqAdd(adqHoje(), -1);
+    const comMarc = rows.flatMap(r => r.dias.filter(d => d.trab || d.ini != null).map(d => d.d)).filter(d => d <= ontem).sort(); const semanas = [];
+    if (datas.length && comMarc.length) { const d0 = datas[0], d1 = comMarc[comMarc.length - 1]; let s = adqAdd(d1, -((adqD(d1).getDay() + 6) % 7));   /* segunda da última semana */
+      if (adqAdd(s, 6) > d1) s = adqAdd(s, -7);
+      while (s >= d0 && semanas.length < 4) { semanas.unshift(s); s = adqAdd(s, -7); } }
+    /* pessoas: o cadastro do RH (sem desligados); ligação com o Ponto pela matrícula, senão pelo nome */
+    const porMat = new Map(), porNome = new Map();
+    rows.forEach(r => { const k = adqMatNorm(r.m.Matricula), n = normName(r.m.Funcionario); if (k) porMat.set(k, (porMat.get(k) || []).concat(r)); if (n) porNome.set(n, (porNome.get(n) || []).concat(r)); });
+    const base = func ? func.filter(f => String(f.Situacao || "Ativo") !== "Desligado") : [...new Map(rows.map(r => [adqMatNorm(r.m.Matricula) || normName(r.m.Funcionario), r.m])).values()].map(m => ({ _id: "p" + (m.Matricula || m.Funcionario), Title: m.Funcionario, Matricula: m.Matricula, Cargo: m.Cargo, Setor: m.Setor, Situacao: "Ativo", _soPonto: true }));
+    const nomesBase = {}; base.forEach(f => { const n = normName(f.Title); nomesBase[n] = (nomesBase[n] || 0) + 1; });
+    const unico = n => nomesBase[n] === 1 && new Set((porNome.get(n) || []).map(r => adqMatNorm(r.m.Matricula) || "-")).size === 1;
+    const pessoas = base.map(f => {
+      const k = adqMatNorm(f.Matricula), n = normName(f.Title);
+      let rs = (k && porMat.get(k)) || [];
+      if (!rs.length && unico(n)) { const cand = porNome.get(n) || []; const km = adqMatNorm(cand[0] && cand[0].m.Matricula); if (!k || !km) rs = cand; }   /* pelo nome só sem matrícula conflitante */
+      else if (rs.length && nomesBase[n] === 1) rs = rs.concat((porNome.get(n) || []).filter(r => !adqMatNorm(r.m.Matricula)));   /* competência importada sem a matrícula, mesmo nome único */
+      const dia = new Map(); rs.forEach(r => r.dias.forEach(d => dia.set(d.d, d)));
+      const p = { id: String(f._id), nome: String(f.Title || "—"), mat: String(f.Matricula || ""), cargo: String(f.Cargo || (rs[0] && rs[0].m.Cargo) || ""), setor: adqSetorDe(f, rs[0] && rs[0].m), cc: String(f.CentroCustoCod || ""), sit: String(f.Situacao || "Ativo"), temPonto: rs.length > 0, dia };
+      Object.assign(p, adqRegime(p, semanas)); return p;
+    });
+    if (ger !== ADQF.ger) return;
+    ADQF.avisos = av; ADQF.pessoas = pessoas; ADQF.semanas = semanas; ADQF.fer = fer; ADQF.comps = comps; ADQF.calc = {};
+    ADQF.serv = adqServDe0(serv);
+    ADQF.em = Date.now();
+  })().finally(() => { if (ger === ADQF.ger) ADQF.p = null; });
+  return ADQF.p;
+}
+const adqDiasSem = (p, s) => [0, 1, 2, 3, 4, 5, 6].map(i => p.dia.get(adqAdd(s, i)) || { d: adqAdd(s, i), plan: false, trab: false, aus: false, hPlan: 0, hReal: 0, he: 0, vazio: true });
+/* regime e turno saem do previsto do Ponto (o RH não tem esses campos) */
+function adqRegime(p, semanas) {
+  const ds = semanas.flatMap(s => adqDiasSem(p, s));
+  const pl = ds.filter(d => d.plan), semEscala = !pl.length;
+  const base = semEscala ? ds.filter(d => d.trab) : pl;
+  if (!base.length) return { reg: p.temPonto ? "sem escala" : "sem ponto", turno: "", semEscala: true };
+  const len = base.reduce((a, d) => a + (semEscala ? d.hReal : d.hPlan), 0) / base.length;
+  const seg = ds.filter((d, i) => i > 0 && (semEscala ? d.trab && ds[i - 1].trab : d.plan && ds[i - 1].plan)).length;
+  const sAtivas = semanas.filter(s => adqDiasSem(p, s).filter(d => d.aus).length < 5);
+  const porSem = sAtivas.map(s => adqDiasSem(p, s).filter(d => semEscala ? d.trab : d.plan).length);
+  const med = porSem.length ? porSem.reduce((a, b) => a + b, 0) / porSem.length : 0;
+  let reg = len >= 11 && seg <= base.length * 0.25 ? "12x36" : (n => n >= 6 ? "6x1" : n === 5 ? "5x2" : n > 0 ? `${n}x${7 - n}` : "—")(Math.round(med));
+  const inis = base.map(d => semEscala ? d.ini : d.pIni).filter(v => v != null).sort((a, b) => a - b);
+  const turno = reg === "12x36" ? "D" : adqPeriodo(inis[Math.floor(inis.length / 2)]);
+  return { reg: semEscala ? `${reg} (sem escala no Flit)` : reg, regBase: reg, turno, semEscala };
+}
+/* aderência por semana (segunda a domingo) contra a janela J */
+function adqAvalSemana(p, s, J, P) {
+  const ds = adqDiasSem(p, s), L = P.lim;
+  if (ds.filter(d => d.vazio).length >= L.ferDias) return { st: "semdados", mot: [], dp: 0, dr: 0, hPlan: 0, hReal: 0, he: 0, ij: 0, ds };   /* semana ainda não importada para a pessoa */
+  if (ds.filter(d => d.aus).length >= L.ferDias) return { st: "ferias", mot: [], dp: 0, dr: 0, hPlan: 0, hReal: 0, he: 0, ij: 0, ds };
+  const naEscala = d => p.semEscala ? d.trab : d.plan;
+  const dp = ds.filter(naEscala).length, dr = ds.filter(d => d.trab).length;
+  const hPlan = ds.reduce((a, d) => a + (p.semEscala ? d.hReal : d.hPlan), 0), hReal = ds.reduce((a, d) => a + d.hReal, 0);
+  const he = ds.reduce((a, d) => a + d.he, 0), he2 = ds.filter(d => d.trab && d.he > L.heDia + 1e-6).length;
+  let ij = 0; ds.forEach((d, i) => { const ant = i ? ds[i - 1] : p.dia.get(adqAdd(s, -1)); if (d.trab && d.ini != null && ant && ant.trab && ant.fim != null) { d.ij = (1440 + d.ini - ant.fim) / 60; if (d.ij < L.interj) ij++; } });
+  return { st: "", mot: [], dp, dr, hPlan, hReal, he, he2, ij, ds };
+}
+function adqAvalPessoa(p, J, P) {
+  const chave = p.id + "|" + J.cod; ADQF.calc.p = ADQF.calc.p || {}; if (ADQF.calc.p[chave]) return ADQF.calc.p[chave];
+  const R = ADQF.semanas.map(s => adqAvalSemana(p, s, J, P)), act = R.filter(r => r.st !== "ferias" && r.st !== "semdados");
+  const is12 = p.regBase === "12x36";
+  const carga12 = act.length ? act.reduce((a, r) => a + r.hPlan, 0) / act.length : 0;
+  const dpMed = act.length ? act.reduce((a, r) => a + r.dp, 0) / act.length : 0;
+  act.forEach(r => {
+    if (!is12 && (P.diasMediaMes ? dpMed > J.dias + 1e-6 : r.dp > J.dias)) r.mot.push(["fora", "Escala acima dos dias"]);
+    if ((is12 ? carga12 : r.hPlan) > J.h + 0.01) r.mot.push(["fora", "Carga acima"]);
+    if (r.dr === 7) r.mot.push(["fora", "Sem folga"]);
+    if (r.ij) r.mot.push(["fora", "Interjornada < " + P.lim.interj + " h"]);
+    if (r.he2) r.mot.push(["atencao", "HE > " + P.lim.heDia + " h/dia"]);
+    r.st = r.mot.some(m => m[0] === "fora") ? "fora" : r.mot.length ? "atencao" : "ok";
+  });
+  const ORD = { fora: 3, atencao: 2, ok: 1 };
+  let out;
+  if (!p.temPonto || (R.length && R.every(r => r.st === "semdados"))) out = { st: "semponto", R, n: 0, mot: [] };
+  else if (!act.length) out = { st: "ferias", R, n: 0, mot: [] };
+  else { const mm = {}; act.forEach(r => [...new Set(r.mot.map(m => m[1]))].forEach(t => { mm[t] = (mm[t] || 0) + 1; })); const n = act.length;
+    out = { st: act.reduce((a, r) => ORD[r.st] > ORD[a] ? r.st : a, "ok"), R, n, mot: Object.entries(mm), dr: act.reduce((a, r) => a + r.dr, 0) / n, hReal: act.reduce((a, r) => a + r.hReal, 0) / n, he: act.reduce((a, r) => a + r.he, 0) / n, ij: act.reduce((a, r) => a + r.ij, 0) }; }
+  return (ADQF.calc.p[chave] = out);
+}
+/* demanda: serviços do setor no tipo de dia; duração vazia = carga da janela ÷ dias */
+const adqTipoDia = d => ADQF.fer.has(d) || adqD(d).getDay() === 0 ? "Domingo e feriado" : adqD(d).getDay() === 6 ? "Sábado" : "Útil";
+const adqServDe = (setor, tipo, todos) => ADQF.serv.filter(s => s.setor === setor && s.tipo === tipo && (todos || s.ini != null)).sort((a, b) => (a.ini ?? -1) - (b.ini ?? -1) || a.ordem - b.ordem);
+const adqServDur = (s, J) => s.dur != null && s.dur > 0 ? s.dur : J.h / J.dias;
+const adqTemDemanda = setor => ADQF.serv.some(s => s.setor === setor && s.ini != null);
+function adqCobertura(setor, s) {   /* presentes no Ponto ÷ postos, por dia e turno (12x36 conta manhã e tarde) */
+  const L = ADQF.pessoas.filter(p => p.setor === setor);
+  const G = ["M", "T", "N"].map(t => [0, 1, 2, 3, 4, 5, 6].map(i => { const d = adqAdd(s, i), need = adqServDe(setor, adqTipoDia(d)).filter(x => adqPeriodo(x.ini) === t).length;
+    const pres = L.filter(p => { const x = p.dia.get(d); if (!x || !x.trab) return false; if (p.regBase === "12x36") return t === "M" || t === "T"; const i0 = x.ini ?? x.pIni ?? adqPIni0(p); return i0 != null && adqPeriodo(i0 % 1440) === t; }).length; return { d, need, pres }; }));
+  const rows = ["M", "T", "N"].filter((t, i) => G[i].some(c => c.need > 0));
+  return { rows, G: rows.map(t => G[["M", "T", "N"].indexOf(t)]), holes: G.flat().filter(c => c.need > 0 && c.pres < c.need).length };
+}
+function adqPIni0(p) { const v = ADQF.semanas.flatMap(s => adqDiasSem(p, s)).map(d => d.pIni ?? d.ini).filter(x => x != null).map(x => x % 1440).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; }
+function adqContrat(setor, J, P) {   /* postos × dias de operação contra pessoas × dias da janela × (1 − ausências) */
+  if (!adqTemDemanda(setor)) return null;
+  const s0 = ADQF.semanas[ADQF.semanas.length - 1] || adqAdd(adqHoje(), -((adqD(adqHoje()).getDay() + 6) % 7));
+  const need = [0, 1, 2, 3, 4, 5, 6].reduce((a, i) => a + adqServDe(setor, adqTipoDia(adqAdd(s0, i))).length, 0);
+  const n = ADQF.pessoas.filter(p => p.setor === setor && p.sit !== "Desligado").length, f = 1 - (adqNum(P.ausencias) / 100);
+  return Math.max(0, Math.ceil((need - n * J.dias * f) / (J.dias * f) - 1e-9));
+}
+function adqSetores() { const m = new Map(); ADQF.pessoas.forEach(p => { if (!m.has(p.setor)) m.set(p.setor, []); m.get(p.setor).push(p); });
+  return [...m.entries()].map(([n, L]) => ({ n, L, cc: adqCcMaisComum(L) })).sort((a, b) => a.n === "Motoristas" ? -1 : b.n === "Motoristas" ? 1 : a.n.localeCompare(b.n, "pt-BR")); }
+function adqCcMaisComum(L) { const c = {}; L.forEach(p => { if (p.cc) c[p.cc] = (c[p.cc] || 0) + 1; }); const k = Object.keys(c).sort((a, b) => c[b] - c[a])[0]; if (!k) return ""; let n = ""; try { n = typeof mstNomePorCod === "function" ? mstNomePorCod(k) : ""; } catch (e) {} return n ? `${k} · ${n}` : k; }
+function adqAderSetor(S, J, P) {
+  const L = S.L.map(p => ({ p, a: adqAvalPessoa(p, J, P) })), A = L.filter(x => ["ok", "atencao", "fora"].includes(x.a.st));
+  const ok = A.filter(x => x.a.st === "ok").length, at = A.filter(x => x.a.st === "atencao").length;
+  return { L, n: A.length, ok, at, fora: A.length - ok - at, pct: A.length ? (ok + at) / A.length : null, he: A.length ? A.reduce((a, x) => a + x.a.he, 0) / A.length : 0 };
+}
+function adqSaude(S, J, P) {
+  const A = adqAderSetor(S, J, P), s = ADQF.semanas[ADQF.semanas.length - 1], dem = adqTemDemanda(S.n);
+  const c = dem && s ? adqCobertura(S.n, s) : null, contr = adqContrat(S.n, J, P), L = P.lim, pct = A.pct == null ? 1 : A.pct;
+  const holes = c ? c.holes : 0, ct = contr || 0;
+  const nivel = (pct * 100 < L.critPct || holes > L.critTurnos || ct > L.critContr) ? "Crítico" : (pct * 100 < L.atPct || holes > 0 || ct > 0) ? "Atenção" : "Em dia";
+  return { A, c, contr, dem, nivel, cls: nivel === "Crítico" ? "st-vencido" : nivel === "Atenção" ? "st-pendente" : "st-pago", nv: nivel === "Crítico" ? "erro" : nivel === "Atenção" ? "aviso" : "ok" };
+}
+
+/* ---------- R2 · PAINEL (realizado, do Ponto) ---------- */
+const ADQ_ST_TXT = { fora: ["st-vencido", "Fora"], atencao: ["st-pendente", "Atenção"], ok: ["st-pago", "Aderente"], ferias: ["st-aguardando", "Férias/afast."], semponto: ["st-aguardando", "Sem ponto"], semdados: ["st-aguardando", "Sem dados"] };
+const ADQ_DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const adqPct = (v, P) => v == null ? "" : v * 100 >= P.lim.atPct ? "ok" : v * 100 >= P.lim.critPct ? "warn" : "bad";
+function adqPainelSetoresHtml(J, P) {
+  if (!ADQF.em) return `<div class="cap-card"><p class="sup">Lendo Funcionários, Controle de Ponto e Feriados…</p></div>`;
+  const S = adqSetores(), avisos = ADQF.avisos.length ? `<p class="adq-aviso">Fontes não lidas: ${ADQF.avisos.map(esc).join(" · ")}.</p>` : "";
+  if (!S.length) return `<div class="cap-card"><div class="cap-card-h"><h3>Setores</h3></div>${avisos}<p class="sup">Nenhum funcionário lido do RH.</p></div>`;
+  if (ADQ.setor && S.some(x => x.n === ADQ.setor)) return adqSetorHtml(S, J, P, avisos);
+  const sem = ADQF.semanas;
+  return `<div class="cap-card" id="adqSetores"><div class="adq-head"><div><h3>Setores</h3><p class="sup">Situação de cada setor contra ${esc(J.nome)} (${adqH(J.h)} h, até ${J.dias} dias por semana). Toque para ver as pessoas e a cobertura.</p></div>
+      <div class="adq-search"><label class="adq-field">Buscar pessoa<input id="adqBusca" placeholder="Nome ou matrícula" autocomplete="off" maxlength="60" oninput="adqBuscar(this.value)"></label><div class="adq-results" id="adqResults" hidden></div></div></div>${avisos}
+    <div class="fv-cards adq-cards">${S.map(s => { const h = adqSaude(s, J, P), A = h.A, pc = A.pct == null ? null : Math.round(A.pct * 100);
+      const regs = {}; s.L.forEach(p => { const r = p.regBase || (p.semEscala ? "sem escala" : "—"); regs[r] = (regs[r] || 0) + 1; });
+      return `<button type="button" class="fv-card nv-${h.nv} adq-card" onclick="adqAbrirSetor(${jsArg(s.n)})"><div class="adq-card-t"><div><h4>${esc(s.n)}</h4><div class="sup">${esc(s.cc || "sem centro de custo")} · ${s.L.length} pessoa${s.L.length === 1 ? "" : "s"}</div></div><span class="pill ${h.cls}">${h.nivel}</span></div>
+        <div class="adq-hbar" aria-hidden="true"><i style="width:${A.n ? A.ok / A.n * 100 : 0}%;background:var(--ok)"></i><i style="width:${A.n ? A.at / A.n * 100 : 0}%;background:var(--warn)"></i><i style="width:${A.n ? A.fora / A.n * 100 : 0}%;background:var(--err)"></i></div>
+        <div class="adq-nums"><div><span>Aderentes</span><b class="${adqPct(A.pct, P)}">${pc == null ? "—" : pc + "%"}</b></div><div><span>HE média/semana</span><b>${adqHfmt(A.he)}</b></div>
+          <div><span>Turnos descobertos</span><b class="${!h.dem ? "" : h.c && h.c.holes ? "bad" : "ok"}">${h.dem ? (h.c ? h.c.holes : "—") : "—"}</b></div><div><span>Contratações</span><b class="${h.contr ? "bad" : h.dem ? "ok" : ""}">${h.contr == null ? "—" : h.contr ? "+" + h.contr : "0"}</b></div></div>
+        <div class="sup">${h.dem ? "" : "Demanda não cadastrada · "}Hoje: ${Object.entries(regs).map(([r, n]) => `${n} em ${esc(r)}`).join(" · ")}</div></button>`; }).join("")}</div>
+    <p class="adq-note">Aderentes: ${sem.length ? `semanas de ${esc(adqFmt(sem[0]))} a ${esc(adqFmt(adqAdd(sem[sem.length - 1], 6)))}` : "sem semanas completas importadas"} do Controle de Ponto (escala prevista do Flit × marcações). Turnos descobertos: última semana importada. Contratações: para cobrir os serviços cadastrados com a janela escolhida e ${esc(adqNum(P.ausencias))}% de ausências.</p></div>`;
+}
+window.adqAbrirSetor = n => { ADQ.setor = n; ADQ.psit = ""; ADQ.cw = Math.max(0, ADQF.semanas.length - 1); adqRender(); const el = $("adqSetor"); if (el) el.scrollIntoView({ block: "start" }); };
+window.adqFecharSetor = () => { ADQ.setor = ""; adqRender(); };
+window.adqPsit = v => { ADQ.psit = v; adqRender(); };
+window.adqCw = w => { ADQ.cw = w; adqRender(); };
+function adqSetorHtml(SS, J, P, avisos) {
+  const s = SS.find(x => x.n === ADQ.setor), h = adqSaude(s, J, P), A = h.A, sem = ADQF.semanas, cw = Math.min(ADQ.cw ?? sem.length - 1, sem.length - 1);
+  const ORD = { fora: 4, atencao: 3, ok: 2, ferias: 1, semponto: 0 };
+  const pessoas = A.L.filter(x => !ADQ.psit || x.a.st === ADQ.psit).sort((a, b) => ORD[b.a.st] - ORD[a.a.st] || a.p.nome.localeCompare(b.p.nome, "pt-BR"));
+  const c = h.dem && sem[cw] ? adqCobertura(s.n, sem[cw]) : null;
+  const fases = ADQ.fase.filter(x => (x.setor === s.n || !x.setor) && x.st !== "Concluído").sort((a, b) => String(a.fim || "").localeCompare(String(b.fim || "")));
+  const edPlano = adqPodeEd("plano"), vePlano = adqPodeVer("plano");
+  const sc = (l, v, d) => `<div class="adq-scard"><span class="l">${esc(l)}</span><span class="v">${v}</span><span class="d">${d}</span></div>`;
+  return `<div class="cap-card" id="adqSetor"><div class="adq-head"><button class="btn sm" type="button" onclick="adqFecharSetor()">← Todos os setores</button><div class="chips">${SS.map(x => `<button type="button" class="chip${x.n === s.n ? " on" : ""}" onclick="adqAbrirSetor(${jsArg(x.n)})">${esc(x.n)}</button>`).join("")}</div></div>${avisos}
+    <div class="adq-head"><div><h3>${esc(s.n)} <span class="pill ${h.cls}">${h.nivel}</span></h3><p class="sup">${esc(s.cc || "sem centro de custo")} · ${s.L.length} pessoas · contra ${esc(J.nome)} (${adqH(J.h)} h, até ${J.dias} dias)</p></div>
+      <div class="adq-controls" style="margin:0">${adqPodeVer("escala") ? `<a class="btn primary" href="${ADQ_BASE}/escala" onclick="ADQ.esetor=${esc(JSON.stringify(s.n))}">Planejar a escala do setor</a>` : ""}${adqPodeVer("escala") ? `<button class="btn" type="button" onclick="adqDemanda(${jsArg(s.n)})">Demanda do setor</button>` : ""}</div></div>
+    <div class="adq-sgrid">${sc("Aderentes", A.pct == null ? "—" : Math.round(A.pct * 100) + "%", `${A.ok + A.at} de ${A.n} pessoas`)}${sc("Fora da jornada", String(A.fora), "pessoas com ao menos 1 motivo")}${sc("Turnos descobertos", h.dem && h.c ? String(h.c.holes) : "—", h.dem ? (sem.length ? "semana de " + esc(adqFmt(sem[sem.length - 1])) : "—") : "demanda não cadastrada")}${sc("Contratações", h.contr == null ? "—" : h.contr ? "+" + h.contr : "0", h.contr == null ? "demanda não cadastrada" : "para " + esc(J.nome))}</div>
+    <div class="adq-sec"><div class="adq-head"><div><h4>Pessoas</h4><p class="sup">Últimas 4 semanas do Ponto. Toque numa pessoa para ver as semanas e o dia a dia.</p></div>
+      <div class="adq-seg" role="group" aria-label="Situação">${[["", "Todas"], ["fora", "Fora"], ["atencao", "Atenção"], ["ok", "Aderentes"]].map(([v, l]) => `<button type="button" aria-pressed="${v === (ADQ.psit || "")}" onclick="adqPsit('${v}')">${l}</button>`).join("")}</div></div>
+      <div class="table-wrap"><table class="cap-table adq-tbl" style="min-width:760px"><thead><tr><th>Pessoa</th><th>Regime · turno</th><th>Dias/semana</th><th>Horas/semana</th><th>HE/semana</th><th>Situação</th><th>O que precisa mudar</th></tr></thead><tbody>
+      ${pessoas.map(({ p, a }) => { const sem0 = !["ok", "atencao", "fora"].includes(a.st);
+        return `<tr onclick="adqFicha(${jsArg(p.id)})"><td><b>${esc(p.nome)}</b><div class="sup">${p.mat ? "Matr. " + esc(p.mat) : "sem matrícula"}</div></td><td>${esc(p.reg)}${p.turno && p.turno !== "D" ? " · " + ADQ_TN[p.turno] : ""}</td>
+          <td class="right">${sem0 ? "—" : adqH(a.dr)}</td><td class="right"${!sem0 && a.hReal > J.h + 0.01 ? ' style="color:var(--err);font-weight:700"' : ""}>${sem0 ? "—" : adqHfmt(a.hReal)}</td><td class="right">${sem0 ? "—" : adqHfmt(a.he)}</td>
+          <td><span class="pill ${ADQ_ST_TXT[a.st][0]}">${ADQ_ST_TXT[a.st][1]}</span></td><td><div class="chips">${a.mot.map(([t, n]) => `<span class="pill st-aguardando">${esc(t)} · ${n}/${a.n} sem.</span>`).join("")}</div></td></tr>`; }).join("") || `<tr><td colspan="7" class="sup">Ninguém nessa situação.</td></tr>`}</tbody></table></div></div>
+    <div class="adq-sec"><div class="adq-head"><div><h4>Cobertura realizada por dia e turno</h4><p class="sup">Presentes no Ponto / postos dos serviços cadastrados.</p></div>
+      ${sem.length ? `<div class="adq-seg" role="group" aria-label="Semana">${sem.map((w, i) => `<button type="button" aria-pressed="${i === cw}" onclick="adqCw(${i})">${esc(adqFmt(w))}</button>`).join("")}</div>` : ""}</div>
+      ${!h.dem ? `<p class="sup">Cadastre a demanda do setor (botão "Demanda do setor") para ver a cobertura.</p>` : !c || !c.rows.length ? `<p class="sup">Sem postos nesta semana.</p>` : `<div class="table-wrap" style="border:0;box-shadow:none"><table class="adq-hm"><thead><tr><th></th>${[0, 1, 2, 3, 4, 5, 6].map(i => { const d = adqAdd(sem[cw], i); return `<th>${ADQ_DIAS[adqD(d).getDay()]}<br>${adqD(d).getDate()}</th>`; }).join("")}</tr></thead><tbody>
+        ${c.rows.map((t, ri) => `<tr><th>${ADQ_TN[t]}</th>${c.G[ri].map(x => !x.need ? `<td class="na">—</td>` : `<td class="${x.pres < x.need ? "bad" : x.pres === x.need ? "warn" : "ok"}">${x.pres}/${x.need}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+      <div class="adq-legend"><span><i class="sw" style="background:var(--ok-bg,#E4F3EA)"></i>coberto</span><span><i class="sw" style="background:#FBF6E9"></i>no limite</span><span><i class="sw" style="background:#FBEDEC"></i>faltou gente</span></div>`}</div>
+    ${vePlano ? `<div class="adq-sec"><div class="adq-head"><div><h4>Fases em aberto que afetam o setor</h4></div>${edPlano ? `<button type="button" class="btn sm" onclick="adqEditor(null, ${jsArg(s.n)})">Incluir fase para ${esc(s.n)}</button>` : ""}</div>
+      <div class="table-wrap"><table class="cap-table adq-tbl" style="min-width:520px"><tbody>${fases.map(x => `<tr onclick="adqEditor(${jsArg(x._id)})"><td>${esc(x.nome)}<div class="sup">${esc(x.resp || "—")} · até ${esc(adqFmt(x.fim))}${x.setor ? "" : " · todos os setores"}</div></td><td class="right"><span class="pill ${adqFaseAtr(x) ? "st-vencido" : ADQ_ST_CLS[x.st]}">${adqFaseAtr(x) ? "Atrasada" : esc(x.st)}</span></td></tr>`).join("") || `<tr><td class="sup">Nenhuma fase em aberto.</td></tr>`}</tbody></table></div></div>` : ""}</div>`;
+}
+window.adqBuscar = q => {
+  const R = $("adqResults"); if (!R) return; q = normName(q);
+  if (q.length < 2) { R.hidden = true; return; }
+  const J = adqJanSel(), P = adqParam();
+  const L = ADQF.pessoas.filter(p => normName(p.nome).includes(q) || adqMatNorm(p.mat) === adqMatNorm(q) && adqMatNorm(q) || String(p.mat).includes(q)).slice(0, 6);
+  R.innerHTML = L.map(p => { const a = adqAvalPessoa(p, J, P); return `<button type="button" onclick="adqFicha(${jsArg(p.id)})"><span>${esc(p.nome)} <span class="sup">· ${esc(p.setor)}</span></span><span class="pill ${ADQ_ST_TXT[a.st][0]}">${ADQ_ST_TXT[a.st][1]}</span></button>`; }).join("") || `<button type="button" disabled>Ninguém encontrado</button>`;
+  R.hidden = false;
+};
+document.addEventListener("click", e => { const R = $("adqResults"); if (R && !R.hidden && !(e.target.closest && e.target.closest(".adq-search"))) R.hidden = true; });
+
+/* ---------- ficha da pessoa (painel lateral) ---------- */
+window.adqFicha = (id, wSel) => {
+  const p = ADQF.pessoas.find(x => x.id === id); if (!p) return;
+  const R0 = $("adqResults"); if (R0) R0.hidden = true;
+  const J = adqJanSel(), P = adqParam(), A = adqAvalPessoa(p, J, P), R = A.R, sem = ADQF.semanas;
+  if (wSel === undefined) wSel = sem.length - 1;
+  const mx = Math.max(J.h + 8, ...R.map(r => r.hReal || 0), ...R.map(r => r.hPlan || 0)) + 4, H = 150, bw = 56, gap = 34, W = 40 + Math.max(1, R.length) * (bw + gap), y = v => H - v / mx * H + 10;
+  let svg = `<svg viewBox="0 0 ${W} ${H + 44}" width="100%" style="max-width:${W}px" role="img" aria-label="Horas por semana"><g font-size="10" fill="currentColor" opacity=".7">`;
+  [0, 20, 40].forEach(v => { svg += `<line x1="34" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="28" y="${y(v) + 3}" text-anchor="end">${v} h</text>`; }); svg += `</g>`;
+  R.forEach((r, w) => { const x = 40 + w * (bw + gap) + gap / 2, sel = w === wSel;
+    if (r.st === "ferias" || r.st === "semdados") svg += `<text x="${x + bw / 2}" y="${y(0) - 6}" text-anchor="middle" font-size="11" fill="var(--ink-2)">${r.st === "ferias" ? "Férias/afast." : "Sem dados"}</text>`;
+    else { const c = r.st === "fora" ? "var(--err)" : r.st === "atencao" ? "var(--warn)" : "var(--ok)";
+      svg += `<rect x="${x}" y="${y(r.hReal)}" width="${bw}" height="${Math.max(0, y(0) - y(r.hReal))}" rx="2" fill="${c}" opacity="${sel ? 1 : .55}"/><line x1="${x - 4}" x2="${x + bw + 4}" y1="${y(r.hPlan)}" y2="${y(r.hPlan)}" stroke="var(--ink)" stroke-width="2" stroke-dasharray="4 3"/><text x="${x + bw / 2}" y="${y(r.hReal) - 5}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">${adqHfmt(r.hReal)}</text>`; }
+    svg += `<text x="${x + bw / 2}" y="${H + 26}" text-anchor="middle" font-size="11" fill="var(--ink${sel ? "" : "-2"})" font-weight="${sel ? 800 : 500}">${esc(adqFmt(sem[w]))}</text>`; });
+  svg += `<line x1="34" x2="${W}" y1="${y(J.h)}" y2="${y(J.h)}" stroke="var(--orange)" stroke-width="2"/></svg>`;
+  const rw = R[wSel];
+  const per = m => m == null ? "" : ADQ_TN[adqPeriodo(m % 1440)];
+  const rows = rw ? rw.ds.map(x => { const dn = ADQ_DIAS[adqD(x.d).getDay()] + " " + adqFmt(x.d);
+    if (x.vazio) return `<tr><td>${dn}</td><td colspan="6" class="sup">sem dados do Ponto</td></tr>`;
+    const fl = []; const esc0 = p.semEscala ? x.trab : x.plan;
+    if (!p.semEscala && !x.plan && x.trab && !x.fer) fl.push(["st-vencido", "Trabalhou na folga"]);
+    if (!p.semEscala && x.plan && !x.trab && !x.aus) fl.push(["st-pendente", "Falta"]);
+    if (!p.semEscala && x.plan && x.trab && x.pIni != null && x.ini != null && adqPeriodo(x.pIni % 1440) !== adqPeriodo(x.ini % 1440)) fl.push(["st-pendente", "Trocou de turno"]);
+    if (x.trab && x.he > P.lim.heDia + 1e-6) fl.push(["st-pendente", "HE > " + P.lim.heDia + " h"]);
+    if (x.ij !== undefined && x.ij < P.lim.interj) fl.push(["st-vencido", "Interjornada " + adqHfmt(x.ij)]);
+    const escTxt = x.plan ? `${adqHHMM(x.pIni)}–${adqHHMM(x.pFim)} · ${adqHfmt(x.hPlan)}` : `<span class="sup">${esc((x.pTxt || "Folga").replace(/\s+/g, " ").slice(0, 30))}</span>`;
+    return `<tr><td class="nw">${dn}</td><td>${p.semEscala ? '<span class="sup">sem escala</span>' : escTxt}</td><td class="nw">${x.ini != null ? adqHHMM(x.ini) + " – " + adqHHMM(x.fim ?? x.ini) : x.aus ? `<span class="sup">${esc(x.rTxt.slice(0, 20))}</span>` : "—"}</td><td class="right">${x.trab ? adqHfmt(x.hReal) : "—"}</td><td class="right">${x.he > 0 ? adqHfmt(x.he) : ""}</td><td class="right">${x.ij !== undefined ? adqHfmt(x.ij) : ""}</td><td><div class="chips">${fl.map(f => `<span class="pill ${f[0]}">${f[1]}</span>`).join("")}</div></td></tr>`; }).join("") : "";
+  const sc = (l, v, d) => `<div class="adq-scard"><span class="l">${esc(l)}</span><span class="v">${v}</span><span class="d">${d}</span></div>`;
+  const ativa = ["ok", "atencao", "fora"].includes(A.st);
+  adqLateral(`<div class="adq-ed-h"><div><h3>${esc(p.nome)}</h3><p class="sup">${p.mat ? "Matr. " + esc(p.mat) + " · " : ""}${esc(p.setor)} · ${esc(p.reg)}${p.turno && p.turno !== "D" ? " · turno " + ADQ_TN[p.turno] : ""}</p></div><button type="button" class="btn sm" onclick="adqLateralFechar()" aria-label="Fechar">✕</button></div>
+    <div class="adq-controls" style="margin:0"><span class="pill ${ADQ_ST_TXT[A.st][0]}">${ADQ_ST_TXT[A.st][1]}</span><span class="sup">contra ${esc(J.nome)} · ${adqH(J.h)} h, até ${J.dias} dias por semana · últimas ${sem.length} semanas do Ponto</span></div>
+    ${ativa ? `<div class="adq-sgrid">${sc("Horas/semana", adqHfmt(A.hReal), "média apontada")}${sc("Dias/semana", adqH(A.dr), "limite " + J.dias)}${sc("HE/semana", adqHfmt(A.he), "do Flit")}${sc("Interjornada < " + P.lim.interj + " h", String(A.ij), "ocorrências")}</div>` : ""}
+    ${A.mot.length ? `<div><b>O que precisa mudar</b><ul class="adq-ul">${A.mot.map(([t, n]) => `<li>${esc(t)} em ${n} de ${A.n} semanas</li>`).join("")}</ul></div>` : ativa ? `<p class="sup">Nenhum desvio nas últimas semanas.</p>` : `<p class="sup">${A.st === "semponto" ? "Sem registro no Controle de Ponto nas semanas analisadas." : "Férias ou afastamento em todas as semanas."}</p>`}
+    ${p.semEscala ? `<p class="adq-aviso">Sem escala no Flit: a aderência usa as marcações como escala.</p>` : ""}
+    ${R.length ? `<div><b>Horas por semana</b><div class="adq-legend"><span><i class="sw" style="background:var(--ok)"></i>apontado</span><span><i class="sw adq-sw-l"></i>previsto na escala</span><span><i class="sw adq-sw-o"></i>limite da janela (${adqH(J.h)} h)</span></div>${svg}</div>
+    <div><div class="adq-head" style="margin:0"><b>Dia a dia</b><div class="adq-seg">${sem.map((w, i) => `<button type="button" aria-pressed="${i === wSel}" onclick="adqFicha(${jsArg(p.id)}, ${i})">${esc(adqFmt(w))}</button>`).join("")}</div></div>
+      <div class="table-wrap" style="margin-top:6px"><table class="cap-table adq-tbl" style="min-width:620px"><thead><tr><th>Dia</th><th>Escala</th><th>Ponto</th><th>Horas</th><th>HE</th><th>Interj.</th><th>Desvios</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${rw && rw.st !== "ferias" && rw.st !== "semdados" ? `<p class="adq-note">Semana: ${rw.dp} dias na escala, ${rw.dr} trabalhados, ${adqHfmt(rw.hPlan)} previstas e ${adqHfmt(rw.hReal)} apontadas.</p>` : ""}</div>` : ""}`, "ficha");
+};
+
+/* ---------- Demanda do setor (lista · Serviços) ---------- */
+const ADQ_TURNOS_PADRAO = { "Garagem": [["M", "04:30", 8.5, "Garagem · 04:30 às 13:00"], ["T", "13:00", 8.5, "Garagem · 13:00 às 21:30"]], "Guichê": [["M", "07:00", 7.5, "Guichê · 1º turno"], ["T", "14:00", 7, "Guichê · 2º turno"]], "Comercial / Agência": [["M", "07:00", 7.5, "Agência · 1º turno"], ["T", "14:00", 7, "Agência · 2º turno"]] };
+window.adqDemanda = async (setor, tipo) => {
+  await adqFontes(); ADQ.dem = { setor, tipo: tipo || ADQ.dem && ADQ.dem.setor === setor && ADQ.dem.tipo || "Útil" };
+  const ed = adqPodeEd("escala"), ex = adqPodeEx("escala"), L = adqServDe(setor, ADQ.dem.tipo, true), J = adqJanSel() || { h: 44, dias: 6 };
+  const mot = setor === "Motoristas";
+  adqLateral(`<div class="adq-ed-h"><div><h3>Demanda · ${esc(setor)}</h3><p class="sup">Serviços que precisam de gente em cada tipo de dia. Domingo e feriado usam a mesma demanda. Duração vazia = carga da janela ÷ dias (${adqHfmt(J.h / J.dias)} em ${esc(J.nome || "")}).</p></div><button type="button" class="btn sm" onclick="adqLateralFechar()" aria-label="Fechar">✕</button></div>
+    <div class="adq-seg" role="group" aria-label="Tipo de dia">${ADQ_TIPOS.map(t => `<button type="button" aria-pressed="${t === ADQ.dem.tipo}" onclick="adqDemanda(${jsArg(setor)}, ${jsArg(t)})">${t} <small>(${adqServDe(setor, t, true).length})</small></button>`).join("")}</div>
+    <div class="table-wrap"><table class="cap-table adq-tbl adq-dem" style="min-width:560px"><thead><tr><th>Código</th><th>Início</th><th>Duração (h)</th><th>Descrição</th><th></th></tr></thead><tbody id="adqDemBody">
+      ${L.map(s => `<tr data-id="${esc(s._id)}"><td><input data-k="cod" value="${esc(s.cod)}" maxlength="20" ${ed ? "" : "disabled"} aria-label="Código"></td><td><input data-k="ini" type="time" value="${s.ini == null ? "" : adqHHMM(s.ini)}" ${ed ? "" : "disabled"} aria-label="Início">${s.ini == null ? `<div class="adq-err">início inválido: "${esc(s.iniTxt)}"</div>` : ""}</td><td><input data-k="dur" type="number" min="1" max="16" step="0.25" value="${s.dur == null ? "" : s.dur}" placeholder="janela" ${ed ? "" : "disabled"} aria-label="Duração"></td><td><input data-k="desc" value="${esc(s.desc)}" maxlength="200" ${ed ? "" : "disabled"} aria-label="Descrição"></td><td>${ex ? `<button type="button" class="btn sm adq-danger" onclick="adqServExcluir(${jsArg(s._id)})">Excluir</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="5" class="sup">Nenhum serviço neste tipo de dia.</td></tr>`}</tbody></table></div>
+    ${ed ? `<div class="adq-controls"><button type="button" class="btn primary" onclick="adqServIncluir()">Incluir serviço</button>${!mot && ADQ_TURNOS_PADRAO[setor] && !L.length ? `<button type="button" class="btn" onclick="adqServTurnos()">Preencher pelos turnos de hoje</button>` : ""}${!L.length ? ADQ_TIPOS.filter(t => t !== ADQ.dem.tipo && adqServDe(setor, t).length).map(t => `<button type="button" class="btn" onclick="adqServCopiar(${jsArg(t)})">Copiar de ${esc(t)}</button>`).join("") : ""}</div>` : ""}
+    ${mot ? `<div><button type="button" class="btn sm" onclick="adqPartidas()">Partidas da Tabela de Horários (${esc(ADQ.dem.tipo)})</button><div id="adqPartidas"></div></div>` : ""}
+    <p class="adq-note">Cada linha é um posto: um motorista num bloco de viagens, ou uma pessoa num turno. ${ex ? "" : "Excluir um serviço é do proprietário do módulo."}</p>`);
+  const body = $("adqDemBody"); if (body && ed) body.addEventListener("change", adqServMudar);
+};
+async function adqServMudar(e) {
+  const t = e.target, tr = t.closest("tr"); if (!t.dataset.k || !tr || !tr.dataset.id) return;
+  const s = ADQF.serv.find(x => x._id === tr.dataset.id); if (!s) return;
+  const f = {}; const k = t.dataset.k, v = String(t.value || "").trim();
+  if (!adqPodeEd("escala")) return;
+  if (ADQ.ocupado) { toast("Aguarde a gravação anterior terminar."); adqDemanda(s.setor, s.tipo); return; }
+  if (k === "cod") { if (!v) { toast("Informe o código."); return; } if (adqServDe(s.setor, s.tipo, true).some(x => x !== s && x.cod === v)) { toast("Código repetido neste tipo de dia."); return; } f.Title = v; }
+  if (k === "ini") { if (adqMin(v) == null) { toast("Início no formato HH:MM."); return; } f.Inicio = v; }
+  if (k === "dur") { if (v && !(adqNum(v) >= 1 && adqNum(v) <= 16)) { toast("Duração entre 1 e 16 h (ou vazia)."); return; } f.Duracao = v ? adqNum(v) : null; }
+  if (k === "desc") f.Descricao = v;
+  ADQ.ocupado = true;
+  try { await adqAtualizar("adq_serv", s._id, f); await adqServRecarregar(); adqToast("Serviço atualizado"); adqRender(); }
+  catch (er) { toast("Não foi possível gravar: " + er.message, 6000); await adqServRecarregar().catch(() => {}); adqDemanda(s.setor, s.tipo); }
+  finally { ADQ.ocupado = false; }
+}
+async function adqServCriarVarios(lst) {
+  if (!adqPodeEd("escala")) throw new Error("Seu acesso à Escala é só de leitura.");
+  if (ADQ.ocupado) throw new Error("aguarde a gravação anterior terminar");
+  ADQ.ocupado = true;
+  try { for (const x of lst) await adqCriar("adq_serv", x); } finally { ADQ.ocupado = false; await adqServRecarregar().catch(() => {}); adqDemanda(ADQ.dem.setor, ADQ.dem.tipo); adqRender(); }
+}
+window.adqServIncluir = async () => {
+  const { setor, tipo } = ADQ.dem, L = adqServDe(setor, tipo, true), pre = { "Útil": "U", "Sábado": "S", "Domingo e feriado": "D" }[tipo];
+  let n = L.length + 1; while (L.some(x => x.cod === pre + String(n).padStart(2, "0"))) n++;
+  const ult = L[L.length - 1];
+  try { await adqServCriarVarios([{ Title: pre + String(n).padStart(2, "0"), Setor: setor, TipoDia: tipo, Inicio: ult ? adqHHMM(ult.ini + 60) : "06:00", Duracao: null, Descricao: "", Ordem: n }]); adqToast("Serviço incluído"); } catch (e) { toast("Não foi possível gravar: " + e.message, 6000); }
+};
+window.adqServTurnos = async () => {
+  const { setor, tipo } = ADQ.dem, T = ADQ_TURNOS_PADRAO[setor] || [], pre = { "Útil": "U", "Sábado": "S", "Domingo e feriado": "D" }[tipo];
+  try { await adqServCriarVarios(T.map(([t, ini, dur, desc], i) => ({ Title: pre + t + "1", Setor: setor, TipoDia: tipo, Inicio: ini, Duracao: dur, Descricao: desc, Ordem: i + 1 }))); adqToast("Postos criados pelos turnos de hoje"); } catch (e) { toast("Não foi possível gravar: " + e.message, 6000); }
+};
+window.adqServCopiar = async de => {
+  const { setor, tipo } = ADQ.dem, pre = { "Útil": "U", "Sábado": "S", "Domingo e feriado": "D" }[tipo];
+  try { await adqServCriarVarios(adqServDe(setor, de).map((s, i) => ({ Title: pre + String(s.cod).replace(/^[USD]/, ""), Setor: setor, TipoDia: tipo, Inicio: adqHHMM(s.ini), Duracao: s.dur, Descricao: s.desc, Ordem: i + 1 }))); adqToast(`Serviços copiados de ${de}`); } catch (e) { toast("Não foi possível gravar: " + e.message, 6000); }
+};
+window.adqServExcluir = async id => {
+  const s = ADQF.serv.find(x => x._id === id); if (!s || !adqPodeEx("escala")) return;
+  if (!(await erpConfirmar({ titulo: "Excluir serviço", texto: `Excluir o serviço ${s.cod} (${s.tipo}) de ${s.setor}?`, sim: "Excluir", perigo: true }))) { adqDemanda(s.setor, s.tipo); return; }
+  if (ADQ.ocupado) { toast("Aguarde a gravação anterior terminar."); return; }
+  ADQ.ocupado = true;
+  try { await adqApagar("adq_serv", id); await adqServRecarregar(); adqToast("Serviço excluído"); } catch (e) { toast("Não foi possível excluir: " + e.message, 6000); }
+  finally { ADQ.ocupado = false; }
+  adqDemanda(s.setor, s.tipo); adqRender();
+};
+window.adqPartidas = async () => {
+  const el = $("adqPartidas"); if (!el) return; el.innerHTML = `<p class="sup">Lendo a Tabela de Horários…</p>`;
+  try {
+    if (!ADQF.horarios) ADQF.horarios = await adqLerLista("horarios");
+    const q = { "Útil": /segunda/i, "Sábado": /s[áa]bado/i, "Domingo e feriado": /domingo/i }[ADQ.dem.tipo];
+    const hoje = adqHoje(), L = ADQF.horarios.filter(h => h.Ativo !== false && q.test(String(h.Quadro || "")) && (!h.VigenciaInicio || adqIso(h.VigenciaInicio) <= hoje)).sort((a, b) => String(a.Horario || "").localeCompare(String(b.Horario || "")));
+    el.innerHTML = L.length ? `<div class="table-wrap" style="max-height:260px;overflow:auto;margin-top:6px"><table class="cap-table adq-tbl" style="min-width:0"><thead><tr><th>Partida</th><th>Origem</th><th>Linha</th><th>Serviço</th></tr></thead><tbody>${L.map(h => `<tr><td class="nw">${esc(h.Horario)}</td><td>${esc(h.Origem || "")}</td><td>${esc(h.Linha || h.Bloco || "")}</td><td>${esc(h.Servico || "")}</td></tr>`).join("")}</tbody></table></div><p class="adq-note">${L.length} partidas. Use para montar os blocos de viagens de cada motorista (a Tabela não tem duração nem veículo).</p>` : `<p class="sup">Nenhuma partida para este tipo de dia.</p>`;
+  } catch (e) { el.innerHTML = `<p class="adq-aviso">Tabela de Horários: ${esc(e.semLista ? "lista não criada" : "não foi possível ler")}.</p>`; }
 };
 
 /* ---------- estilo (só tokens do ERP) ---------- */
@@ -37985,6 +38343,34 @@ body.adq-off #pMatriz tr[data-mod="adq"],body.adq-off #pMatriz tr[data-pai="adq"
 .adq-ed-foot{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;margin-top:auto;padding-top:10px;border-top:1px solid var(--line)}
 .adq-err{color:var(--err);font-size:13px;margin:0}
 .adq-toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 14px;border-radius:var(--radius);display:flex;gap:12px;align-items:center;z-index:80;font-size:13px;max-width:calc(100% - 32px)}
+.adq .adq-cards{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.adq .adq-card{text-align:left;font:inherit;color:inherit;cursor:pointer;display:flex;flex-direction:column;gap:10px;background:var(--surface);border-top:1px solid var(--line);border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:14px}
+.adq .adq-card:hover{border-color:var(--navy)}
+.adq .adq-card-t{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.adq .adq-card h4{margin:0;font-size:15px;font-weight:800;color:var(--navy)}
+.adq .adq-hbar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--soft)}.adq .adq-hbar i{display:block;height:100%}
+.adq .adq-nums{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}.adq .adq-nums div{display:flex;flex-direction:column}.adq .adq-nums span{font-size:11px;color:var(--ink-2)}
+.adq .adq-nums b{font-size:17px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.adq b.bad,.adq-ed b.bad{color:var(--err)}.adq b.warn{color:var(--warn)}.adq b.ok{color:var(--ok)}
+.adq .adq-search{position:relative}.adq .adq-search input{width:240px;max-width:100%}
+.adq .adq-results{position:absolute;top:100%;left:0;right:0;z-index:4;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);margin-top:4px;box-shadow:var(--shadow-2,0 8px 20px rgba(11,22,40,.12));overflow:hidden;min-width:240px}
+.adq .adq-results button{display:flex;justify-content:space-between;gap:8px;width:100%;border:0;background:none;color:var(--ink);font:inherit;font-size:13px;font-weight:600;padding:8px 10px;cursor:pointer;text-align:left}.adq .adq-results button:hover{background:var(--soft)}
+.adq .adq-sgrid,.adq-ed .adq-sgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:6px}
+@media (max-width:760px){.adq .adq-sgrid,.adq-ed .adq-sgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.adq-scard{border:1px solid var(--line);border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;gap:4px;background:var(--surface)}
+.adq-scard .l{font-size:12px;color:var(--ink-2);font-weight:600}.adq-scard .v{font-size:20px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums}.adq-scard .d{font-size:12px;color:var(--ink-2)}
+.adq .adq-sec{margin-top:18px}.adq .adq-sec h4{margin:0;font-size:14px;font-weight:800;color:var(--navy)}
+.adq .adq-hm{border-collapse:separate;border-spacing:3px;font-variant-numeric:tabular-nums;font-size:12px}
+.adq .adq-hm th{font-size:11px;color:var(--ink-2);font-weight:700;text-align:center}.adq .adq-hm tbody th{text-align:left;padding-right:4px}
+.adq .adq-hm td{text-align:center;border-radius:var(--radius-sm);padding:8px 2px;font-weight:700;min-width:42px}
+.adq .adq-hm td.ok{background:#E4F3EA;color:var(--ok)}.adq .adq-hm td.warn{background:#FBF6E9;color:var(--warn)}.adq .adq-hm td.bad{background:#FBEDEC;color:var(--err)}.adq .adq-hm td.na{color:var(--ink-2)}
+.adq-legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--ink-2);margin:6px 0}.adq-legend span{display:inline-flex;align-items:center;gap:6px}
+.adq-legend .sw{width:14px;height:14px;border-radius:3px;border:1px solid var(--line);display:inline-block}
+.adq-legend .adq-sw-l{background:none;border:0;border-top:2px dashed var(--ink);border-radius:0;height:0}.adq-legend .adq-sw-o{background:none;border:0;border-top:2px solid var(--orange);border-radius:0;height:0}
+.adq-aviso{font-size:12.5px;color:var(--warn);background:#FBF6E9;border-radius:var(--radius);padding:8px 10px;margin:6px 0}
+.adq-ul{margin:6px 0 0;padding-left:18px;font-size:13px}
+.adq-ed .adq-seg button small{font-weight:500}
+.adq-ed .cap-table{min-width:0}
+.adq-ed .adq-dem input{width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:var(--radius-sm);padding:5px 7px;min-width:0}
 .adq-toast button{background:none;border:0;color:var(--orange-soft);font:inherit;font-weight:800;cursor:pointer}
 </style>`);
 /* ADQ:FIM ===================================================================== */

@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.7",
+  version: "v0.14.9",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -5529,7 +5529,7 @@ async function loadCAP(opts) {
   if (_troc()) throw divTrocou();
   const [items] = await Promise.all([SP.items(CAP_STATE.site.id, CAP_STATE.list.id), loadForn(true).catch(() => [])]);
   if (_troc()) throw divTrocou();
-  CAP_STATE.items = items.map(it => Object.assign({ _id: it.id }, it.fields || {}));
+  CAP_STATE.items = items.map(it => capCriadorDe(Object.assign({ _id: it.id }, it.fields || {}), it));   /* v0.14.8: quem criou (desfazer a própria importação) */
   if (CAP_STATE.cols && CAP_STATE.cols.has("FornecedorRefId")) CAP_STATE.items.forEach(it => { it.FornecedorRefLookupId = it.FornecedorRefId == null || it.FornecedorRefId === "" ? undefined : it.FornecedorRefId; });   /* v0.13.4: a coluna numérica manda; o lookup antigo (ids de outra lista) é ignorado */
   if ((opts && opts.soLeitura) || !podeEditar("cap") || vcAtivo()) return CAP_STATE.items; /* v0.12.12: Obrigações e Fornecedores só leem — não marcam vencidas nem gravam nada · v0.12.14: quem só vê também não grava */
   /* --- v0.7: Vencido automático --- */
@@ -7377,7 +7377,7 @@ async function capSave(existing) {
     }
     CAP_STATE.docFila = null; CAP_STATE.preset = null;
     closeModal(); toast(existing ? "Fatura atualizada" : "Fatura cadastrada");
-    try { await loadCAP({ soLeitura: !$("capBody") }); } catch (e) { toast("Gravado, mas não foi possível recarregar: " + e.message, 6000); }
+    try { await capRecarregarUm(existing ? existing._id : (criada && criada.id)); } catch (e) { toast("Gravado, mas não foi possível recarregar: " + e.message, 6000); }   /* v0.14.8 (item 18): relê só a fatura salva */
     const depois = CAP_STATE.depois; CAP_STATE.depois = null;
     if (depois) depois(); else paintCAP();
   } catch (e) { showErr("Erro ao salvar: " + e.message); btn.disabled = false; btn.textContent = existing ? "Salvar" : "Cadastrar"; }
@@ -7392,7 +7392,7 @@ window.capDelete = async (id) => {
   try {
     await graph(`/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/items/${id}`, { method: "DELETE" });
     let falhas = 0; for (const a of proprios) { try { await graph(`/drives/${a.d}/items/${a.id}`, { method: "DELETE" }); } catch (e) { falhas++; console.warn("anexo não apagado", a.n, e); } }
-    closeModal(); toast(`Fatura excluída${proprios.length ? ` · ${proprios.length - falhas} documento(s) apagado(s)${falhas ? ` · ${falhas} ficou(aram) na pasta` : ""}` : ""}`); await loadCAP({ soLeitura: !$("capBody") }); paintCAP();
+    closeModal(); toast(`Fatura excluída${proprios.length ? ` · ${proprios.length - falhas} documento(s) apagado(s)${falhas ? ` · ${falhas} ficou(aram) na pasta` : ""}` : ""}`); capTirarLocal([id]); paintCAP();   /* v0.14.8 (item 18): sem reler a lista inteira */
   }
   catch (e) { toast("Erro ao excluir: " + e.message, 6000); }
 };
@@ -23192,7 +23192,7 @@ function capRecCampos(f, comp) {
   Object.keys(fields).forEach(k => { if (fields[k] === null || (k !== "FornecedorRefLookupId" && !hasCol(k))) delete fields[k]; });
   return fields;
 }
-const capRecLer = async () => (await SP.items(CAP_STATE.site.id, CAP_STATE.list.id)).map(it => Object.assign({ _id: it.id }, it.fields || {}));
+const capRecLer = async () => (await SP.items(CAP_STATE.site.id, CAP_STATE.list.id)).map(it => capCriadorDe(Object.assign({ _id: it.id }, it.fields || {}), it));   /* v0.14.8 (revisão B3): mantém quem criou */
 async function capRecorrentesGerar() {
   if (CAP_REC_RODANDO || !session.n1 || (typeof vcAtivo === "function" && vcAtivo()) || !CAP_STATE.list || !FORN_STATE.items || !FORN_STATE.items.length) return;
   CAP_REC_RODANDO = true;
@@ -37364,6 +37364,333 @@ function rhVidaHtml(f) {
     } catch (e) { console.warn("vida funcional", e); }
     return r;
   }; }
+
+/* =====================================================================
+   v0.14.8 · CAP R1 (fila "v0.13.5" da CAP_PENDENCIAS; itens 18, 10 e 17 da lista de 13/10)
+   18  Salvar ou excluir uma fatura relê só ela (não a lista inteira). A importação relê só as faturas novas.
+   10  Pagar em lote com comprovante: um comprovante para todas (uma cópia vai para a pasta de cada fatura) e/ou um por fatura.
+       Fatura cujo comprovante não sobe não é paga e continua selecionada para tentar de novo.
+   17  Importação com lote e desfazer: cada importação grava o lote (coluna LoteImportacao, criada pela Configuração) e o
+       histórico "importada". Ao terminar, a janela mostra o resultado com "Desfazer esta importação"; a janela Importar lista as
+       últimas importações. Desfazer exclui só as faturas do lote que não mudaram depois de importadas (sem outro histórico, sem
+       anexo, sem obrigação ligada, sem saldo de parcial, fora dos reparos do Rio Card). Quem edita a CAP desfaz a própria
+       importação; o proprietário desfaz qualquer uma e pode marcar também as alteradas.
+   ===================================================================== */
+const CAP_LOTE = { desfazendo: null, importando: false, ultimo: null };
+{ const col = () => ({ name: "LoteImportacao", displayName: "Lote da importação", text: { allowMultipleLines: false, maxLength: 40 } });
+  LISTS.cap.columns.push(col());
+  if (LISTS.div_cap && LISTS.div_cap.columns !== LISTS.cap.columns && !LISTS.div_cap.columns.some(c => c.name === "LoteImportacao")) LISTS.div_cap.columns.push(col()); }
+
+/* ---- 18 · reler só o que mudou ---- */
+function capCriadorDe(it, raw) {
+  const u = raw && raw.createdBy && raw.createdBy.user;
+  if (u) { it._criadoPor = normEmail(u.email || u.userPrincipalName || ""); it._criadoNome = String(u.displayName || ""); }
+  if (raw && raw.createdDateTime) it._criadoEm = raw.createdDateTime;
+  return it;
+}
+function capItemDe(raw) {
+  const f = Object.assign({}, (raw && raw.fields) || {});
+  if (f.FornecedorRefId != null && f.FornecedorRefId !== "" && (f.FornecedorRefLookupId == null || f.FornecedorRefLookupId === "")) f.FornecedorRefLookupId = f.FornecedorRefId;   /* a mesma ponte de SP.items */
+  const it = capCriadorDe(Object.assign({ _id: String(raw.id) }, f), raw);
+  if (CAP_STATE.cols && CAP_STATE.cols.has("FornecedorRefId")) it.FornecedorRefLookupId = it.FornecedorRefId == null || it.FornecedorRefId === "" ? undefined : it.FornecedorRefId;
+  try { if (it.Subcategoria) it.Subcategoria = subcatCanon(it.Subcategoria); } catch (e) {}
+  return it;
+}
+function capTodos() { return CAP_STATE.espelhoCC && Array.isArray(CAP_STATE._todos) ? CAP_STATE._todos : (CAP_STATE.items || []); }
+function capDepoisLocal() {
+  CAP_STATE.rev = (CAP_STATE.rev || 0) + 1;
+  try { if (typeof BUSCA !== "undefined") BUSCA.cache = {}; } catch (e) {}   /* a busca do topo relê a CAP já com a mudança */
+  if (typeof DIV !== "undefined" && DIV.on) setTimeout(() => { divResumoGravar().catch(e => console.warn("div_resumo", e)); }, 0);
+}
+/* troca o objeto (não altera o antigo: quem guardou a versão anterior compara as duas) */
+function capPorLocal(novo) {
+  const id = String(novo._id);
+  const por = (arr, entra) => { const i = arr.findIndex(x => String(x._id) === id); if (i >= 0) { if (entra) arr[i] = novo; else arr.splice(i, 1); } else if (entra) arr.push(novo); };
+  if (!Array.isArray(CAP_STATE.items)) CAP_STATE.items = [];
+  if (CAP_STATE.espelhoCC) { if (Array.isArray(CAP_STATE._todos)) por(CAP_STATE._todos, true); por(CAP_STATE.items, (ccDe(novo) || "") === CAP_STATE.espelhoCC); }
+  else por(CAP_STATE.items, true);
+}
+function capTirarLocal(ids) {
+  const s = new Set((ids || []).map(String)); if (!s.size) return;
+  CAP_STATE.items = (CAP_STATE.items || []).filter(x => !s.has(String(x._id)));
+  if (CAP_STATE.espelhoCC && Array.isArray(CAP_STATE._todos)) CAP_STATE._todos = CAP_STATE._todos.filter(x => !s.has(String(x._id)));
+  if (CAP_STATE.sel && CAP_STATE.sel.delete) s.forEach(i => CAP_STATE.sel.delete(i));
+  capDepoisLocal();
+}
+async function capRecarregarUm(ids) {
+  const lista = [...new Set((Array.isArray(ids) ? ids : [ids]).filter(x => x != null && x !== "").map(String))];
+  const tudo = () => loadCAP({ soLeitura: !$("capBody") });
+  if (!lista.length || !CAP_STATE.site || !CAP_STATE.list || !Array.isArray(CAP_STATE.items)) return tudo();
+  const siteId = CAP_STATE.site.id, listId = CAP_STATE.list.id, gen = typeof DIV !== "undefined" ? DIV.gen : 0;
+  const url = id => `/sites/${siteId}/lists/${listId}/items/${encodeURIComponent(id)}?$expand=fields`;
+  let res;
+  if (lista.length === 1) {
+    try { res = [{ ok: true, status: 200, body: await graph(url(lista[0])) }]; }
+    catch (e) { if (e && e.status === 404) res = [{ ok: false, status: 404 }]; else return tudo(); }
+  } else { try { res = await graphBatch(lista.map(id => ({ method: "GET", url: url(id) }))); } catch (e) { return tudo(); } }
+  if ((typeof DIV !== "undefined" && DIV.gen !== gen) || !CAP_STATE.list || CAP_STATE.list.id !== listId) return CAP_STATE.items;   /* a tela trocou durante a leitura */
+  if (res.some(r => !r || (!(r.ok && r.body && r.body.fields) && r.status !== 404))) return tudo();   /* alguma leitura falhou: relê tudo, como antes */
+  const sumiram = [];
+  res.forEach((r, i) => { if (r.status === 404) sumiram.push(lista[i]); else capPorLocal(capItemDe(r.body)); });
+  if (sumiram.length) capTirarLocal(sumiram); else capDepoisLocal();
+  return CAP_STATE.items;
+}
+
+/* ---- 10 · pagar em lote com comprovante ---- */
+window.capPagarLote = () => {
+  if (!podeEditar("cap")) { toast("Seu acesso à CAP é só de leitura."); return; }
+  if (!capPodePagar()) { toast("Pagar em lote faz parte da permissão \"Pagar faturas\" (Usuários e permissões)."); return; }
+  const its = capSelItens().filter(it => it.Status !== "Pago" && !capCancelada(it)).sort((a, b) => String(a.Vencimento || "").localeCompare(String(b.Vencimento || "")));
+  if (!its.length) { toast("Nenhuma fatura em aberto selecionada."); return; }
+  const tot = its.reduce((s, it) => s + Number(it.Valor || 0), 0), jaPagas = capSelItens().length - its.length, comDoc = hasCol("Anexos");
+  $("modal").className = "modal wide";
+  modal(`<div class="modal-head"><h2>Registrar pagamento em lote</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <p class="lead" style="margin:0 0 12px"><b>${its.length}</b> fatura(s) em aberto · total <b>${esc(fmtBRL(tot))}</b>.${jaPagas ? ` ${jaPagas} selecionada(s) já paga(s) ficam de fora.` : ""} Todas recebem a mesma data; banco e forma só mudam se você escolher (vazio = mantém o de cada fatura). Para juros ou desconto, use o <b>Pagar</b> da própria fatura.</p>
+      <div class="form-grid">
+        <div class="field"><label>Data do pagamento<span class="req">*</span></label><input type="date" id="plData" value="${todayISO()}"></div>
+        <div class="field"><label>Banco</label><select id="plBanco">${opt(BANCOS, "", true)}</select><div class="hint">Vazio = mantém o banco de cada fatura</div></div>
+        <div class="field"><label>Forma de pagamento</label><select id="plForma">${opt(FORMAS, "", true)}</select><div class="hint">Vazio = mantém a forma de cada fatura</div></div>
+        ${comDoc ? `<div class="field full"><label>Comprovante para todas</label><label class="btn sm doc-add" style="display:inline-flex">📎 Anexar comprovante<input type="file" id="plArq" accept="${DOC_ACEITA}" hidden multiple></label><div class="hint" id="plArqHint">Opcional. Um PIX, TED ou borderô que paga várias faturas: uma cópia vai para a pasta de cada fatura. Para um comprovante por fatura, use o 📎 da linha.</div></div>` : ""}
+      </div>
+      <div class="import-preview" style="max-height:320px;overflow:auto;margin-top:12px"><table><thead><tr><th>Fatura</th><th>Vencimento</th><th style="text-align:right">Valor</th><th>Status</th><th>Banco · forma</th>${comDoc ? "<th>Comprovante</th>" : ""}</tr></thead><tbody>
+        ${its.map(it => `<tr><td>${esc(it.Title || "—")}<div class="sup">${esc(it.Fornecedor || "")}${it.Parcela ? " · parcela " + esc(it.Parcela) : ""}</div></td><td class="nw">${fmtDate(it.Vencimento)}</td><td class="right">${esc(fmtBRL(it.Valor))}</td><td>${statusPill(it.Status)}</td><td class="nw">${esc([it.Banco, it.FormaPagamento].filter(Boolean).join(" · ") || "—")}</td>${comDoc ? `<td class="nw"><label class="btn mini" title="Comprovante só desta fatura" style="cursor:pointer">📎<input type="file" class="plArqUm" data-id="${esc(String(it._id))}" accept="${DOC_ACEITA}" hidden multiple></label> <span class="sup plArqNome" data-id="${esc(String(it._id))}"></span></td>` : ""}</tr>`).join("")}
+      </tbody></table></div>
+      <div class="err-msg" id="plErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>
+    </div>
+    <div class="modal-foot"><button class="btn" id="plCancel" onclick="closeModal()">Cancelar</button><button class="btn primary" id="plGo">Confirmar ${its.length} pagamento(s)</button></div>`);
+  const arqsUm = new Map();
+  if ($("plArq")) $("plArq").addEventListener("change", () => { const fs = [...$("plArq").files]; $("plArqHint").textContent = fs.length ? `${fs.map(f => f.name).join(", ")} · vai para as ${its.length} fatura(s)` : "Opcional. Um PIX, TED ou borderô que paga várias faturas: uma cópia vai para a pasta de cada fatura. Para um comprovante por fatura, use o 📎 da linha."; });
+  document.querySelectorAll("#modal .plArqUm").forEach(inp => inp.addEventListener("change", () => { const fs = [...inp.files], id = inp.dataset.id; if (fs.length) arqsUm.set(id, fs); else arqsUm.delete(id); const s = document.querySelector(`#modal .plArqNome[data-id="${CSS.escape(id)}"]`); if (s) s.textContent = fs.map(f => f.name).join(", "); }));
+  $("plGo").onclick = async () => {
+    const data = $("plData").value, banco = $("plBanco").value, forma = $("plForma").value, err = $("plErr");
+    if (!data) { err.style.display = "block"; err.textContent = "Informe a data do pagamento."; return; }
+    if (data > todayISO() && !confirm(`A data do pagamento (${fmtDate(data)}) é futura. Confirmar mesmo assim?`)) return;
+    const comuns = $("plArq") ? [...$("plArq").files] : [];
+    const b = $("plGo"); b.disabled = true; let ok = 0; const falhas = [];
+    $("plCancel").disabled = true; const x = document.querySelector("#modal .modal-head .x"); if (x) x.disabled = true;
+    $("modalBack").onclick = null; document.removeEventListener("keydown", escClose);
+    let drive = null;
+    for (const [n, it] of its.entries()) {
+      const arqs = comuns.concat(arqsUm.get(String(it._id)) || []), enviados = [];
+      const fields = { Status: "Pago", DataPagamento: data, Estimado: false, ValorPago: Number(it.Valor || 0) };
+      if (banco) fields.Banco = banco; if (forma) fields.FormaPagamento = forma;
+      try {
+        if (arqs.length) {
+          b.textContent = `Enviando comprovante… ${n + 1}/${its.length}`;
+          if (!drive) drive = await docDrive();
+          const alvo = Object.assign({}, it, fields);
+          for (const f of arqs) enviados.push(await capEnviarUm(alvo, "Comprovante", f, null, drive));
+          fields.Anexos = JSON.stringify(anexosDe(it).concat(enviados));
+        }
+        if (hasCol("Historico")) fields.Historico = capHistAdd(it, "paga", `${fmtBRL(it.Valor)} em ${fmtDate(data)} (em lote)${arqs.length ? ` · comprovante: ${arqs.map(f => f.name).join(", ")}` : ""}`);
+        for (const k of Object.keys(fields)) if (!hasCol(k)) delete fields[k];
+        await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, fields); Object.assign(it, fields); ok++;
+        if (typeof capEhReparo === "function" && capEhReparo(it) && typeof rcSyncDaCap === "function") { try { await rcSyncDaCap(it); } catch (e) { console.warn("rcSyncDaCap (lote)", e); } }   /* revisão B6 */
+      } catch (e) {
+        falhas.push({ it, erro: (enviados.length < arqs.length ? "comprovante não enviado: " : "") + e.message }); console.warn("baixa em lote", it._id, e);
+        for (const a of enviados) { try { await graph(`/drives/${a.d}/items/${a.id}`, { method: "DELETE" }); } catch (e2) { /* sem permissão de excluir: o arquivo fica na pasta */ } }
+      }
+      b.textContent = `Registrando… ${ok + falhas.length}/${its.length}`;
+    }
+    CAP_STATE.rev = (CAP_STATE.rev || 0) + 1;
+    CAP_STATE.sel.clear(); falhas.forEach(f => CAP_STATE.sel.add(String(f.it._id)));   /* as que falharam continuam selecionadas para tentar de novo */
+    if (typeof DIV !== "undefined" && DIV.on) setTimeout(() => { divResumoGravar().catch(e => console.warn("div_resumo", e)); }, 0);
+    if (!falhas.length) { closeModal(); toast(`${ok} pagamento(s) registrado(s)${comuns.length || arqsUm.size ? " com comprovante" : ""}`, 5000); paintCAP(); return; }
+    paintCAP();
+    modal(`<div class="modal-head"><h2>Pagamento em lote</h2><button class="x" onclick="closeModal()">×</button></div>
+      <div class="modal-body"><p class="lead" style="margin:0 0 10px"><b>${ok}</b> pagamento(s) registrado(s). <b class="err">${falhas.length}</b> fatura(s) não foram pagas e continuam selecionadas:</p>
+        <ul class="cap-lote-falhas">${falhas.map(f => `<li><b>${esc(f.it.Title || "—")}</b> <span class="sup">${esc(f.it.Fornecedor || "")}</span> — ${esc(f.erro)}</li>`).join("")}</ul></div>
+      <div class="modal-foot"><button class="btn primary" onclick="closeModal()">Fechar</button></div>`);
+  };
+};
+
+/* ---- 17 · importação com lote e desfazer ---- */
+function capLoteNovo() { const d = new Date(), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${Math.random().toString(36).slice(2, 6)}`; }
+function capLoteRotulo(id) { const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/.exec(String(id || "")); return m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}` : String(id || ""); }
+function capLoteEu() { return [session.me && session.me.mail, session.me && session.me.userPrincipalName].map(normEmail).filter(Boolean); }
+/* não mudou depois de importada: só o histórico "importada", sem anexo, sem obrigação, sem filha de parcial, fora dos reparos */
+function capLoteFilhas() { const s = new Set(); capTodos().forEach(x => { if (x.ParcialDe != null && x.ParcialDe !== "") s.add(String(x.ParcialDe)); }); return s; }
+/* nunca sai pelo desfazer, nem marcada pelo proprietário: reparos do Rio Card e fatura com saldo de parcial (revisão M2) */
+function capLoteBloqueada(it, filhas) { return (typeof capEhReparo === "function" && capEhReparo(it)) || (filhas || capLoteFilhas()).has(String(it._id)); }
+function capLoteIntocada(it, filhas) {
+  if (!it) return false;
+  if (capLoteBloqueada(it, filhas)) return false;
+  if (!hasCol("Historico") && (it.Status === "Pago" || it.DataPagamento)) return false;   /* revisão B4: sem histórico não dá para saber se foi paga depois */
+  if (capHist(it).some(h => h && h.a !== "importada")) return false;
+  if (anexosDe(it).length) return false;
+  if (it.ObrigacaoLookupId != null && it.ObrigacaoLookupId !== "") return false;
+  return true;
+}
+function capLotePode(it) {
+  if (!it || !podeEditar("cap") || vcAtivo()) return false;
+  if (typeof DIV !== "undefined" && DIV.on && !session.n1) return false;
+  if (podeExcluir("cap")) return true;
+  return !!it._criadoPor && capLoteEu().includes(it._criadoPor);
+}
+function capLotes() {
+  const m = new Map();
+  capTodos().forEach(it => { const k = it.LoteImportacao; if (!k) return; if (!m.has(k)) m.set(k, []); m.get(k).push(it); });
+  const filhas = capLoteFilhas(), prop = podeExcluir("cap");
+  return [...m.entries()].map(([k, its]) => ({ k, its, por: (its.find(x => x._criadoNome) || {})._criadoNome || "", total: its.reduce((s, it) => s + Number(it.Valor || 0), 0),
+    desf: its.filter(it => capLotePode(it) && !capLoteBloqueada(it, filhas) && (prop || capLoteIntocada(it, filhas))).length })).sort((a, b) => String(b.k).localeCompare(String(a.k)));
+}
+capCommitImport = async function (rows) {
+  if (!podeEditar("cap")) { toast("Seu acesso à CAP é só de leitura."); return; }
+  const btn = $("impCommit"), sum = $("impSummary"); if (!btn || CAP_LOTE.importando || !rows || !rows.length) return;
+  CAP_LOTE.importando = true; btn.disabled = true;
+  document.querySelectorAll("#modal .modal-foot .btn:not(.primary), #modal .modal-head .x, #modal .modal-body button, #modal .modal-body input, #modal .modal-body textarea").forEach(el => { el.disabled = true; });
+  $("modalBack").onclick = null; document.removeEventListener("keydown", escClose);   /* enquanto grava, a janela não fecha */
+  const lote = capLoteNovo(), comLote = hasCol("LoteImportacao"), criadas = [], falhas = [];
+  try {
+    for (const r of rows) {
+      const fields = Object.assign({}, r.fields);
+      if (comLote) fields.LoteImportacao = lote;
+      if (fields.Status !== "Pago" && fields.Status !== "Cancelada" && !isIsenta(fields) && fields.Vencimento && String(fields.Vencimento).slice(0, 10) < todayISO() && (!fields.Status || fields.Status === "Pendente")) fields.Status = "Vencido";   /* revisão B2: antes a releitura completa marcava */
+      if (hasCol("Historico")) fields.Historico = capHistAdd(null, "importada", comLote ? `lote ${capLoteRotulo(lote)}` : "importação em lote");
+      try { const c = await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, fields); criadas.push(String(c.id)); }
+      catch (e) { falhas.push({ r, erro: e.message }); console.error("import row failed", e, r); }
+      if (sum) sum.innerHTML = `Importando ${criadas.length + falhas.length}/${rows.length}…${falhas.length ? ` · <b class="err">${falhas.length} falharam</b>` : ""}`;
+    }
+  } finally { CAP_LOTE.importando = false; }
+  if (criadas.length) { try { await capRecarregarUm(criadas); } catch (e) { try { await loadCAP({ soLeitura: !$("capBody") }); } catch (e2) { toast("Importado, mas não foi possível recarregar: " + e2.message, 6000); } } }
+  CAP_LOTE.ultimo = { lote: comLote ? lote : null, ids: criadas.slice() };
+  toast(`Importadas ${criadas.length} fatura(s)${falhas.length ? `, ${falhas.length} falharam` : ""}`);
+  if ($("capBody")) paintCAP();
+  $("modal").className = "modal wide";
+  modal(`<div class="modal-head"><h2>Importação concluída</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <p class="lead" style="margin:0 0 12px"><b>${criadas.length}</b> de ${rows.length} fatura(s) importada(s)${comLote ? ` · lote <b>${esc(capLoteRotulo(lote))}</b>` : ""}.</p>
+      ${falhas.length ? `<div class="err-msg" style="display:block;color:var(--err);font-size:13px;margin-bottom:10px"><b>${falhas.length} linha(s) não foram gravadas:</b><ul class="cap-lote-falhas">${falhas.map(f => `<li>${esc(f.r.fields.Title || "—")} · ${esc(f.r.fields.Fornecedor || "")} — ${esc(f.erro)}</li>`).join("")}</ul></div>` : ""}
+      ${criadas.length ? `<p class="sup" style="margin:0">Errou a planilha? <b>Desfazer esta importação</b> exclui as faturas deste lote que ainda não foram mexidas (pagas, editadas ou com anexo ficam).${comLote ? " O lote também fica em Importar › Últimas importações." : " Sem a coluna «Lote da importação» (Sistema › Configuração › Executar tudo), só dá para desfazer agora, nesta janela."}</p>` : ""}
+    </div>
+    <div class="modal-foot">${criadas.length ? `<button class="btn" id="impDesfazer" onclick="capLoteDesfazer(${jsArg(comLote ? lote : "@ultimo")})">Desfazer esta importação</button>` : ""}<button class="btn primary" onclick="closeModal()">Fechar</button></div>`);
+};
+window.capLoteDesfazer = async (lote) => {
+  if (!podeEditar("cap")) { toast("Seu acesso à CAP é só de leitura."); return; }
+  const ids = lote === "@ultimo" ? ((CAP_LOTE.ultimo && CAP_LOTE.ultimo.ids) || []) : capTodos().filter(x => x.LoteImportacao === lote).map(x => String(x._id));
+  if (!ids.length) { toast("Nada a desfazer: as faturas deste lote já não estão na CAP."); return; }
+  try { await capRecarregarUm(ids); } catch (e) { toast("Não foi possível reler as faturas do lote: " + e.message, 7000); return; }   /* confere o estado atual (alguém pode ter pago no meio-tempo) */
+  if ($("capBody")) paintCAP();
+  const prop = podeExcluir("cap");
+  const filhas = capLoteFilhas();
+  const linhas = ids.map(id => capTodos().find(x => String(x._id) === id)).filter(Boolean).map(it => { const bloq = capLoteBloqueada(it, filhas), intocada = capLoteIntocada(it, filhas), pode = capLotePode(it), nAx = anexosDe(it).filter(a => !(a.rc || a.rcs)).length;
+    return { it, intocada, pode, marca: pode && intocada, livre: pode && !bloq && (intocada || prop), motivo: !pode ? "importada por outra pessoa (só o proprietário da CAP desfaz)" : bloq ? "ligada a reparo do Rio Card ou com saldo de parcial: não sai pelo desfazer" : !intocada ? `mudou depois da importação (paga, editada, com anexo ou obrigação)${nAx ? ` · ${nAx} anexo(s) saem junto` : ""}` : "" }; });
+  if (!linhas.length) { toast("Nada a desfazer: as faturas deste lote já não estão na CAP."); return; }
+  $("modal").className = "modal wide";
+  modal(`<div class="modal-head"><h2>Desfazer importação${lote !== "@ultimo" ? " · " + esc(capLoteRotulo(lote)) : ""}</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <p class="lead" style="margin:0 0 12px">As faturas marcadas saem da CAP em definitivo. As que mudaram depois da importação ficam desmarcadas${prop ? " (como proprietário, você pode marcá-las)" : ""}.</p>
+      <div class="import-preview" style="max-height:340px;overflow:auto"><table><thead><tr><th><input type="checkbox" id="ldTodas" title="Marcar/desmarcar as que podem sair"></th><th>Fatura</th><th>Vencimento</th><th style="text-align:right">Valor</th><th>Status</th><th>Observação</th></tr></thead><tbody>
+        ${linhas.map(l => `<tr class="${l.marca ? "ok" : "dup"}"><td>${l.livre ? `<input type="checkbox" class="ldSel" data-id="${esc(String(l.it._id))}" ${l.marca ? "checked" : ""}>` : ""}</td><td>${esc(l.it.Title || "—")}<div class="sup">${esc(l.it.Fornecedor || "")}</div></td><td class="nw">${fmtDate(l.it.Vencimento)}</td><td class="right">${esc(fmtBRL(l.it.Valor))}</td><td>${statusPill(l.it.Status)}</td><td class="sup">${esc(l.motivo)}</td></tr>`).join("")}
+      </tbody></table></div>
+      <div class="err-msg" id="ldErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>
+    </div>
+    <div class="modal-foot"><button class="btn" id="ldCancel" onclick="closeModal()">Cancelar</button><button class="btn primary" id="ldGo" style="background:var(--err);border-color:var(--err)">Excluir</button></div>`);
+  const marcadas = () => [...document.querySelectorAll("#modal .ldSel")].filter(c => c.checked).map(c => c.dataset.id);
+  const atualiza = () => { const n = marcadas().length, cx = [...document.querySelectorAll("#modal .ldSel")]; $("ldGo").disabled = !n; $("ldGo").textContent = n ? `Excluir ${n} fatura(s)` : "Excluir"; const t = $("ldTodas"); if (t) { t.checked = cx.length > 0 && n === cx.length; t.indeterminate = n > 0 && n < cx.length; t.disabled = !cx.length; } };
+  $("ldTodas").onchange = e => { document.querySelectorAll("#modal .ldSel").forEach(c => { c.checked = e.target.checked; }); atualiza(); };
+  document.querySelectorAll("#modal .ldSel").forEach(c => c.addEventListener("change", atualiza)); atualiza();
+  $("ldGo").onclick = async () => {
+    const sel = marcadas(); if (!sel.length) return;
+    const b = $("ldGo"); b.disabled = true; b.textContent = "Excluindo…"; $("ldCancel").disabled = true;
+    const x = document.querySelector("#modal .modal-head .x"); if (x) x.disabled = true; $("modalBack").onclick = null; document.removeEventListener("keydown", escClose);
+    const siteId = CAP_STATE.site.id, listId = CAP_STATE.list.id;
+    /* revisão M1: confere de novo logo antes de excluir (alguém pode ter pago ou anexado com a janela aberta) */
+    try { await capRecarregarUm(sel); } catch (e) { $("ldErr").style.display = "block"; $("ldErr").textContent = "Não foi possível conferir as faturas: " + e.message; b.disabled = false; b.textContent = "Excluir"; $("ldCancel").disabled = false; return; }
+    const filhas2 = capLoteFilhas(), mudou = [];
+    const vai = sel.filter(id => { const it = capTodos().find(x => String(x._id) === id); const marcadaIntocada = (linhas.find(l => String(l.it._id) === id) || {}).intocada;
+      const ok = it && capLotePode(it) && !capLoteBloqueada(it, filhas2) && (capLoteIntocada(it, filhas2) || (podeExcluir("cap") && !marcadaIntocada)); if (it && !ok) mudou.push(it); return ok; });
+    const anexosDe2 = Object.fromEntries(vai.map(id => [id, anexosDe(capTodos().find(x => String(x._id) === id) || {}).filter(a => a && a.id && a.d && !(a.rc || a.rcs))]));
+    let res = [];
+    CAP_LOTE.desfazendo = new Set(vai);
+    try { if (vai.length) res = await graphBatch(vai.map(id => ({ method: "DELETE", url: `/sites/${siteId}/lists/${listId}/items/${id}` }))); }
+    catch (e) { res = null; }
+    finally { CAP_LOTE.desfazendo = null; }
+    let saiu;
+    if (res) saiu = vai.filter((id, i) => res[i] && (res[i].ok || res[i].status === 404));
+    else { try { await capRecarregarUm(vai); } catch (e) {} const ainda = new Set(capTodos().map(x => String(x._id))); saiu = vai.filter(id => !ainda.has(id)); }   /* revisão M3: lote interrompido — vale o que o SharePoint tem */
+    const falhou = vai.length - saiu.length + mudou.length;
+    let axFalha = 0; for (const id of saiu) for (const a of anexosDe2[id] || []) { try { await graph(`/drives/${a.d}/items/${a.id}`, { method: "DELETE" }); } catch (e) { axFalha++; } }   /* revisão M2: como o Excluir da fatura */
+    capTirarLocal(saiu);
+    if (CAP_LOTE.ultimo) CAP_LOTE.ultimo.ids = CAP_LOTE.ultimo.ids.filter(id => !saiu.includes(id));
+    closeModal(); toast(`${saiu.length} fatura(s) da importação excluída(s)${mudou.length ? ` · ${mudou.length} mudou(aram) agora e ficaram` : ""}${falhou - mudou.length ? ` · ${falhou - mudou.length} falha(s)` : ""}${axFalha ? ` · ${axFalha} anexo(s) ficaram na pasta` : ""}`, 7000);
+    if ($("capBody")) paintCAP();
+  };
+};
+/* a guarda deixa quem edita a CAP excluir as faturas do próprio lote, só durante o desfazer (o resto da guarda não muda) */
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path) {
+    if (/^DELETE$/i.test(method || "") && CAP_LOTE.desfazendo && CAP_STATE.list) {
+      const m = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0].match(/\/lists\/([^/]+)\/items\/([^/]+)$/);
+      if (m && m[1] === CAP_STATE.list.id && CAP_LOTE.desfazendo.has(decodeURIComponent(m[2]))) {
+        const it = capTodos().find(x => String(x._id) === decodeURIComponent(m[2]));
+        if (it && capLotePode(it) && (capLoteIntocada(it) || podeExcluir("cap"))) return;
+      }
+    }
+    return g0.apply(this, arguments); }; window.guardaEscrita = guardaEscrita; }
+/* janela Importar: últimas importações (lotes) com Desfazer */
+{ const ci0 = window.capImport;
+  window.capImport = () => {
+    ci0();
+    const h = document.querySelector("#modal .modal-body"); if (!h) return;
+    const ls = capLotes().slice(0, 8);
+    const aviso = !hasCol("LoteImportacao") ? `<p class="sup" style="margin:6px 0 0">Para guardar o lote de cada importação (e poder desfazer depois), ${session.n1 ? "rode Sistema › Configuração › Executar tudo (coluna nova «Lote da importação»)" : "um administrador precisa rodar a Configuração"}.</p>` : "";
+    h.insertAdjacentHTML("beforeend", `<details class="cap-lotes" style="margin-top:16px"${ls.length ? "" : " hidden"}><summary><b>Últimas importações</b> <span class="sup">(${ls.length})</span></summary>
+      <div class="import-preview" style="margin-top:8px"><table><thead><tr><th>Quando</th><th>Quem</th><th style="text-align:right">Faturas</th><th style="text-align:right">Total</th><th></th></tr></thead><tbody>
+      ${ls.map(l => `<tr><td class="nw">${esc(capLoteRotulo(l.k))}</td><td>${esc(l.por || "—")}</td><td class="right">${l.its.length}</td><td class="right">${esc(fmtBRL(l.total))}</td><td class="right">${l.desf ? `<button class="btn mini" onclick="capLoteDesfazer(${jsArg(l.k)})">Desfazer…</button>` : `<span class="sup">—</span>`}</td></tr>`).join("")}
+      </tbody></table></div></details>${aviso}`);
+  };
+}
+
+/* =====================================================================
+   v0.14.9 · Pedido de 18/10 (19:14): imprimir TODOS os horários numa folha só (A4 deitada).
+   Botão "Horários numa folha" na Tabela de Tarifas e "Tudo numa folha" na Tabela de Horários.
+   Uma coluna por tipo de dia (Segunda a sexta, Sábados, Domingos e feriados; Especiais só se tiver horário),
+   com os blocos Macabu × Macaé, Fretamento e Madalena. A folha é reduzida até caber (sem o limite de 50% das outras impressões).
+   ===================================================================== */
+const HOR_FOLHA_CSS = `
+  .hf-grid{display:grid;gap:0 10px;align-items:start}
+  .hf-col{min-width:0;border:.6px solid #C9CFD8;border-radius:4px;overflow:hidden}
+  .hf-col .hq{margin:0;border-radius:0;padding:6px 10px}.hf-col .hq b{font-size:13px}.hf-col .hq span{font-size:8px}
+  .hf-bl{margin:0}.hf-bl .hf-t{font-size:9px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#1E2153;padding:5px 8px 3px;border-bottom:1px solid #8D96A3;background:#fff}
+  .hf-bl .hf-t span{font-weight:700;color:#6B7280;letter-spacing:.05em;margin-left:6px}
+  .hf-col table.ht th{font-size:8px;padding:3px 6px}
+  .hf-col .hr{min-height:0;padding:2px 5px;gap:3px}.hf-col .hr .h{font-size:11.5px;min-width:32px}
+  .hf-col .hp{font-size:7px;padding:1px 2px}.hf-col .ho{font-size:7.5px;-webkit-line-clamp:2}
+  .hf-col .hf-vazio{padding:8px;font-size:9px;color:#6B7280}`;
+function horFolhaQuadros() { return HOR_QUADROS.filter(q => HOR_BLOCOS.some(bl => HOR_ORIGENS.some(o => horDe(q, bl, o).length)) || q !== "Especiais"); }
+function horFolhaHtml() {
+  const qs = horFolhaQuadros(), vig = horVigencia();
+  const par = (a, b) => { const n = Math.max(a.length, b.length); let h = ""; for (let i = 0; i < n; i++) h += `<tr><td>${horPrintLinha(a[i], true)}</td><td>${horPrintLinha(b[i], true)}</td></tr>`; return h; };
+  const bloco = (tit, sub, a, b, oa, ob) => (a.length || b.length) ? `<div class="hf-bl"><div class="hf-t">${esc(tit)}${sub ? `<span>${esc(sub)}</span>` : ""}</div><table class="ht"><thead><tr><th>Saída de ${esc(oa)}</th><th>Saída de ${esc(ob)}</th></tr></thead><tbody>${par(a, b)}</tbody></table></div>` : "";
+  const col = q => { const h = bloco("Macabu × Macaé", "linha regular", horDe(q, "Linha", "Macabu"), horDe(q, "Linha", "Macaé"), "Macabu", "Macaé")
+      + bloco("Fretamento", "", horDe(q, "Fretamento", "Macabu"), horDe(q, "Fretamento", "Macaé"), "Macabu", "Macaé")
+      + bloco("Horário de Madalena", "Macaé × S. M. Madalena", horDe(q, "Madalena", "Madalena"), horDe(q, "Madalena", "Macaé"), "Madalena", "Macaé");
+    return `<div class="hf-col"><div class="hq"><b>${esc(q)}</b></div>${h || `<div class="hf-vazio">Sem horários cadastrados.</div>`}</div>`; };
+  const doc = `HOR-TODOS-${(vig || todayISO()).replace(/-/g, "")}`;
+  return `<div class="pg">${printCab("Tabela de horários", `Válida a partir de ${vig ? fmtDate(vig).replace(/(\d{2})\/(\d{2})\/(\d{2})$/, "$1/$2/20$3") : "—"} · Conceição de Macabu · Macaé · Santa Maria Madalena`, { doc, meta: [["Tipos de dia", String(qs.length)]], semQuem: true })}
+    <div class="hf-grid" style="grid-template-columns:repeat(${qs.length},minmax(0,1fr))">${qs.map(col).join("")}</div>
+    <div class="hleg"><b>Serviços:</b> <span class="hp">Parador</span> para em todos os pontos · <span class="hp unico">Direto</span> preço único, sem paradas intermediárias · <span class="hp mad">via Madalena</span> segue até Santa Maria Madalena${qs.some(q => HOR_ORIGENS.some(o => horDe(q, "Fretamento", o).length)) ? ` · <span class="hp fret">Fretamento</span> firmas` : ""}</div>
+    <p class="hnota">Horários sujeitos a alteração sem aviso prévio. Em feriados vale o quadro de domingos.</p>
+    ${printRodape("Operacional · Tabela de Horários", true)}</div>`;
+}
+window.horImprimirFolha = async () => {
+  try { toast("Buscando os horários…", 2000); await loadHor(HOR_STATE.ready); }   /* revisão B1: sempre lê de novo (alguém pode ter editado) */
+  catch (e) { HOR_STATE.erro = e.message; HOR_STATE.itens = HOR_SEED.map((r, i) => Object.assign({ _id: "seed" + i }, r)); HOR_STATE.ready = false; }   /* revisão M1: como a tela de Horários */
+  if (!HOR_STATE.ready) toast("A lista de horários não está disponível: a folha sai com o quadro embutido.", 6000);
+  printDoc({ titulo: "Tabela de Horários", html: horFolhaHtml(), fonte: 10, css: HOR_PRINT_CSS + HOR_FOLHA_CSS, umaPagina: true, paisagem: true });
+};
+/* a folha única pode precisar de mais redução que as outras impressões (que param em 50%); revisão M2: reconhecida pelo conteúdo, sem flag global */
+{ const c0 = printCaber; printCaber = function (doc, paisagem) {
+    if (!doc || !doc.querySelector(".hf-grid")) return c0.apply(this, arguments);
+    const maxH = (paisagem ? 210 - 28 : 297 - 28) * 96 / 25.4 * 0.92;   /* folga maior: o rodapé não pode passar para a 2ª folha */
+    [...doc.querySelectorAll(".pg")].forEach(pg => { pg.style.zoom = ""; const h = pg.scrollHeight; if (h > maxH) pg.style.zoom = String(Math.max(0.25, Math.floor(maxH / h * 1000) / 1000)); });
+    const z = Math.min(...[...doc.querySelectorAll(".pg")].map(pg => Number(pg.style.zoom || 1)));
+    if (z < 0.5) toast(`Muitos horários: a folha saiu em ${Math.round(z * 100)}% e pode ficar difícil de ler. "Imprimir tudo" (Tabela de Horários) usa uma folha por tipo de dia.`, 9000);   /* revisão B2 */
+  }; }
+{ const p0 = paintHor; paintHor = function () { const r = p0.apply(this, arguments); const a = $("horActions"); if (a && !a.querySelector(".hor-folha")) { const t = [...a.querySelectorAll("button")].find(b => /Imprimir tudo/.test(b.textContent)); const h = `<button class="btn hor-folha" onclick="horImprimirFolha()" title="Todos os tipos de dia numa folha A4 deitada">Tudo numa folha</button>`; if (t) t.insertAdjacentHTML("afterend", h); else a.insertAdjacentHTML("afterbegin", h); } return r; }; window.paintHor = paintHor; }
+{ const p0 = paintTar; paintTar = function () { const r = p0.apply(this, arguments); const a = $("tarActions"); if (a && !a.querySelector(".hor-folha")) { const t = [...a.querySelectorAll("button")].find(b => /Imprimir/.test(b.textContent)); const h = `<button class="btn hor-folha" onclick="horImprimirFolha()" title="Todos os horários (todos os tipos de dia) numa folha A4 deitada">Horários numa folha</button>`; if (t) t.insertAdjacentHTML("afterend", h); else a.insertAdjacentHTML("afterbegin", h); } return r; }; window.paintTar = paintTar; }
+CONFIG.version = "v0.14.9";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.9.2",
+  version: "v0.14.9.3",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -37757,7 +37757,6 @@ function horPaxLegenda(qs) {
   it.push(`<span><b>Sem marca</b> = Parador, para em todos os pontos</span>`);
   if (tem(z => /^(direto|preço único)$/i.test(z.Servico || ""))) it.push(`<span><span class="hp unico">Direto</span> preço único, sem paradas intermediárias</span>`);
   if (tem(z => z.Servico === "Fretamento")) it.push(`<span><span class="hp fret">Fretamento</span> firmas</span>`);
-  if (tem(z => (horPaxMk(z) || [])[0] === "via")) it.push(`<span><span class="mk via"></span> via Madalena</span>`);
   if (tem(z => (horPaxMk(z) || [])[0] === "sai")) it.push(`<span><span class="mk sai"></span> sai de Santa Maria Madalena</span>`);
   if (tem(z => (horPaxMk(z) || [])[0] === "fim")) it.push(`<span><span class="mk fim"></span> ponto final em Santa Maria Madalena</span>`);
   if (tem(z => z.Linha)) it.push(`<span><span class="hlin" style="margin:0">1000</span> número da linha no letreiro</span>`);
@@ -37777,7 +37776,26 @@ HOR_FOLHA_CSS_EXTRA = (typeof HOR_FOLHA_CSS_EXTRA === "string" ? HOR_FOLHA_CSS_E
 /* botões: sem "Imprimir tudo"; "Imprimir Painel" */
 { const p0 = paintHor; paintHor = function () { const r = p0.apply(this, arguments); const a = $("horActions"); if (a) { [...a.querySelectorAll("button")].forEach(b => { if (/^Imprimir tudo$/.test(b.textContent.trim())) b.remove(); }); const f = a.querySelector(".hor-folha"); if (f) { f.textContent = "Imprimir Painel"; f.title = "Todos os tipos de dia numa folha A4 deitada, para afixar no ponto ou na agência"; } } return r; }; window.paintHor = paintHor; }
 { const p0 = paintTar; paintTar = function () { const r = p0.apply(this, arguments); const f = $("tarActions") && $("tarActions").querySelector(".hor-folha"); if (f) f.textContent = "Imprimir Painel de horários"; return r; }; window.paintTar = paintTar; }
-CONFIG.version = "v0.14.9.2";
+
+/* =====================================================================
+   v0.14.9.3 · Pedido de 19/10 (13:52): na impressão só existem dois casos de Madalena — sai "via Madalena".
+   ● verde = sai de Santa Maria Madalena · ● vermelha = ponto final em Santa Maria Madalena (uma bola de cada cor).
+   Sem o campo Madalena preenchido: Serviço "Madalena" ou observação de Madalena — "Vem de Madalena" = saída; o resto = ponto final.
+   ===================================================================== */
+horPaxMk = function (z) {
+  if (!z) return null;
+  const sai = HOR_MK["Saída de Madalena"], fim = HOR_MK["Ponto Final Madalena"];
+  if (z.Madalena) return /sa[ií]da/i.test(z.Madalena) ? sai : fim;
+  const ob = String(z.Observacao || "");
+  if (z.Servico === "Madalena" || horViaMad(z) || /^\s*(vem|vai|sai|sa[ií]da|via|para|ponto final)\b[^·;]*madalena/i.test(ob)) return /^\s*(vem|sai|sa[ií]da) de madalena/i.test(ob) ? sai : fim;   /* revisão B1/B2 */
+  return null;
+};
+window.horPaxMk = horPaxMk;
+HOR_FOLHA_CSS_EXTRA += `
+  .mk.sai{background:#1F7A3E;border:0;border-radius:50%}.mk.fim{background:#C0392B;border:0;border-radius:50%}`;
+{ const hp0 = window.horImprimir;
+  window.horImprimir = function () { const p0 = printDoc; printDoc = o => { printDoc = p0; return p0(Object.assign({}, o, { css: (o.css || "") + `.mk.sai{background:#1F7A3E;border:0;border-radius:50%}.mk.fim{background:#C0392B;border:0;border-radius:50%}` })); }; try { return hp0.apply(this, arguments); } finally { printDoc = p0; } }; }
+CONFIG.version = "v0.14.9.3";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

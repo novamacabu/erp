@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.9.1",
+  version: "v0.14.9.2",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -37679,7 +37679,7 @@ window.horImprimirFolha = async () => {
   try { toast("Buscando os horários…", 2000); await loadHor(HOR_STATE.ready); }   /* revisão B1: sempre lê de novo (alguém pode ter editado) */
   catch (e) { HOR_STATE.erro = e.message; HOR_STATE.itens = HOR_SEED.map((r, i) => Object.assign({ _id: "seed" + i }, r)); HOR_STATE.ready = false; }   /* revisão M1: como a tela de Horários */
   if (!HOR_STATE.ready) toast("A lista de horários não está disponível: a folha sai com o quadro embutido.", 6000);
-  printDoc({ titulo: "Tabela de Horários", html: horFolhaHtml(), fonte: 10, css: HOR_PRINT_CSS + HOR_FOLHA_CSS + (typeof HOR_FOLHA_CSS_EXTRA === "string" ? HOR_FOLHA_CSS_EXTRA : ""), umaPagina: true, paisagem: true });
+  printDoc({ titulo: "Painel de horários", html: horFolhaHtml(), fonte: 10, css: HOR_PRINT_CSS + HOR_FOLHA_CSS + (typeof HOR_FOLHA_CSS_EXTRA === "string" ? HOR_FOLHA_CSS_EXTRA : ""), umaPagina: true, paisagem: true });
 };
 /* a folha única pode precisar de mais redução que as outras impressões (que param em 50%); revisão M2: reconhecida pelo conteúdo, sem flag global */
 { const c0 = printCaber; printCaber = function (doc, paisagem) {
@@ -37687,7 +37687,7 @@ window.horImprimirFolha = async () => {
     const maxH = (paisagem ? 210 - 28 : 297 - 28) * 96 / 25.4 * 0.92;   /* folga maior: o rodapé não pode passar para a 2ª folha */
     [...doc.querySelectorAll(".pg")].forEach(pg => { pg.style.zoom = ""; const h = pg.scrollHeight; if (h > maxH) pg.style.zoom = String(Math.max(0.25, Math.floor(maxH / h * 1000) / 1000)); });
     const z = Math.min(...[...doc.querySelectorAll(".pg")].map(pg => Number(pg.style.zoom || 1)));
-    if (z < 0.5) toast(`Muitos horários: a folha saiu em ${Math.round(z * 100)}% e pode ficar difícil de ler. "Imprimir tudo" (Tabela de Horários) usa uma folha por tipo de dia.`, 9000);   /* revisão B2 */
+    if (z < 0.5) toast(`Muitos horários: a folha saiu em ${Math.round(z * 100)}% e pode ficar difícil de ler. "Imprimir (PDF)" na Tabela de Horários imprime um tipo de dia por folha.`, 9000);   /* revisão B2 */
   }; }
 { const p0 = paintHor; paintHor = function () { const r = p0.apply(this, arguments); const a = $("horActions"); if (a && !a.querySelector(".hor-folha")) { const t = [...a.querySelectorAll("button")].find(b => /Imprimir tudo/.test(b.textContent)); const h = `<button class="btn hor-folha" onclick="horImprimirFolha()" title="Todos os tipos de dia numa folha A4 deitada">Tudo numa folha</button>`; if (t) t.insertAdjacentHTML("afterend", h); else a.insertAdjacentHTML("afterbegin", h); } return r; }; window.paintHor = paintHor; }
 { const p0 = paintTar; paintTar = function () { const r = p0.apply(this, arguments); const a = $("tarActions"); if (a && !a.querySelector(".hor-folha")) { const t = [...a.querySelectorAll("button")].find(b => /Imprimir/.test(b.textContent)); const h = `<button class="btn hor-folha" onclick="horImprimirFolha()" title="Todos os horários (todos os tipos de dia) numa folha A4 deitada">Horários numa folha</button>`; if (t) t.insertAdjacentHTML("afterend", h); else a.insertAdjacentHTML("afterbegin", h); } return r; }; window.paintTar = paintTar; }
@@ -37714,7 +37714,70 @@ window.horPrintLinha = horPrintLinha;
   const hp0 = window.horImprimir;
   window.horImprimir = function (tudo) { const p0 = printDoc; printDoc = o => { printDoc = p0; return p0(Object.assign({}, o, { css: (o.css || "") + extra })); }; try { return hp0.apply(this, arguments); } finally { printDoc = p0; } };
   HOR_FOLHA_CSS_EXTRA = extra; }
-CONFIG.version = "v0.14.9.1";
+
+/* =====================================================================
+   v0.14.9.2 · Pedido de 19/10 (13:35): impressão dos horários pensada para o passageiro.
+   - Madalena vira marcador verde com legenda (sem etiqueta comprida): ● via Madalena · ○ sai de Madalena · ■ ponto final em Madalena.
+   - "Parador" é o padrão e não ocupa a linha (sem marca = para em todos os pontos); só Direto e Fretamento têm etiqueta.
+   - Linha só com o número, discreto à direita; linhas alternadas em cinza claro; cabeçalho "Saída de Macabu → Macaé".
+   - Tabela de Horários: sai "Imprimir tudo"; "Tudo numa folha" vira "Imprimir Painel" (na Tabela de Tarifas, "Imprimir Painel de horários").
+   Vale para Imprimir (PDF) e Imprimir Painel. Tela e Excel não mudam.
+   ===================================================================== */
+const HOR_MK = { "Saída de Madalena": ["sai", "sai de Madalena"], "Ponto Final Madalena": ["fim", "ponto final em Madalena"] };
+/* marcador de Madalena: campo Madalena; sem ele, Serviço "Madalena" ou observação "via Madalena" (revisão G: "Vem de Madalena" = sai de Madalena) */
+function horPaxMk(z) {
+  if (!z) return null;
+  if (z.Madalena) return HOR_MK[z.Madalena] || ["via", "via Madalena"];
+  if (z.Servico === "Madalena") return /^\s*vem de madalena/i.test(String(z.Observacao || "")) ? HOR_MK["Saída de Madalena"] : ["via", "via Madalena"];
+  return horViaMad(z) ? ["via", "via Madalena"] : null;
+}
+horPrintLinha = function (z, comServ) {
+  if (!z) return `<div class="hr"></div>`;
+  const mk = horPaxMk(z);
+  const sv = comServ && z.Servico && z.Servico !== "Parador" && z.Servico !== "Madalena" ? `<span class="hp ${horServCls(z.Servico)}">${esc(horServRot(z.Servico))}</span>` : "";
+  const lin = z.Linha ? `<span class="hlin">${esc(String(z.Linha).replace(/^Linha\s*/i, ""))}</span>` : "";
+  return `<div class="hr"><span class="h">${esc(z.Horario)}</span>${mk ? `<span class="mk ${mk[0]}" title="${esc(mk[1])}"></span>` : ""}${sv}${lin}</div>`;
+};
+window.horPrintLinha = horPrintLinha;
+const HOR_PAX_CSS = `
+  table.ht tbody tr:nth-child(even) td{background:#F4F6F9}
+  table.ht th i{font-style:normal;font-weight:700;color:#6B7280;letter-spacing:.04em}
+  .hr .h{letter-spacing:.01em}
+  .mk{display:inline-block;width:10px;height:10px;flex-shrink:0;box-sizing:border-box;margin:0 1px}
+  .mk.via{background:#1F7A3E;border-radius:50%}.mk.sai{border:2.2px solid #1F7A3E;border-radius:50%}.mk.fim{background:#1F7A3E;border-radius:2px}
+  .hr .hp.unico{font-size:8.5px;padding:2px 5px}
+  .hlin{margin-left:auto;flex-shrink:0;font-size:8.5px;font-weight:700;color:#8A93A3;font-variant-numeric:tabular-nums}
+  .hleg2{display:flex;gap:6px 16px;flex-wrap:wrap;margin:12px 0 0;font-size:9.5px;color:#3B4352;align-items:center}
+  .hleg2>span{display:inline-flex;align-items:center;gap:5px}
+  .hf-col .mk{width:8px;height:8px}.hf-col .hlin{font-size:7px}.hf-col .hp.unico{font-size:7px;padding:1px 3px}`;
+/* legenda única, só com o que aparece na folha */
+function horPaxLegenda(qs) {
+  const zs = qs.flatMap(q => HOR_BLOCOS.flatMap(bl => HOR_ORIGENS.flatMap(o => horDe(q, bl, o))));
+  const tem = f => zs.some(f), it = [];
+  it.push(`<span><b>Sem marca</b> = Parador, para em todos os pontos</span>`);
+  if (tem(z => /^(direto|preço único)$/i.test(z.Servico || ""))) it.push(`<span><span class="hp unico">Direto</span> preço único, sem paradas intermediárias</span>`);
+  if (tem(z => z.Servico === "Fretamento")) it.push(`<span><span class="hp fret">Fretamento</span> firmas</span>`);
+  if (tem(z => (horPaxMk(z) || [])[0] === "via")) it.push(`<span><span class="mk via"></span> via Madalena</span>`);
+  if (tem(z => (horPaxMk(z) || [])[0] === "sai")) it.push(`<span><span class="mk sai"></span> sai de Santa Maria Madalena</span>`);
+  if (tem(z => (horPaxMk(z) || [])[0] === "fim")) it.push(`<span><span class="mk fim"></span> ponto final em Santa Maria Madalena</span>`);
+  if (tem(z => z.Linha)) it.push(`<span><span class="hlin" style="margin:0">1000</span> número da linha no letreiro</span>`);
+  return `<div class="hleg2">${it.join("")}</div>`;
+}
+function horPaxAjustar(html, qs) {
+  let primeira = true;
+  html = html.replace(/<div class="hleg">[\s\S]*?<\/div>/g, () => { if (!primeira) return ""; primeira = false; return horPaxLegenda(qs); });
+  if (primeira) html = html.replace('<p class="hnota">', horPaxLegenda(qs) + '<p class="hnota">');   /* revisão M: quadro sem legenda antiga também ganha a nova */
+  return html.replace(/<th>Saída de ([^<]+)<\/th><th>Saída de ([^<]+)<\/th>/g, (m, a, b) => `<th>Saída de ${a} <i>→ ${b}</i></th><th>Saída de ${b} <i>→ ${a}</i></th>`);
+}
+{ const p0 = horPrintPagina; horPrintPagina = function (q) { return horPaxAjustar(p0.apply(this, arguments), [q]); }; window.horPrintPagina = horPrintPagina; }
+{ const f0 = horFolhaHtml; horFolhaHtml = function () { return horPaxAjustar(f0.apply(this, arguments), horFolhaQuadros()).replace("<h1>Tabela de horários</h1>", "<h1>Painel de horários</h1>"); }; window.horFolhaHtml = horFolhaHtml; }
+HOR_FOLHA_CSS_EXTRA = (typeof HOR_FOLHA_CSS_EXTRA === "string" ? HOR_FOLHA_CSS_EXTRA : "") + HOR_PAX_CSS;
+{ const hp0 = window.horImprimir;
+  window.horImprimir = function () { const p0 = printDoc; printDoc = o => { printDoc = p0; return p0(Object.assign({}, o, { css: (o.css || "") + HOR_PAX_CSS })); }; try { return hp0.apply(this, arguments); } finally { printDoc = p0; } }; }
+/* botões: sem "Imprimir tudo"; "Imprimir Painel" */
+{ const p0 = paintHor; paintHor = function () { const r = p0.apply(this, arguments); const a = $("horActions"); if (a) { [...a.querySelectorAll("button")].forEach(b => { if (/^Imprimir tudo$/.test(b.textContent.trim())) b.remove(); }); const f = a.querySelector(".hor-folha"); if (f) { f.textContent = "Imprimir Painel"; f.title = "Todos os tipos de dia numa folha A4 deitada, para afixar no ponto ou na agência"; } } return r; }; window.paintHor = paintHor; }
+{ const p0 = paintTar; paintTar = function () { const r = p0.apply(this, arguments); const f = $("tarActions") && $("tarActions").querySelector(".hor-folha"); if (f) f.textContent = "Imprimir Painel de horários"; return r; }; window.paintTar = paintTar; }
+CONFIG.version = "v0.14.9.2";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

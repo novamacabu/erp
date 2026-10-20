@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.9.3",
+  version: "v0.14.10",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -3840,7 +3840,7 @@ const MODULES = [
   { id: "regul",      path: "#/operacional/regulamentacoes",   icon: "lei",     name: "Regulamentações",     area: "Operacional", groups: ["operacional", "diretoria"], status: "piloto" },   /* v0.12.77: gratuidades, DETRO/RJ e legislação, com links oficiais */
   { id: "diesel",     path: "#/operacional/controle-de-diesel", icon: "bus",     name: "Controle de Diesel",  area: "Operacional", groups: ["operacional", "financeiro", "diretoria"], status: "ativo", wide: true },
   /* v0.12.15 (30/09): submódulos do Operacional */
-  { id: "pax",        path: "#/operacional/estatistica-de-passageiros", icon: "chart", name: "Estatística de Passageiros", area: "Operacional", groups: ["operacional", "diretoria"], status: "ativo" },
+  { id: "pax",        path: "#/financeiro/estatistica-de-passageiros", icon: "chart", name: "Estatística de Passageiros", area: "Financeiro", groups: ["financeiro", "operacional", "diretoria"], status: "ativo" },   /* v0.14.10: passou do Operacional para o Financeiro */
   { id: "horarios",   path: "#/operacional/tabela-de-horarios", icon: "clock",   name: "Tabela de Horários",  area: "Operacional", groups: ["operacional", "financeiro", "diretoria"], status: "ativo" },
   { id: "tarifas",    path: "#/operacional/tabela-de-tarifas",  icon: "ticket",  name: "Tabela de Tarifas",   area: "Operacional", groups: ["operacional", "financeiro", "diretoria"], status: "ativo" },
   { id: "garagem",    path: "#/operacional/escala-garagem",     icon: "people",  name: "Escala Garagem",      area: "Operacional", groups: ["operacional", "diretoria"], status: "ativo" },
@@ -4803,6 +4803,7 @@ function route() {
   if (hash === "#/financeiro/controle-de-roletas") { location.replace("#/operacional/controle-de-roletas"); return; }
   if (hash === "#/area/Agentes") { location.replace("#/financeiro/agentes"); return; }   /* v0.13.4: a área Agentes virou o card Agentes Financeiros */
   if (hash === "#/financeiro/agencia-conceicao") { location.replace("#/financeiro/agentes"); return; }   /* v0.13.4: "Operações da Agência" absorvido */
+  if (hash === "#/operacional/estatistica-de-passageiros") { location.replace("#/financeiro/estatistica-de-passageiros"); return; }   /* v0.14.10: endereço antigo */
   if (hash === "#/financeiro/agentes") { const m = MODULES.find(x => x.id === "agentes"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "agentes"; document.body.classList.remove("wide", "nav-open"); $("main").innerHTML = pageAgentes(); if (typeof navAtivo === "function") navAtivo("agentes"); window.scrollTo(0, 0); return; }
   if (hash === "#/operacional/controle-de-roletas") { const m = MODULES.find(x => x.id === "roletas"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "roletas"; document.body.classList.remove("wide", "nav-open"); if (MOD_RESET.rol) MOD_RESET.rol(); $("main").innerHTML = pageRol(); renderRol(); navAtivo("roletas"); window.scrollTo(0, 0); return; }
   /* v0.12.27 #15: Financeiro > Recebimento Motorista (sai da prévia) */
@@ -15664,7 +15665,7 @@ function chipsHtml(id, opcoes, ativos, fn, rotTodos) {
 /* textos dos cartões da Configuração para as listas novas */
 Object.assign(SETUP_TEXT, {
   horarios: `Cria no site Operacional a lista "Operacional — Horários" com o quadro de partidas embutido (linha, fretamento e Madalena, por tipo de dia). Editado em Operacional › Tabela de Horários.`,
-  pax: `Cria no site Operacional a lista "Operacional — Passageiros" (vazia): passageiros por viagem, alimentada pela importação da planilha mensal em Operacional › Estatística de Passageiros.`,
+  pax: `Cria no site Financeiro a lista "Financeiro — Passageiros" (vazia): passageiros por viagem, alimentada pela importação da planilha mensal em Financeiro › Estatística de Passageiros. A lista antiga "Operacional — Passageiros" (site Operacional) não é usada nem apagada.`,
   gar_eq: `Cria no site Operacional a lista "Garagem — Equipe" (vazia): funcionários das garagens de Macaé e Conceição de Macabu, com horário padrão e equipe de plantão.`,
   gar_esc: `Cria no site Operacional a lista "Garagem — Escala" (vazia): turnos e plantões por dia, gerados ou importados em Operacional › Escala Garagem.`
 });
@@ -16883,7 +16884,7 @@ window.tarImprimir = () => {
    v0.12.15 · OPERACIONAL › ESTATÍSTICA DE PASSAGEIROS — passageiros por viagem (data, serviço, horário, sentido) e por trecho.
    Desenho a partir da planilha mensal de estatística (abas por serviço × tipo de dia; um bloco por horário com os trechos
    origem × destino, gratuidade e TOTAL DIA; colunas = dias do mês). Os números são da operação e NÃO ficam no código:
-   a lista "Operacional — Passageiros" nasce vazia e a planilha é importada pela tela (formato do arquivo mensal).
+   a lista nasce vazia (desde a v0.14.10 "Financeiro — Passageiros", site Financeiro) e a planilha é importada pela tela (formato do arquivo mensal).
    ===================================================================== */
 const PAX_SERVICOS = ["Parador", "Direto", "Madalena", "Fretamento"];
 /* v0.12.19: cada serviço tem linha, descrição e um rótulo amigável que aparece nas tabelas */
@@ -16916,7 +16917,7 @@ function paxTrechoLegivel(label) {
 const PAX_UI = { linhaFilt: "", sentidoFilt: "", agrup: "resumo", painelGrafMes: "bar", diaSel: "" };   /* v0.12.26: + diaSel para sincronia Passageiros por Dia */
 const PAX_LUGARES = 46, PAX_META = 0.8;
 LISTS.pax = {
-  key: "pax", displayName: "Operacional — Passageiros", siteKey: "operacional", titleAs: "Chave",
+  key: "pax", displayName: "Financeiro — Passageiros", siteKey: "financeiro", titleAs: "Chave",   /* v0.14.10: lista nova e vazia no site Financeiro (valores oficiais); a antiga "Operacional — Passageiros" fica intocada no site Operacional */
   description: "Operacional NMB · passageiros transportados por viagem (data, serviço, horário, sentido) com os trechos em JSON. Alimentada pela importação da planilha de estatística ou por lançamento manual.",
   columns: [
     { name: "Data",       displayName: "Data",              required: true, dateTime: dateOnly },
@@ -16935,7 +16936,7 @@ const PAX_STATE = { site: null, list: undefined, itens: [], mes: "", tab: "horar
 MOD_RESET.pax = () => { PAX_STATE.tab = "horario"; PAX_STATE.imp = null; PAX_UI.linhaFilt = ""; PAX_UI.sentidoFilt = ""; PAX_UI.agrup = "resumo"; PAX_UI.painelGrafMes = "bar"; };
 function paxChave(f) { return `${f.Data}|${f.Servico}|${f.Horario}|${f.Sentido || "Ida"}`; }
 async function loadPax(force) {
-  if (!PAX_STATE.site) PAX_STATE.site = await SP.site(CONFIG.sites.operacional);
+  if (!PAX_STATE.site) PAX_STATE.site = await SP.site(CONFIG.sites[LISTS.pax.siteKey]);   /* v0.14.10: site Financeiro */
   if (force || PAX_STATE.list === undefined) { const lists = await SP.lists(PAX_STATE.site.id); PAX_STATE.list = lists.find(l => l.displayName === LISTS.pax.displayName) || null; }
   if (!PAX_STATE.list) { PAX_STATE.itens = []; PAX_STATE.ready = false; return; }
   const items = await SP.items(PAX_STATE.site.id, PAX_STATE.list.id);
@@ -16965,7 +16966,7 @@ function paintPax() {
   const body = $("paxBody"); if (!body) return;
   const edita = PAX_STATE.ready && podeEditar("pax"), its = paxDoMes();
   const acts = $("paxActions"); if (acts) acts.innerHTML = edita ? `<button class="btn" onclick="paxTab('importar')">Importar planilha</button><button class="btn primary" onclick="paxForm()">Lançar viagem</button>` : "";
-  if (!PAX_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>A lista "Operacional — Passageiros" ainda não existe</h3><p>Rode Sistema › Configuração › "Executar tudo na ordem" (você precisa ser proprietário do site Operacional). Depois importe a planilha mensal por aqui.</p></div>`; return; }
+  if (!PAX_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>A lista "Financeiro — Passageiros" ainda não existe</h3><p>Rode Sistema › Configuração › "Executar tudo na ordem" (você precisa ser proprietário do site Financeiro). Depois importe a planilha mensal por aqui.</p></div>`; return; }
   const meses = [...new Set(PAX_STATE.itens.map(x => x.Data.slice(0, 7)))].sort().reverse();
   const viagens = its.length, pag = its.reduce((s, x) => s + Number(x.Pagantes || 0), 0), grat = its.reduce((s, x) => s + Number(x.Gratuidade || 0), 0), lug = its.reduce((s, x) => s + Number(x.Lugares || PAX_LUGARES), 0);
   const dias = new Set(its.map(x => x.Data)).size;
@@ -17334,7 +17335,7 @@ function paxImportGo() {
     const modo = $("impModo").value, existentes = new Map(PAX_STATE.itens.filter(x => x.Data.slice(0, 7) === imp.mes).map(x => [x.Title, x]));
     const cria = [], atualiza = [];
     imp.regs.forEach(f => { const ex = existentes.get(f.Title); if (!ex) cria.push(f); else if (modo === "atualiza") atualiza.push({ id: ex._id, f }); });
-    if (!confirm(`Gravar ${cria.length} viagem(ns) nova(s)${atualiza.length ? ` e atualizar ${atualiza.length}` : ""} em ${mesLabel(imp.mes)} na lista "Operacional — Passageiros"?`)) return;
+    if (!confirm(`Gravar ${cria.length} viagem(ns) nova(s)${atualiza.length ? ` e atualizar ${atualiza.length}` : ""} em ${mesLabel(imp.mes)} na lista "${LISTS.pax.displayName}"?`)) return;
     b.disabled = true; const log = $("impLog"); log.style.display = "block"; log.textContent = "Gravando…";
     const base = `/sites/${PAX_STATE.site.id}/lists/${PAX_STATE.list.id}/items`;
     const reqs = cria.map(f => ({ method: "POST", url: base, body: { fields: f } })).concat(atualiza.map(a => ({ method: "PATCH", url: `${base}/${a.id}/fields`, body: a.f })));
@@ -24787,7 +24788,7 @@ window.multaExcluir = async id => {
    ===================================================================== */
 const EXEC = { textosModo: {}, aba: "geral", W: 834, ref: null, opTipo: "dossie", opPais: null, demo: null, ver: null, textos: {}, fonte: {}, sujo: {}, doc: null, tk: 0, rtk: 0, lido: false, pronto: Promise.resolve(), df: { dep: "", sit: "", ano: "", q: "" } };
 const EXEC_ROTAS = {
-  viag: ["dev", "Operacional › Controle de Viagens"], pax: ["#/operacional/estatistica-de-passageiros", "Operacional › Estatística de Passageiros"],
+  viag: ["dev", "Operacional › Controle de Viagens"], pax: ["#/financeiro/estatistica-de-passageiros", "Financeiro › Estatística de Passageiros"],
   veic: ["#/operacional/frota|veic", "Operacional › Frota › Geral"], manut: ["#/operacional/frota|manut", "Operacional › Frota › Manutenção"], nc: ["#/operacional/frota|nc", "Operacional › Frota › Não conformidades"], multas: ["#/operacional/frota|multas", "Operacional › Frota › Registro de Multas"],
   inf: ["#/operacional/painel-de-infracoes", "Operacional › Painel de Infrações"], sin: ["dev", "Operacional › Ocorrências e sinistros"],
   func: ["#/rh/banco-de-dados/funcs", "Recursos Humanos › Banco de Dados › Funcionários"], ponto: ["#/rh/relatorios/controle-de-ponto", "Recursos Humanos › Relatórios › Controle de Ponto"], trein: ["dev", "Recursos Humanos › Treinamentos"],
@@ -27653,7 +27654,7 @@ async function cpxCarregar(force) {
       t("cap", async () => { await loadCAP({ soLeitura: true }); return { st: CAP_STATE.items.length ? "ok" : "vazio", n: CAP_STATE.items.length }; }),
       t("obr", async () => { await loadObr(); return { st: OBR_STATE.items.length ? "ok" : "vazio", n: OBR_STATE.items.length }; }),   /* v0.12.73 (revisão): sempre (só leitura) — a regra e a dívida não podem depender de quem olha */
       t("cx", async () => { const r = await cpxLista("financeiro", LISTS.cx_mov.displayName, "Data,Tipo,Origem,Valor"); CPX.cx = r.itens; return { st: !r.list ? "semlista" : r.itens.length ? "ok" : "vazio", n: r.itens.length }; }),
-      t("pax", async () => { const r = await cpxLista("operacional", LISTS.pax.displayName, "Data,Pagantes,Gratuidade"); CPX.pax = r.itens; return { st: !r.list ? "semlista" : r.itens.length ? "ok" : "vazio", n: r.itens.length }; }),
+      t("pax", async () => { const r = await cpxLista(LISTS.pax.siteKey, LISTS.pax.displayName, "Data,Pagantes,Gratuidade"); CPX.pax = r.itens; return { st: !r.list ? "semlista" : r.itens.length ? "ok" : "vazio", n: r.itens.length }; }),
       t("veic", async () => { const r = await cpxLista("operacional", LISTS.frota_veic.displayName, "Title,Ano,Tipo,Situacao,Placa"); CPX.veic = r.itens; return { st: !r.list ? "semlista" : r.itens.length ? "ok" : "vazio", n: r.itens.length }; }),
       t("imob", async () => { await imobCarregar(force); return { st: !IMOB.list ? "semlista" : IMOB.itens.length ? "ok" : "vazio", n: IMOB.itens.length }; }),
       t("inv", async () => { await invCarregar(force); return { st: !INV.list ? "semlista" : INV.itens.length ? "ok" : "vazio", n: INV.itens.length }; }),
@@ -37795,7 +37796,82 @@ HOR_FOLHA_CSS_EXTRA += `
   .mk.sai{background:#1F7A3E;border:0;border-radius:50%}.mk.fim{background:#C0392B;border:0;border-radius:50%}`;
 { const hp0 = window.horImprimir;
   window.horImprimir = function () { const p0 = printDoc; printDoc = o => { printDoc = p0; return p0(Object.assign({}, o, { css: (o.css || "") + `.mk.sai{background:#1F7A3E;border:0;border-radius:50%}.mk.fim{background:#C0392B;border:0;border-radius:50%}` })); }; try { return hp0.apply(this, arguments); } finally { printDoc = p0; } }; }
-CONFIG.version = "v0.14.9.3";
+CONFIG.version = "v0.14.10";
+
+/* =====================================================================
+   v0.14.10 · Pedido de 20/10 (09:02–09:04): Estatística de Passageiros passa do Operacional para o Financeiro
+   (rota #/financeiro/estatistica-de-passageiros; o endereço antigo redireciona), com lista nova e vazia
+   "Financeiro — Passageiros" no site Financeiro para começar com os valores oficiais (a antiga, no site Operacional,
+   não é lida nem apagada). Exportação em Excel por mês, por ano ou de todos os dados.
+   ===================================================================== */
+function paxExpMeses() { return [...new Set(PAX_STATE.itens.map(x => (x.Data || "").slice(0, 7)).filter(Boolean))].sort(); }
+window.paxExportar = () => {
+  if (!PAX_STATE.ready) { toast("A lista de passageiros ainda não existe."); return; }
+  const meses = paxExpMeses(), anos = [...new Set(meses.map(m => m.slice(0, 4)))];
+  if (!meses.length) { toast("Ainda não há viagens lançadas para exportar."); return; }
+  const mesAtual = meses.includes(PAX_STATE.mes) ? PAX_STATE.mes : meses[meses.length - 1];
+  $("modal").className = "modal";
+  modal(`<div class="modal-head"><h2>Exportar para Excel</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body"><div class="form-grid">
+      <div class="field full"><label>Período</label><div class="seg-tabs" role="radiogroup" id="pxePer">
+        <button type="button" class="on" data-p="mes">Mês</button><button type="button" data-p="ano">Ano</button><button type="button" data-p="todos">Todos os dados</button></div></div>
+      <div class="field" id="pxeMesW"><label>Mês</label><select id="pxeMes">${meses.slice().reverse().map(m => `<option value="${m}" ${m === mesAtual ? "selected" : ""}>${esc(mesLabel(m))}</option>`).join("")}</select></div>
+      <div class="field" id="pxeAnoW" hidden><label>Ano</label><select id="pxeAno">${anos.slice().reverse().map(a => `<option>${a}</option>`).join("")}</select></div>
+    </div><p class="sup" id="pxeResumo" style="margin:12px 0 0"></p></div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" id="pxeGo">Baixar Excel</button></div>`);
+  let per = "mes";
+  const filtro = () => per === "mes" ? (x => (x.Data || "").slice(0, 7) === $("pxeMes").value) : per === "ano" ? (x => (x.Data || "").slice(0, 4) === $("pxeAno").value) : (() => true);
+  const resumo = () => { const its = PAX_STATE.itens.filter(filtro()); $("pxeResumo").textContent = `${its.length} viagem(ns) · ${its.reduce((s, x) => s + Number(x.Pagantes || 0) + Number(x.Gratuidade || 0), 0).toLocaleString("pt-BR")} passageiro(s)`; };
+  document.querySelectorAll("#pxePer button").forEach(b => b.onclick = () => { per = b.dataset.p; document.querySelectorAll("#pxePer button").forEach(x => x.classList.toggle("on", x === b)); $("pxeMesW").hidden = per !== "mes"; $("pxeAnoW").hidden = per !== "ano"; resumo(); });
+  $("pxeMes").onchange = resumo; $("pxeAno").onchange = resumo; resumo();
+  $("pxeGo").onclick = async () => {
+    const its = PAX_STATE.itens.filter(filtro()).slice().sort((a, b) => String(a.Data).localeCompare(String(b.Data)) || String(a.Horario || "").padStart(5, "0").localeCompare(String(b.Horario || "").padStart(5, "0")));
+    if (!its.length) { toast("Nenhuma viagem no período escolhido."); return; }
+    const rot = per === "mes" ? $("pxeMes").value : per === "ano" ? $("pxeAno").value : "todos";
+    const b = $("pxeGo"); b.disabled = true; b.textContent = "Gerando…";
+    try { await paxExcel(its, rot, per === "mes" ? mesLabel(rot) : per === "ano" ? `Ano ${rot}` : "Todos os dados"); closeModal(); }
+    catch (e) { toast("Não foi possível gerar o Excel: " + e.message, 7000); b.disabled = false; b.textContent = "Baixar Excel"; }
+  };
+};
+async function paxExcel(its, rot, titulo) {
+  const { wb } = await xlsxNovo();
+  const NAVY = "FF1E2153", CINZA = "FFEEF1F5", fina = { style: "thin", color: { argb: "FFDDE1E6" } };
+  const DIAS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+  const trechos = []; its.forEach(x => Object.keys(paxTrechos(x)).forEach(k => { if (!trechos.includes(k)) trechos.push(k); }));
+  const cab = (ws, cols) => { const r = ws.addRow(cols); r.eachCell(c => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } }; c.alignment = { vertical: "middle", wrapText: true }; c.border = { bottom: fina }; }); r.height = 30; ws.views = [{ state: "frozen", ySplit: r.number, showGridLines: false }]; ws.autoFilter = { from: { row: r.number, column: 1 }, to: { row: r.number, column: cols.length } }; };
+  const topo = (ws, n) => { const r = ws.addRow([`Estatística de Passageiros · ${titulo}`]); ws.mergeCells(r.number, 1, r.number, n); r.getCell(1).font = { bold: true, size: 14, color: { argb: NAVY } }; const r2 = ws.addRow([`Transportadora Nova Macabu · gerado pelo ERP NMB em ${new Date().toLocaleString("pt-BR")}`]); ws.mergeCells(r2.number, 1, r2.number, n); r2.getCell(1).font = { size: 9, color: { argb: "FF6B7280" } }; ws.addRow([]); };
+  /* Viagens: uma linha por viagem, trechos em colunas */
+  const ws = wb.addWorksheet("Viagens");
+  const cols = ["Data", "Dia", "Serviço", "Horário", "Sentido", "Pagantes", "Gratuidades", "Total", "Lugares", "Ocupação (total ÷ lugares)"].concat(trechos, ["Origem", "Observações"]);
+  topo(ws, cols.length); cab(ws, cols);
+  its.forEach(x => {
+    const d = x.Data ? new Date(x.Data + "T12:00:00") : null, pag = Number(x.Pagantes || 0), gr = Number(x.Gratuidade || 0), lug = Number(x.Lugares || PAX_LUGARES), t = paxTrechos(x);
+    const r = ws.addRow([d, d ? DIAS[d.getDay()] : "", x.Servico || "", x.Horario || "", x.Sentido || "", pag, gr, pag + gr, lug || null, lug ? (pag + gr) / lug : null].concat(trechos.map(k => { const v = Number(t[k]); return t[k] == null || t[k] === "" || !Number.isFinite(v) ? null : v; }), [x.Origem || "", x.Observacoes || ""]));
+    r.getCell(1).numFmt = "dd/mm/yyyy"; r.getCell(10).numFmt = "0%"; r.eachCell({ includeEmpty: true }, c => { c.border = { bottom: fina }; });
+  });
+  ws.columns.forEach((c, i) => { c.width = i === 0 ? 12 : i === 1 ? 10 : i === cols.length - 1 ? 30 : i < 10 ? 11 : Math.min(22, Math.max(10, String(cols[i]).length + 2)); });
+  /* Resumo por mês */
+  const rs = wb.addWorksheet("Resumo por mês");
+  const rc = ["Mês", "Viagens", "Pagantes", "Gratuidades", "Total", "Lugares", "Ocupação (total ÷ lugares)", "Média por viagem"];
+  topo(rs, rc.length); cab(rs, rc);
+  const pm = {}; its.forEach(x => { const m = (x.Data || "").slice(0, 7); const o = (pm[m] = pm[m] || { v: 0, p: 0, g: 0, l: 0 }); o.v++; o.p += Number(x.Pagantes || 0); o.g += Number(x.Gratuidade || 0); o.l += Number(x.Lugares || PAX_LUGARES); });
+  const tot = { v: 0, p: 0, g: 0, l: 0 };
+  Object.keys(pm).sort().forEach(m => { const o = pm[m]; ["v", "p", "g", "l"].forEach(k => tot[k] += o[k]); const r = rs.addRow([mesLabel(m), o.v, o.p, o.g, o.p + o.g, o.l || null, o.l ? (o.p + o.g) / o.l : null, o.v ? (o.p + o.g) / o.v : null]); r.getCell(7).numFmt = "0%"; r.getCell(8).numFmt = "0.0"; });
+  const rt = rs.addRow(["Total", tot.v, tot.p, tot.g, tot.p + tot.g, tot.l || null, tot.l ? (tot.p + tot.g) / tot.l : null, tot.v ? (tot.p + tot.g) / tot.v : null]);
+  rt.font = { bold: true }; rt.getCell(7).numFmt = "0%"; rt.getCell(8).numFmt = "0.0"; rt.eachCell(c => { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: CINZA } }; });
+  rs.columns.forEach((c, i) => { c.width = i === 0 ? 20 : 14; });
+  /* Resumo por serviço */
+  const ss = wb.addWorksheet("Por serviço");
+  const sc = ["Serviço", "Viagens", "Pagantes", "Gratuidades", "Total", "Ocupação (total ÷ lugares)"]; topo(ss, sc.length); cab(ss, sc);
+  const ps = {}; its.forEach(x => { const k = x.Servico || "—"; const o = (ps[k] = ps[k] || { v: 0, p: 0, g: 0, l: 0 }); o.v++; o.p += Number(x.Pagantes || 0); o.g += Number(x.Gratuidade || 0); o.l += Number(x.Lugares || PAX_LUGARES); });
+  const ordS = k => { const i = PAX_SERVICOS.indexOf(k); return i < 0 ? 99 : i; };
+  Object.keys(ps).sort((a, b) => ordS(a) - ordS(b) || a.localeCompare(b)).forEach(k => { const o = ps[k]; const r = ss.addRow([k, o.v, o.p, o.g, o.p + o.g, o.l ? (o.p + o.g) / o.l : null]); r.getCell(6).numFmt = "0%"; });
+  ss.columns.forEach((c, i) => { c.width = i === 0 ? 16 : 13; });
+  wb.views = [{ activeTab: 1 }];
+  await xlsxBaixar(wb, `estatistica-de-passageiros_${rot}.xlsx`);
+  toast(`Excel gerado: ${its.length} viagem(ns).`);
+}
+{ const p0 = paintPax; paintPax = function () { const r = p0.apply(this, arguments); const a = $("paxActions"); if (a && PAX_STATE.ready && !a.querySelector(".pax-exp")) a.insertAdjacentHTML("afterbegin", `<button class="btn pax-exp" onclick="paxExportar()" title="Baixa as viagens em Excel: um mês, um ano ou todos os dados">Exportar Excel</button>`); return r; }; window.paintPax = paintPax; }
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

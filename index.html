@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.10",
+  version: "v0.14.11",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -37796,7 +37796,7 @@ HOR_FOLHA_CSS_EXTRA += `
   .mk.sai{background:#1F7A3E;border:0;border-radius:50%}.mk.fim{background:#C0392B;border:0;border-radius:50%}`;
 { const hp0 = window.horImprimir;
   window.horImprimir = function () { const p0 = printDoc; printDoc = o => { printDoc = p0; return p0(Object.assign({}, o, { css: (o.css || "") + `.mk.sai{background:#1F7A3E;border:0;border-radius:50%}.mk.fim{background:#C0392B;border:0;border-radius:50%}` })); }; try { return hp0.apply(this, arguments); } finally { printDoc = p0; } }; }
-CONFIG.version = "v0.14.10";
+CONFIG.version = "v0.14.11";
 
 /* =====================================================================
    v0.14.10 · Pedido de 20/10 (09:02–09:04): Estatística de Passageiros passa do Operacional para o Financeiro
@@ -37872,6 +37872,117 @@ async function paxExcel(its, rot, titulo) {
   toast(`Excel gerado: ${its.length} viagem(ns).`);
 }
 { const p0 = paintPax; paintPax = function () { const r = p0.apply(this, arguments); const a = $("paxActions"); if (a && PAX_STATE.ready && !a.querySelector(".pax-exp")) a.insertAdjacentHTML("afterbegin", `<button class="btn pax-exp" onclick="paxExportar()" title="Baixa as viagens em Excel: um mês, um ano ou todos os dados">Exportar Excel</button>`); return r; }; window.paintPax = paintPax; }
+
+/* =====================================================================
+   v0.14.11 · Pedido de 20/10 (10:10): CAP do zero para começar a usar oficialmente.
+   Sistema › Configuração › "CAP — começar do zero" (só administrador): esvazia as listas "Lançamentos" (Faturas) e
+   "Obrigações" do site CAP. Antes de excluir, grava uma cópia em Excel na biblioteca do site CAP
+   (Backups/CAP antes de zerar) e baixa a mesma cópia no computador; sem a cópia gravada, nada é excluído.
+   As listas continuam as mesmas (o SharePoint não reaproveita os números dos itens, então Rio Card › Reparos e Imobilizado,
+   que guardam o número da fatura, nunca apontam para uma fatura nova). Fica de fora: Fornecedores (Terceiros), carteiras,
+   Dívidas, Central de Tarefas e os arquivos anexados (continuam nas pastas).
+   ===================================================================== */
+const CAPZ = { rodando: false, log: [], cont: null };
+function capzLog(t, tipo) { CAPZ.log.push({ t, tipo: tipo || "" }); const el = $("capzLog"); if (el) { el.style.display = "block"; el.innerHTML = CAPZ.log.map(l => `<div class="${l.tipo === "err" ? "err" : l.tipo === "ok" ? "ok" : ""}">${esc(l.t)}</div>`).join(""); el.scrollTop = el.scrollHeight; } }
+/* revisão M3: depois do zero, reparo do Rio Card que apontava para uma fatura excluída não recria a fatura sozinho */
+{ const g0 = rcSyncGrupo; rcSyncGrupo = async function (o) {
+    try {
+      const rep = o && o.rep, cid = rep && rep.CapId;
+      if (cid && o.origem === "rep") {
+        const reg = await erpParamLer("cap_zerada");
+        if (reg && reg.valor) { try { await loadCAP({ soLeitura: true }); } catch (e) {}
+          if (CAP_STATE.list && !CAP_STATE.items.some(x => String(x._id) === String(cid))) return { erro: "a fatura deste reparo foi excluída quando a CAP foi zerada — lance a fatura de novo, se ainda for paga" }; }
+      }
+    } catch (e) {}
+    return g0.apply(this, arguments);
+  }; window.rcSyncGrupo = rcSyncGrupo; }
+async function capzListas() {
+  const site = await SP.site(CONFIG.sites[LISTS.cap.siteKey]); const ls = await SP.lists(site.id);
+  return { site, fat: ls.find(l => l.displayName === LISTS.cap.displayName) || null, obr: ls.find(l => l.displayName === LISTS.obr.displayName) || null };
+}
+async function capzPintar() {
+  const c = $("capzCorpo"); if (!c) return;
+  try {
+    const L = await capzListas(); const nF = L.fat ? (await SP.items(L.site.id, L.fat.id)).length : null, nO = L.obr ? (await SP.items(L.site.id, L.obr.id)).length : null;
+    const reg = await erpParamLer("cap_zerada", true);
+    CAPZ.cont = { nF, nO };
+    if (!$("capzCorpo")) return;
+    const ult = reg && reg.valor ? `<p class="desc">Última vez: <b>${esc(fmtDate(String(reg.valor.em || "").slice(0, 10)))}</b> por ${esc(reg.valor.por || "—")} · ${esc(String(reg.valor.faturas || 0))} fatura(s) e ${esc(String(reg.valor.obrigacoes || 0))} obrigação(ões) excluídas${reg.valor.copia ? ` · cópia: <b>${esc(reg.valor.copia)}</b>` : ""}.</p>` : "";
+    c.innerHTML = `<p class="desc">Hoje: <b>${nF == null ? "lista Lançamentos não encontrada" : nF + " fatura(s)"}</b> · <b>${nO == null ? "lista Obrigações não encontrada" : nO + " obrigação(ões)"}</b>.</p>${ult}
+      <div class="row-actions" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="capzCopia" ${nF || nO ? "" : "disabled"}>Baixar cópia (Excel)</button><button class="btn" id="capzGo" style="color:var(--err);border-color:var(--err)" ${nF || nO ? "" : "disabled"}>Zerar faturas e obrigações…</button></div>`;
+    $("capzCopia").onclick = () => capzCopia(false).catch(e => toast("Não foi possível gerar a cópia: " + e.message, 7000));
+    $("capzGo").onclick = capzConfirmar;
+  } catch (e) { c.innerHTML = `<p class="desc err">Não foi possível ler o site CAP: ${esc(e.message)}</p>`; }
+}
+async function capzCopia(gravarNoSite) {
+  const L = await capzListas();
+  const ler = async l => l ? (await SP.items(L.site.id, l.id)).map(it => Object.assign({ id: String(it.id) }, it.fields || {})) : [];
+  const fats = await ler(L.fat), obrs = await ler(L.obr);
+  const { wb } = await xlsxNovo();
+  const aba = (nome, its) => { const ws = wb.addWorksheet(nome); const ks = ["id"]; its.forEach(x => Object.keys(x).forEach(k => { if (!ks.includes(k) && !/^@odata|^_|^(ContentType|Attachments|Edit|LinkTitle.*|ItemChildCount|FolderChildCount|_UIVersionString|AppAuthorLookupId|AppEditorLookupId)$/.test(k)) ks.push(k); }));
+    const h = ws.addRow(ks); h.font = { bold: true }; ws.views = [{ state: "frozen", ySplit: 1 }];
+    its.forEach(x => ws.addRow(ks.map(k => { const v = x[k]; return v == null ? null : typeof v === "object" ? JSON.stringify(v) : v; })));
+    ws.columns.forEach(c => { c.width = 18; }); };
+  aba("Faturas (Lançamentos)", fats); aba("Obrigações", obrs);
+  const agora = new Date(), p = n => String(n).padStart(2, "0"), carimbo = `${agora.getFullYear()}-${p(agora.getMonth() + 1)}-${p(agora.getDate())} ${p(agora.getHours())}${p(agora.getMinutes())}`;
+  const nome = `CAP antes de zerar ${carimbo} - ${fats.length} faturas e ${obrs.length} obrigacoes.xlsx`;
+  await xlsxBaixar(wb, nome);
+  if (!gravarNoSite) { toast(`Cópia baixada: ${fats.length} fatura(s) e ${obrs.length} obrigação(ões).`, 6000); return { fats, obrs, nome }; }
+  const buf = await wb.xlsx.writeBuffer(), file = new File([buf], nome, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const item = await docEnviar("Backups/CAP antes de zerar", nome, file);
+  return { fats, obrs, nome: (item && item.name) || nome, url: item && item.webUrl, L };
+}
+function capzConfirmar() {
+  if (!session.n1 || vcAtivo()) { toast("Só administrador zera a CAP."); return; }
+  const k = CAPZ.cont || {};
+  $("modal").className = "modal";
+  modal(`<div class="modal-head"><h2>Zerar faturas e obrigações</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body"><p class="lead" style="margin:0 0 10px">Saem da CAP <b>${esc(String(k.nF ?? "?"))} fatura(s)</b> e <b>${esc(String(k.nO ?? "?"))} obrigação(ões)</b>. Antes, o ERP grava uma cópia em Excel na biblioteca do site CAP (pasta <b>Backups/CAP antes de zerar</b>) e baixa a mesma cópia aqui. Sem a cópia gravada, nada é excluído.</p>
+      <p class="sup" style="margin:0 0 12px">Não mexe em: Fornecedores (Terceiros), carteiras, Dívidas, Central de Tarefas e arquivos anexados. Os reparos do Rio Card e o Imobilizado que apontavam para faturas antigas ficam sem a fatura (os reparos não recriam a fatura antiga sozinhos).</p>
+      <p class="sup" style="margin:0 0 12px">Depois de zerar: o Fluxo de Caixa, o Painel, a Contabilidade e o CAPEX/DRE deixam de ter as saídas antigas da CAP. As faturas recorrentes (fornecedores Fixos) do mês são geradas de novo no primeiro acesso de um administrador à CAP.</p>
+      <div class="field"><label>Digite <b>ZERAR</b> para confirmar</label><input id="capzTxt" autocomplete="off"></div>
+      <div class="err-msg" id="capzErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div></div>
+    <div class="modal-foot"><button class="btn" id="capzCancel" onclick="closeModal()">Cancelar</button><button class="btn primary" id="capzOk" disabled style="background:var(--err);border-color:var(--err)">Gravar cópia e zerar</button></div>`);
+  $("capzTxt").oninput = () => { $("capzOk").disabled = $("capzTxt").value.trim().toUpperCase() !== "ZERAR"; };
+  $("capzOk").onclick = capzZerar;
+}
+async function capzZerar() {
+  if (CAPZ.rodando || !session.n1 || vcAtivo()) return;
+  CAPZ.rodando = true; CAPZ.log = [];
+  const b = $("capzOk"); b.disabled = true; $("capzCancel").disabled = true; const x = document.querySelector("#modal .modal-head .x"); if (x) x.disabled = true;
+  $("modalBack").onclick = null; document.removeEventListener("keydown", escClose);
+  try {
+    b.textContent = "Gravando a cópia…"; let cp;
+    try { cp = await capzCopia(true); }
+    catch (e) { $("capzErr").style.display = "block"; $("capzErr").textContent = "A cópia não foi gravada no site CAP — nada foi excluído. " + e.message; b.textContent = "Gravar cópia e zerar"; b.disabled = false; $("capzCancel").disabled = false; if (x) x.disabled = false; document.addEventListener("keydown", escClose); return; }
+    closeModal(); capzLog(`Cópia gravada: Backups/CAP antes de zerar/${cp.nome}`, "ok");
+    const del = async (l, its, rot) => { if (!l || !its.length) return 0;
+      const r = await graphBatch(its.map(it => ({ method: "DELETE", url: `/sites/${cp.L.site.id}/lists/${l.id}/items/${it.id}` })), (f, t) => { const el = $("capzCorpo"); if (el) el.querySelector(".desc") && (el.querySelector(".desc").textContent = `Excluindo ${rot}… ${f}/${t}`); });
+      const falhas = r.filter(z => !(z && (z.ok || z.status === 404))).length; capzLog(`${rot}: ${its.length - falhas} excluída(s)${falhas ? ` · ${falhas} falha(s)` : ""}`, falhas ? "err" : "ok"); return falhas; };
+    let f1 = 0, f2 = 0;
+    try { f1 = await del(cp.L.fat, cp.fats, "Faturas");   /* primeiro as faturas (apontam para as obrigações) */
+      f2 = await del(cp.L.obr, cp.obrs, "Obrigações"); }
+    catch (e) {   /* revisão M1: lote interrompido (rede, sessão) — registra e avisa; a cópia já está gravada */
+      capzLog("Interrompido: " + e.message + ". Rode de novo para excluir o que sobrou (a cópia já está gravada).", "err");
+      try { await erpParamGravar("cap_zerada", { em: new Date().toISOString(), por: capHistQuem(), faturas: cp.fats.length, obrigacoes: cp.obrs.length, falhas: "interrompido", copia: cp.nome, url: cp.url || "" }); } catch (e2) {}
+      toast("A exclusão foi interrompida — veja o registro em Configuração › CAP — começar do zero.", 9000); return; }
+    try { await erpParamGravar("cap_zerada", { em: new Date().toISOString(), por: capHistQuem(), faturas: cp.fats.length, obrigacoes: cp.obrs.length, falhas: f1 + f2, copia: cp.nome, url: cp.url || "" }); } catch (e) { capzLog("Registro não gravado em ERP — Parâmetros: " + e.message, "err"); }
+    if (!(typeof DIV !== "undefined" && DIV.on)) {   /* revisão M2: no modo Dívidas o estado em memória é o das Dívidas — não mexe */
+      CAP_STATE.items = []; if (Array.isArray(CAP_STATE._todos)) CAP_STATE._todos = []; CAP_STATE.sel && CAP_STATE.sel.clear && CAP_STATE.sel.clear(); CAP_STATE.rev = (CAP_STATE.rev || 0) + 1;
+      OBR_STATE.items = []; }
+    try { BUSCA.cache = {}; } catch (e) {}
+    capzLog(f1 + f2 ? `Terminado com ${f1 + f2} falha(s): rode de novo para excluir o que sobrou.` : "CAP zerada. Pode começar a lançar.", f1 + f2 ? "err" : "ok");
+    toast(f1 + f2 ? "CAP zerada com falhas — veja o registro na Configuração." : "CAP zerada. A cópia ficou no site CAP e no seu computador.", 8000);
+  } finally { CAPZ.rodando = false; capzPintar(); }
+}
+{ const pc = pageConfig; pageConfig = function () {
+    const h = pc.apply(this, arguments); if (!session.n1) return h;
+    const card = `<section class="setup-card" id="capzCard"><h2>CAP — começar do zero</h2>
+      <p class="desc">Esvazia Faturas (lista "Lançamentos") e Obrigações do site CAP para começar a usar a plataforma oficialmente. Antes, grava uma cópia em Excel no site CAP e no seu computador.</p>
+      <div id="capzCorpo"><p class="desc">Contando…</p></div><div class="setup-log checks" id="capzLog" style="display:none;max-height:220px;overflow:auto"></div></section>`;
+    setTimeout(() => { capzPintar().catch(() => {}); }, 0);
+    return h.replace(/(<div class="setup-all">)/, card + "$1");
+  }; window.pageConfig = pageConfig; }
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -3778,7 +3778,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.12",
+  version: "v0.14.12.1",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -38390,7 +38390,7 @@ let TERC_NOTAS_GRAVAR = null;
     const t = $("gNotaNova"); if (t && t.value.trim()) { TERC_NOTAS.pend.push(tercNotaNova(t.value)); t.value = ""; tercNotasLista(); }
     const daqui = $("gNotasLista") && (!existing || String(existing._id) === TERC_NOTAS.id);
     if (daqui && (TERC_NOTAS.pend.length || TERC_NOTAS.tirou)) {
-      if (tercNotasCol()) TERC_NOTAS_GRAVAR = JSON.stringify(TERC_NOTAS.base.concat(TERC_NOTAS.pend.map(n => ({ t: n.t, por: n.por, em: n.em }))));
+      if (tercNotasCol()) TERC_NOTAS_GRAVAR = JSON.stringify(TERC_NOTAS.base.concat(TERC_NOTAS.pend.map(n => Object.assign({ t: n.t, por: n.por, em: n.em }, n.e ? { e: n.e } : {}))));
       else if ($("gObs")) $("gObs").value = [$("gObs").value.trim()].concat(TERC_NOTAS.pend.map(n => `[${tercDataTxt(n.em)} · ${n.por}] ${n.t}`)).filter(Boolean).join("\n");
     }
     try { return await s0.apply(this, arguments); } finally { TERC_NOTAS_GRAVAR = null; }
@@ -38596,6 +38596,77 @@ window.capTfAbrirFatura = async id => {
 .cap-rec-cfg input[type=number]{width:64px;padding:3px 6px}
 .cap-rec-conf ul{margin:4px 0 0 18px}`; document.head.appendChild(s); })();
 CONFIG.version = "v0.14.12";
+
+/* v0.14.12.1 · Pedido de 20/10 (16:37): observações de Terceiros editáveis — o administrador edita todas (inclusive o
+   "Registro anterior" e os registros do sistema); cada pessoa edita só as que ela mesma lançou. A edição fica marcada
+   (quem e quando) e vale ao salvar o cadastro. Observação nova passa a guardar o e-mail de quem escreveu ("e"); as antigas,
+   sem e-mail, são reconhecidas pelo nome. A guarda barra a gravação direta que mude ou tire a observação de outra pessoa. */
+const tercNotaChave = n => `${n && n.em || ""}|${n && n.por || ""}`;
+function tercNotaMinha(n) { if (!n || n.legado) return false; const eu = tercQuemEmail(); return n.e ? normEmail(n.e) === eu && !!eu : (!!n.por && n.por !== "—" && n.por === tercQuem()); }
+function tercNotaPodeEditar(n) { return !vcAtivo() && podeEditar("forn") && (!!session.n1 || tercNotaMinha(n)); }
+{ const nn = tercNotaNova; tercNotaNova = function () { const n = nn.apply(this, arguments), e = tercQuemEmail(); if (e) n.e = e; return n; }; }
+TERC_NOTAS.editando = null;
+tercNotaHtml = function (n, i, podeTirar, podeEd) {
+  const k = String(i).replace(/'/g, ""), arg = typeof i === "number" ? String(i) : `'${k}'`;
+  const cab = n.legado ? "Registro anterior" : `${esc(tercDataTxt(n.em))} · ${esc(n.por || "—")}`;
+  const ed = n.ed && n.ed.em ? ` <span class="tnota-ed" title="Editada">· editada em ${esc(tercDataTxt(n.ed.em))} por ${esc(n.ed.por || "—")}</span>` : "";
+  if (podeEd && TERC_NOTAS.editando === k) return `<li class="tnota tnota-editando"><div class="tnota-cab">${cab}${n.pend ? " <em>a salvar</em>" : ""}</div>
+    <textarea id="gNotaEd" rows="3" maxlength="2000" aria-label="Editar observação">${esc(n.t)}</textarea>
+    <div class="tnota-ed-acoes"><button type="button" class="btn sm primary" onclick="tercNotaEdOk()">Ok</button> <button type="button" class="btn sm ghost" onclick="tercNotaEdCancelar()">Cancelar</button> <span class="sup">vale ao salvar o cadastro</span></div></li>`;
+  return `<li class="tnota${n.pend ? " pend" : ""}"><div class="tnota-cab">${cab}${ed}${n.pend ? ` <em>a salvar</em>` : ""}${podeEd ? ` <button type="button" class="tav-x tnota-lapis" title="Editar esta observação" onclick="tercNotaEditar(${esc(arg)})">✎</button>` : ""}${podeTirar ? ` <button type="button" class="tav-x" title="Tirar esta observação" onclick="tercNotaTirar(${esc(arg)})">×</button>` : ""}</div><div class="tnota-t">${esc(n.t)}</div></li>`;
+};
+tercNotasLista = function () {
+  const el = $("gNotasLista"); if (!el) return;
+  const leg = String(($("gObs") && $("gObs").value) || "").trim(), adm = !!session.n1 && !vcAtivo();
+  const html = TERC_NOTAS.pend.map((n, j) => ({ n: Object.assign({ pend: true }, n), j })).reverse().map(o => tercNotaHtml(o.n, "'p" + o.j + "'", true, true))
+    .concat(TERC_NOTAS.base.map((n, i) => ({ n, i })).reverse().map(o => tercNotaHtml(o.n, o.i, adm, tercNotaPodeEditar(o.n))))
+    .concat(leg ? [tercNotaHtml({ t: leg, legado: true }, "'leg'", adm, adm)] : []);
+  el.innerHTML = html.length ? html.join("") : `<li class="tnota-vazio">Nenhuma observação.</li>`;
+};
+window.tercNotaEditar = k => { if (TERC_NOTAS.editando != null && $("gNotaEd") && !tercNotaEdOk()) return; TERC_NOTAS.editando = String(k); tercNotasLista(); const t = $("gNotaEd"); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } };
+window.tercNotaEdCancelar = () => { TERC_NOTAS.editando = null; tercNotasLista(); };
+window.tercNotaEdOk = () => {
+  const k = TERC_NOTAS.editando, v = String(($("gNotaEd") || {}).value || "").trim().slice(0, 2000); if (k == null) return true;
+  if (!v) { toast("A observação não pode ficar vazia. Para tirá-la, use o ×."); return false; }
+  if (k === "leg") { if (!session.n1 || vcAtivo()) return; if ($("gObs") && $("gObs").value.trim() !== v) { $("gObs").value = v; TERC_NOTAS.tirou = true; } }
+  else if (k[0] === "p") { const n = TERC_NOTAS.pend[Number(k.slice(1))]; if (n) n.t = v; }
+  else { const i = Number(k), n = TERC_NOTAS.base[i]; if (!n || !tercNotaPodeEditar(n)) return;
+    if (n.t !== v) { TERC_NOTAS.base[i] = Object.assign({}, n, { t: v, ed: { por: tercQuem(), e: tercQuemEmail(), em: new Date().toISOString() } }); TERC_NOTAS.tirou = true; } }
+  TERC_NOTAS.editando = null; tercNotasLista(); return true;
+};
+{ const t0 = window.tercNotaTirar; window.tercNotaTirar = k => { TERC_NOTAS.editando = null; return t0(k); }; }
+{ const ff = fornForm; fornForm = function () { TERC_NOTAS.editando = null; return ff.apply(this, arguments); }; window.fornForm = fornForm; }
+/* salvar com uma edição aberta: aplica o texto antes de gravar */
+{ const s0 = fornSave; fornSave = async function () { if (TERC_NOTAS.editando != null && $("gNotaEd") && !tercNotaEdOk()) return; return s0.apply(this, arguments); }; window.fornSave = fornSave; }
+/* guarda: quem não é administrador não muda nem tira observação de outra pessoa (nem gravando direto, nem em lote);
+   também não muda o "Registro anterior" (revisão M1–M3) */
+function tercNotasGuarda(method, path, body) {
+  const M = String(method || "GET").toUpperCase(), p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0];
+  if (/\/\$batch$/.test(p0)) { ((body && body.requests) || []).forEach(r => tercNotasGuarda(r.method, "/" + String(r.url || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").replace(/^\/+/, ""), r.body)); return; }
+  if (session.n1 || (M !== "PATCH" && M !== "POST") || !FORN_STATE.list) return;
+  const m = p0.match(/\/lists\/([^/]+)\/items(?:\/([^/]+)(?:\/fields)?)?$/); if (!m || m[1] !== FORN_STATE.list.id) return;
+  const f = (M === "POST" ? body && body.fields : body) || {};
+  const ant = m[2] ? (FORN_STATE.items || []).find(i => String(i._id) === String(m[2])) : null;
+  const ruim = msg => { const e = new Error(msg || "Só o administrador muda ou tira observações de outras pessoas."); e.status = 403; e.semAcesso = true; throw e; };
+  if (ant && "Observacoes" in f && String(f.Observacoes || "").trim() !== String(ant.Observacoes || "").trim()) ruim("Só o administrador muda o registro anterior das observações.");
+  if (!("Notas" in f)) return;
+  const velhas = ant ? tercNotas(ant) : []; let novas; try { novas = JSON.parse(f.Notas || "[]"); } catch (e) { novas = null; }
+  if (!Array.isArray(novas) || novas.some(x => !x || typeof x !== "object")) ruim();
+  const chaves = novas.map(tercNotaChave); if (new Set(chaves).size !== chaves.length) ruim();
+  const igual = (a, b) => JSON.stringify([a.t, a.por, a.em, a.e || null, a.ed || null]) === JSON.stringify([b.t, b.por, b.em, b.e || null, b.ed || null]);
+  const eu = tercQuemEmail(), meuNome = tercQuem();
+  const proprio = x => !x.ed || (normEmail(x.ed.e) === eu && x.ed.por === meuNome);
+  velhas.forEach(o => { const n = novas.find(x => tercNotaChave(x) === tercNotaChave(o)); if (!n) ruim();
+    if (igual(n, o)) return;
+    if (tercNotaMinha(o)) { if (n.por !== o.por || n.em !== o.em || (o.e || null) !== (n.e || null) || !proprio(n)) ruim(); }
+    else if (!igual(n, o)) ruim(); });
+  const velhasK = new Set(velhas.map(tercNotaChave));
+  novas.filter(x => !velhasK.has(tercNotaChave(x))).forEach(x => { if (!eu || normEmail(x.e) !== eu || x.por !== meuNome || !proprio(x)) ruim("Observação nova só pode ser lançada em seu próprio nome."); });
+}
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path, body) { const r = g0.apply(this, arguments); tercNotasGuarda(method, path, body); return r; }; window.guardaEscrita = guardaEscrita; }
+(function () { const s = document.createElement("style"); s.textContent = `.tnota-lapis{margin-left:auto}.tnota-lapis + .tav-x{margin-left:0}.tnota-ed{font-style:italic}
+.tnota-editando textarea{width:100%;margin-top:4px;min-height:60px}.tnota-ed-acoes{display:flex;gap:6px;align-items:center;margin-top:6px}`; document.head.appendChild(s); })();
+CONFIG.version = "v0.14.12.1";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.11.2",
+  version: "v0.14.11.3",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -14778,10 +14778,10 @@ function paintForn() {
   body.innerHTML = `
     ${FORN_STATE.sitErro ? `<div class="import-help" style="margin-bottom:14px">Não foi possível ler a Contas a Pagar (${esc(FORN_STATE.sitErro)}) — as colunas de situação ficam vazias.</div>` : ""}
     <div class="cap-kpis">
-      ${kpi("Ativos", ativos.length, `${all.length - ativos.length} inativos`)}
-      ${kpi("Fixos", fixos.length, "faturas que voltam todo mês")}
-      ${kpi("Variáveis", vars.length, "entram quando chega a NF")}
-      ${soCad ? kpi("A classificar", ativos.filter(x => !x.Tipo).length, "sem classificação de custo · clique para filtrar", "", "fornTipoFiltro('__vazio')") + kpi("Sem CNPJ/CPF", ativos.filter(x => docClean(x.CNPJ).length !== 11 && docClean(x.CNPJ).length !== 14).length, "cadastros a completar") : kpi("Fixas por mês", fmtBRL(estim), `estimativa · ${comValor} de ${fixos.length} fixos com valor (padrão ou última conta)`, "money") + kpi("Com faturas em atraso", atraso == null ? "…" : atraso, "clique para filtrar", atraso ? "venc-txt" : "", pronto ? "fornPagFiltro('atraso')" : "")}
+      ${kpi("Ativos", ativos.length, `${all.length - ativos.length} inativos · clique para ver todos os ativos`, "", "fornKpiFiltro('ativos')")}
+      ${kpi("Fixos", fixos.length, "faturas que voltam todo mês · clique para filtrar", "", "fornTipoFiltro('Fixo')")}
+      ${kpi("Variáveis", vars.length, "entram quando chega a NF · clique para filtrar", "", "fornTipoFiltro('Variável')")}
+      ${soCad ? kpi("A classificar", ativos.filter(x => !x.Tipo).length, "sem classificação de custo · clique para filtrar", "", "fornTipoFiltro('__vazio')") + kpi("Sem CNPJ/CPF", ativos.filter(x => docClean(x.CNPJ).length !== 11 && docClean(x.CNPJ).length !== 14).length, "cadastros a completar · clique para filtrar", "", "fornKpiFiltro('semdoc')") : kpi("Fixas por mês", fmtBRL(estim), `estimativa · ${comValor} de ${fixos.length} fixos com valor (padrão ou última conta)`, "money") + kpi("Com faturas em atraso", atraso == null ? "…" : atraso, "clique para filtrar", atraso ? "venc-txt" : "", pronto ? "fornPagFiltro('atraso')" : "")}
     </div>
     <div class="filters" role="search">
       <input type="search" class="span-2" id="fornBusca" placeholder="Buscar por razão social, nome fantasia, CNPJ, cidade, contato..." value="${esc(f.busca)}">
@@ -38051,6 +38051,349 @@ async function atvCopiar() {
     setTimeout(() => { atvPintar().catch(() => {}); }, 0);
     return h.replace(/(<div class="setup-all">)/, card + "$1");
   }; window.pageConfig = pageConfig; }
+
+/* =====================================================================
+   v0.14.11.3 · Pedidos de 20/10 (12:32–12:53), Banco de Dados — Terceiros (Fornecedores):
+   1. Bloquear fornecedor (só o administrador do sistema): bloqueado, não recebe fatura nova, obrigação nova,
+      conta recorrente nem pagamento. As faturas que já existem continuam visíveis e editáveis (cancelar, corrigir).
+   2. Aprovação de inclusão e exclusão: o cadastro novo feito por quem não é administrador nasce "aguardando aprovação"
+      (não recebe faturas até ser aprovado); quem não é administrador não exclui, pede a exclusão. Só o administrador
+      vê o quadro "Aprovações pendentes" e aprova ou recusa.
+   3. Todos os cartões do topo filtram a lista (Ativos, Fixos, Variáveis, Sem CNPJ/CPF).
+   Colunas novas "Bloqueio" e "Aprovacao" (JSON), criadas pela Configuração (Executar tudo).
+   ===================================================================== */
+LISTS.forn.columns.push(
+  { name: "Bloqueio",  displayName: "Bloqueio (JSON)",            text: { allowMultipleLines: true, textType: "plain" } },
+  { name: "Aprovacao", displayName: "Aprovação pendente (JSON)",  text: { allowMultipleLines: true, textType: "plain" } });
+function tercJ1(v) { if (!v) return null; try { const o = typeof v === "string" ? JSON.parse(v) : v; return o && typeof o === "object" ? o : null; } catch (e) { return { motivo: String(v) }; } }
+function tercBloqueio(x) { return tercJ1(x && x.Bloqueio); }
+function tercAprov(x) { const a = tercJ1(x && x.Aprovacao); return a && (a.tipo === "inclusao" || a.tipo === "exclusao") ? a : null; }
+function tercAprovPendInc(x) { const a = tercAprov(x); return !!(a && a.tipo === "inclusao"); }
+function tercQuem() { return (session.me && session.me.displayName) || "—"; }
+function tercQuemEmail() { return normEmail((session.me && (session.me.mail || session.me.userPrincipalName)) || ""); }
+function tercDataTxt(iso) { const d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d.toLocaleDateString("pt-BR") : ""; }
+/* motivo que impede novos pagamentos para o cadastro (null = livre) */
+function tercTravaMotivo(x) {
+  if (!x) return null; const b = tercBloqueio(x);
+  if (b) return `O fornecedor "${x.Title}" está bloqueado pela administração${b.motivo ? ` (${b.motivo})` : ""}: não recebe faturas, obrigações nem pagamentos novos.`;
+  if (tercAprovPendInc(x)) return `O cadastro "${x.Title}" ainda aguarda a aprovação do administrador: só recebe faturas, obrigações e pagamentos depois de aprovado.`;
+  return null;
+}
+/* cadastro a partir dos campos de uma fatura ou obrigação */
+function tercDeCampos(f) {
+  const its = FORN_STATE.items || []; if (!its.length || !f) return null;
+  const tem = v => v != null && v !== "";
+  const id = tem(f.FornecedorRefId) ? f.FornecedorRefId : tem(f.FornecedorRefLookupId) ? f.FornecedorRefLookupId : tem(f.FornecedorId) ? f.FornecedorId : f.FornecedorLookupId;
+  if (id != null && id !== "") { const x = its.find(i => String(i._id) === String(id)); if (x) return x; }
+  const dc = docClean(f.CNPJ || ""); if (dc.length === 11 || dc.length === 14) { const x = its.find(i => docClean(i.CNPJ) === dc); if (x) return x; }
+  const n = normName(f.Fornecedor || f.FornecedorTexto || ""); if (n) { const x = its.find(i => normName(i.Title) === n); if (x) return x; }
+  return null;
+}
+/* ---- guarda de gravação: vale para toda origem (fatura, importação, lote, recorrentes, obrigação, duplicar, Rio Card) ---- */
+let TERC_APROV_N = 0;
+function tercErro(msg) { const e = new Error(msg); e.status = 403; e.tercTrava = true; return e; }
+function tercGuarda(method, path, body) {
+  const p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0];
+  if (/\/\$batch$/.test(p0)) { ((body && body.requests) || []).forEach(r => tercGuarda(r.method, "/" + String(r.url || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").replace(/^\/+/, ""), r.body)); return; }
+  const M = String(method || "GET").toUpperCase(); if (M !== "POST" && M !== "PATCH" && M !== "DELETE") return;
+  const m = p0.match(/\/lists\/([^/]+)\/items(?:\/([^/]+)(?:\/fields)?)?$/); if (!m) return;
+  const lid = m[1], iid = m[2] || null, novos = (M === "POST" ? body && body.fields : body) || {};
+  const fornL = FORN_STATE.list && FORN_STATE.list.id;
+  if (lid === fornL) {   /* cadastro: bloqueio e aprovação só pelo administrador */
+    if (session.n1) return;
+    if (M === "DELETE") throw tercErro("Só o administrador do sistema exclui um cadastro de Terceiros. Use \"Pedir exclusão\".");
+    if ("Bloqueio" in novos) throw tercErro("Só o administrador do sistema bloqueia ou desbloqueia um fornecedor.");
+    if (M === "POST") { TERC_APROV_N++; novos.Aprovacao = JSON.stringify({ tipo: "inclusao", por: tercQuem(), email: tercQuemEmail(), em: new Date().toISOString() }); return; }   /* inclusão por quem não é administrador: nasce aguardando aprovação */
+    const ant = (FORN_STATE.items || []).find(i => String(i._id) === String(iid));
+    if ("Aprovacao" in novos) { const a = tercJ1(novos.Aprovacao);
+      if (!(a && a.tipo === "exclusao" && !tercAprov(ant))) throw tercErro("Só o administrador do sistema decide as aprovações de Terceiros."); }
+    else if (ant && "CNPJ" in novos && [11, 14].includes(docClean(ant.CNPJ).length) && docClean(novos.CNPJ) !== docClean(ant.CNPJ) && !tercAprovPendInc(ant)) {   /* revisão M-a: completar um documento vazio não volta para aprovação */   /* revisão M2: trocar o documento de um cadastro aprovado = cadastro novo, volta para aprovação */
+      TERC_APROV_N++; novos.Aprovacao = JSON.stringify({ tipo: "inclusao", por: tercQuem(), email: tercQuemEmail(), em: new Date().toISOString(), motivo: `CNPJ/CPF alterado de ${ant.CNPJ || "(vazio)"} para ${novos.CNPJ || "(vazio)"}` });
+    }
+    return;
+  }
+  if (M === "DELETE") return;
+  const capL = CAP_STATE.list && CAP_STATE.list.id, obrL = OBR_STATE.list && OBR_STATE.list.id;
+  const ehCap = !!capL && lid === capL, ehObr = !!obrL && lid === obrL; if (!ehCap && !ehObr) return;
+  let ant = null; if (iid) ant = (ehCap ? (typeof capTodos === "function" ? capTodos() : CAP_STATE.items) : OBR_STATE.items || []).find(i => String(i._id) === String(iid)) || null;
+  const KF = ["Fornecedor", "FornecedorRefId", "FornecedorRefLookupId", "CNPJ", "FornecedorId", "FornecedorTexto", "FornecedorLookupId"];
+  /* revisão G1: o fornecedor que vale é o que está sendo gravado (campos novos primeiro); só sem eles usa o da fatura gravada */
+  const soNovos = {}; KF.forEach(k => { if (k in novos) soNovos[k] = novos[k]; });
+  const x = tercDeCampos(soNovos) || tercDeCampos(Object.assign({}, ant || {}, novos)); const mot = tercTravaMotivo(x); if (!mot) return;
+  if (M === "POST") throw tercErro(mot);
+  const trocou = !!ant && KF.some(k => k in novos && String(novos[k] == null ? "" : novos[k]) !== String(ant[k] == null ? "" : ant[k])) && tercDeCampos(ant) !== x;
+  const paga = ehCap && ((novos.Status === "Pago" && (!ant || ant.Status !== "Pago")) || (novos.ValorPago != null && Number(novos.ValorPago) > Number((ant && ant.ValorPago) || 0)) || (!!novos.DataPagamento && !(ant && ant.DataPagamento) && !(ant && ant.Status === "Pago")));
+  if (trocou || paga) throw tercErro(mot);
+}
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path, body) { const r = g0.apply(this, arguments); tercGuarda(method, path, body); return r; }; }
+/* recorrentes: o bloqueado (ou aguardando aprovação) fica fora da geração e da prévia */
+{ const e0 = capRecElegiveis; capRecElegiveis = function () { return e0.apply(this, arguments).filter(f => !tercTravaMotivo(f)); }; }
+/* fatura: aviso ao escolher o fornecedor */
+function tercAvisoFatura() {
+  const doc = $("fCNPJ"), fo = $("fForn"); if (!doc && !fo) return;
+  const x = tercDeCampos({ CNPJ: doc ? doc.value : "", Fornecedor: fo ? fo.value : "" }), mot = tercTravaMotivo(x);
+  let el = $("fFornTrava"); if (!el) { el = document.createElement("div"); el.id = "fFornTrava"; el.className = "hint terc-trava-aviso"; const h = $("fCNPJHint") || doc || fo; if (!h) return; h.insertAdjacentElement("afterend", el); }
+  el.textContent = mot ? "🚫 " + mot : ""; el.hidden = !mot;
+}
+window.tercAvisoFatura = tercAvisoFatura;
+{ const a0 = capApplyForn; capApplyForn = function () { const r = a0.apply(this, arguments); try { tercAvisoFatura(); } catch (e) {} return r; }; window.capApplyForn = capApplyForn; }
+document.addEventListener("change", ev => { const t = ev.target; if (t && (t.id === "fForn" || t.id === "fCNPJ")) { try { tercAvisoFatura(); } catch (e) {} } }, true);
+
+/* ---- ações do administrador ---- */
+function tercObsLinha(x, txt) { return [String(x.Observacoes || "").trim(), `[${txt}]`].filter(Boolean).join("\n"); }
+async function tercGravar(x, campos, ok) {
+  try { await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, x._id, campos); }
+  catch (e) { toast("Não foi possível gravar: " + e.message, 7000); return false; }
+  Object.assign(x, campos); if (ok) toast(ok); tercRedesenhar(x); return true;
+}
+function tercColsOk(...cs) { if (FORN_STATE.cols && cs.some(c => !FORN_STATE.cols.has(c))) { toast("As colunas novas de Terceiros ainda não existem: rode Sistema › Configuração (Executar tudo).", 8000); return false; } return true; }
+function tercRedesenhar(x) {
+  try { if (document.querySelector("#modal .tcad") && x) tercReabrir(x._id);
+    else if (document.querySelector("#modal #gNome") && x) { if (typeof TERC_NOTAS !== "undefined" && TERC_NOTAS.id === String(x._id)) { TERC_NOTAS.base = tercNotas(x); try { tercNotasLista(); } catch (e) {} }   /* revisão M-b: o histórico do formulário segue o que foi gravado */
+      const bx = document.querySelector("#modal .terc-sitbox"), h = tercSitCaixa(x); if (bx) { if (h) bx.outerHTML = h; else bx.remove(); } else if (h) { const fg = document.querySelector("#modal .modal-body .form-grid"); if (fg) fg.insertAdjacentHTML("beforebegin", h); } } } catch (e) {}
+  try { if ($("fornBody")) paintForn(); } catch (e) {}
+}
+window.tercBloquear = async (id, on) => {
+  const x = (FORN_STATE.items || []).find(i => String(i._id) === String(id)); if (!x) return;
+  if (!session.n1) { toast("Só o administrador do sistema bloqueia ou desbloqueia um fornecedor."); return; }
+  if (!tercColsOk("Bloqueio")) return;
+  if (on) {
+    const mot = prompt(`Bloquear "${x.Title}"?\n\nBloqueado, ele não recebe fatura nova, obrigação nova, conta recorrente nem pagamento. As faturas que já existem continuam na CAP.\n\nMotivo (obrigatório):`, ""); if (mot == null) return;
+    if (!mot.trim()) { toast("Informe o motivo do bloqueio."); return; }
+    const b = { por: tercQuem(), em: new Date().toISOString(), motivo: mot.trim().slice(0, 300) };
+    await tercGravar(x, { Bloqueio: JSON.stringify(b), ...tercNotaCampos(x, `Bloqueado por ${b.por} em ${tercDataTxt(b.em)}: ${b.motivo}`) }, "Fornecedor bloqueado");
+  } else {
+    if (!confirm(`Desbloquear "${x.Title}"? Ele volta a receber faturas, obrigações e pagamentos.`)) return;
+    await tercGravar(x, { Bloqueio: null, ...tercNotaCampos(x, `Desbloqueado por ${tercQuem()} em ${tercDataTxt(new Date().toISOString())}`) }, "Fornecedor desbloqueado");
+  }
+};
+window.tercPedirExclusao = async id => {
+  const x = (FORN_STATE.items || []).find(i => String(i._id) === String(id)); if (!x) return;
+  if (!podeEditar("forn")) { toast("Seu acesso a Fornecedores é só de leitura."); return; }
+  if (!tercColsOk("Aprovacao")) return;
+  if (tercAprov(x)) { toast(tercAprov(x).tipo === "exclusao" ? "A exclusão deste cadastro já foi pedida." : "Este cadastro ainda aguarda a aprovação da inclusão."); return; }
+  const mot = prompt(`Pedir ao administrador a exclusão de "${x.Title}"?\n\nO cadastro continua valendo até a decisão.\n\nMotivo (obrigatório):`, ""); if (mot == null) return;
+  if (!mot.trim()) { toast("Informe o motivo da exclusão."); return; }
+  await tercGravar(x, { Aprovacao: JSON.stringify({ tipo: "exclusao", por: tercQuem(), email: tercQuemEmail(), em: new Date().toISOString(), motivo: mot.trim().slice(0, 300) }) }, "Pedido de exclusão enviado ao administrador");
+};
+window.tercDecidir = async (id, aprova) => {
+  const x = (FORN_STATE.items || []).find(i => String(i._id) === String(id)); if (!x) return;
+  if (!session.n1) { toast("Só o administrador do sistema decide as aprovações."); return; }
+  const a = tercAprov(x); if (!a) { toast("Este pedido já foi decidido."); tercRedesenhar(x); return; }
+  const hoje = tercDataTxt(new Date().toISOString());
+  if (a.tipo === "inclusao" && aprova) return tercGravar(x, { Aprovacao: null, ...tercNotaCampos(x, `Inclusão pedida por ${a.por || "—"} em ${tercDataTxt(a.em)}, aprovada por ${tercQuem()} em ${hoje}`) }, "Cadastro aprovado");
+  if (a.tipo === "exclusao" && !aprova) return tercGravar(x, { Aprovacao: null, ...tercNotaCampos(x, `Exclusão pedida por ${a.por || "—"} em ${tercDataTxt(a.em)}${a.motivo ? ` (${a.motivo})` : ""}, recusada por ${tercQuem()} em ${hoje}`) }, "Pedido de exclusão recusado: o cadastro continua");
+  /* recusar a inclusão ou aprovar a exclusão = excluir o cadastro */
+  const usadas = (typeof capTodos === "function" ? capTodos() : CAP_STATE.items || []).filter(it => tercDeCampos(it) === x).length;
+  const obrs = (OBR_STATE.items || []).filter(o => tercDeCampos(o) === x).length;
+  const txt = a.tipo === "inclusao" ? `Recusar a inclusão de "${x.Title}" (pedida por ${a.por || "—"})? O cadastro é excluído.` : `Aprovar a exclusão de "${x.Title}" (pedida por ${a.por || "—"}${a.motivo ? `: ${a.motivo}` : ""})? O cadastro é excluído em definitivo.`;
+  if (!confirm(txt + (usadas || obrs ? `\n\nAtenção: ${usadas} fatura(s) e ${obrs} obrigação(ões) carregadas apontam para ele. Se ele pode voltar a ser usado, prefira recusar e marcar como Inativo.` : ""))) return;
+  try { await graph(`/sites/${FORN_STATE.site.id}/lists/${FORN_STATE.list.id}/items/${x._id}`, { method: "DELETE" }); }
+  catch (e) { toast("Erro ao excluir: " + e.message, 7000); return; }
+  FORN_STATE.items = FORN_STATE.items.filter(i => i !== x); try { closeModal(); } catch (e) {}
+  toast(a.tipo === "inclusao" ? "Inclusão recusada: cadastro excluído" : "Exclusão aprovada: cadastro excluído");
+  try { await loadForn(false); } catch (e) {} try { if ($("fornBody")) paintForn(); } catch (e) {}
+};
+/* excluir: o administrador exclui direto (como antes); os demais pedem */
+{ const d0 = window.fornDelete; window.fornDelete = id => session.n1 ? d0(id) : tercPedirExclusao(id); }
+/* inclusão por quem não é administrador: avisa que foi para aprovação */
+{ const s0 = fornSave;
+  fornSave = async function (existing) {
+    if (!existing && !session.n1 && FORN_STATE.cols && !FORN_STATE.cols.has("Aprovacao")) { const e = $("gErr"); if (e) { e.style.display = "block"; e.textContent = "Os cadastros novos agora passam pela aprovação do administrador, e a coluna para isso ainda não existe: peça ao administrador para rodar Sistema › Configuração (Executar tudo)."; } return; }
+    const n0 = TERC_APROV_N, r = await s0.apply(this, arguments);
+    if (!session.n1 && TERC_APROV_N > n0) toast(existing ? "CNPJ/CPF alterado: o cadastro voltou para a aprovação do administrador." : "Pedido de inclusão enviado ao administrador: o cadastro recebe faturas depois de aprovado.", 7000);
+    return r;
+  }; window.fornSave = fornSave; }
+
+/* ---- telas ---- */
+function tercSitPills(x) {
+  const b = tercBloqueio(x), a = tercAprov(x);
+  return (b ? `<span class="pill st-vencido terc-sit" title="${esc(`Bloqueado por ${b.por || "—"} em ${tercDataTxt(b.em)}${b.motivo ? ": " + b.motivo : ""}`)}"><i></i>Bloqueado</span>` : "")
+    + (a ? `<span class="pill st-aguardando terc-sit" title="${esc(`Pedido por ${a.por || "—"} em ${tercDataTxt(a.em)}${a.motivo ? ": " + a.motivo : ""}`)}"><i></i>${a.tipo === "inclusao" ? "Aguardando aprovação" : "Exclusão pedida"}</span>` : "");
+}
+function tercSitCaixa(x) {   /* faixa no cartão e no formulário */
+  const b = tercBloqueio(x), a = tercAprov(x), adm = session.n1, ed = podeEditar("forn");
+  const partes = [];
+  if (b) partes.push(`<div><b>🚫 Bloqueado</b> por ${esc(b.por || "—")} em ${esc(tercDataTxt(b.em))}${b.motivo ? ` — ${esc(b.motivo)}` : ""}. Não recebe fatura nova, obrigação nova, conta recorrente nem pagamento.</div>`);
+  if (a) partes.push(`<div><b>${a.tipo === "inclusao" ? "⏳ Inclusão aguardando aprovação" : "⏳ Exclusão pedida"}</b> por ${esc(a.por || "—")} em ${esc(tercDataTxt(a.em))}${a.motivo ? ` — ${esc(a.motivo)}` : ""}.${a.tipo === "inclusao" ? " Até a aprovação, não recebe faturas nem pagamentos." : ""}</div>`);
+  const bts = [];
+  if (adm && a) bts.push(`<button type="button" class="btn sm primary" onclick="tercDecidir(${jsArg(x._id)}, true)">${a.tipo === "inclusao" ? "Aprovar inclusão" : "Aprovar exclusão"}</button>`, `<button type="button" class="btn sm" onclick="tercDecidir(${jsArg(x._id)}, false)">Recusar</button>`);
+  if (adm) bts.push(b ? `<button type="button" class="btn sm" onclick="tercBloquear(${jsArg(x._id)}, false)">🔓 Desbloquear</button>` : `<button type="button" class="btn sm" style="color:var(--err)" onclick="tercBloquear(${jsArg(x._id)}, true)">🚫 Bloquear fornecedor</button>`);
+  else if (ed && !a) bts.push(`<button type="button" class="btn sm ghost" onclick="tercPedirExclusao(${jsArg(x._id)})">Pedir exclusão</button>`);
+  if (!partes.length && !bts.length) return "";
+  return `<div class="terc-sitbox${b ? " bloq" : a ? " pend" : ""}">${partes.join("")}${bts.length ? `<div class="terc-sitbt">${bts.join(" ")}</div>` : ""}</div>`;
+}
+{ const tc = tercCadastroCard;
+  tercCadastroCard = function (key) {
+    const r = tc.apply(this, arguments);
+    try { const id = String(key).replace(/^id:/, ""), x = (FORN_STATE.items || []).find(i => String(i._id) === id), body = x && document.querySelector("#modal .tcad");
+      if (body && !body.querySelector(".terc-sitbox")) { body.insertAdjacentHTML("afterbegin", tercSitCaixa(x)); const tit = document.querySelector("#modal .tcad-head .tcad-tit"); if (tit) tit.insertAdjacentHTML("afterend", tercSitPills(x)); } } catch (e) { console.warn("terc situação", e); }
+    return r;
+  }; window.tercCadastroCard = tercCadastroCard; }
+{ const ff = fornForm;
+  fornForm = function (x) {
+    let h = ff.apply(this, arguments); if (!x || !x._id) return h;
+    if (!session.n1) h = h.replace(/<button class="btn" onclick="fornDelete\('[^']*'\)"[^>]*>Excluir<\/button>/, "");   /* quem não é administrador pede pela faixa do topo */
+    return h.replace('<div class="modal-body"><div class="form-grid forn-form">', `<div class="modal-body">${tercSitCaixa(x)}<div class="form-grid forn-form">`);
+  }; window.fornForm = fornForm; }
+/* lista: situação ao lado do nome; quadro de aprovações (só administrador); filtros dos cartões */
+window.fornKpiFiltro = k => {
+  const f = FORN_STATE.filter;
+  if (k === "ativos") Object.assign(f, { tipo: "", ativo: "ativos", semDoc: false, pag: "" });
+  else if (k === "semdoc") f.semDoc = !f.semDoc;
+  paintForn();
+};
+{ const ff0 = fornFiltered;
+  fornFiltered = function () { let arr = ff0.apply(this, arguments); if (FORN_STATE.filter.semDoc) arr = arr.filter(x => docClean(x.CNPJ).length !== 11 && docClean(x.CNPJ).length !== 14); return arr; };
+  window.fornFiltered = fornFiltered; }
+function tercAprovQuadro() {
+  const pend = (FORN_STATE.items || []).filter(x => tercAprov(x)).sort((a, b) => String(tercAprov(a).em || "").localeCompare(String(tercAprov(b).em || "")));
+  if (!pend.length) return "";
+  return `<section class="terc-aprov" id="tercAprov"><h3>Aprovações pendentes <span class="cap-views-n">${pend.length}</span> <span class="sup">só o administrador vê este quadro</span></h3>
+    <div class="table-wrap"><table class="cap-table"><thead><tr><th>Pedido</th><th>Cadastro</th><th>Pedido por</th><th>Motivo</th><th></th></tr></thead><tbody>${pend.map(x => { const a = tercAprov(x);
+      return `<tr><td><span class="pill st-aguardando"><i></i>${a.tipo === "inclusao" ? "Inclusão" : "Exclusão"}</span></td><td><a href="#" onclick="event.preventDefault();tercCadastroCard('id:${esc(String(x._id))}')">${esc(x.Title || "—")}</a><div class="sup">${esc(x.CNPJ || "sem CNPJ/CPF")}</div></td><td>${esc(a.por || "—")}<div class="sup">${esc(tercDataTxt(a.em))}</div></td><td>${esc(a.motivo || "—")}</td>
+        <td style="white-space:nowrap"><button class="btn sm primary" onclick="tercDecidir(${jsArg(x._id)}, true)">Aprovar</button> <button class="btn sm" onclick="tercDecidir(${jsArg(x._id)}, false)">Recusar</button></td></tr>`; }).join("")}</tbody></table></div></section>`;
+}
+{ const pt = paintForn;
+  paintForn = function () {
+    const r = pt.apply(this, arguments); const body = $("fornBody"); if (!body) return r;
+    body.querySelectorAll("table.cap-table tbody tr").forEach(tr => {
+      const m = String(tr.getAttribute("onclick") || "").match(/fornAbrir\('(?:id:|id%3A)(\d+)'/i); if (!m) return; const x = FORN_STATE.items.find(i => String(i._id) === m[1]); if (!x) return;
+      const p = tercSitPills(x), d = tr.querySelector("td .desc"); if (p && d && !tr.querySelector(".terc-sit")) d.insertAdjacentHTML("beforeend", " " + p);
+    });
+    if (session.n1 && typeof tercSoCadastro === "function" && tercSoCadastro()) { const q = tercAprovQuadro(); if (q && !$("tercAprov")) body.insertAdjacentHTML("afterbegin", q); }
+    const f = FORN_STATE.filter, ks = body.querySelectorAll(".cap-kpis .kpi");   /* cartão do filtro ativo fica marcado */
+    ks.forEach(k => { const on = String(k.getAttribute("onclick") || ""); k.classList.toggle("on", (on.includes("'Fixo'") && f.tipo === "Fixo") || (on.includes("'Variável'") && f.tipo === "Variável") || (on.includes("__vazio") && f.tipo === "__vazio") || (on.includes("semdoc") && !!f.semDoc)); });
+    return r;
+  }; window.paintForn = paintForn; }
+(function () { const s = document.createElement("style"); s.textContent = `.terc-sitbox{border:1px solid var(--line,#e5e7eb);border-radius:10px;padding:10px 12px;margin:0 0 14px;font-size:13px;display:grid;gap:6px;background:var(--bg-soft,#f8fafc)}
+.terc-sitbox.bloq{border-color:#e6b3ad;background:#fdf3f2}.terc-sitbox.pend{border-color:#ecd59a;background:#fffaf0}.terc-sitbt{display:flex;gap:8px;flex-wrap:wrap}
+.terc-trava-aviso{color:var(--err,#b42318);font-weight:600}.terc-aprov{border:1px solid #ecd59a;background:#fffaf0;border-radius:12px;padding:12px 14px;margin-bottom:16px}.terc-aprov h3{margin:0 0 8px;font-size:15px}
+.terc-sit{margin-left:6px;vertical-align:middle}`; document.head.appendChild(s); })();
+/* v0.14.11.3 · Pedido de 20/10 (13:01): Classificação de custo, Situação, Centro de Custo e Estabelecimento passam a ser obrigatórios no cadastro */
+{ const ff = fornForm;
+  fornForm = function (x) {
+    let h = ff.apply(this, arguments); const novo = !x || !x._id, R = '<span class="req">*</span>';
+    h = h.replace('<label>Situação</label>', '<label>Situação' + R + '</label>').replace('<label>Classificação de custo</label>', '<label>Classificação de custo' + R + '</label>')
+      .replace('<label>Estabelecimento (CNPJ da NMB)</label>', '<label>Estabelecimento (CNPJ da NMB)' + R + '</label>').replace('<label>Centro de Custo</label>', '<label>Centro de Custo' + R + '</label>')
+      .replace('<option value="">— a classificar —</option>', '<option value="">— escolha —</option>')
+      .replace(/<select id="gCC"><option value="">[^<]*<\/option>/, '<select id="gCC"><option value="">— escolha —</option>');
+    if (novo && !(x && x.Ativo === false)) h = h.replace(/<select id="gAtivo"><option value="1"[^>]*>Ativo<\/option>/, '<select id="gAtivo"><option value="" selected>— escolha —</option><option value="1">Ativo</option>');
+    return h;
+  }; window.fornForm = fornForm; }
+{ const s0 = fornSave;
+  fornSave = async function () {
+    const v = id => ($(id) ? String($(id).value || "").trim() : null), falta = [];
+    if (v("gTipo") === "") falta.push("Classificação de custo");
+    if (v("gAtivo") === "") falta.push("Situação");
+    if (v("gCC") === "") falta.push("Centro de Custo");
+    if (v("gEstab") === "" && [...$("gEstab").options].some(o => o.value)) falta.push("Estabelecimento");   /* sem CNPJ lido (nenhuma opção) não trava o cadastro */
+    if (falta.length) { const e = $("gErr"); if (e) { e.style.display = "block"; e.textContent = `Preencha ${falta.length > 1 ? "os campos obrigatórios" : "o campo obrigatório"}: ${falta.join(", ")}.`; } const el = $({ "Classificação de custo": "gTipo", "Situação": "gAtivo", "Centro de Custo": "gCC", "Estabelecimento": "gEstab" }[falta[0]]); if (el) el.focus(); return; }
+    return s0.apply(this, arguments);
+  }; window.fornSave = fornSave; }
+/* v0.14.11.3 · Pedido de 20/10 (13:18): "Outros contatos e telefones" com Nome e Setor em campos separados (JSON ganha "s") */
+{ const de0 = tercContatosDe;
+  const leOC = x => { try { const a = JSON.parse((x && x.OutrosContatos) || "[]"); return Array.isArray(a) ? a.filter(c => c && (c.n || c.s || c.tel || c.email)) : []; } catch (e) { return []; } };
+  tercContatosDe = leOC;
+  const juntos = x => leOC(x).map(c => Object.assign({}, c, { n: [c.n, c.s].filter(Boolean).join(" · ") }));   /* cartão e busca: nome · setor */
+  const comJuntos = fn => function () { const keep = tercContatosDe; tercContatosDe = juntos; try { return fn.apply(this, arguments); } finally { tercContatosDe = keep; } };
+  tercCadastroCard = comJuntos(tercCadastroCard); window.tercCadastroCard = tercCadastroCard;
+  fornFiltered = comJuntos(fornFiltered); window.fornFiltered = fornFiltered;
+  window.tercContatoLinha = c => `<tr><td><input class="to-n" value="${esc((c && c.n) || "")}" placeholder="Ex.: Lucas"></td><td><input class="to-s" value="${esc((c && c.s) || "")}" placeholder="Ex.: Financeiro"></td><td><input class="to-t" data-mask="tel" inputmode="tel" value="${esc((c && c.tel) || "")}"></td><td><input class="to-e" type="email" value="${esc((c && c.email) || "")}"></td><td><button type="button" class="btn sm ghost" onclick="this.closest('tr').remove()" title="Remover o contato">✕</button></td></tr>`;
+  window.tercContatosLer = () => [...document.querySelectorAll("#gOutros tbody tr")].map(tr => { const v = c => { const i = tr.querySelector(c); return i ? i.value.trim() : ""; }; const n = v(".to-n"), st = v(".to-s"), tel = v(".to-t"), email = v(".to-e"); return n || st || tel || email ? Object.assign({}, n ? { n } : {}, st ? { s: st } : {}, tel ? { tel } : {}, email ? { email } : {}) : null; }).filter(Boolean);
+  const ff = fornForm;
+  fornForm = function () { const h = ff.apply(this, arguments);
+    return h.replace(/(<table class="cap-table terc-contas" id="gOutros">)<colgroup>[\s\S]*?<\/colgroup><thead><tr><th>Nome \/ setor<\/th>/, '$1<colgroup><col style="width:24%"><col style="width:20%"><col style="width:150px"><col><col style="width:46px"></colgroup><thead><tr><th>Nome</th><th>Setor</th>'); };
+  window.fornForm = fornForm; }
+/* v0.14.11.3 · Pedido de 20/10 (13:23): Observações de Terceiros viram um histórico — cada observação é registrada à parte,
+   com data e autor, e aparece uma por vez (no cadastro novo e na edição). Coluna nova "Notas" (JSON); o texto antigo
+   de "Observações" continua gravado e aparece como a primeira observação ("registro anterior"). */
+LISTS.forn.columns.push({ name: "Notas", displayName: "Observações registradas (JSON)", text: { allowMultipleLines: true, textType: "plain" } });
+function tercNotas(x) { try { const a = JSON.parse((x && x.Notas) || "[]"); return Array.isArray(a) ? a.filter(n => n && String(n.t || "").trim()) : []; } catch (e) { return []; } }
+function tercNotasCol() { return !FORN_STATE.cols || FORN_STATE.cols.has("Notas"); }
+function tercNotaNova(txt) { return { t: String(txt).trim().slice(0, 2000), por: tercQuem(), em: new Date().toISOString() }; }
+function tercNotaCampos(x, txt) {   /* registro do sistema (bloqueio, aprovação) como observação */
+  if (tercNotasCol()) return { Notas: JSON.stringify(tercNotas(x).concat([tercNotaNova(txt)])) };
+  return { Observacoes: [String(x.Observacoes || "").trim(), `[${txt}]`].filter(Boolean).join("\n") };
+}
+function tercNotaHtml(n, i, podeTirar) {
+  return `<li class="tnota${n.pend ? " pend" : ""}"><div class="tnota-cab">${n.legado ? "Registro anterior" : `${esc(tercDataTxt(n.em))} · ${esc(n.por || "—")}`}${n.pend ? ` <em>a salvar</em>` : ""}${podeTirar ? ` <button type="button" class="tav-x" title="Tirar esta observação" onclick="tercNotaTirar(${i})">×</button>` : ""}</div><div class="tnota-t">${esc(n.t)}</div></li>`;
+}
+const TERC_NOTAS = { id: null, base: [], pend: [] };
+function tercNotasLista() {
+  const el = $("gNotasLista"); if (!el) return;
+  const leg = String(($("gObs") && $("gObs").value) || "").trim();
+  const itens = TERC_NOTAS.base.map((n, i) => ({ n, i })), pend = TERC_NOTAS.pend.map((n, j) => ({ n: Object.assign({ pend: true }, n), j }));
+  const html = pend.slice().reverse().map(o => tercNotaHtml(o.n, "'p" + o.j + "'", true))
+    .concat(itens.slice().reverse().map(o => tercNotaHtml(o.n, o.i, !!session.n1)))
+    .concat(leg ? [tercNotaHtml({ t: leg, legado: true }, "'leg'", !!session.n1)] : []);
+  el.innerHTML = html.length ? html.join("") : `<li class="tnota-vazio">Nenhuma observação.</li>`;
+}
+window.tercNotaAdd = () => { const t = $("gNotaNova"); if (!t || !t.value.trim()) { if (t) t.focus(); return; } TERC_NOTAS.pend.push(tercNotaNova(t.value)); t.value = ""; tercNotasLista(); t.focus(); };
+window.tercNotaTirar = k => {
+  if (typeof k === "string" && k[0] === "p") { TERC_NOTAS.pend.splice(Number(k.slice(1)), 1); tercNotasLista(); return; }
+  if (!session.n1) return; if (!confirm("Tirar esta observação do cadastro? Vale ao salvar.")) return;
+  if (k === "leg") { if ($("gObs")) $("gObs").value = ""; } else TERC_NOTAS.base.splice(Number(k), 1);
+  TERC_NOTAS.tirou = true; tercNotasLista();
+};
+{ const ff = fornForm;
+  fornForm = function (x) {
+    const h = ff.apply(this, arguments), v = x || {};
+    TERC_NOTAS.id = v._id ? String(v._id) : null; TERC_NOTAS.base = tercNotas(v); TERC_NOTAS.pend = []; TERC_NOTAS.tirou = false;
+    return h.replace(/<div class="field full"><textarea id="gObs" aria-label="Observações">([\s\S]*?)<\/textarea><\/div>/, (m, txt) =>
+      `<div class="field full"><textarea id="gObs" aria-label="Observações (registro anterior)" hidden>${txt}</textarea>
+        <div class="tnota-nova"><textarea id="gNotaNova" rows="2" placeholder="Escreva uma observação e clique em Adicionar (fica registrada com a data e o seu nome)"></textarea><button type="button" class="btn sm" onclick="tercNotaAdd()">+ Adicionar</button></div>
+        <ul class="tnotas" id="gNotasLista"></ul></div>`);
+  }; window.fornForm = fornForm; }
+{ const w0 = fornWireForm; fornWireForm = function () { const r = w0.apply(this, arguments); tercNotasLista(); const t = $("gNotaNova"); if (t) t.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); tercNotaAdd(); } }); return r; }; window.fornWireForm = fornWireForm; }
+/* salvar: as observações novas (e o texto ainda não adicionado) vão junto, numa só gravação */
+let TERC_NOTAS_GRAVAR = null;
+{ const s0 = fornSave;
+  fornSave = async function (existing) {
+    const t = $("gNotaNova"); if (t && t.value.trim()) { TERC_NOTAS.pend.push(tercNotaNova(t.value)); t.value = ""; tercNotasLista(); }
+    const daqui = $("gNotasLista") && (!existing || String(existing._id) === TERC_NOTAS.id);
+    if (daqui && (TERC_NOTAS.pend.length || TERC_NOTAS.tirou)) {
+      if (tercNotasCol()) TERC_NOTAS_GRAVAR = JSON.stringify(TERC_NOTAS.base.concat(TERC_NOTAS.pend.map(n => ({ t: n.t, por: n.por, em: n.em }))));
+      else if ($("gObs")) $("gObs").value = [$("gObs").value.trim()].concat(TERC_NOTAS.pend.map(n => `[${tercDataTxt(n.em)} · ${n.por}] ${n.t}`)).filter(Boolean).join("\n");
+    }
+    try { return await s0.apply(this, arguments); } finally { TERC_NOTAS_GRAVAR = null; }
+  }; window.fornSave = fornSave; }
+{ const c0 = SP.create, u0 = SP.update;
+  const junta = (listId, fields) => { if (TERC_NOTAS_GRAVAR != null && FORN_STATE.list && listId === FORN_STATE.list.id && fields && !("Notas" in fields)) { fields = Object.assign({}, fields, { Notas: TERC_NOTAS_GRAVAR }); } return fields; };
+  SP.create = (siteId, listId, fields) => c0(siteId, listId, junta(listId, fields));
+  SP.update = (siteId, listId, itemId, fields) => u0(siteId, listId, itemId, junta(listId, fields)); }
+/* cartão: as observações uma a uma, mais recente primeiro */
+{ const tc = tercCadastroCard;
+  tercCadastroCard = function (key) {
+    const r = tc.apply(this, arguments);
+    try { const id = String(key).replace(/^id:/, ""), x = (FORN_STATE.items || []).find(i => String(i._id) === id), body = x && document.querySelector("#modal .tcad");
+      if (body && !body.querySelector(".tnotas")) {
+        const notas = tercNotas(x).slice().reverse().map(n => tercNotaHtml(n, 0, false)).concat(String(x.Observacoes || "").trim() ? [tercNotaHtml({ t: String(x.Observacoes).trim(), legado: true }, 0, false)] : []);
+        const old = [...body.querySelectorAll(".tcad-sec")].find(sx => { const h = sx.querySelector("h4"); return h && /^Observações/.test(h.textContent); });
+        const html = notas.length ? `<section class="tcad-sec"><h4>Observações <span>${notas.length}</span></h4><ul class="tnotas">${notas.join("")}</ul></section>` : "";
+        if (old) old.outerHTML = html; else if (html) { const nota = body.querySelector(".tcad-nota"); if (nota) nota.insertAdjacentHTML("beforebegin", html); else body.insertAdjacentHTML("beforeend", html); }
+      } } catch (e) { console.warn("terc notas", e); }
+    return r;
+  }; window.tercCadastroCard = tercCadastroCard; }
+/* busca: acha também pelo texto das observações registradas */
+{ const f0 = fornFiltered;
+  fornFiltered = function () {
+    if (!FORN_STATE.filter.busca) return f0.apply(this, arguments);
+    const orig = FORN_STATE.items, mapa = new Map();
+    FORN_STATE.items = orig.map(x => { const ns = tercNotas(x); if (!ns.length) return x; const c = Object.assign({}, x, { Observacoes: [x.Observacoes].concat(ns.map(n => n.t)).filter(Boolean).join("\n") }); mapa.set(c, x); return c; });
+    try { return f0.apply(this, arguments).map(c => mapa.get(c) || c); } finally { FORN_STATE.items = orig; }
+  }; window.fornFiltered = fornFiltered; }
+(function () { const s = document.createElement("style"); s.textContent = `.tnota-nova{display:flex;gap:8px;align-items:flex-start}.tnota-nova textarea{flex:1;min-height:52px}
+.tnotas{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px;max-height:320px;overflow:auto}.tnota{border:1px solid var(--line,#e5e7eb);border-radius:10px;padding:8px 10px;background:var(--bg-soft,#f8fafc)}
+.tnota.pend{border-style:dashed}.tnota-cab{font-size:11.5px;color:var(--muted,#667085);display:flex;gap:6px;align-items:center}.tnota-cab .tav-x{margin-left:auto}.tnota-t{white-space:pre-wrap;font-size:13.5px;margin-top:2px}.tnota-vazio{font-size:13px;color:var(--muted,#667085)}`; document.head.appendChild(s); })();
+/* v0.14.11.3 · Pedido de 20/10 (13:26): janelas com altura fixa — cabeçalho e rodapé da janela ficam parados e só o conteúdo rola
+   (o menu do topo continua à vista atrás); antes a janela inteira crescia de ponta a ponta e rolava junto com a página */
+(function () { const s = document.createElement("style"); s.textContent = `
+.modal-back .modal{max-height:calc(100vh - 80px);max-height:calc(100dvh - 80px);display:flex;flex-direction:column;overflow-y:auto}
+.modal-back .modal > .modal-head,.modal-back .modal > .modal-foot{flex:none}
+.modal-back .modal > .modal-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+@media (max-width: 760px){.modal-back .modal{max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px)}}`; document.head.appendChild(s); })();
+CONFIG.version = "v0.14.11.3";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

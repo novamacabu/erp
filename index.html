@@ -3143,7 +3143,7 @@ select.forn-cls.vazio{color:var(--muted);font-style:italic}
   #login .lg-top { padding: 22px 30px !important }
   #login .lg-foot { padding: 14px 30px 20px !important }
 }
-/* v0.12.73 · Diretoria › CAPEX / OPEX e Financeiro › Imobilizado */
+/* v0.12.73 · Diretoria › CAPEX / OPEX e Diretoria › Ativos da Empresa */
 :is(#cpxRoot,#imobRoot) .cap-table .r{text-align:right;white-space:nowrap}:is(#cpxRoot,#imobRoot) .cap-table th.r{text-align:right}
 :is(#cpxRoot,#imobRoot) .b{font-weight:700}:is(#cpxRoot,#imobRoot) .mut{color:var(--ink-3)}:is(#cpxRoot,#imobRoot) .nw{white-space:nowrap}
 .cpx-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;margin:0 0 var(--gap);box-shadow:var(--shadow)}
@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.11.1",
+  version: "v0.14.11.2",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -3859,7 +3859,7 @@ const MODULES = [
   { id: "roletas",    path: "#/operacional/controle-de-roletas", icon: "chart",  name: "Controle de Roletas", area: "Financeiro", groups: ["financeiro", "operacional", "diretoria"], status: "piloto", menu: false, hubDe: "agentes" },   /* v0.12.27 #14 · v0.12.71: do Financeiro para o Operacional (o endereço antigo redireciona) */
   { id: "recebimento", path: "#/financeiro/recebimento",       icon: "cash",    name: "Arrecadação",         area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto", menu: false, hubDe: "agentes" },   /* v0.12.27 #15: saiu de prévia */
   { id: "fin_tarefas", path: "#/financeiro/central-de-tarefas", icon: "tasks", name: "Central de Tarefas", area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto", wide: true },   /* v0.12.94: a Central de Tarefas no Financeiro, com atribuição a pessoas (como o Planner) */
-  { id: "imob",       path: "#/financeiro/imobilizado",       icon: "imob",    name: "Imobilizado",         area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto" },   /* v0.12.73: bens e depreciação (base do CAPEX) */
+  { id: "imob",       path: "#/diretoria/ativos-da-empresa",  icon: "imob",    name: "Ativos da Empresa",   area: "Diretoria",  groups: ["diretoria"], status: "piloto" },   /* v0.14.11.2: era Financeiro › Imobilizado — valor patrimonial, só para o time executivo */   /* v0.12.73: bens e depreciação (base do CAPEX) */
   { id: "sac",        path: "#/diretoria/sac",                 icon: "chart",   name: "SAC",                 area: "Diretoria",   groups: ["diretoria"],               status: "ativo", wide: true },
   { id: "pesquisa",   path: "#/diretoria/pesquisa-de-satisfacao", icon: "chart", name: "Pesquisa de Satisfação", area: "Diretoria", groups: ["diretoria"],               status: "ativo", wide: true },   /* v0.12.65 */
   { id: "exec",       path: "#/diretoria/relatorio-executivo", icon: "chart",  name: "Relatório Executivo",  area: "Diretoria",   groups: ["diretoria"],               status: "piloto", wide: true },   /* v0.12.69 */
@@ -4804,6 +4804,7 @@ function route() {
   if (hash === "#/area/Agentes") { location.replace("#/financeiro/agentes"); return; }   /* v0.13.4: a área Agentes virou o card Agentes Financeiros */
   if (hash === "#/financeiro/agencia-conceicao") { location.replace("#/financeiro/agentes"); return; }   /* v0.13.4: "Operações da Agência" absorvido */
   if (hash === "#/operacional/estatistica-de-passageiros") { location.replace("#/financeiro/estatistica-de-passageiros"); return; }   /* v0.14.10: endereço antigo */
+  if (hash === "#/financeiro/imobilizado") { location.replace("#/diretoria/ativos-da-empresa"); return; }   /* v0.14.11.2: Imobilizado → Diretoria › Ativos da Empresa */
   if (hash === "#/financeiro/agentes") { const m = MODULES.find(x => x.id === "agentes"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "agentes"; document.body.classList.remove("wide", "nav-open"); $("main").innerHTML = pageAgentes(); if (typeof navAtivo === "function") navAtivo("agentes"); window.scrollTo(0, 0); return; }
   if (hash === "#/operacional/controle-de-roletas") { const m = MODULES.find(x => x.id === "roletas"); if (!canSee(m)) { location.hash = "#/inicio"; return; } session.modAtual = "roletas"; document.body.classList.remove("wide", "nav-open"); if (MOD_RESET.rol) MOD_RESET.rol(); $("main").innerHTML = pageRol(); renderRol(); navAtivo("roletas"); window.scrollTo(0, 0); return; }
   /* v0.12.27 #15: Financeiro > Recebimento Motorista (sai da prévia) */
@@ -6089,6 +6090,11 @@ function modal(html) {
   if (!jaAberta) m._foco = document.activeElement;   /* v0.12.81: o foco volta para onde estava ao fechar */
   m.innerHTML = html; m.dataset.sujo = "";
   m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true");
+  /* v0.14.11.2: toda janela (cadastro, fatura, obrigação…) abre no topo, no título — a rolagem da janela anterior não fica guardada,
+     e o foco automático/preenchimento dos campos logo depois de abrir não puxa a tela para o meio */
+  if (modal.manterRolagem) modal.manterRolagem = false;   /* re-desenho da mesma janela (ex.: cartão do Terceiro depois de uma ação) mantém a posição */
+  else { const topo = () => { const b = $("modalBack"); if (b) b.scrollTop = 0; m.scrollTop = 0; const mb = m.querySelector(".modal-body"); if (mb) mb.scrollTop = 0; };
+    topo(); requestAnimationFrame(topo); setTimeout(topo, 60); setTimeout(topo, 250); }
   if (window.innerWidth > 900) setTimeout(() => { if (!$("modalBack").classList.contains("on") || m.contains(document.activeElement)) return; const f = m.querySelector(".modal-body input:not([type=hidden]):not([disabled]):not([readonly]), .modal-body select:not([disabled]), .modal-body textarea:not([disabled])"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } }, 0);
   if (!m._erpSujo) { m.addEventListener("input", ev => { if (ev.target && ev.target.matches && ev.target.matches("input:not([type=search]):not([type=checkbox]):not([type=radio]):not([type=file]),textarea")) m.dataset.sujo = "1"; }, true); m._erpSujo = true; }
   const back = $("modalBack"); back.classList.add("on");
@@ -6170,7 +6176,7 @@ function capApplyForn(isNew) {
   $("subList").innerHTML = subcatOptions($("fCat").value);
   setIf("fSub", f.SubcategoriaPadrao); setIf("fBanco", f.BancoPadrao); setIf("fForma", f.FormaPadrao);
   if (isNew) {
-    setIf("fVal", fornValorRef(f) || "");   /* v0.12.59: valor de referência (última conta ou valor padrão antigo) */
+    /* v0.14.11.2 (pedido 20/10 12:14): o valor não vem mais preenchido pelo valor de referência — o usuário digita */
     if (!$("fVenc").value && f.DiaVencimento) { const d = new Date(); d.setDate(Math.min(Number(f.DiaVencimento), 28)); if (d < new Date()) d.setMonth(d.getMonth() + 1); $("fVenc").value = ymd(d); $("fComp").value = $("fVenc").value.slice(0, 7); }
     if (!$("fTitle").value) { const c = $("fComp").value || $("fVenc").value.slice(0, 7) || compFromDate(todayISO()); $("fTitle").value = `${f.Title} ${compLabel(c)}`; }
   }
@@ -16242,8 +16248,8 @@ function paintCAP() {
   const acts = $("capActions"), edita = podeEditar("cap");
   if (acts) acts.innerHTML = edita ? `<button class="btn" onclick="capImport()">Importar</button>${ehAdm() ? `<button class="btn" onclick="capDedup()" title="Localiza faturas importadas duas vezes (nome cru da planilha + nome do cadastro)">Duplicadas</button>` : ""}<button class="btn primary" onclick="capNew()" title="Atalho: n">Nova fatura</button>` : `<span class="sup">Acesso só de leitura</span>`;
   const total = CAP_STATE.items.length;
-  if (total === 0) {
-    body.innerHTML = `${typeof DIV !== "undefined" && DIV.on ? capViewsBar() : ""}<div class="cap-empty">
+  if (total === 0 && (!CAP_STATE.view || CAP_STATE.view === "lista")) {   /* v0.14.11.2: CAP vazia (depois de zerar) mantém as abas; só a aba Faturas mostra o aviso */
+    body.innerHTML = `${capViewsBar()}<div class="cap-empty">
       <h3>Ainda não há faturas cadastradas</h3>
       <p>${edita ? `Você pode cadastrar uma fatura por vez ou importar várias de uma vez colando de uma planilha.${FORN_STATE.items.length ? "" : " Cadastre os fornecedores primeiro para o preenchimento automático funcionar."}` : "Seu acesso é só de leitura."}</p>
       ${edita ? `<div class="actions"><button class="btn primary" onclick="capNew()">Cadastrar fatura</button><button class="btn" onclick="capImport()">Importar em lote</button></div>` : ""}
@@ -19324,7 +19330,7 @@ window.capNovaDoForn = (k, v) => {
   const pre = { Fornecedor: cad.Title || g.nome, CNPJ: cad.CNPJ || "", Categoria: fornCatConta(cad.CategoriaPadrao), Subcategoria: cad.SubcategoriaPadrao || "", Banco: cad.BancoPadrao || "",
     FormaPagamento: cad.FormaPadrao || "", CentroCusto: cad.CentroCustoPadrao || "", Status: "Pendente" };
   if (cad.Estabelecimento) pre.Estabelecimento = cad.Estabelecimento;
-  { const vr = fornValorRef(cad._id ? cad : { Title: g.nome }); if (vr > 0) pre.Valor = vr; }   /* v0.12.59: valor de referência (última conta ou valor padrão antigo) */
+  /* v0.14.11.2: sem valor de referência — o valor da fatura nova é digitado */
   /* vencimento sugerido: próximo dia de vencimento do cadastro (ou o da última conta do fornecedor) */
   const ult = g.contas.slice().sort((a, b) => String(b.Vencimento || "").localeCompare(String(a.Vencimento || "")))[0];
   const dia = Number(cad.DiaVencimento || (ult && ult.Vencimento ? dLocal(ult.Vencimento).getDate() : 0));
@@ -27427,13 +27433,13 @@ window.bilTarAplicar = async () => {
 try { window.session = session; window.MODULES = MODULES; window.canSee = canSee; } catch (e) {}
 boot();
 /* =====================================================================
-   v0.12.73 · Pedido de 08/10, item 3 — Diretoria › CAPEX / OPEX e Financeiro › Imobilizado (piloto de ponta a ponta).
+   v0.12.73 · Pedido de 08/10, item 3 — Diretoria › CAPEX / OPEX e Diretoria › Ativos da Empresa (piloto de ponta a ponta).
    Leitura da saúde da empresa e dos investimentos com o que já existe no ERP:
    · OPEX, CAPEX e Financeiro saem das faturas da CAP pela coluna nova "Natureza do gasto" — ou pela regra automática
      (tipo de lançamento, categoria, classificação do fornecedor, obrigação vinculada e bem do imobilizado);
    · a receita sai das entradas do Fluxo de Caixa; os passageiros, da Estatística de Passageiros; a idade da frota,
      de Operacional › Frota › Geral; a dívida, das Obrigações (parcelamentos e financiamentos);
-   · o imobilizado (bens e depreciação linear mês a mês) é o módulo novo Financeiro › Imobilizado ("Financeiro — Imobilizado");
+   · o imobilizado (bens e depreciação linear mês a mês) é o módulo novo Diretoria › Ativos da Empresa ("Financeiro — Imobilizado");
    · o plano de investimentos é a lista nova "Diretoria — Plano de investimentos", com simulação de financiamento e payback.
    Referências: vida útil e residual gerenciais de referência para ônibus (10 anos, 15% — parâmetros próximos aos das planilhas tarifárias do
    tipo GEIPOT, que depreciam de forma não linear) e micro-ônibus (8 anos, 10%) — padrões editáveis bem a bem; taxas fiscais da IN RFB 1.700/2017 (Anexo III); reformas que aumentam a vida útil
@@ -27545,8 +27551,8 @@ const INV_STATUS = ["Ideia", "Em análise", "Aprovado", "Contratado", "Executado
 const INV_PRIOR = ["Alta", "Média", "Baixa"];
 const FIN_FORMAS = ["Recursos próprios", "FINAME / BNDES", "Financiamento bancário", "Leasing", "Consórcio", "Outro"];
 LISTS.fin_imob = {
-  key: "fin_imob", displayName: "Financeiro — Imobilizado", siteKey: "financeiro", titleAs: "Descrição do bem",
-  description: "Financeiro NMB · bens da empresa (frota, garagem, equipamentos, tecnologia) com a depreciação linear mês a mês. Editado em Financeiro › Imobilizado; lido pelo painel CAPEX / OPEX da Diretoria.",
+  key: "fin_imob", displayName: "Diretoria — Ativos da Empresa", siteKey: "diretoria", titleAs: "Descrição do bem",   /* v0.14.11.2: era "Financeiro — Imobilizado" (site Financeiro); os dados são copiados pela Configuração */
+  description: "Financeiro NMB · bens da empresa (frota, garagem, equipamentos, tecnologia) com a depreciação linear mês a mês. Editado em Diretoria › Ativos da Empresa; lido pelo painel CAPEX / OPEX da Diretoria.",
   columns: [
     { name: "Categoria",         displayName: "Categoria",                 required: true, choice: choice(IMOB_CATS.map(c => c.n), true), update: true },
     { name: "Identificacao",     displayName: "Identificação (prefixo, placa ou patrimônio)", text: { allowMultipleLines: false, maxLength: 40 } },
@@ -27590,7 +27596,7 @@ LISTS.di_invest = {
   ]
 };
 SETUP_ORDER.push("fin_imob", "di_invest");
-SETUP_TEXT.fin_imob = `Cria no site Financeiro a lista "Financeiro — Imobilizado": um registro por bem (categoria, identificação, aquisição, valor, vida útil, valor residual, situação e baixa), com a depreciação linear calculada pelo ERP. Usada em Financeiro › Imobilizado e no painel CAPEX / OPEX da Diretoria.`;
+SETUP_TEXT.fin_imob = `Cria no site Diretoria a lista "Diretoria — Ativos da Empresa": um registro por bem (categoria, identificação, aquisição, valor, vida útil, valor residual, situação e baixa), com a depreciação linear calculada pelo ERP. Usada em Diretoria › Ativos da Empresa e no painel CAPEX / OPEX. Os bens da lista antiga "Financeiro — Imobilizado" são copiados pelo cartão "Ativos da Empresa — copiar do Financeiro".`;
 SETUP_TEXT.di_invest = `Cria no site Diretoria a lista "Diretoria — Plano de investimentos": investimentos previstos (o quê, valor, mês, prioridade, status, forma de pagamento, entrada, prazo, juros e economia esperada). Usada em Diretoria › CAPEX / OPEX › Plano de investimentos.`;
 
 /* ---- estado e premissas ---- */
@@ -27936,14 +27942,14 @@ function cpxAvisos(D) {
   if (!D.validos.length) a.push(`Nenhum mês do período tem dados: a CAP passou a valer no ERP em ${compLabel(CONFIG.capInicio || "")}. Escolha outra referência.`);
   else if (semRec.length) a.push(`Receita: sem entradas no Fluxo de Caixa em ${semRec.map(cpxMesCurto).join(", ")} — margem e EBITDA desses meses ficam incompletos.`);
   if (D.T.nRev) a.push(cpxPagVe("classif") && cpxVe("cap") ? `${D.T.nRev} fatura(s) do período foram classificadas pela regra e pedem conferência (aba Classificação das contas).` : `${D.T.nRev} fatura(s) do período foram classificadas pela regra e pedem conferência por quem cuida da CAP.`);
-  if (F.imob && F.imob.st === "semlista") a.push(`A lista "Financeiro — Imobilizado" ainda não existe: depreciação e CAPEX dos bens começam quando ela for criada (Sistema › Configuração) e os bens forem cadastrados em Financeiro › Imobilizado.`);
-  else if (F.imob && F.imob.st === "vazio") a.push(`Nenhum bem em Financeiro › Imobilizado: depreciação, valor contábil e reinvestimento aparecem quando os bens forem cadastrados.`);
+  if (F.imob && F.imob.st === "semlista") a.push(`A lista "Diretoria — Ativos da Empresa" ainda não existe: depreciação e CAPEX dos bens começam quando ela for criada (Sistema › Configuração) e os bens forem cadastrados em Diretoria › Ativos da Empresa.`);
+  else if (F.imob && F.imob.st === "vazio") a.push(`Nenhum bem em Diretoria › Ativos da Empresa: depreciação, valor contábil e reinvestimento aparecem quando os bens forem cadastrados.`);
   if (F.cap && F.cap.st === "ok" && CAP_STATE.cols && !CAP_STATE.cols.has("Natureza")) a.push(`A coluna "Natureza do gasto" ainda não existe na CAP: tudo segue a regra automática até um administrador rodar Sistema › Configuração › Contas a Pagar.`);
   ["cap", "cx", "pax", "veic", "imob", "inv"].forEach(k => { const f = F[k]; if (f && ["semacesso", "erro"].includes(f.st)) a.push(`${CPX_FONTE_NOME[k]}: ${f.st === "semacesso" ? "sem acesso no SharePoint" : "não foi possível ler"}${f.msg ? ` (${f.msg.slice(0, 90)})` : ""}.`); });
   const fo = F.obr; if (fo && ["semacesso", "erro", "semlista"].includes(fo.st)) a.push(`Obrigações: ${fo.st === "semlista" ? "a lista não existe" : fo.st === "semacesso" ? "sem acesso no SharePoint" : "não foi possível ler"} — a regra das parcelas de financiamentos e parcelamentos e o saldo da dívida ficam de fora.`);
   return a.length ? `<div class="cpx-avisos">${a.map(x => `<div>${esc(x)}</div>`).join("")}</div>` : "";
 }
-const CPX_FONTE_NOME = { cap: "Contas a Pagar", cx: "Fluxo de Caixa (entradas)", pax: "Estatística de Passageiros", veic: "Frota › Geral", imob: "Financeiro › Imobilizado", inv: "Plano de investimentos", obr: "Obrigações", prem: "Premissas" };
+const CPX_FONTE_NOME = { cap: "Contas a Pagar", cx: "Fluxo de Caixa (entradas)", pax: "Estatística de Passageiros", veic: "Frota › Geral", imob: "Diretoria › Ativos da Empresa", inv: "Plano de investimentos", obr: "Obrigações", prem: "Premissas" };
 function cpxKpi(lbl, val, sub, cls, extra) { return `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(lbl)}</div><div class="val money">${esc(val)}</div><div class="sub">${sub}</div>${extra || ""}</div>`; }
 function cpxPainel(D) {
   const T = D.T, P = D.P, C = D.Tc, H = D.H, pv = D.comparavel;
@@ -27987,7 +27993,7 @@ function cpxDreHtml(D) {
       ${lin("grp", "Receita operacional (entradas do Fluxo de Caixa)", X => X.rec, false)}
       ${lin("grp", "(−) OPEX", X => X.opex, true)}${grupos}
       ${lin("tot", "= EBITDA operacional", X => X.ebitda, false, "resultado da operação antes da depreciação, dos juros e das dívidas")}
-      ${lin("", "(−) Depreciação", X => X.dep, true, "Financeiro › Imobilizado, linear mês a mês")}
+      ${lin("", "(−) Depreciação", X => X.dep, true, "Diretoria › Ativos da Empresa, linear mês a mês")}
       ${lin("tot", "= Resultado operacional (EBIT)", X => X.ebit, false)}
       ${lin("", "(−) Juros e dívidas (natureza Financeiro)", X => X.fin, true)}
       ${lin("tot", "= Resultado após juros e dívidas", X => X.res, false, "gerencial: as parcelas de dívida entram inteiras (juros e principal)")}
@@ -28067,12 +28073,12 @@ function cpxCapexAba(D) {
     ${cpxKpi("Depreciação do mês", cpxK(I.depMes), compLabel(hoje))}
   </div>`;
   const cats = Object.entries(I.porCat).sort((a, b) => b[1].valor - a[1].valor);
-  const linkImob = cpxVe("imob") ? `<a href="#/financeiro/imobilizado" class="cpx-lnk">abrir Financeiro › Imobilizado →</a>` : "";
+  const linkImob = cpxVe("imob") ? `<a href="#/diretoria/ativos-da-empresa" class="cpx-lnk">abrir Diretoria › Ativos da Empresa →</a>` : "";
   const tabImob = `<div class="cap-card"><div class="cap-card-h"><h3>Imobilizado por categoria</h3><span class="cap-card-s">bens em uso, hoje · ${linkImob}</span></div>
     ${cats.length ? `<div class="table-wrap"><table class="cap-table" id="cpxImobCatT"><thead><tr><th>Categoria</th><th class="r">Bens</th><th class="r">Aquisição</th><th class="r">Depreciação acumulada</th><th class="r">Valor contábil</th><th>Vida útil consumida</th><th class="r">Depreciação / mês</th></tr></thead><tbody>
       ${cats.map(([k, p]) => { const pct = p.base > 0 ? p.acum / p.base : 0; return `<tr><td>${esc(k)}</td><td class="r">${p.n}</td><td class="r">${esc(fmtBRL(p.valor))}</td><td class="r">${esc(fmtBRL(p.acum))}</td><td class="r b">${esc(fmtBRL(p.contabil))}</td><td>${imobBarra(pct)}</td><td class="r">${esc(fmtBRL(p.depMes))}</td></tr>`; }).join("")}
       <tr class="tot"><td>Total</td><td class="r">${I.n}</td><td class="r">${esc(fmtBRL(I.valor))}</td><td class="r">${esc(fmtBRL(I.acum))}</td><td class="r">${esc(fmtBRL(I.contabil))}</td><td>${imobBarra(I.pctDep || 0)}</td><td class="r">${esc(fmtBRL(I.depMes))}</td></tr></tbody></table></div>`
-      : `<p class="cap-muted">Nenhum bem cadastrado. ${cpxVe("imob") ? `Cadastre a frota, a garagem e os equipamentos em <a href="#/financeiro/imobilizado">Financeiro › Imobilizado</a> para ver depreciação, valor contábil e reinvestimento.` : "O cadastro fica em Financeiro › Imobilizado."}</p>`}</div>`;
+      : `<p class="cap-muted">Nenhum bem cadastrado. ${cpxVe("imob") ? `Cadastre a frota, a garagem e os equipamentos em <a href="#/diretoria/ativos-da-empresa">Diretoria › Ativos da Empresa</a> para ver depreciação, valor contábil e reinvestimento.` : "O cadastro fica em Diretoria › Ativos da Empresa."}</p>`}</div>`;
   /* CAPEX realizado no período: bens adquiridos + contas CAPEX ainda não incorporadas */
   const its = [];
   D.B.bens.forEach(({ b, c }) => { if (D.validos.includes(c.aq)) its.push({ m: c.aq, o: "Imobilizado", d: b.Title || "—", cat: c.cat.n, v: c.valor, id: b._id, tipo: "bem" }); });
@@ -28189,7 +28195,7 @@ function invForm(x, pre) {
     <div class="field"><label>Bem no Imobilizado</label><div class="static">${v.AtivoRef ? `ligado ao bem nº ${esc(v.AtivoRef)}${cpxVe("imob") ? ` · <a href="#" onclick="imobAbrirDe(${jsArg(v.AtivoRef)}); return false;">abrir</a>` : ""}` : `<span class="sup">—</span>`}</div></div>
     <div class="field full"><label>Justificativa</label><textarea id="ivJust" ${dis}>${esc(v.Justificativa || "")}</textarea></div>
   </div><div class="err-msg" id="ivErr" style="display:none;color:var(--err);margin-top:12px;font-size:13px"></div></div>
-  <div class="modal-foot">${x && invExclui() ? `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="invExcluir(${jsArg(x._id)})">Excluir</button>` : ""}${x && ed && x.Status === "Executado" && !x.AtivoRef && imobEdita() && IMOB.list ? `<button class="btn" onclick="invParaImob(${jsArg(x._id)})" title="Cria o bem em Financeiro › Imobilizado com os dados deste investimento">Cadastrar no Imobilizado</button>` : ""}<button class="btn" onclick="closeModal()">${ed ? "Cancelar" : "Fechar"}</button>${ed ? `<button class="btn primary" id="ivSave">${x ? "Salvar" : "Incluir no plano"}</button>` : ""}</div>`;
+  <div class="modal-foot">${x && invExclui() ? `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="invExcluir(${jsArg(x._id)})">Excluir</button>` : ""}${x && ed && x.Status === "Executado" && !x.AtivoRef && imobEdita() && IMOB.list ? `<button class="btn" onclick="invParaImob(${jsArg(x._id)})" title="Cria o bem em Diretoria › Ativos da Empresa com os dados deste investimento">Cadastrar no Imobilizado</button>` : ""}<button class="btn" onclick="closeModal()">${ed ? "Cancelar" : "Fechar"}</button>${ed ? `<button class="btn primary" id="ivSave">${x ? "Salvar" : "Incluir no plano"}</button>` : ""}</div>`;
 }
 function invLerForm() {
   const g = id => { const e = $(id); return e ? String(e.value || "").trim() : ""; }, n = id => { const s = g(id); return s === "" ? null : Number(s); };
@@ -28411,7 +28417,7 @@ function cpxDoc() {
   const img = (src, t, s) => `<div class="gr"><h3>${esc(t)}${s ? `<span>${esc(s)}</span>` : ""}</h3>${src ? `<img src="${src}" alt="${esc(t)}">` : '<p class="mut">—</p>'}</div>`;
   const graf = S("Evolução", `12 meses até ${compLabel(D.ref)}`) + img(g1, "Receita, OPEX, CAPEX e dívidas", "meses sem dados ficam em branco") + `<div class="grid2" style="margin-top:6px">${img(g2, "OPEX por grupo", per)}${img(g3, "CAPEX × depreciação", "12 meses")}</div>`;
   const cats = Object.entries(I.porCat).sort((a, b) => b[1].valor - a[1].valor);
-  const imob = S("Imobilizado", `bens em uso em ${compLabel(hoje)}`) + (cats.length ? `<table class="t"><thead><tr><th>Categoria</th><th class="r">Bens</th><th class="r">Aquisição</th><th class="r">Deprec. acumulada</th><th class="r">Valor contábil</th><th class="r">Consumido</th><th class="r">Deprec./mês</th></tr></thead><tbody>${cats.map(([k, p]) => `<tr><td>${esc(k)}</td><td class="r">${p.n}</td><td class="r">${br(p.valor)}</td><td class="r">${br(p.acum)}</td><td class="r">${br(p.contabil)}</td><td class="r">${cpxPct(p.base > 0 ? p.acum / p.base : null, 0)}</td><td class="r">${br(p.depMes)}</td></tr>`).join("")}<tr class="tot"><td>Total</td><td class="r">${I.n}</td><td class="r">${br(I.valor)}</td><td class="r">${br(I.acum)}</td><td class="r">${br(I.contabil)}</td><td class="r">${cpxPct(I.pctDep, 0)}</td><td class="r">${br(I.depMes)}</td></tr></tbody></table>` : `<p class="mut">Nenhum bem cadastrado em Financeiro › Imobilizado.</p>`);
+  const imob = S("Imobilizado", `bens em uso em ${compLabel(hoje)}`) + (cats.length ? `<table class="t"><thead><tr><th>Categoria</th><th class="r">Bens</th><th class="r">Aquisição</th><th class="r">Deprec. acumulada</th><th class="r">Valor contábil</th><th class="r">Consumido</th><th class="r">Deprec./mês</th></tr></thead><tbody>${cats.map(([k, p]) => `<tr><td>${esc(k)}</td><td class="r">${p.n}</td><td class="r">${br(p.valor)}</td><td class="r">${br(p.acum)}</td><td class="r">${br(p.contabil)}</td><td class="r">${cpxPct(p.base > 0 ? p.acum / p.base : null, 0)}</td><td class="r">${br(p.depMes)}</td></tr>`).join("")}<tr class="tot"><td>Total</td><td class="r">${I.n}</td><td class="r">${br(I.valor)}</td><td class="r">${br(I.acum)}</td><td class="r">${br(I.contabil)}</td><td class="r">${cpxPct(I.pctDep, 0)}</td><td class="r">${br(I.depMes)}</td></tr></tbody></table>` : `<p class="mut">Nenhum bem cadastrado em Diretoria › Ativos da Empresa.</p>`);
   const frota = S("Frota: idade e substituição", `idade-limite ${F.lim} anos (premissa)`) + (F.V.length ? `<table class="t"><thead><tr><th>Ano</th><th class="r">Veículos a substituir</th><th class="r">Custo estimado</th></tr></thead><tbody>${F.anos.map(a => `<tr><td>${a.y}${a.y === F.ano ? " (inclui os já acima do limite)" : ""}</td><td class="r">${a.n}</td><td class="r">${a.n ? (a.custo ? br(a.custo) : "a definir") : "—"}</td></tr>`).join("")}</tbody></table><div class="filt">Idade média ${esc(cpxAnos(F.idadeMedia))} · ${F.acima} veículo(s) acima do limite · o custo vem das premissas (preço de um veículo novo por tipo).</div>` : `<p class="mut">Sem veículos em Operacional › Frota › Geral.</p>`);
   const ativos = (INV.itens || []).filter(o => !["Executado", "Cancelado"].includes(o.Status)).sort((a, b) => String(a.MesPrevisto || "9999").localeCompare(String(b.MesPrevisto || "9999")));
   const plano = S("Plano de investimentos", `${ativos.length} ativo(s) · saída de caixa prevista em 12 meses ${cpxK(R.caixa12)}`) + (ativos.length ? `<table class="t"><thead><tr><th>Investimento</th><th>Status</th><th class="nw">Mês</th><th class="r">Valor</th><th>Pagamento</th><th class="r">Payback</th></tr></thead><tbody>${ativos.map(o => { const s = invSim(o); return `<tr><td><b>${esc(o.Title || "—")}</b><div class="mut">${esc([o.Categoria, o.TipoInvest, o.Area].filter(Boolean).join(" · "))}</div></td><td>${esc(o.Status || "")}</td><td class="nw">${/^\d{4}-\d{2}$/.test(o.MesPrevisto || "") ? esc(cpxMesCurto(o.MesPrevisto)) : "—"}</td><td class="r">${br(s.valor)}</td><td>${esc(s.forma)}${s.fin ? `<div class="mut">${s.n}× ${br(s.parc)}</div>` : ""}</td><td class="r">${s.payback != null ? s.payback.toFixed(0) + " meses" : "—"}</td></tr>`; }).join("")}</tbody></table>` : `<p class="mut">Nenhum investimento ativo no plano.</p>`);
@@ -28462,7 +28468,7 @@ window.cpxExcel = async () => {
     w2.views = [{ state: "frozen", xSplit: 2, ySplit: 4 }]; w2.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: meses.length + 3 } };
     }
     /* 3. imobilizado: bem a bem para quem vê o Imobilizado; por categoria para os demais */
-    if (vC && !cpxVe("imob")) { const wc = wb.addWorksheet("Imobilizado"); tit(wc, "Imobilizado por categoria", "bens em uso · o detalhe bem a bem exige acesso a Financeiro › Imobilizado"); cab(wc, ["Categoria", "Bens", "Aquisição", "Depreciação acumulada", "Valor contábil", "Depreciação / mês"]); Object.entries(D.imob.porCat).forEach(([k, p]) => { const r = wc.addRow([k, p.n, p.valor, p.acum, p.contabil, p.depMes]); [3, 4, 5, 6].forEach(i => { r.getCell(i).numFmt = moeda; }); }); [34, 8, 16, 20, 16, 16].forEach((w, i) => { wc.getColumn(i + 1).width = w; }); }
+    if (vC && !cpxVe("imob")) { const wc = wb.addWorksheet("Imobilizado"); tit(wc, "Imobilizado por categoria", "bens em uso · o detalhe bem a bem exige acesso a Diretoria › Ativos da Empresa"); cab(wc, ["Categoria", "Bens", "Aquisição", "Depreciação acumulada", "Valor contábil", "Depreciação / mês"]); Object.entries(D.imob.porCat).forEach(([k, p]) => { const r = wc.addRow([k, p.n, p.valor, p.acum, p.contabil, p.depMes]); [3, 4, 5, 6].forEach(i => { r.getCell(i).numFmt = moeda; }); }); [34, 8, 16, 20, 16, 16].forEach((w, i) => { wc.getColumn(i + 1).width = w; }); }
     if (vC && cpxVe("imob")) {
     const w3 = wb.addWorksheet("Imobilizado"); const hj = todayISO().slice(0, 7); tit(w3, "Imobilizado", `posição em ${compLabel(hj)} · depreciação linear`);
     cab(w3, ["Bem", "Categoria", "Identificação", "Aquisição", "Valor de aquisição", "Vida útil (meses)", "Residual (%)", "Depreciação mensal", "Depreciação acumulada", "Valor contábil", "Situação"]);
@@ -28481,14 +28487,14 @@ window.cpxExcel = async () => {
 };
 
 /* =====================================================================
-   v0.12.73 · Financeiro › Imobilizado — bens da empresa e depreciação linear (base do CAPEX e da depreciação da Diretoria)
+   v0.12.73 · Diretoria › Ativos da Empresa — bens da empresa e depreciação linear (base do CAPEX e da depreciação da Diretoria)
    ===================================================================== */
 function imobBarra(p) { const pct = Math.max(0, Math.min(100, Math.round((p || 0) * 100))); return `<span class="imob-bar"><i><b style="width:${pct}%;background:${pct >= 75 ? "var(--err)" : pct >= 50 ? "var(--warn)" : "var(--ok)"}"></b></i>${pct}%</span>`; }
 function pageImob() {
   const abas = PAG_DEF.imob.map(p => `<button class="tab" data-k="${p.k}" onclick="imobAba('${p.k}')">${esc(p.n.replace(/ \(.*\)$/, ""))}</button>`).join("");
   return `<div class="page" id="imobRoot">
-    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><b>Imobilizado</b></nav>
-    <div class="cap-topo"><div><h1 style="margin:0">Imobilizado</h1><p class="sup" style="margin:2px 0 0">Bens da empresa — frota, garagem, equipamentos e tecnologia — com a depreciação mês a mês. Base do CAPEX e da depreciação em Diretoria › CAPEX / OPEX.</p></div><span class="grow"></span><div id="imobActions" class="page-actions"></div></div>
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Diretoria">Diretoria</a><span>›</span><b>Ativos da Empresa</b></nav>
+    <div class="cap-topo"><div><h1 style="margin:0">Ativos da Empresa</h1><p class="sup" style="margin:2px 0 0">Bens da empresa — frota, garagem, equipamentos e tecnologia — com a depreciação mês a mês. Base do CAPEX e da depreciação em Diretoria › CAPEX / OPEX.</p></div><span class="grow"></span><div id="imobActions" class="page-actions"></div></div>
     <div class="cap-views" id="imobTabs">${abas}</div>
     <div id="imobBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
   </div>`;
@@ -28651,7 +28657,7 @@ window.imobNovo = (pre, depois) => {
   $("modal").className = "modal"; modal(imobForm(null, pre)); imobWire(null, depois);
 };
 window.imobAbrir = id => { const b = (IMOB.itens || []).find(x => String(x._id) === String(id)); if (!b) { toast("Bem não encontrado — atualize a página."); return; } $("modal").className = "modal"; modal(imobForm(b)); imobWire(b); };
-window.imobAbrirDe = id => { if (location.hash !== "#/financeiro/imobilizado" && cpxVe("imob")) { IMOB.abrirDepois = String(id); location.hash = "#/financeiro/imobilizado"; } else imobAbrir(id); };
+window.imobAbrirDe = id => { if (location.hash !== "#/diretoria/ativos-da-empresa" && cpxVe("imob")) { IMOB.abrirDepois = String(id); location.hash = "#/diretoria/ativos-da-empresa"; } else imobAbrir(id); };
 function imobWire(b, depois) {
   const cat = $("iqCat");
   if (cat) cat.addEventListener("change", () => { const c = imobCat(cat.value); $("iqCatHint").textContent = c ? c.ref : ""; $("iqVida").placeholder = c ? c.vida : ""; $("iqRes").placeholder = c ? c.res : ""; imobPrevPinta(); });
@@ -28703,13 +28709,13 @@ window.imobExcel = async () => {
 window.imobImprimir = () => {
   const hj = todayISO().slice(0, 7), L = (IMOB.itens || []).map(b => ({ b, c: imobCalc(b) })).filter(x => !x.c.baixado).sort((a, b) => a.c.cat.n.localeCompare(b.c.cat.n, "pt-BR") || String(a.c.aq).localeCompare(String(b.c.aq)));
   const t = L.reduce((s, { c }) => { s.v += c.valor; s.a += c.acum(hj); s.k += c.contabil(hj); s.d += c.dep(hj); return s; }, { v: 0, a: 0, k: 0, d: 0 }), br = v => esc(fmtBRL(v));
-  const html = printCab("Relação do <b>Imobilizado</b>", `bens em uso · posição em ${compLabel(hj)} · depreciação linear`, { doc: `IMOB-${hj.replace("-", "")}`, meta: [["Bens", String(L.length)]] })
+  const html = printCab("Ativos da Empresa · <b>Imobilizado</b>", `bens em uso · posição em ${compLabel(hj)} · depreciação linear`, { doc: `IMOB-${hj.replace("-", "")}`, meta: [["Bens", String(L.length)]] })
     + printKpis([["Valor de aquisição", cpxK(t.v), ""], ["Depreciação acumulada", cpxK(t.a), ""], ["Valor contábil", cpxK(t.k), ""], ["Depreciação do mês", cpxK(t.d), compLabel(hj)]])
     + printSec("Bens em uso", `${L.length} bem(ns)`, 1) + `<table class="t"><thead><tr><th>Bem</th><th>Categoria</th><th class="nw">Aquisição</th><th class="r">Valor</th><th class="r">Vida útil</th><th class="r">Deprec./mês</th><th class="r">Acumulada</th><th class="r">Contábil</th></tr></thead><tbody>
       ${L.map(({ b, c }) => `<tr><td><b>${esc(b.Title || "")}</b>${b.Identificacao ? `<div class="mut">${esc(b.Identificacao)}</div>` : ""}</td><td>${esc(c.cat.n)}</td><td class="nw">${fmtDate(b.DataAquisicao)}</td><td class="r">${br(c.valor)}</td><td class="r">${esc(imobVidaTxt(c.vida))}</td><td class="r">${br(c.dep(hj))}</td><td class="r">${br(c.acum(hj))}</td><td class="r">${br(c.contabil(hj))}</td></tr>`).join("")}
       <tr class="tot"><td colspan="3">Total</td><td class="r">${br(t.v)}</td><td></td><td class="r">${br(t.d)}</td><td class="r">${br(t.a)}</td><td class="r">${br(t.k)}</td></tr></tbody></table>`
     + `<p class="mut" style="font-size:9px;margin-top:6px">Depreciação linear pela vida útil gerencial de cada bem (o valor residual não deprecia). Documento gerencial — confira os critérios fiscais com a contabilidade.</p>`
-    + printAssin([["Financeiro", ""], ["Contabilidade", ""]]) + printRodape("Financeiro › Imobilizado");
+    + printAssin([["Financeiro", ""], ["Contabilidade", ""]]) + printRodape("Diretoria › Ativos da Empresa");
   printDoc({ titulo: "Relação do Imobilizado", html, paisagem: true, fonte: 10 });
 };
 
@@ -28721,7 +28727,7 @@ window.imobImprimir = () => {
        não passavam pela limpeza dele — a CAP continuava filtrada no centro de custo Operacional. A limpeza fica aqui, no embrulho de fora. */
     if (hash !== "#/operacional/almoxarifado/fornecedores") { if (FORN_STATE.ccFixo) { FORN_STATE.ccFixo = ""; FORN_STATE.filter = Object.assign({}, FORN_STATE.filter, { busca: "" }); } if (CAP_STATE.espelhoCC) almfSair(); }
     if (session.modAtual === "painel_hor" && !hash.startsWith("#/operacional/painel-de-horarios") && typeof phStop === "function") phStop();
-    const alvo = hash === "#/diretoria/capex-opex" ? "capex" : hash === "#/financeiro/imobilizado" ? "imob" : null;
+    const alvo = hash === "#/diretoria/capex-opex" ? "capex" : hash === "#/diretoria/ativos-da-empresa" ? "imob" : null;
     if (!alvo) return r7.apply(this, arguments);
     const m = MODULES.find(x => x.id === alvo); if (!canSee(m)) { location.hash = "#/inicio"; return; }
     session.modAtual = alvo; session.pagAtual = ""; document.body.classList.remove("nav-open", "lista-aberta"); document.body.classList.toggle("wide", !!m.wide);
@@ -31890,7 +31896,7 @@ function dreEstrutura(conjs) {
   R.push({ cls: "grp", rot: "(−) Despesas operacionais", f: X => X.desp, menor: true, tip: "administração, comercial, ocupação, tributos que não incidem sobre a receita e multas" });
   DRE_CONTAS.filter(c => c.bloco === "desp" && tem(L(c.k))).forEach(c => R.push({ cls: "sub", rot: c.n, f: L(c.k), k: c.k, menor: true }));
   R.push({ cls: "tot", rot: "= EBITDA (LAJIDA)", f: X => X.ebitda, tip: "resultado antes dos juros, do IRPJ/CSLL, da depreciação e da amortização" });
-  R.push({ cls: "", rot: "(−) Depreciação e amortização", f: X => X.dep, menor: true, tip: "Financeiro › Imobilizado, linear mês a mês" });
+  R.push({ cls: "", rot: "(−) Depreciação e amortização", f: X => X.dep, menor: true, tip: "Diretoria › Ativos da Empresa, linear mês a mês" });
   R.push({ cls: "tot", rot: "= Resultado operacional (EBIT)", f: X => X.ebit });
   R.push({ cls: "", rot: "(−) Despesas financeiras", f: L("dfin"), k: "dfin", menor: true, tip: "juros, IOF e tarifas bancárias (categoria Financeiras)" });
   R.push({ cls: "tot", rot: "= Resultado antes do IRPJ e da CSLL", f: X => X.lair });
@@ -31977,8 +31983,8 @@ function dreAvisos(D) {
   if (!D.validos.length) a.push(`Nenhum mês do período tem dados: a CAP passou a valer no ERP em ${compLabel(CONFIG.capInicio || "")}. Escolha outra referência.`);
   else if (semRec.length) a.push(`Receita: sem entradas no Fluxo de Caixa em ${semRec.map(cpxMesCurto).join(", ")} — o resultado desses meses fica incompleto.`);
   if (D.T.nRev) a.push(`${D.T.nRev} fatura(s) do período pedem conferência da natureza ou da linha da DRE${drePagVe("plano") ? " (aba Plano de contas da DRE)" : ""}.`);
-  if (F.imob && F.imob.st === "semlista") a.push(`A lista "Financeiro — Imobilizado" ainda não existe: sem ela, a DRE fica sem depreciação.`);
-  else if (F.imob && F.imob.st === "vazio") a.push(`Nenhum bem em Financeiro › Imobilizado: a depreciação aparece quando os bens forem cadastrados.`);
+  if (F.imob && F.imob.st === "semlista") a.push(`A lista "Diretoria — Ativos da Empresa" ainda não existe: sem ela, a DRE fica sem depreciação.`);
+  else if (F.imob && F.imob.st === "vazio") a.push(`Nenhum bem em Diretoria › Ativos da Empresa: a depreciação aparece quando os bens forem cadastrados.`);
   ["cap", "cx", "pax", "imob"].forEach(k => { const f = F[k]; if (f && ["semacesso", "erro"].includes(f.st)) a.push(`${CPX_FONTE_NOME[k]}: ${f.st === "semacesso" ? "sem acesso no SharePoint" : "não foi possível ler"}${f.msg ? ` (${f.msg.slice(0, 90)})` : ""}.`); });
   const fo = F.obr; if (fo && ["semacesso", "erro", "semlista"].includes(fo.st)) a.push(`Obrigações: ${fo.st === "semlista" ? "a lista não existe" : fo.st === "semacesso" ? "sem acesso no SharePoint" : "não foi possível ler"} — parcelas de financiamentos e parcelamentos podem cair em custos e despesas em vez de dívidas.`);
   if (DRE.mapaErro) a.push(`Plano de contas da DRE: não foi possível ler os ajustes (${DRE.mapaErro.slice(0, 90)}); vale a regra automática.`);
@@ -32204,7 +32210,7 @@ function dreMetodo() {
     ["(−) Tributos sobre a receita", "CAP › Impostos e Taxas: ICMS, ISS, PIS, COFINS e DARF (Simples/PIS/COFINS)", "DARF com IRPJ/CSLL na descrição vai para IRPJ e CSLL; DARF sem identificação pede conferência"],
     ["(−) Custo dos serviços prestados", "CAP › Combustível, Pneus, Manutenção, Peças e Acessórios, manutenção terceirizada, Pessoal/Encargos/Benefícios da operação, Seguros, IPVA e licenciamento", "pessoal vai para o custo, salvo pró-labore e contas com centro de custo administrativo"],
     ["(−) Despesas operacionais", "CAP › Serviços, Comunicação, Material de Consumo, Jurídico, Frota Auxiliar, Aluguel, Utilidades, Telecom, demais Impostos e Taxas, Tributárias (multas) e pessoal administrativo", "conta sem categoria cai em Outras despesas / a classificar"],
-    ["(−) Depreciação e amortização", "Financeiro › Imobilizado, linear mês a mês pela vida útil gerencial", "o bem entra no CAPEX no mês da aquisição e no resultado pela depreciação"],
+    ["(−) Depreciação e amortização", "Diretoria › Ativos da Empresa, linear mês a mês pela vida útil gerencial", "o bem entra no CAPEX no mês da aquisição e no resultado pela depreciação"],
     ["(−) Despesas financeiras", "CAP › Financeiras: juros, IOF e tarifas bancárias", "capital de giro é parcela de empréstimo: vai para dívidas"],
     ["(−) IRPJ e CSLL", "CAP › DARF de IRPJ/CSLL (pela descrição) ou subcategoria IRPJ/CSLL", "regime do Simples: o DAS fica nos tributos sobre a receita"],
     ["Fora da DRE", "natureza CAPEX (investimento), Financeiro de dívidas (parcelas de financiamentos, empréstimos e parcelamentos de tributos) e Fora do resultado", "aparecem em Do resultado ao caixa"]
@@ -34395,7 +34401,7 @@ window.sitesMigrar = async (opc) => {
     const capMap = mapas.cap || new Map();
     if (capMap.size && !simular) {
       try { const stOp = await site("operacional"), ls = await listasDe("operacional"), l = ls.find(x => x.displayName === LISTS.rc_rep.displayName); if (l) { const reps = await ler(stOp, l); let n = 0; for (const r of reps) { const novo = r.CapId && capMap.get(String(r.CapId)); if (novo && String(novo) !== String(r.CapId)) { await SP.update(stOp.id, l.id, r._id, { CapId: String(novo) }); n++; } } log(`Rio Card › Reparos: ${n} referência(s) à CAP atualizada(s).`, "ok"); } } catch (e) { log("Rio Card › Reparos: " + e.message, "warn"); }
-      try { const stF = await site("financeiro"), ls = await listasDe("financeiro"), l = ls.find(x => x.displayName === LISTS.fin_imob.displayName); if (l) { const bens = await ler(stF, l); let n = 0; for (const b of bens) { const ids = imobCapIds(b); if (!ids.length) continue; const novos = ids.map(id => capMap.get(String(id)) || id); if (novos.join(",") !== ids.join(",")) { await SP.update(stF.id, l.id, b._id, { CapRef: novos.join(",") }); n++; } } log(`Imobilizado: ${n} bem(ns) com contas religadas.`, "ok"); } } catch (e) { log("Imobilizado: " + e.message, "warn"); }
+      try { const stF = await site(LISTS.fin_imob.siteKey), ls = await listasDe(LISTS.fin_imob.siteKey), l = ls.find(x => x.displayName === LISTS.fin_imob.displayName); if (l) { const bens = await ler(stF, l); let n = 0; for (const b of bens) { const ids = imobCapIds(b); if (!ids.length) continue; const novos = ids.map(id => capMap.get(String(id)) || id); if (novos.join(",") !== ids.join(",")) { await SP.update(stF.id, l.id, b._id, { CapRef: novos.join(",") }); n++; } } log(`Imobilizado: ${n} bem(ns) com contas religadas.`, "ok"); } } catch (e) { log("Imobilizado: " + e.message, "warn"); }
     }
     if (simular) { log(`Simulação concluída: ${totalNovos} registro(s) seriam copiados. Nada foi gravado.`, "ok"); toast(`Simulação: ${totalNovos} registro(s) seriam copiados — veja o registro.`, 8000); return; }
     try { await erpParamGravar("sites_migracao", { em: new Date().toISOString(), por: capHistQuem(), novos: totalNovos, anexos: totalAnexos, falhas, so: soAgentes ? "agentes" : "tudo", versao: CONFIG.version }); } catch (e) {}
@@ -34951,7 +34957,7 @@ function tercCardExtras(key) {
   if (nota) nota.insertAdjacentHTML("beforebegin", html); else body.insertAdjacentHTML("beforeend", html);
 }
 { const tc = tercCadastroCard; tercCadastroCard = function (key) { const r = tc.apply(this, arguments); try { tercCardExtras(key); } catch (e) { console.warn("tercCardExtras", e); } return r; }; window.tercCadastroCard = tercCadastroCard; }
-const tercReabrir = id => { const m = $("modal"), y = m && m.querySelector(".modal-body") ? m.querySelector(".modal-body").scrollTop : 0; tercCadastroCard("id:" + id); const b = document.querySelector("#modal .modal-body"); if (b) b.scrollTop = y; };
+const tercReabrir = id => { const m = $("modal"), y = m && m.querySelector(".modal-body") ? m.querySelector(".modal-body").scrollTop : 0, yb = $("modalBack") ? $("modalBack").scrollTop : 0; modal.manterRolagem = true; tercCadastroCard("id:" + id); modal.manterRolagem = false; const b = document.querySelector("#modal .modal-body"); if (b) b.scrollTop = y; if ($("modalBack")) $("modalBack").scrollTop = yb; };
 window.tercAvalSalvar = async id => {
   if (!podeEditar("forn")) return;
   const e = $("tavErr"), btn = $("tavSalvar"), v = {}; TERC_AVAL_CRIT.forEach(([k]) => { const r = document.querySelector(`input[name=tav_${k}]:checked`); if (r) v[k] = Number(r.value); });
@@ -37799,7 +37805,7 @@ HOR_FOLHA_CSS_EXTRA += `
   .mk.sai{background:#1F7A3E;border:0;border-radius:50%}.mk.fim{background:#C0392B;border:0;border-radius:50%}`;
 { const hp0 = window.horImprimir;
   window.horImprimir = function () { const p0 = printDoc; printDoc = o => { printDoc = p0; return p0(Object.assign({}, o, { css: (o.css || "") + `.mk.sai{background:#1F7A3E;border:0;border-radius:50%}.mk.fim{background:#C0392B;border:0;border-radius:50%}` })); }; try { return hp0.apply(this, arguments); } finally { printDoc = p0; } }; }
-CONFIG.version = "v0.14.11.1";
+CONFIG.version = "v0.14.11.2";
 
 /* =====================================================================
    v0.14.10 · Pedido de 20/10 (09:02–09:04): Estatística de Passageiros passa do Operacional para o Financeiro
@@ -37984,6 +37990,65 @@ async function capzZerar() {
       <p class="desc">Esvazia Faturas (lista "Lançamentos") e Obrigações do site CAP para começar a usar a plataforma oficialmente. Antes, grava uma cópia em Excel no site CAP e no seu computador.</p>
       <div id="capzCorpo"><p class="desc">Contando…</p></div><div class="setup-log checks" id="capzLog" style="display:none;max-height:220px;overflow:auto"></div></section>`;
     setTimeout(() => { capzPintar().catch(() => {}); }, 0);
+    return h.replace(/(<div class="setup-all">)/, card + "$1");
+  }; window.pageConfig = pageConfig; }
+
+/* =====================================================================
+   v0.14.11.2 · Pedido de 20/10 (12:06): Imobilizado vira Diretoria › Ativos da Empresa, com a lista no site Diretoria
+   ("Diretoria — Ativos da Empresa"), só para o time executivo. Cartão na Configuração (administrador) copia os bens da lista
+   antiga "Financeiro — Imobilizado" (site Financeiro), sem apagar nada; rodar de novo não duplica.
+   ===================================================================== */
+const ATV_MIG = { rodando: false };
+function atvChave(x) { return [String(x.Title || "").trim().toLowerCase(), String(x.Identificacao || "").trim().toLowerCase(), x.DataAquisicao ? ymd(x.DataAquisicao) : "", Number(x.ValorAquisicao || 0).toFixed(2)].join("|"); }
+async function atvLer() {
+  const sF = await SP.site(CONFIG.sites.financeiro), lF = (await SP.lists(sF.id)).find(l => l.displayName === "Financeiro — Imobilizado") || null;
+  const sD = await SP.site(CONFIG.sites[LISTS.fin_imob.siteKey]), lD = (await SP.lists(sD.id)).find(l => l.displayName === LISTS.fin_imob.displayName) || null;
+  const ler = async (s, l) => l ? (await SP.items(s.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+  const velhos = await ler(sF, lF), novos = await ler(sD, lD), ja = new Set(novos.map(atvChave));
+  return { sF, lF, sD, lD, velhos, novos, falta: velhos.filter(x => !ja.has(atvChave(x))) };
+}
+async function atvPintar() {
+  const c = $("atvCorpo"); if (!c) return;
+  try {
+    const R = await atvLer(); if (!$("atvCorpo")) return;
+    if (!R.lF) { $("atvCard").remove(); return; }   /* lista antiga não existe: nada a copiar */
+    c.innerHTML = !R.lD ? `<p class="desc">Primeiro rode <b>Executar tudo</b> para criar a lista "${esc(LISTS.fin_imob.displayName)}" no site Diretoria.</p>`
+      : `<p class="desc">Lista antiga (site Financeiro): <b>${R.velhos.length}</b> bem(ns) · lista nova (site Diretoria): <b>${R.novos.length}</b> · a copiar: <b>${R.falta.length}</b>.</p>
+         ${R.falta.length ? `<button class="btn primary" id="atvGo">Copiar ${R.falta.length} bem(ns)</button>` : `<p class="desc ok">Tudo copiado. Confira em Diretoria › Ativos da Empresa e, depois, exclua a lista "Financeiro — Imobilizado" no site Financeiro (ou tire o acesso do Financeiro a ela).</p>`}`;
+    if ($("atvGo")) $("atvGo").onclick = () => atvCopiar().catch(e => toast("Cópia interrompida: " + e.message, 8000));
+  } catch (e) { c.innerHTML = `<p class="desc err">Não foi possível ler as listas: ${esc(e.message)}</p>`; }
+}
+async function atvCopiar() {
+  if (ATV_MIG.rodando || !session.n1 || vcAtivo()) return;
+  ATV_MIG.rodando = true; const b = $("atvGo"); if (b) { b.disabled = true; b.textContent = "Copiando…"; }
+  try {
+    const R = await atvLer(); if (!R.lD) throw new Error("rode Executar tudo antes");
+    const cols = new Set(["Title", ...LISTS.fin_imob.columns.map(c => c.name)]); let ok = 0, falha = 0;
+    const reg = await erpParamLer("ativos_copia", true), mapa = Object.assign({}, (reg && reg.valor && reg.valor.mapa) || {});   /* id antigo → id novo */
+    const porChave = new Map(R.novos.map(x => [atvChave(x), String(x._id)]));
+    R.velhos.forEach(x => { const n = porChave.get(atvChave(x)); if (n && !mapa[x._id]) mapa[x._id] = n; });
+    for (const x of R.falta) {
+      const f = {}; Object.keys(x).forEach(k => { if (cols.has(k) && x[k] != null && x[k] !== "") f[k] = x[k]; });
+      try { const c = await SP.create(R.sD.id, R.lD.id, f); mapa[x._id] = String(c.id); ok++; } catch (e) { falha++; console.warn("ativos: cópia", x._id, e); }
+      if (b) b.textContent = `Copiando… ${ok + falha}/${R.falta.length}`;
+    }
+    /* revisão M1: o Plano de investimentos aponta para o bem pelo id (AtivoRef) — passa a apontar para o bem copiado; cada item só é refeito uma vez */
+    let religados = 0; const feitos = new Set((reg && reg.valor && reg.valor.inv) || []);
+    try { await invCarregar(true);
+      for (const it of (INV.itens || [])) { const a = String(it.AtivoRef || ""); if (!a || feitos.has(String(it._id)) || !mapa[a]) continue;
+        try { await SP.update(INV.site.id, INV.list.id, it._id, { AtivoRef: mapa[a] }); feitos.add(String(it._id)); religados++; } catch (e) { console.warn("ativos: plano", it._id, e); } }
+    } catch (e) { console.warn("ativos: plano de investimentos não lido", e); }
+    try { await erpParamGravar("ativos_copia", { em: new Date().toISOString(), por: capHistQuem(), mapa, inv: [...feitos] }); } catch (e) { console.warn("ativos_copia", e); }
+    toast(`${ok} bem(ns) copiado(s) para "${LISTS.fin_imob.displayName}"${religados ? ` · ${religados} item(ns) do Plano de investimentos religado(s)` : ""}${falha ? ` · ${falha} falha(s)` : ""}`, 8000);
+    try { IMOB.list = undefined; IMOB.itens = []; CPX.carregado = false; } catch (e) {}
+  } finally { ATV_MIG.rodando = false; atvPintar(); }
+}
+{ const pc = pageConfig; pageConfig = function () {
+    const h = pc.apply(this, arguments); if (!session.n1) return h;
+    const card = `<section class="setup-card" id="atvCard"><h2>Ativos da Empresa — copiar do Financeiro</h2>
+      <p class="desc">O Imobilizado virou Diretoria › Ativos da Empresa, com a lista no site Diretoria (só o time executivo). Copia os bens da lista antiga "Financeiro — Imobilizado" para a nova, sem apagar nada; rodar de novo não duplica.</p>
+      <div id="atvCorpo"><p class="desc">Lendo as listas…</p></div></section>`;
+    setTimeout(() => { atvPintar().catch(() => {}); }, 0);
     return h.replace(/(<div class="setup-all">)/, card + "$1");
   }; window.pageConfig = pageConfig; }
 

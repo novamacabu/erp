@@ -786,6 +786,7 @@
 
 #psq-root .det-grid .badge{font-size:10.5px}
 #psq-root .placa-sac svg{width:100%;height:100%;display:block}
+#psq-root .placa-sac.psq-logo-sm{display:flex;align-items:center;justify-content:center}#psq-root .placa-sac.psq-logo-sm img{width:100%;height:100%;display:block;border-radius:50%}
 /* ===== Controle de Diesel (migrado, CSS plano, escopo #dsl-root) ===== */
 
 #dsl-root{display:block}
@@ -3777,7 +3778,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.11.4",
+  version: "v0.14.12",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -23164,7 +23165,7 @@ async function capRecParamGravar(valor) {
 }
 window.capRecLigar = async ligar => {
   if (!session.n1 || (typeof vcAtivo === "function" && vcAtivo())) { toast("Só um administrador liga ou desliga as contas recorrentes."); return; }
-  if (ligar && !(await erpConfirmar({ titulo: "Ativar contas recorrentes", texto: "A partir de agora, todo mês novo o ERP gera a conta de cada fornecedor ativo classificado como Fixo ou Variável (com dia de vencimento no cadastro), quando um administrador abrir a CAP. Ativar?", sim: "Ativar" }))) return;
+  if (ligar && !(await erpConfirmar({ titulo: "Ativar contas recorrentes", texto: "A partir de agora, todo mês novo o ERP gera a conta de cada fornecedor ativo classificado como Fixo ou Variável (com dia de vencimento no cadastro), quando um administrador abrir a CAP (quem edita a CAP gera com confirmação). Ativar?", sim: "Ativar" }))) return;
   try {
     const atual = (await capRecParam(true)) || {};
     await capRecParamGravar(Object.assign({}, atual, { ativo: !!ligar, por: (session.me && session.me.displayName) || "", em: new Date().toISOString() }));
@@ -23174,6 +23175,7 @@ window.capRecLigar = async ligar => {
   } catch (e) { toast("Erro: " + e.message, 6000); }
 };
 let CAP_REC_RODANDO = false;
+let CAP_REC_DEL = null;   /* v0.14.12: cópias duplicadas que quem edita a CAP pode apagar (só as que acabou de criar) */
 const capRecFeitos = (P, comp) => ((P && P.feitos && P.feitos[comp]) || []).map(String);
 function capRecTemConta(items, f, comp) {
   /* conta do fornecedor com competência OU vencimento no mês (luz de setembro que vence em outubro conta como a de outubro) */
@@ -23203,51 +23205,77 @@ function capRecCampos(f, comp) {
   return fields;
 }
 const capRecLer = async () => (await SP.items(CAP_STATE.site.id, CAP_STATE.list.id)).map(it => capCriadorDe(Object.assign({ _id: it.id }, it.fields || {}), it));   /* v0.14.8 (revisão B3): mantém quem criou */
-async function capRecorrentesGerar() {
-  if (CAP_REC_RODANDO || !session.n1 || (typeof vcAtivo === "function" && vcAtivo()) || !CAP_STATE.list || !FORN_STATE.items || !FORN_STATE.items.length) return;
+async function capRecorrentesGerar(opts) {
+  /* v0.14.12 (item 12): o administrador gera sozinho, como antes; quem edita a CAP vê as contas a gerar e gera com confirmação
+     ({manual:true}). A anotação dos meses resolvidos vai para "CAP — Parâmetros" (site CAP) quando a lista existe; sem ela,
+     só o administrador gera (ERP — Parâmetros). Do dia escolhido em diante (diaProximo), o mês seguinte também é gerado. */
+  opts = opts || {};
+  const adm = !!session.n1, ed = !adm && podeEditar("cap");
+  if (CAP_REC_RODANDO || !(adm || ed) || (typeof vcAtivo === "function" && vcAtivo()) || !CAP_STATE.list || !FORN_STATE.items || !FORN_STATE.items.length) return;
   CAP_REC_RODANDO = true;
-  const comp = capCompOf(new Date()), mostra = () => { if ($("capBody")) paintCAP(); };
+  const hoje = new Date(), comp = capCompOf(hoje), mostra = () => { if ($("capBody")) paintCAP(); };
+  const feitosDe = (P, M, c) => [...new Set(capRecFeitos(P, c).concat(capRecFeitos(M && M.val, c)))];
   try {
-    const P0 = await capRecParam(), feitos0 = capRecFeitos(P0, comp);
-    const pre = capRecCandidatos(comp, CAP_STATE.items, feitos0);
-    if (!pre.ok.length && P0 && P0.ativo) {   /* nada a gerar: anota quem já tem conta no mês (lançada à mão ou importada), para não ser gerada depois de excluída ou mudada de mês */
-      const jaTem = capRecElegiveis().filter(f => !feitos0.includes(String(f._id)) && capRecTemConta(CAP_STATE.items, f, comp)).map(f => String(f._id));
-      if (jaTem.length) { try { const P = (await capRecParam(true)) || P0; const fe = Object.assign({}, P.feitos || {}); fe[comp] = [...new Set(capRecFeitos(P, comp).concat(jaTem))]; Object.keys(fe).sort().slice(0, -6).forEach(k => delete fe[k]); await capRecParamGravar(Object.assign({}, P, { feitos: fe })); } catch (e) { console.warn("contas recorrentes: anotar o mês", e); } }
+    const P0 = await capRecParam(), M0 = await capRecMemo();
+    if (M0.erro) { if (adm) { CAP_STATE.recInfo = { comp, criadas: [], semDia: [], erros: [`não foi possível ler "${LISTS.cap_param.displayName}" (${M0.erro}); nada foi gerado`] }; mostra(); } return; }   /* revisão M1: sem os meses anotados, não gera (a excluída voltaria) */
+    const comps0 = capRecComps(P0, hoje);
+    const pre = comps0.map(c => Object.assign({ c }, capRecCandidatos(c, CAP_STATE.items, feitosDe(P0, M0, c))));
+    const okN = pre.reduce((n, x) => n + x.ok.length, 0), semDia0 = pre[0].semDia;
+    const memoOk = !!(M0 && M0.lista) || adm;
+    if (!okN && P0 && P0.ativo && memoOk) {   /* nada a gerar: anota quem já tem conta no mês (lançada à mão ou importada), para não ser gerada depois de excluída ou mudada de mês */
+      const marcas = {};
+      comps0.forEach(c => { const fe = feitosDe(P0, M0, c), ids = capRecElegiveis().filter(f => !fe.includes(String(f._id)) && capRecTemConta(CAP_STATE.items, f, c)).map(f => String(f._id)); if (ids.length) marcas[c] = ids; });
+      if (Object.keys(marcas).length) { try { await capRecMemoGravar(marcas); } catch (e) { console.warn("contas recorrentes: anotar o mês", e); } }
     }
-    if (!pre.ok.length && !pre.semDia.length) return;
-    if (!P0 || !P0.ativo) {   /* desligada: só a prévia */
-      const ant = CAP_STATE.recInfo, pv = pre.ok.map(f => f.Title), sd = pre.semDia.map(f => f.Title);
+    if (!okN && !semDia0.length) { if (CAP_STATE.recInfo && CAP_STATE.recInfo.confirmar) { CAP_STATE.recInfo = null; mostra(); } return; }
+    if (!P0 || !P0.ativo) {   /* desligada: só a prévia, para o administrador */
+      if (!adm) return;
+      const ant = CAP_STATE.recInfo, pv = pre[0].ok.map(f => f.Title), sd = semDia0.map(f => f.Title);
       if (!(ant && ant.desligada && ant.comp === comp && ant.previa.join("|") === pv.join("|") && ant.semDia.join("|") === sd.join("|"))) { CAP_STATE.recInfo = { comp, desligada: true, previa: pv, criadas: [], semDia: sd, erros: [] }; mostra(); }
       return;
     }
-    if (!pre.ok.length) {   /* nada a gravar: só avisa quem ficou sem dia de vencimento */
-      const sd = pre.semDia.map(f => f.Title), ant = CAP_STATE.recInfo;
-      if (!(ant && ant.comp === comp && ant.semDia.join("|") === sd.join("|"))) { CAP_STATE.recInfo = { comp, criadas: [], semDia: sd, erros: [] }; mostra(); }
+    if (!okN) {   /* nada a gravar: só avisa quem ficou sem dia de vencimento */
+      const sd = semDia0.map(f => f.Title), ant = CAP_STATE.recInfo;
+      if (!(ant && !ant.confirmar && ant.comp === comp && ant.semDia.join("|") === sd.join("|"))) { CAP_STATE.recInfo = { comp, criadas: [], semDia: sd, erros: [] }; mostra(); }
       return;
     }
+    if (!adm && !opts.manual) {   /* quem edita: mostra o que falta gerar e espera a confirmação */
+      const pend = pre.filter(x => x.ok.length).map(x => ({ comp: x.c, nomes: x.ok.map(f => f.Title) }));
+      const sig = JSON.stringify(pend) + "|" + semDia0.map(f => f.Title).join("|") + "|" + !!(M0 && M0.lista), ant = CAP_STATE.recInfo;
+      if (!(ant && ant.confirmar && ant.sig === sig)) { CAP_STATE.recInfo = { comp, confirmar: true, sig, pend, semMemo: !(M0 && M0.lista), criadas: [], semDia: semDia0.map(f => f.Title), erros: [] }; mostra(); }
+      return;
+    }
+    if (!adm && !(M0 && M0.lista)) { toast(`Para quem edita gerar as contas recorrentes, a lista "${LISTS.cap_param.displayName}" precisa existir: peça a um administrador para rodar Sistema › Configuração › Executar tudo.`, 8000); return; }
     try { await loadObr(); } catch (e) { CAP_STATE.recInfo = { comp, criadas: [], semDia: [], erros: [`as Obrigações não carregaram (${e.message}); nada foi gerado`] }; mostra(); return; }
     const P = await capRecParam(true); if (!P || !P.ativo) return;   /* relê: outro administrador pode ter gerado ou desligado */
-    const feitos = capRecFeitos(P, comp), atuais = await capRecLer();
-    const C = capRecCandidatos(comp, atuais, feitos), criadas = [], erros = [], okIds = [];
-    for (const f of C.ok) {
-      try { await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, capRecCampos(f, comp)); criadas.push(f.Title); okIds.push(String(f._id)); }
-      catch (e) { erros.push(`${f.Title}: ${e.message}`); }
+    const M = await capRecMemo(true); if (M.erro) { CAP_STATE.recInfo = { comp, criadas: [], semDia: [], erros: [`não foi possível ler "${LISTS.cap_param.displayName}" (${M.erro}); nada foi gerado`] }; mostra(); return; }
+    const atuais = await capRecLer();
+    const Cs = capRecComps(P, hoje).map(c => Object.assign({ c }, capRecCandidatos(c, atuais, feitosDe(P, M, c))));
+    const criadas = [], erros = [], okIds = {}, novos = new Set();
+    for (const C of Cs) {
+      okIds[C.c] = [];
+      for (const f of C.ok) {
+        try { const r = await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, capRecCampos(f, C.c)); if (r && r.id != null) novos.add(String(r.id)); criadas.push(C.c === comp ? f.Title : `${f.Title} (${capMesLabelRec(C.c)})`); okIds[C.c].push(String(f._id)); }
+        catch (e) { erros.push(`${f.Title}: ${e.message}`); }
+      }
     }
-    /* anota o mês como resolvido para os elegíveis com conta (gerada agora ou já existente); quem falhou ou não tem dia fica de fora */
-    const pend = new Set(C.ok.map(f => String(f._id)).filter(id => !okIds.includes(id)).concat(C.semDia.map(f => String(f._id))));
-    const marcar = capRecElegiveis().map(f => String(f._id)).filter(id => !pend.has(id));
-    const fe = Object.assign({}, P.feitos || {}); fe[comp] = [...new Set(feitos.concat(marcar))];
-    Object.keys(fe).sort().slice(0, -6).forEach(k => delete fe[k]);   /* guarda os 6 últimos meses */
-    try { await capRecParamGravar(Object.assign({}, P, { feitos: fe })); } catch (e) { erros.push(`não foi possível anotar o mês nos parâmetros (${e.message})`); }
+    /* anota cada mês como resolvido para os elegíveis com conta (gerada agora ou já existente); quem falhou ou não tem dia fica de fora */
+    const marcas = {};
+    Cs.forEach(C => { const pend = new Set(C.ok.map(f => String(f._id)).filter(id => !okIds[C.c].includes(id)).concat(C.semDia.map(f => String(f._id)))); marcas[C.c] = capRecElegiveis().map(f => String(f._id)).filter(id => !pend.has(id)); });
+    try { await capRecMemoGravar(marcas, P); } catch (e) { erros.push(`não foi possível anotar o mês (${e.message})`); }
     let items = criadas.length ? await capRecLer() : atuais;
-    /* dois administradores ao mesmo tempo: fica a conta mais antiga de cada fornecedor no mês */
-    const grupos = {}; items.filter(it => itemComp(it) === comp && String(it.Observacoes || "").startsWith(CAP_REC_MARCA)).forEach(it => { const k = normName(it.Fornecedor); (grupos[k] = grupos[k] || []).push(it); });
-    const sobras = Object.values(grupos).filter(g => g.length > 1).flatMap(g => g.sort((a, b) => Number(a._id) - Number(b._id)).slice(1));
-    for (const it of sobras) { try { await graph(`/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/items/${it._id}`, { method: "DELETE" }); } catch (e) { erros.push(`cópia ${it.Title}: ${e.message}`); } }
-    if (sobras.length) items = await capRecLer();
-    CAP_STATE.recInfo = { comp, criadas, semDia: C.semDia.map(f => f.Title), erros };
-    if (criadas.length) { CAP_STATE.items = items; toast(`${criadas.length} conta(s) recorrente(s) de ${capMesLabelRec(comp)} gerada(s) automaticamente.`, 6000); }
-    if (criadas.length || erros.length || C.semDia.length) mostra();
+    /* duas pessoas ao mesmo tempo: fica a conta mais antiga de cada fornecedor no mês (quem edita só apaga a cópia que acabou de criar) */
+    const grupos = {}; items.filter(it => Cs.some(C => itemComp(it) === C.c) && String(it.Observacoes || "").startsWith(CAP_REC_MARCA)).forEach(it => { const k = itemComp(it) + "|" + normName(it.Fornecedor); (grupos[k] = grupos[k] || []).push(it); });
+    const sobras = Object.values(grupos).filter(g => g.length > 1).flatMap(g => g.sort((a, b) => Number(a._id) - Number(b._id)).slice(1)).filter(it => adm || podeExcluir("cap") || novos.has(String(it._id)));
+    if (sobras.length) {
+      CAP_REC_DEL = new Set(sobras.map(it => String(it._id)));
+      try { for (const it of sobras) { try { await graph(`/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/items/${it._id}`, { method: "DELETE" }); } catch (e) { erros.push(`cópia ${it.Title}: ${e.message}`); } } }
+      finally { CAP_REC_DEL = null; }
+      items = await capRecLer();
+    }
+    CAP_STATE.recInfo = { comp, criadas, semDia: (Cs[0] ? Cs[0].semDia : []).map(f => f.Title), erros };
+    if (criadas.length) { CAP_STATE.items = items; try { if (typeof BUSCA !== "undefined") BUSCA.cache = {}; } catch (e) {} toast(`${criadas.length} conta(s) recorrente(s) gerada(s)${adm ? " automaticamente" : ""}.`, 6000); }
+    mostra();
   } catch (e) { console.warn("contas recorrentes", e); }
   finally { CAP_REC_RODANDO = false; }
 }
@@ -23259,6 +23287,15 @@ function capRecAviso() {
     if (!session.n1 || (!R.previa.length && !R.semDia.length)) return;
     body.insertAdjacentHTML("afterbegin", `<div class="import-help cap-rec-aviso" style="margin-bottom:14px"><b>Contas recorrentes (desligadas).</b> Ao ativar, o ERP gera todo mês a conta dos fornecedores ativos classificados como Fixo ou Variável. Em ${esc(capMesLabelRec(R.comp))} seriam ${R.previa.length}${R.previa.length ? ` (${lista(R.previa)})` : ""}.${R.semDia.length ? ` <span class="venc-txt">Sem dia de vencimento no cadastro (ficariam de fora): ${lista(R.semDia)}.</span>` : ""} Confira a classificação em <a href="#" onclick="capSetView('forn'); return false">Fornecedores</a> antes de ativar.
       <button class="btn primary" style="margin-left:8px" onclick="capRecLigar(true)">Ativar</button> <button class="btn ghost" onclick="CAP_STATE.recInfo.fechado=true; this.parentElement.remove()">Agora não</button></div>`);
+    return;
+  }
+  if (R.confirmar) {   /* v0.14.12 (item 12): quem edita a CAP gera com confirmação */
+    const n = R.pend.reduce((s, p) => s + p.nomes.length, 0);
+    body.insertAdjacentHTML("afterbegin", `<div class="import-help cap-rec-aviso cap-rec-conf" style="margin-bottom:14px"><b>Contas recorrentes a gerar: ${n}.</b>
+      ${R.pend.map(p => ` ${esc(capMesLabelRec(p.comp))}: ${p.nomes.length} (${lista(p.nomes)}).`).join("")} Fixas entram como Pendente; variáveis como "Aguardando NF", com o valor padrão como estimativa.
+      ${R.semDia.length ? ` <span class="venc-txt">Sem dia de vencimento no cadastro (não entram): ${lista(R.semDia)}.</span>` : ""}
+      ${R.semMemo ? ` <span class="venc-txt">Para gerar daqui, um administrador precisa rodar Sistema › Configuração › Executar tudo (lista nova "${esc(LISTS.cap_param.displayName)}"). Até lá, elas são geradas quando um administrador abre a CAP.</span> <button class="btn ghost" style="margin-left:8px" onclick="CAP_STATE.recInfo.fechado=true; this.parentElement.remove()">Ok</button>`
+        : ` <button class="btn primary" style="margin-left:8px" id="capRecGerarBtn" onclick="capRecGerarAgora()">Gerar agora…</button> <button class="btn ghost" onclick="CAP_STATE.recInfo.fechado=true; this.parentElement.remove()">Agora não</button>`}</div>`);
     return;
   }
   if (!R.criadas.length && !R.erros.length && !R.semDia.length) return;
@@ -26180,7 +26217,7 @@ if (typeof SETUP_TEXT !== "undefined") SETUP_TEXT.psq_resp = `Cria no site Diret
 const PSQ_HTML = `<div class="wrap" id="psq-app">
   <header class="topo">
     <div class="marca">
-      <div class="placa-sac" aria-hidden="true" style="background:#2F7D4F"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 7l4.9 10 11 1.6-8 7.8 1.9 11L24 32.2 14.2 37.4l1.9-11-8-7.8 11-1.6z" fill="#fff"/><circle cx="24" cy="24" r="3.2" fill="#F2B705"/></svg></div>
+      <div class="placa-sac psq-logo-sm" aria-hidden="true" style="background:#fff"><img src="data:image/png;base64,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" alt="" width="40" height="40"></div>
       <div class="titulo"><h1>Pesquisa de Satisfação</h1><p>Transportadora Nova Macabu · passageiros · SurveyMonkey</p></div>
     </div>
     <div class="topo-acoes">
@@ -33311,7 +33348,7 @@ async function tfMudar(id, campos) {
     const sid = TF.site.id, lid = TF.list.id;   /* revisão: a repetição grava na mesma lista */
     if (t.rid) await tfGravar(x => SP.update(sid, lid, t.rid, x), f);
     else if (t.auto) { /* 1º acompanhamento de uma automática: grava com a origem */
-      await tfGravar(x => SP.create(sid, lid, x), Object.assign({ Title: String(t.Title).slice(0, 255), Departamento: t.Departamento, Subcategoria: t.Subcategoria, Status: t.Status, Prioridade: t.Prioridade, Inicio: t.Inicio || null, Prazo: t.Prazo || null, Veiculo: t.Veiculo || null, Origem: t.id }, f));
+      await tfGravar(x => SP.create(sid, lid, x), Object.assign({ Title: String(t.Title).slice(0, 255), Departamento: t.Departamento, Subcategoria: t.Subcategoria, Status: t.Status, Prioridade: t.Prioridade, Inicio: t.Inicio || null, Prazo: t.Prazo || null, Origem: t.id }, TF_CTX[TF.ctx].veic ? { Veiculo: t.Veiculo || null } : {}, f));   /* v0.14.12: a Central do Financeiro não tem Veículo */
     }
     await tfCarregar(); tfPintar(); return true;
   } catch (e) { toast("Não foi possível gravar: " + e.message, 6000); return false; }
@@ -33343,7 +33380,7 @@ window.tfForm = t => {
   let subs = []; try { subs = JSON.parse(v.Subtarefas || "[]"); } catch (e) {} if (!Array.isArray(subs)) subs = [];
   TF.subs = subs.filter(x => x && typeof x.t === "string").map(x => ({ t: x.t.slice(0, 200), f: !!x.f }));
   const todas = tfTodas(), subsSug = [...new Set(todas.map(x => x.Subcategoria).filter(Boolean))], resp = [...new Set(todas.map(x => x.Responsavel).filter(Boolean).concat((session.me && session.me.displayName) || []))];
-  const rota = t && t.rota ? (t.rota.includes("|") ? `FROTA.aba='${t.rota.split("|")[1]}'; closeModal(); location.hash='${t.rota.split("|")[0]}'` : `closeModal(); location.hash='${t.rota}'`) : "";
+  const rota = t && t.rota ? (/^cap:/.test(t.rota) ? `closeModal(); capTfAbrirFatura(${jsArg(t.rota.slice(4))})` : t.rota.includes("|") ? `FROTA.aba='${t.rota.split("|")[1]}'; closeModal(); location.hash='${t.rota.split("|")[0]}'` : `closeModal(); location.hash='${t.rota}'`) : "";
   openModal(novo ? "Nova tarefa" : auto ? "Tarefa automática" : "Tarefa", `${auto ? `<div class="tf-auto-box">⚡ Criada pelo ERP${t.det ? ` · ${esc(t.det)}` : ""}${t.resolvida ? " · <b>já resolvida na origem</b>" : ". Some sozinha quando a origem for resolvida."}${rota ? ` <button class="btn sm" onclick="${esc(rota)}">Abrir a origem</button>` : ""}</div>` : ""}
     <div class="form-grid">
       <div class="field full"><label>Tarefa<span class="req">*</span></label><input id="tfT" maxlength="255" value="${esc(v.Title || "")}" ${lk}></div>
@@ -38394,6 +38431,171 @@ let TERC_NOTAS_GRAVAR = null;
 .modal-back .modal > .modal-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
 @media (max-width: 760px){.modal-back .modal{max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px)}}`; document.head.appendChild(s); })();
 CONFIG.version = "v0.14.11.4";
+
+/* =====================================================================
+   v0.14.12 · CAP R2 (fila "v0.13.6", leitura do Fable de 13/10):
+   12 · contas recorrentes geradas também por quem edita a CAP (com confirmação) e o mês seguinte a partir de um dia escolhido;
+   11 · faturas a vencer como tarefas automáticas na Central de Tarefas do Financeiro (uma por fatura).
+   - Lista nova "CAP — Parâmetros" (site CAP): guarda os meses já resolvidos das recorrentes, porque quem edita a CAP não grava em
+     "ERP — Parâmetros" (site TI, só administradores). A chave liga/desliga e o dia do mês seguinte continuam lá (administrador).
+   - Central de Tarefas do Financeiro: coluna nova "Origem" (o acompanhamento das automáticas, como na Central do Operacional).
+   ===================================================================== */
+LISTS.cap_param = {
+  key: "cap_param", displayName: "CAP — Parâmetros", siteKey: "cap", titleAs: "Chave",
+  description: "CAP NMB · parâmetros da CAP gravados pelo próprio ERP por quem edita a CAP (ex.: meses já resolvidos das contas recorrentes). Não edite à mão.",
+  columns: [
+    { name: "Valor",       displayName: "Valor (JSON)", text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "AlteradoPor", displayName: "Alterado por", text: { allowMultipleLines: false, maxLength: 100 } }
+  ]
+};
+SETUP_ORDER.push("cap_param");
+SETUP_TEXT.cap_param = `Cria no site CAP a lista "CAP — Parâmetros" (v0.14.12): o ERP anota ali os meses já resolvidos das contas recorrentes, para que quem edita a CAP também possa gerá-las (com confirmação). Mesmo acesso da CAP.`;
+const CAP_PARAM = { site: null, list: undefined, id: null, val: null, em: 0 };
+async function capParamLista(force) {
+  if (!force && CAP_PARAM.list !== undefined) return CAP_PARAM;
+  if (!CAP_PARAM.site) CAP_PARAM.site = (CAP_STATE.site && (typeof DIV === "undefined" || !DIV.on)) ? CAP_STATE.site : await SP.site(CONFIG.sites[LISTS.cap_param.siteKey]);
+  const ls = await SP.lists(CAP_PARAM.site.id);
+  CAP_PARAM.list = ls.find(l => l.displayName === LISTS.cap_param.displayName) || null;
+  return CAP_PARAM;
+}
+/* memória das recorrentes no site CAP: {lista, val:{feitos:{AAAA-MM:[ids]}}} */
+async function capRecMemo(force) {
+  try {
+    await capParamLista(force);
+    if (!CAP_PARAM.list) return { lista: false, val: null };
+    if (force || !CAP_PARAM.em || Date.now() - CAP_PARAM.em > 120000) {
+      const it = (await SP.items(CAP_PARAM.site.id, CAP_PARAM.list.id)).find(x => (x.fields || {}).Title === "cap_recorrentes");
+      CAP_PARAM.id = it ? String(it.id) : null;
+      CAP_PARAM.ruim = false; try { CAP_PARAM.val = it ? JSON.parse(it.fields.Valor || "null") : null; } catch (e) { CAP_PARAM.val = null; CAP_PARAM.ruim = true; }
+      CAP_PARAM.em = Date.now();
+    }
+    return { lista: true, val: CAP_PARAM.val };
+  } catch (e) { return { lista: false, val: null, erro: String((e && e.message) || e) }; }
+}
+/* anota os fornecedores resolvidos em cada mês ({AAAA-MM: [ids]}); relê antes de gravar e guarda os 6 meses mais novos */
+async function capRecMemoGravar(marcas) {
+  const junta = val => { const fe = Object.assign({}, (val && val.feitos) || {}); Object.entries(marcas).forEach(([c, ids]) => { fe[c] = [...new Set(capRecFeitos(val, c).concat((ids || []).map(String)))]; }); Object.keys(fe).sort().slice(0, -6).forEach(k => delete fe[k]); return Object.assign({}, val || {}, { feitos: fe }); };
+  const M = await capRecMemo(true);
+  if (M.erro) throw new Error(M.erro);
+  if (M.lista && CAP_PARAM.ruim) throw new Error(`o valor gravado em "${LISTS.cap_param.displayName}" está ilegível; nada foi sobrescrito`);   /* revisão B1 */
+  if (M.lista) {
+    const v = junta(M.val), f = { Valor: JSON.stringify(v), AlteradoPor: ((session.me && session.me.displayName) || "").slice(0, 100) };
+    if (CAP_PARAM.id) await SP.update(CAP_PARAM.site.id, CAP_PARAM.list.id, CAP_PARAM.id, f);
+    else { const it = await SP.create(CAP_PARAM.site.id, CAP_PARAM.list.id, Object.assign({ Title: "cap_recorrentes" }, f)); CAP_PARAM.id = String(it.id); }
+    CAP_PARAM.val = v; CAP_PARAM.em = Date.now(); return;
+  }
+  if (!session.n1) throw new Error(`a lista "${LISTS.cap_param.displayName}" ainda não existe`);
+  await capRecParamGravar(junta((await capRecParam(true)) || {}));   /* sem a lista nova: como antes, nos parâmetros do ERP (só administrador) */
+}
+/* meses a gerar: o corrente e, do dia escolhido em diante, também o seguinte */
+function capRecComps(P, hoje) {
+  const c0 = capCompOf(hoje), d = Math.round(Number(P && P.diaProximo));
+  if (!(P && P.ativo && d >= 1 && d <= 28 && hoje.getDate() >= d)) return [c0];
+  return [c0, capCompOf(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1))];
+}
+window.capRecGerarAgora = async () => {
+  const R = CAP_STATE.recInfo; if (!R || !R.confirmar || R.semMemo) return;
+  if (!podeEditar("cap") || vcAtivo()) { toast("Seu acesso à CAP é só de leitura."); return; }
+  const n = R.pend.reduce((s, p) => s + p.nomes.length, 0);
+  const html = `<p>O ERP vai lançar <b>${n} conta(s) recorrente(s)</b> na CAP:</p><ul>${R.pend.map(p => `<li><b>${esc(capMesLabelRec(p.comp))}:</b> ${p.nomes.map(esc).join(", ")}</li>`).join("")}</ul><p class="sup">Fixas entram como Pendente; variáveis como "Aguardando NF", com o valor padrão (ou o da última fatura) como estimativa. Confira com a NF depois.</p>`;
+  if (!(await erpConfirmar({ titulo: "Gerar contas recorrentes", html, sim: `Gerar ${n}` }))) return;
+  if (CAP_REC_RODANDO) { toast("A CAP ainda está conferindo as recorrentes; tente de novo em alguns segundos."); return; }   /* revisão B2 */
+  const b = $("capRecGerarBtn"); if (b) { b.disabled = true; b.textContent = "Gerando…"; }
+  CAP_STATE.recInfo = null;
+  await capRecorrentesGerar({ manual: true });
+  if (!CAP_STATE.recInfo) { toast("Nada foi gerado: outra pessoa já gerou ou a geração automática foi desligada.", 6000); if ($("capBody")) paintCAP(); }
+};
+/* Painel › Recorrentes: situação da geração e, para o administrador, ligar/desligar e o dia do mês seguinte */
+function capRecCfgHtml() {
+  const P = CAP_STATE.recParam; if (P === undefined) return "";
+  const on = !!(P && P.ativo), d = P && Number(P.diaProximo) >= 1 ? Math.round(Number(P.diaProximo)) : "";
+  if (!session.n1 || vcAtivo()) return `<div class="cap-rec-cfg sup">Geração automática das contas recorrentes: <b>${on ? "ligada" : "desligada"}</b>${on && d ? ` · o mês seguinte é gerado a partir do dia ${d}` : ""}${on && podeEditar("cap") && !vcAtivo() ? " · quem edita a CAP gera com confirmação, pelo aviso no topo de Faturas" : ""}.</div>`;
+  return `<div class="cap-rec-cfg"><span><b>Geração automática:</b> ${on ? `ligada <a href="#" class="sup" onclick="capRecLigar(false); return false">desligar</a>` : `desligada <button class="btn mini primary" onclick="capRecLigar(true)">Ativar</button>`}</span>
+    <span><label for="capRecDia">Gerar também o mês seguinte a partir do dia</label> <input type="number" id="capRecDia" min="1" max="28" step="1" value="${d}" placeholder="—"> <button class="btn mini" onclick="capRecDiaSalvar()">Salvar</button> <span class="sup">em branco: só o mês corrente</span></span></div>`;
+}
+window.capRecDiaSalvar = async () => {
+  if (!session.n1 || vcAtivo()) { toast("Só um administrador muda a geração das contas recorrentes."); return; }
+  const raw = String(($("capRecDia") || {}).value || "").trim(), d = raw ? Number(raw) : null;
+  if (raw && !(Number.isInteger(d) && d >= 1 && d <= 28)) { toast("Informe um dia de 1 a 28, ou deixe em branco para gerar só o mês corrente."); return; }
+  try {
+    const atual = (await capRecParam(true)) || {};
+    await capRecParamGravar(Object.assign({}, atual, { diaProximo: d, diaPor: (session.me && session.me.displayName) || "", diaEm: new Date().toISOString() }));
+    toast(d ? `O mês seguinte passa a ser gerado a partir do dia ${d}.` : "Só o mês corrente é gerado.", 5000);
+    CAP_STATE.recInfo = null;
+    if (atual.ativo) await capRecorrentesGerar(); if ($("capBody")) paintCAP();
+  } catch (e) { toast("Erro: " + e.message, 6000); }
+};
+{ const p0 = paintCAP; paintCAP = function () { const r = p0.apply(this, arguments);
+    try { const body = $("capBody"); if (body && CAP_STATE.view === "painel" && !(typeof DIV !== "undefined" && DIV.on) && !body.querySelector(".cap-rec-cfg")) { const h = [...body.querySelectorAll(".cap-card .cap-card-h h3")].find(x => x.textContent.trim() === "Recorrentes"); const html = capRecCfgHtml(); if (h && html) h.closest(".cap-card-h").insertAdjacentHTML("afterend", html); } } catch (e) {}
+    return r; }; window.paintCAP = paintCAP; }
+/* guarda: "CAP — Parâmetros" segue a CAP (quem edita grava; só administrador apaga); quem edita apaga só a cópia duplicada que acabou de criar */
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path) {
+    if (/^(POST|PATCH|PUT|DELETE)$/i.test(method || "") && !(typeof vcAtivo === "function" && vcAtivo())) {
+      const p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0];
+      if (CAP_PARAM.list && /\/lists\//.test(p0) && p0.includes(CAP_PARAM.list.id)) {
+        if (/^DELETE$/i.test(method) ? !session.n1 : !podeEditar("cap")) { const e = new Error(/^DELETE$/i.test(method) ? "Só administradores apagam os parâmetros da CAP." : "Seu acesso à CAP é só de leitura."); e.status = 403; e.semAcesso = true; throw e; }
+        return;
+      }
+      if (/^DELETE$/i.test(method) && CAP_REC_DEL && CAP_STATE.list) {
+        const m = p0.match(/\/lists\/([^/]+)\/items\/([^/]+)$/);
+        if (m && m[1] === CAP_STATE.list.id && CAP_REC_DEL.has(decodeURIComponent(m[2])) && podeEditar("cap")) return;
+      }
+    }
+    return g0.apply(this, arguments); }; window.guardaEscrita = guardaEscrita; }
+
+/* ---- 11 · faturas a vencer como tarefas automáticas (Central de Tarefas do Financeiro) ---- */
+LISTS.fin_tarefas.columns.push({ name: "Origem", displayName: "Origem (tarefa automática)", text: { allowMultipleLines: false, maxLength: 160 } });
+SETUP_TEXT.fin_tarefas += ` A coluna "Origem" (v0.14.12) guarda o acompanhamento das tarefas automáticas das faturas a vencer.`;
+const CAP_TF_DIAS = 7;   /* janela: faturas em aberto que vencem em até 7 dias, e as vencidas */
+const TF_CAP = { em: 0, erro: "", semOrigem: false, listaId: "" };
+TF_CTX.fin_tarefas.lead = `Tarefas da equipe financeira, como no Planner: atribua a pessoas do Financeiro e cada uma vê o que está sob sua responsabilidade. As faturas da CAP que vencem em até ${CAP_TF_DIAS} dias (e as vencidas) entram sozinhas como tarefas ⚡ e somem quando a fatura é paga ou cancelada`;
+const capTfPode = () => { const m = MODULES.find(x => x.id === "cap"); return !!(m && canSee(m)); };
+const capTfAberta = it => !!it && it.Status !== "Pago" && !isIsenta(it);   /* isIsenta inclui a Cancelada */
+function capTfAuto() {
+  if (!capTfPode() || !TF_CAP.em || TF_CAP.erro || (typeof DIV !== "undefined" && DIV.on)) return [];
+  const hoje = tfHoje(), lim = tfAdd(hoje, CAP_TF_DIAS), out = [];
+  (CAP_STATE.items || []).forEach(it => {
+    if (!capTfAberta(it) || !it.Vencimento) return;
+    const v = ymd(it.Vencimento); if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || v > lim) return;
+    const dias = tfDias(hoje, v), val = capValorEfetivo(it);
+    out.push({ auto: true, id: `auto:cap:${it._id}`, Title: `Pagar ${it.Title || it.Fornecedor || "fatura"} — ${fmtBRL(val)}`, Departamento: "Financeiro", Subcategoria: "Faturas a pagar", Status: "A fazer",
+      Prioridade: dias < 0 ? "Urgente" : dias <= 2 ? "Alta" : "Média", Inicio: tfAdd(v, -CAP_TF_DIAS), Prazo: v,
+      det: [it.Fornecedor, fmtBRL(val), dias < 0 ? `vencida há ${-dias} dia(s)` : dias === 0 ? "vence hoje" : `vence em ${dias} dia(s)`, it.Status === "Aguardando NF" ? "aguardando NF" : "", it.Estimado ? "valor estimado" : ""].filter(Boolean).join(" · "),
+      rota: `cap:${it._id}` });
+  });
+  return out;
+}
+{ const a0 = tfAuto; tfAuto = function () { if (TF.ctx === "fin_tarefas") return capTfAuto(); return a0.apply(this, arguments); }; }
+/* acompanhada e resolvida: aparece concluída só quando a fatura foi paga, cancelada, marcada N/A ou excluída (fora da janela, some) */
+{ const f0 = tfFonteOk; tfFonteOk = function (origem) {
+    const m = String(origem || "").match(/^auto:cap:(.+)$/); if (!m) return f0.apply(this, arguments);
+    if (TF.ctx !== "fin_tarefas" || !capTfPode() || !TF_CAP.em || TF_CAP.erro) return false;
+    const it = (CAP_STATE.items || []).find(x => String(x._id) === m[1]);
+    return !it || !capTfAberta(it); }; }
+{ const c0 = tfCarregar; tfCarregar = async function (force) {
+    const ctx = TF.ctx, r = await c0.apply(this, arguments);
+    if (ctx === "fin_tarefas" && capTfPode() && !(typeof DIV !== "undefined" && DIV.on)) {
+      if (force || !TF_CAP.em || TF_CAP.erro || Date.now() - TF_CAP.em > 120000) { try { await loadCAP({ soLeitura: true }); TF_CAP.em = Date.now(); TF_CAP.erro = ""; } catch (e) { TF_CAP.erro = String((e && e.message) || e); } }   /* revisão M2: não relê a CAP a cada tarefa movida */
+      try { const A = TF.ctx === ctx ? TF : TF_GUARDA[ctx]; if (A && A.list && A.site && (force || TF_CAP.listaId !== A.list.id)) { const cs = await graphAll(`/sites/${A.site.id}/lists/${A.list.id}/columns?$select=name`); TF_CAP.semOrigem = !cs.some(c => c.name === "Origem"); TF_CAP.listaId = A.list.id; } } catch (e) {}
+    }
+    return r; }; }
+/* sem a coluna "Origem" (Configuração não rodou): a automática aparece, mas não dá para acompanhá-la ainda */
+{ const m0 = tfMudar; tfMudar = async function (id) {
+    if (TF.ctx === "fin_tarefas" && /^auto:cap:/.test(String(id)) && TF_CAP.semOrigem) {
+      const t = tfTodas().find(x => x.id === id);
+      if (t && !t.rid) { toast(`Para acompanhar as tarefas automáticas (status, pessoas, anotações), a lista "Central de Tarefas" precisa da coluna "Origem". ${session.n1 ? "Rode Sistema › Configuração › Executar tudo." : "Peça a um administrador para rodar a Configuração."}`, 8000); return false; }
+    }
+    return m0.apply(this, arguments); }; }
+window.capTfAbrirFatura = async id => {
+  if (location.hash.split("?")[0] !== "#/financeiro/contas-a-pagar") location.hash = "#/financeiro/contas-a-pagar";
+  const ok = await buscaEsperar(() => CAP_STATE.items.some(it => String(it._id) === String(id)) && $("capBody") && $("capBody").querySelector("table, .cap-empty") && !/Carregando/.test(($("capBody").innerText || "").slice(0, 200)), 9000);   /* revisão B3 */
+  if (ok) capEdit(String(id)); else toast("Não foi possível abrir a fatura — procure na CAP.");
+};
+(function () { const s = document.createElement("style"); s.textContent = `
+.cap-rec-cfg{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;margin:2px 0 12px;font-size:13px}
+.cap-rec-cfg input[type=number]{width:64px;padding:3px 6px}
+.cap-rec-conf ul{margin:4px 0 0 18px}`; document.head.appendChild(s); })();
+CONFIG.version = "v0.14.12";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

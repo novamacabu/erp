@@ -3777,7 +3777,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.11",
+  version: "v0.14.11.1",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -3840,7 +3840,7 @@ const MODULES = [
   { id: "regul",      path: "#/operacional/regulamentacoes",   icon: "lei",     name: "Regulamentações",     area: "Operacional", groups: ["operacional", "diretoria"], status: "piloto" },   /* v0.12.77: gratuidades, DETRO/RJ e legislação, com links oficiais */
   { id: "diesel",     path: "#/operacional/controle-de-diesel", icon: "bus",     name: "Controle de Diesel",  area: "Operacional", groups: ["operacional", "financeiro", "diretoria"], status: "ativo", wide: true },
   /* v0.12.15 (30/09): submódulos do Operacional */
-  { id: "pax",        path: "#/financeiro/estatistica-de-passageiros", icon: "chart", name: "Estatística de Passageiros", area: "Financeiro", groups: ["financeiro", "operacional", "diretoria"], status: "ativo" },   /* v0.14.10: passou do Operacional para o Financeiro */
+  { id: "pax",        path: "#/financeiro/estatistica-de-passageiros", icon: "chart", name: "Estatística de Passageiros", area: "Financeiro", groups: ["financeiro", "operacional", "diretoria"], status: "ativo", menu: false, hubDe: "agentes" },   /* v0.14.10: passou do Operacional para o Financeiro · v0.14.11.1: dentro de Agentes Financeiros */
   { id: "horarios",   path: "#/operacional/tabela-de-horarios", icon: "clock",   name: "Tabela de Horários",  area: "Operacional", groups: ["operacional", "financeiro", "diretoria"], status: "ativo" },
   { id: "tarifas",    path: "#/operacional/tabela-de-tarifas",  icon: "ticket",  name: "Tabela de Tarifas",   area: "Operacional", groups: ["operacional", "financeiro", "diretoria"], status: "ativo" },
   { id: "garagem",    path: "#/operacional/escala-garagem",     icon: "people",  name: "Escala Garagem",      area: "Operacional", groups: ["operacional", "diretoria"], status: "ativo" },
@@ -4926,6 +4926,8 @@ function route() {
 function addCrumbs(mod) {
   const pg = $("main").querySelector(".page");
   if (!pg || !mod.area || pg.querySelector(".crumbs")) return;
+  const hub = mod.hubDe ? MODULES.find(x => x.id === mod.hubDe && x.path) : null;   /* v0.14.11.1: página dentro de um card (ex.: Agentes Financeiros) */
+  if (hub) { pg.insertAdjacentHTML("afterbegin", `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/${encodeURIComponent(mod.area)}">${esc(mod.area)}</a><span>›</span><a href="${esc(hub.path)}">${esc(hub.name)}</a><span>›</span><b>${esc(mod.name)}</b></nav>`); return; }
   pg.insertAdjacentHTML("afterbegin", `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/${encodeURIComponent(mod.area)}">${esc(mod.area)}</a><span>›</span><b>${esc(mod.name)}</b></nav>`);
 }
 
@@ -4990,13 +4992,14 @@ function pageAgentes() {   /* v0.13.4: Agentes Financeiros — um card no Financ
     { id: "ag_conc", pg: "ven", name: "Vendas da Agência", icon: "ticket", desc: "Fechamento de vendas por linha, tipo de passagem e forma de pagamento", status: "piloto", href: "#/financeiro/agencia-conceicao/vendas" },
     { id: "escala", name: "Escala Agência", icon: "people", desc: "Escala dos agentes das agências", status: "ativo", href: "#/financeiro/escala-agencia" },
     { id: "recebimento", name: "Arrecadação", icon: "cash", desc: "Malotes recebidos dos motoristas, conferência e aprovação", status: "piloto", href: "#/financeiro/recebimento" },
-    { id: "roletas", name: "Controle de Roletas", icon: "chart", desc: "Catracas por carro × horário × motorista", status: "piloto", href: "#/operacional/controle-de-roletas" }
+    { id: "roletas", name: "Controle de Roletas", icon: "chart", desc: "Catracas por carro × horário × motorista", status: "piloto", href: "#/operacional/controle-de-roletas" },
+    { id: "pax", name: "Estatística de Passageiros", icon: "chart", desc: "Passageiros por viagem, dia e trecho; importação da planilha mensal e exportação em Excel", status: "ativo", href: "#/financeiro/estatistica-de-passageiros" }   /* v0.14.11.1 */
   ].filter(m => { const mod = MODULES.find(x => x.id === m.id); if (!canSee(mod)) return false; if (m.pg) { try { return permPagValor(m.id, m.pg) !== "nenhum"; } catch (e) { return true; } } return true; });
   const tiles = mods.map(m => `<a class="tile" href="${m.href}"><span class="tile-ico">${ICONS[m.icon] || ICONS.home}</span><h3>${esc(m.name)}</h3><div class="area">${esc(m.desc)}</div><span class="st"><i></i>${esc(m.status)}</span></a>`).join("");
   return `<div class="page">
     <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><b>Agentes Financeiros</b></nav>
     <h1>Agentes Financeiros</h1>
-    <p class="lead">Rotinas dos agentes das agências: movimento do caixa, vendas, escala, arrecadação e controle de roletas. Clique num bloco para abrir.</p>
+    <p class="lead">Rotinas dos agentes das agências: movimento do caixa, vendas, escala, arrecadação, controle de roletas e estatística de passageiros. Clique num bloco para abrir.</p>
     ${tiles ? `<div class="tiles">${tiles}</div>` : `<div class="cap-empty"><h3>Sem acesso</h3><p>Nenhuma destas páginas está liberada para o seu usuário.</p></div>`}
   </div>`;
 }
@@ -37796,7 +37799,7 @@ HOR_FOLHA_CSS_EXTRA += `
   .mk.sai{background:#1F7A3E;border:0;border-radius:50%}.mk.fim{background:#C0392B;border:0;border-radius:50%}`;
 { const hp0 = window.horImprimir;
   window.horImprimir = function () { const p0 = printDoc; printDoc = o => { printDoc = p0; return p0(Object.assign({}, o, { css: (o.css || "") + `.mk.sai{background:#1F7A3E;border:0;border-radius:50%}.mk.fim{background:#C0392B;border:0;border-radius:50%}` })); }; try { return hp0.apply(this, arguments); } finally { printDoc = p0; } }; }
-CONFIG.version = "v0.14.11";
+CONFIG.version = "v0.14.11.1";
 
 /* =====================================================================
    v0.14.10 · Pedido de 20/10 (09:02–09:04): Estatística de Passageiros passa do Operacional para o Financeiro

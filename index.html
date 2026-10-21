@@ -3778,7 +3778,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.12.4",
+  version: "v0.14.12.5",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -9417,15 +9417,21 @@ window.pbForm = (id, editar) => {
     <div class="err-msg" id="pbErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
     if (!ed) return true;
     const g = k => ($(k) ? String($(k).value || "").trim() : "");
-    const err = m => { $("pbErr").style.display = "block"; $("pbErr").textContent = m; return false; };
-    if (PB_COM.edit != null && !pbComOk()) return false;
-    if (!g("pbModelo") || !g("pbSerie") || !g("pbStatus")) return err("Preencha modelo, nº série e status.");
+    /* v0.14.12.5: junta tudo o que falta e mostra numa janela por cima, com Ok */
+    const probs = [], err = m => { probs.push(m); return false; };
+    const avisar = async () => { const e = $("pbErr"); if (e) { e.style.display = "none"; e.textContent = ""; }
+      await erpAviso({ titulo: "Confira antes de salvar", texto: probs.length > 1 ? `Faltam ${probs.length} ajustes para salvar esta máquina:` : "Falta um ajuste para salvar esta máquina:", itens: probs }); return false; };
+    if (PB_COM.edit != null && !pbComOk()) err("Termine (Ok) ou cancele o comentário que está sendo editado.");
+    if (!g("pbModelo")) err("Escolha o modelo.");
+    if (!g("pbSerie")) err("Informe o nº de série.");
+    if (!g("pbStatus")) err("Escolha o status.");
     const e1Txt = pbImeiTxt(v.ImeiEquip1, PB_IMEI_EQ), e2Txt = pbImeiTxt(v.ImeiEquip2, PB_IMEI_EQ);
     const mexeu1 = g("pbImei1") !== e1Txt, mexeu2 = g("pbImei2") !== e2Txt;   /* revisão M1: o que não foi mexido é gravado como estava */
-    if ((mexeu1 && g("pbImei1") && pbDig(g("pbImei1")).length !== 15) || (mexeu2 && g("pbImei2") && pbDig(g("pbImei2")).length !== 15)) return err(`IMEI do equipamento: 15 números (${PB_IMEI_EQ.ph}).`);
+    if (mexeu1 && g("pbImei1") && pbDig(g("pbImei1")).length !== 15) err(`IMEI 1 (equipamento): 15 números, no padrão ${PB_IMEI_EQ.ph}.`);
+    if (mexeu2 && g("pbImei2") && pbDig(g("pbImei2")).length !== 15) err(`IMEI 2 (equipamento): 15 números, no padrão ${PB_IMEI_EQ.ph}.`);
     const e1 = mexeu1 ? pbDig(g("pbImei1")) : (v.ImeiEquip1 || ""), e2 = mexeu2 ? pbDig(g("pbImei2")) : (v.ImeiEquip2 || "");
     let rj = g("pbId");
-    if (rj && rj !== rjTxt) { if (pbDig(rj).length !== 20 || !/^[\d\s.\-\/]+$/.test(rj)) return err(`IMEI (RJ Consultores): 20 números (${PB_IMEI_RJ.ph}).`); rj = pbGrupos(rj, PB_IMEI_RJ); }
+    if (rj && rj !== rjTxt) { if (pbDig(rj).length !== 20 || !/^[\d\s.\-\/]+$/.test(rj)) err(`IMEI (RJ Consultores): 20 números, no padrão ${PB_IMEI_RJ.ph}.`); else rj = pbGrupos(rj, PB_IMEI_RJ); }
     else if (rj === rjTxt) rj = v.CodigoID || null;
     const histNovo = PB_COM.lista.slice(), eu = (session.me && session.me.displayName) || "—";
     const nvComent = g("pbComentNovo");
@@ -9441,16 +9447,17 @@ window.pbForm = (id, editar) => {
     const vSel = $("pbVeic") ? $("pbVeic").value.trim() : "";
     const novas = { IdInterno: g("pbIdInt") || null, Grupo: g("pbGrupo") || null, ImeiEquip1: e1 || null, ImeiEquip2: e2 || null, BateriaSerie: g("pbBateria") || null, Veiculo: (vSel && typeof frotaRefCanon === "function" && frotaRefCanon(vSel)) || vSel || null };
     const faltam = Object.keys(novas).filter(k => !pbCol(k) && novas[k]);
-    if (faltam.length) return err(`A lista ainda não tem todos os campos (ID, Grupo, IMEIs, bateria, veículo). ${session.n1 ? "Rode Sistema › Configuração › Executar tudo." : "Peça a um administrador para rodar a Configuração."}`);
-    if (novas.IdInterno && PB_STATE.itens.some(i => String(i.IdInterno || "").trim().toLowerCase() === novas.IdInterno.toLowerCase() && (!x || i._id !== x._id))) return err("Já existe uma máquina com este ID.");
+    if (faltam.length) err(`A lista ainda não tem todos os campos (ID, Grupo, IMEIs, bateria, veículo). ${session.n1 ? "Rode Sistema › Configuração › Executar tudo." : "Peça a um administrador para rodar a Configuração."}`);
+    if (novas.IdInterno && PB_STATE.itens.some(i => String(i.IdInterno || "").trim().toLowerCase() === novas.IdInterno.toLowerCase() && (!x || i._id !== x._id))) err("Já existe uma máquina com este ID.");
     Object.keys(novas).forEach(k => { if (PB_STATE.cols ? PB_STATE.cols.has(k) : novas[k] != null) f[k] = novas[k]; });
     const respId = $("pbResp").value;
     const temResp = PB_STATE.cols ? PB_STATE.cols.has("ResponsavelId") : null, temLk = PB_STATE.cols ? PB_STATE.cols.has("Responsavel") : false;
     if (temResp === true) f.ResponsavelId = respId ? Number(respId) : null;
     else if (temLk) f.ResponsavelLookupId = respId ? Number(respId) : null;
-    else if (respId) return err(`A lista ainda não tem a coluna do Responsável. ${session.n1 ? "Rode Sistema › Configuração › Executar tudo" : "Peça a um administrador para rodar a Configuração"} e salve de novo (ou deixe "(sem responsável)" por enquanto).`);
-    const dup = PB_STATE.itens.find(i => i.Title === f.Title && (!x || i._id !== x._id));
-    if (dup) return err("Já existe uma máquina com este nº de série.");
+    else if (respId) err(`A lista ainda não tem a coluna do Responsável. ${session.n1 ? "Rode Sistema › Configuração › Executar tudo" : "Peça a um administrador para rodar a Configuração"} e salve de novo (ou deixe "(sem responsável)" por enquanto).`);
+    const dup = g("pbSerie") && PB_STATE.itens.find(i => i.Title === f.Title && (!x || i._id !== x._id));
+    if (dup) err("Já existe uma máquina com este nº de série" + (dup.IdInterno ? ` (ID ${dup.IdInterno}).` : "."));
+    if (probs.length) return await avisar();
     /* histórico de movimentações: o que mudou em relação ao gravado */
     if (x && pbMovOk() && PB_STATE.cols) {
       const depois = Object.assign({}, x, f, { ResponsavelLookupId: respId ? Number(respId) : null, ResponsavelId: respId ? Number(respId) : null });
@@ -38800,7 +38807,40 @@ function tercNotasGuarda(method, path, body) {
 { const g0 = guardaEscrita; guardaEscrita = function (method, path, body) { const r = g0.apply(this, arguments); tercNotasGuarda(method, path, body); return r; }; window.guardaEscrita = guardaEscrita; }
 (function () { const s = document.createElement("style"); s.textContent = `.tnota-lapis{margin-left:auto}.tnota-lapis + .tav-x{margin-left:0}.tnota-ed{font-style:italic}
 .tnota-editando textarea{width:100%;margin-top:4px;min-height:60px}.tnota-ed-acoes{display:flex;gap:6px;align-items:center;margin-top:6px}`; document.head.appendChild(s); })();
-CONFIG.version = "v0.14.12.4";
+CONFIG.version = "v0.14.12.5";
+
+/* v0.14.12.5 (pedido de 21/10 16:50): o que falta ajustar antes de salvar aparece numa janela por cima, com a lista completa
+   e um botão Ok, em vez de uma linha vermelha no fim do formulário. A janela de trás volta intacta ao clicar em Ok. */
+/* `html` é só para uso interno (entra cru); texto de quem usa o ERP vai em `texto` e `itens`, que passam por esc */
+function erpAviso(o) {
+  return new Promise(res => {
+    const mA = $("modal"), bA = $("modalBack");
+    const guardada = bA.classList.contains("on") && mA.childNodes.length ? { frag: document.createDocumentFragment(), cls: mA.className, sujo: mA.dataset.sujo || "", yb: bA.scrollTop, ym: mA.scrollTop, ycorpo: (mA.querySelector(".modal-body") || {}).scrollTop || 0 } : null;   /* revisão M1: a rolagem volta onde estava (desde a v0.14.11.3 quem rola é o .modal-body) */
+    if (guardada) while (mA.firstChild) guardada.frag.appendChild(mA.firstChild);
+    const itens = (o.itens || []).filter(Boolean);
+    modal(`<div class="modal-head"><h2>${esc(o.titulo || "Atenção")}</h2><button class="x" id="avX">×</button></div>
+      <div class="modal-body"><div class="conf-txt erp-aviso-txt" role="alert">${o.html || (o.texto ? esc(o.texto) : "")}
+        ${itens.length ? `<ul class="erp-aviso-lista">${itens.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}</div></div>
+      <div class="modal-foot"><button class="btn primary" id="avOk">Ok</button></div>`);
+    $("modal").className = "modal conf erp-aviso";
+    let feito = false;
+    const fim = () => { if (feito) return; feito = true; document.removeEventListener("keydown", tecla, true);
+      if (guardada) { mA.innerHTML = ""; mA.appendChild(guardada.frag); mA.className = guardada.cls; mA.dataset.sujo = guardada.sujo; bA.classList.add("on"); bA.onclick = ev => { if (ev.target === bA && bA._ini === bA) fecharModalComCuidado(); bA._ini = null; }; document.addEventListener("keydown", escClose);
+        const volta = () => { bA.scrollTop = guardada.yb; mA.scrollTop = guardada.ym; const c = mA.querySelector(".modal-body"); if (c) c.scrollTop = guardada.ycorpo; };   /* revisão M1: o modal() do aviso leva a rolagem para o topo em 60 ms e 250 ms */
+        volta(); requestAnimationFrame(volta); setTimeout(volta, 80); setTimeout(volta, 300);
+        setTimeout(() => { const b = $("mSave"); if (b && b.isConnected && typeof b.focus === "function") b.focus(); }, 40); }   /* revisão B1 */
+      else closeModal();
+      res(true); };
+    const tecla = ev => { if (ev.key === "Escape" || ev.key === "Enter") { ev.stopImmediatePropagation(); ev.preventDefault(); fim(); } };
+    document.addEventListener("keydown", tecla, true);
+    $("avOk").onclick = fim; $("avX").onclick = fim;
+    $("modalBack").onclick = ev => { if (ev.target === bA && bA._ini === bA) fim(); bA._ini = null; };   /* revisão B3: arrasto que termina no fundo não fecha */
+    setTimeout(() => { const b = $("avOk"); if (b) b.focus(); }, 30);
+  });
+}
+window.erpAviso = erpAviso;
+(function () { const s = document.createElement("style"); s.textContent = `.erp-aviso-lista{margin:10px 0 0 18px;display:grid;gap:6px}
+.erp-aviso-lista li{font-size:13.5px}.erp-aviso .modal-body{padding-top:14px}`; document.head.appendChild(s); })();
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

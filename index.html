@@ -3778,7 +3778,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.12.1",
+  version: "v0.14.12.2",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -4204,7 +4204,7 @@ const CAP_LIST = LISTS.cap;
 const SETUP_CTX = { sites: {}, permOk: {}, lists: null };
 
 function colBody(col, lists) {
-  const { update, lookupList, naoObrig, relaxMin, ...body } = col;   /* v0.12.58: marcas internas não vão para o Graph */
+  const { update, lookupList, naoObrig, relaxMin, renomear, ...body } = col;   /* v0.12.58: marcas internas não vão para o Graph (v0.14.12.2: renomear) */
   if (lookupList) {
     const target = (lists || []).find(l => l.displayName === lookupList);
     if (!target) throw new Error(`A lista "${lookupList}" ainda não existe neste site`);
@@ -4292,6 +4292,11 @@ async function setupList(def, cb) {
       const s = push(`req-${col.name}`, `"${col.displayName}" deixa de ser obrigatória`);
       try { await graph(`/sites/${site.id}/lists/${list.id}/columns/${ex.id}`, { method: "PATCH", body: { required: false } }); ex.required = false; finish(s, "ok", "Pode ficar vazia"); }
       catch (e) { finish(s, "warn", `${e.message}. Ajuste manual: SharePoint → configurações da lista → coluna "${col.displayName}" → "Exigir informações" = Não.`); }
+    }
+    if (ex && col.renomear && ex.displayName !== col.displayName) {   /* v0.14.12.2: coluna que mudou de nome na tela (ex.: Código ID → IMEI (RJ Consultores)) */
+      const s = push(`ren-${col.name}`, `Renomear a coluna "${ex.displayName}" para "${col.displayName}"`);
+      try { await graph(`/sites/${site.id}/lists/${list.id}/columns/${ex.id}`, { method: "PATCH", body: { displayName: col.displayName } }); ex.displayName = col.displayName; finish(s, "ok", "Só o título; os dados ficam"); }
+      catch (e) { finish(s, "warn", `${e.message}. Os dados não mudam; o título pode ser trocado no SharePoint.`); }
     }
     if (ex) {
       if (col.update && col.choice) {
@@ -9178,7 +9183,9 @@ function pageGbInd() {
 }
 
 /* v0.12.20 · Máquinas Pagbank */
-const PB_STATE = { site: null, list: undefined, itens: [], funcs: [], ready: false, erro: "", q: "", filtroStatus: "", filtroLocal: "", aba: "ativas" };
+const PB_STATE = { site: null, list: undefined, itens: [], funcs: [], ready: false, erro: "", q: "", filtroStatus: "", filtroLocal: "", filtroGrupo: "", aba: "ativas", cols: null };
+const PB_GRUPOS = ["Frota", "Agência"];
+const pbCol = n => !PB_STATE.cols || PB_STATE.cols.has(n);   /* v0.14.12.2: coluna nova só é gravada depois da Configuração */
 /* v0.12.82: Devolvida e Bloqueada vão para a aba "Devolvidas ou Bloqueadas" */
 const PB_INATIVOS = ["Devolvida", "Bloqueada"];
 const pbInativa = x => PB_INATIVOS.includes(x.Status);
@@ -9191,6 +9198,8 @@ async function loadPb(force) {
   if (!PB_STATE.list) { PB_STATE.itens = []; PB_STATE.ready = false; return; }
   const items = await SP.items(PB_STATE.site.id, PB_STATE.list.id);
   PB_STATE.itens = items.map(it => Object.assign({ _id: String(it.id) }, it.fields || {}));
+  try { PB_STATE.cols = new Set((await graphAll(`/sites/${PB_STATE.site.id}/lists/${PB_STATE.list.id}/columns?$select=name`)).map(c => c.name)); } catch (e) { PB_STATE.cols = null; }
+  try { await frotaRefsCarregar(); } catch (e) {}   /* v0.14.12.2: veículos de Frota › Geral */
   /* carrega RH — Funcionários para o seletor Responsável */
   try {
     const siteRh = await SP.site(CONFIG.sites.rh);
@@ -9242,12 +9251,13 @@ function paintPb() {
   if (!PB_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>A lista "Operacional — Máquinas Pagbank" ainda não existe</h3><p>Vá em Sistema › Configuração e rode "Executar tudo na ordem" (ou só o setup "Operacional — Máquinas Pagbank").</p></div>`; return; }
   const its = PB_STATE.itens.filter(x => {
     const q = PB_STATE.q.toLowerCase();
-    const bateQ = !q || [x.Title, x.Modelo, x.CodigoID, x.Local, x.CNPJTitular, estRotulo(estPorCnpj(x.CNPJTitular))].some(v => String(v || "").toLowerCase().includes(q));
+    const bateQ = !q || [x.Title, x.Modelo, x.CodigoID, x.IdInterno, x.ImeiEquip1, x.ImeiEquip2, x.Veiculo, x.Grupo, x.Local, x.CNPJTitular, estRotulo(estPorCnpj(x.CNPJTitular))].some(v => String(v || "").toLowerCase().includes(q));
+    if (PB_STATE.filtroGrupo && (PB_STATE.filtroGrupo === "—" ? !!x.Grupo : x.Grupo !== PB_STATE.filtroGrupo)) return false;
     const bateS = !PB_STATE.filtroStatus || x.Status === PB_STATE.filtroStatus;
     const bateL = !PB_STATE.filtroLocal || x.Local === PB_STATE.filtroLocal;
     const bateA = PB_STATE.aba === "inativas" ? pbInativa(x) : !pbInativa(x);
     return bateQ && bateS && bateL && bateA;
-  }).sort((a, b) => String(a.Modelo || "").localeCompare(String(b.Modelo || ""), "pt-BR") || String(a.Title || "").localeCompare(String(b.Title || "")));
+  }).sort((a, b) => String(a.IdInterno || "\uffff").localeCompare(String(b.IdInterno || "\uffff"), "pt-BR", { numeric: true }) || String(a.Modelo || "").localeCompare(String(b.Modelo || ""), "pt-BR") || String(a.Title || "").localeCompare(String(b.Title || "")));
   const locais = [...new Set(PB_STATE.itens.map(x => x.Local).filter(Boolean))];
   const statusOps = ["Ativada", "Aguardando ativação", "Bloqueada", "Devolvida", "Em manutenção"].filter(s => (PB_STATE.aba === "inativas") === PB_INATIVOS.includes(s));
   const stCls = s => ({ "Ativada": "pago", "Aguardando ativação": "hoje", "Bloqueada": "venc", "Devolvida": "", "Em manutenção": "hoje" }[s] || "");
@@ -9267,6 +9277,7 @@ function paintPb() {
   const nInat = PB_STATE.itens.filter(pbInativa).length;
   const abas = `<div class="cap-views" role="tablist"><button class="tab ${PB_STATE.aba !== "inativas" ? "on" : ""}" role="tab" onclick="pbAba('ativas')">Ativas <span class="cap-views-n neutro">${PB_STATE.itens.length - nInat}</span></button><button class="tab ${PB_STATE.aba === "inativas" ? "on" : ""}" role="tab" onclick="pbAba('inativas')">Devolvidas ou Bloqueadas <span class="cap-views-n neutro">${nInat}</span></button></div>`;
   const stOpts = `<select id="pbSt" onchange="PB_STATE.filtroStatus = this.value; paintPb();"><option value="">Todos os status</option>${statusOps.map(s => `<option ${PB_STATE.filtroStatus === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>`;
+  const grpOpts = `<select id="pbGrp" onchange="PB_STATE.filtroGrupo = this.value; paintPb();"><option value="">Todos os grupos</option>${PB_GRUPOS.concat(["—"]).map(g => `<option value="${esc(g)}" ${PB_STATE.filtroGrupo === g ? "selected" : ""}>${g === "—" ? "Sem grupo" : "Grupo " + esc(g)}</option>`).join("")}</select>`;
   const locOpts = `<select id="pbLoc" onchange="PB_STATE.filtroLocal = this.value; paintPb();"><option value="">Todos os locais</option>${locais.map(l => `<option ${PB_STATE.filtroLocal === l ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
   const linha = x => {
     const resp = x.ResponsavelLookupId ? funcNome(x.ResponsavelLookupId) : "";
@@ -9282,22 +9293,23 @@ function paintPb() {
     const fu = x.ResponsavelLookupId ? PB_STATE.funcs.find(f => String(f._id) === String(x.ResponsavelLookupId)) : null;
     return `<tr onclick="pbForm(${jsArg(x._id)})">
       <td class="pb-foto-td">${erpAvatar(fu, 32)}</td>
+      <td class="nw"><b>${esc(x.IdInterno || "—")}</b>${x.Grupo ? `<div class="sup">${esc(x.Grupo)}</div>` : ""}</td>
       <td class="nw"><b>${esc(x.Modelo || "—")}</b></td>
-      <td class="nw"><b>${esc(x.Title || "—")}</b>${x.Title ? ` <button class="btn-copy" title="Copiar nº série" onclick="event.stopPropagation(); erpCopy(${jsArg(x.Title)})">📋</button>` : ""}${x.CodigoID ? `<div class="sup">ID ${esc(x.CodigoID)} <button class="btn-copy" title="Copiar ID" onclick="event.stopPropagation(); erpCopy(${jsArg(x.CodigoID)})">📋</button></div>` : ""}</td>
+      <td class="nw"><b>${esc(x.Title || "—")}</b>${x.Title ? ` <button class="btn-copy" title="Copiar nº série" onclick="event.stopPropagation(); erpCopy(${jsArg(x.Title)})">📋</button>` : ""}${x.CodigoID ? `<div class="sup">IMEI RJ ${esc(x.CodigoID)} <button class="btn-copy" title="Copiar IMEI (RJ Consultores)" onclick="event.stopPropagation(); erpCopy(${jsArg(x.CodigoID)})">📋</button></div>` : ""}</td>
       <td>${pbContaHtml(x.CNPJTitular)}</td>
       <td><span class="pill st-${stCls(x.Status) || "pend"}"><i></i>${esc(x.Status || "—")}</span></td>
-      <td>${esc(x.Local || "—")}</td>
+      <td>${esc(x.Local || "—")}${x.Veiculo ? `<div class="sup">🚌 ${esc(x.Veiculo)}</div>` : ""}</td>
       <td>${resp ? esc(resp) : "<span class=sup>sem responsável</span>"}</td>
       <td class="nw act">${btnAcao}</td>
     </tr>`;
   };
   body.innerHTML = `${kpis}${abas}
     <div class="filters" role="search">
-      <input type="search" id="pbQ" class="span-2" placeholder="Buscar: nº série, modelo, código ID, local…" value="${esc(PB_STATE.q)}">
-      ${stOpts}${locOpts}
-      <button class="btn ghost" onclick="PB_STATE.q = ''; PB_STATE.filtroStatus = ''; PB_STATE.filtroLocal = ''; paintPb();">Limpar</button>
+      <input type="search" id="pbQ" class="span-2" placeholder="Buscar: ID, nº série, modelo, IMEI, veículo, local…" value="${esc(PB_STATE.q)}">
+      ${grpOpts}${stOpts}${locOpts}
+      <button class="btn ghost" onclick="PB_STATE.q = ''; PB_STATE.filtroStatus = ''; PB_STATE.filtroLocal = ''; PB_STATE.filtroGrupo = ''; paintPb();">Limpar</button>
     </div>
-    ${its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th title="Foto do responsável (editável em RH › Funcionários)"><span class="sr-only">Foto</span></th><th>Modelo</th><th>Nº série</th><th>Conta</th><th>Status</th><th>Local</th><th>Responsável</th><th></th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhuma máquina no filtro</h3><p>${PB_STATE.itens.length ? "Troque o status, o local ou limpe os filtros." : (edita ? "Clique em \"Cadastrar máquina\" para começar." : "A lista está vazia.")}</p></div>`}
+    ${its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th title="Foto do responsável (editável em RH › Funcionários)"><span class="sr-only">Foto</span></th><th>ID</th><th>Modelo</th><th>Nº série</th><th>Conta</th><th>Status</th><th>Local · veículo</th><th>Responsável</th><th></th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhuma máquina no filtro</h3><p>${PB_STATE.itens.length ? "Troque o status, o local ou limpe os filtros." : (edita ? "Clique em \"Cadastrar máquina\" para começar." : "A lista está vazia.")}</p></div>`}
     <p class="hint">Dica: você pode baixar a relação pelo painel do PagBank em "Gerenciar maquininhas" (gerencianet.pagbank.com.br). Para bloquear ou ativar remotamente, use o próprio painel do PagBank.</p>`;
   const q = $("pbQ"); if (q) q.addEventListener("input", ev => { PB_STATE.q = ev.target.value; erpDeb("pbQ", () => keepFocus(paintPb)); });
 }
@@ -9324,15 +9336,21 @@ window.pbForm = (id) => {
     ? `<ul class="pb-hist">${hist.slice().reverse().map(h => `<li><div class="pb-hist-top"><b>${esc(h.autor || "—")}</b> · <span class="sup">${esc(h.data || "")}</span></div><div class="pb-hist-txt">${esc(h.texto || "").replace(/\n/g, "<br>")}</div></li>`).join("")}</ul>`
     : `<div class="sup" style="padding:8px 0">Nenhum comentário ainda.</div>`;
   $("modal").className = "modal";
+  const grpSel = `<select id="pbGrupo"><option value="">— escolha —</option>${PB_GRUPOS.map(g => `<option ${v.Grupo === g ? "selected" : ""}>${esc(g)}</option>`).join("")}</select>`;
   openModal(x ? "Editar máquina" : "Cadastrar maquininha Pagbank", `<div class="form-grid">
+      <div class="field"><label>ID</label><input id="pbIdInt" maxlength="30" value="${esc(v.IdInterno || "")}" placeholder="Ex.: MQ-01"></div>
+      <div class="field"><label>Grupo</label>${grpSel}<div class="hint">Frota (máquinas dos ônibus) ou Agência</div></div>
       <div class="field"><label>Modelo<span class="req">*</span></label><select id="pbModelo">${modelos.map(m => `<option ${v.Modelo === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
       <div class="field"><label>Nº de série<span class="req">*</span></label><input id="pbSerie" value="${esc(v.Title || "")}" placeholder="Ex.: PB3S259S71979"></div>
-      <div class="field"><label>Código ID</label><input id="pbId" value="${esc(v.CodigoID || "")}" placeholder="Ex.: 93DCF729"></div>
+      <div class="field"><label>IMEI (RJ Consultores)</label><input id="pbId" maxlength="40" value="${esc(v.CodigoID || "")}" placeholder="Identificação na RJ Consultores"></div>
       <div class="field"><label>Conta (CNPJ)</label>${pbCnpjSelect(v.CNPJTitular) || `<input id="pbCnpj" data-mask="doc" inputmode="numeric" value="${esc(v.CNPJTitular || "")}" placeholder="00.000.000/0000-00"><div class="hint">Cadastre os CNPJs em Diretoria › Cadastros Mestres › CNPJs</div>`}</div>
       <div class="field"><label>Status<span class="req">*</span></label><select id="pbStatus">${statusOps.map(s => `<option ${v.Status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
       <div class="field"><label>Local</label><select id="pbLocal">${locOpts}</select></div>   <!-- v0.12.48: id próprio — o filtro da página também se chamava pbLoc e o Local do formulário nunca era gravado -->
       <div class="field"><label>Responsável</label><select id="pbResp">${funcOpts}</select><div class="hint">${PB_STATE.funcs.length ? "Associado à lista RH — Funcionários." : "A lista RH — Funcionários está vazia. Cadastre funcionários antes de associar."}</div></div>
       <div class="field"><label>Alocação</label><select id="pbUser">${userOpts}</select>${uAnt ? `<div class="hint">Antes: ${esc(uAnt)} — a pessoa fica no Responsável; ao salvar, a alocação passa a ser a escolhida aqui.</div>` : ""}</div>
+      <div class="field"><label>IMEI 1 (equipamento)</label><input id="pbImei1" inputmode="numeric" maxlength="20" value="${esc(v.ImeiEquip1 || "")}" placeholder="15 dígitos"></div>
+      <div class="field"><label>IMEI 2 (equipamento)</label><input id="pbImei2" inputmode="numeric" maxlength="20" value="${esc(v.ImeiEquip2 || "")}" placeholder="15 dígitos (se houver)"></div>
+      <div class="field"><label>Associada ao veículo</label>${frotaRefSelect("pbVeic", v.Veiculo, "", frotaRefsLista().length ? "Nenhum (opcional)" : "Prefixo (ex.: RJ 221.001)")}<div class="hint">Veículos cadastrados em Operacional › Frota › Geral</div></div>
       <div class="field"><label>Data de aquisição</label><input type="date" id="pbAq" value="${esc(v.DataAquisicao ? ymd(v.DataAquisicao) : "")}"></div>
       <div class="field full"><label>Observações</label><input id="pbObs" value="${esc(v.Observacoes || "")}"></div>
     </div>
@@ -9343,6 +9361,13 @@ window.pbForm = (id) => {
     const g = k => $(k).value.trim();
     const err = m => { $("pbErr").style.display = "block"; $("pbErr").textContent = m; return false; };
     if (!g("pbModelo") || !g("pbSerie") || !g("pbStatus")) return err("Preencha modelo, nº série e status.");
+    const imeiOk = t => !t || /^\d{14,16}$/.test(t.replace(/[\s.\-\/]/g, ""));
+    if (!imeiOk(g("pbImei1")) || !imeiOk(g("pbImei2"))) return err("IMEI do equipamento: use só números (normalmente 15 dígitos).");
+    const vSel = $("pbVeic") ? $("pbVeic").value.trim() : "";
+    const novas = { IdInterno: g("pbIdInt") || null, Grupo: g("pbGrupo") || null, ImeiEquip1: g("pbImei1").replace(/\D/g, "") || null, ImeiEquip2: g("pbImei2").replace(/\D/g, "") || null, Veiculo: (vSel && typeof frotaRefCanon === "function" && frotaRefCanon(vSel)) || vSel || null };
+    const faltam = Object.keys(novas).filter(k => !pbCol(k) && novas[k]);
+    if (faltam.length) return err(`A lista ainda não tem os campos novos (ID, Grupo, IMEIs, Veículo). ${session.n1 ? "Rode Sistema › Configuração › Executar tudo." : "Peça a um administrador para rodar a Configuração."}`);
+    if (novas.IdInterno && PB_STATE.itens.some(i => String(i.IdInterno || "").trim().toLowerCase() === novas.IdInterno.toLowerCase() && (!x || i._id !== x._id))) return err("Já existe uma máquina com este ID.");
     const histNovo = hist.slice();
     const nvComent = g("pbComentNovo");
     if (nvComent) histNovo.push({ data: todayISO(), autor: (session.me && session.me.displayName) || "—", texto: nvComent });
@@ -9354,6 +9379,7 @@ window.pbForm = (id) => {
       UsuarioPagbank: g("pbUser") || null,
       Historico: histNovo.length ? JSON.stringify(histNovo) : null
     };
+    Object.keys(novas).forEach(k => { if (PB_STATE.cols ? PB_STATE.cols.has(k) : novas[k] != null) f[k] = novas[k]; });   /* revisão M1: sem saber as colunas, campo vazio não é enviado */
     const respId = $("pbResp").value;
     if (respId) f.ResponsavelLookupId = Number(respId); else f.ResponsavelLookupId = null;
     const dup = PB_STATE.itens.find(i => i.Title === f.Title && (!x || i._id !== x._id));
@@ -17770,7 +17796,7 @@ LISTS.eq_pagbank = {
   description: "Operacional NMB · cadastro das maquininhas Pagbank (modelo, nº série, status, garantia, local, responsável). Formato do painel do PagBank.",
   columns: [
     { name: "Modelo",         displayName: "Modelo",             required: true, choice: choice(["Moderninha Pro", "Moderninha Smart 2", "Moderninha Smart", "Moderninha X", "Minizinha Chip 3", "Outra"]) },
-    { name: "CodigoID",       displayName: "Código ID",          text: { allowMultipleLines: false, maxLength: 40 } },
+    { name: "CodigoID",       displayName: "IMEI (RJ Consultores)", renomear: true, text: { allowMultipleLines: false, maxLength: 40 } },   /* v0.14.12.2: era "Código ID" */
     { name: "CNPJTitular",    displayName: "CNPJ titular",       text: { allowMultipleLines: false, maxLength: 20 } },
     { name: "Status",         displayName: "Status",             required: true, choice: choice(["Ativada", "Aguardando ativação", "Bloqueada", "Devolvida", "Em manutenção"]), update: true },
     { name: "GarantiaAte",    displayName: "Garantia até",       dateTime: dateOnly },
@@ -17780,7 +17806,13 @@ LISTS.eq_pagbank = {
     { name: "DataAquisicao",  displayName: "Data de aquisição",  dateTime: dateOnly },
     { name: "UsuarioPagbank", displayName: "Usuário PagBank",    text: { allowMultipleLines: false, maxLength: 100 } },   /* v0.12.27 #16: login do painel do PagBank para esta máquina */
     { name: "Historico",      displayName: "Histórico (JSON)",   text: { allowMultipleLines: true, textType: "plain" } },   /* v0.12.27 #16: lista de comentários/eventos no registro */
-    { name: "Observacoes",    displayName: "Observações",        text: { allowMultipleLines: true, textType: "plain" } }
+    { name: "Observacoes",    displayName: "Observações",        text: { allowMultipleLines: true, textType: "plain" } },
+    /* v0.14.12.2 (pedido de 21/10 11:47): ID interno, Grupo (Frota/Agência), IMEIs do equipamento e veículo associado */
+    { name: "IdInterno",      displayName: "ID da máquina",                 text: { allowMultipleLines: false, maxLength: 30 } },
+    { name: "Grupo",          displayName: "Grupo",              choice: choice(["Frota", "Agência"]), update: true },
+    { name: "ImeiEquip1",     displayName: "IMEI 1 (equipamento)", text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "ImeiEquip2",     displayName: "IMEI 2 (equipamento)", text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Veiculo",        displayName: "Associada ao veículo",  text: { allowMultipleLines: false, maxLength: 30 } }
   ]
 };
 
@@ -18873,7 +18905,7 @@ window.avalExcluir = async id => { if (!confirm("Excluir esta avaliação?")) re
    ===================================================================== */
 const TI_STATE = { site: null, list: undefined, itens: [], ready: false, erro: "", busca: "", status: "", sev: "", cat: "", dep: "", meus: false };
 MOD_RESET.ti_chamados = () => { TI_STATE.busca = ""; TI_STATE.status = ""; TI_STATE.sev = ""; TI_STATE.cat = ""; TI_STATE.dep = ""; TI_STATE.meus = false; };
-MOD_RESET.pb = () => { PB_STATE.q = ""; PB_STATE.filtroStatus = ""; PB_STATE.filtroLocal = ""; };
+MOD_RESET.pb = () => { PB_STATE.q = ""; PB_STATE.filtroStatus = ""; PB_STATE.filtroLocal = ""; PB_STATE.filtroGrupo = ""; };
 async function loadTi(force) {
   TI_STATE.erro = "";
   if (!TI_STATE.site) TI_STATE.site = await SP.site(CONFIG.sites.ti);
@@ -38666,7 +38698,7 @@ function tercNotasGuarda(method, path, body) {
 { const g0 = guardaEscrita; guardaEscrita = function (method, path, body) { const r = g0.apply(this, arguments); tercNotasGuarda(method, path, body); return r; }; window.guardaEscrita = guardaEscrita; }
 (function () { const s = document.createElement("style"); s.textContent = `.tnota-lapis{margin-left:auto}.tnota-lapis + .tav-x{margin-left:0}.tnota-ed{font-style:italic}
 .tnota-editando textarea{width:100%;margin-top:4px;min-height:60px}.tnota-ed-acoes{display:flex;gap:6px;align-items:center;margin-top:6px}`; document.head.appendChild(s); })();
-CONFIG.version = "v0.14.12.1";
+CONFIG.version = "v0.14.12.2";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

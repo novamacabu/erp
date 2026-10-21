@@ -3778,7 +3778,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.12.3",
+  version: "v0.14.12.4",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -9252,7 +9252,7 @@ function paintPb() {
   if (!PB_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>A lista "Operacional — Máquinas Pagbank" ainda não existe</h3><p>Vá em Sistema › Configuração e rode "Executar tudo na ordem" (ou só o setup "Operacional — Máquinas Pagbank").</p></div>`; return; }
   const its = PB_STATE.itens.filter(x => {
     const q = PB_STATE.q.toLowerCase();
-    const bateQ = !q || [x.Title, x.Modelo, x.CodigoID, x.IdInterno, x.ImeiEquip1, x.ImeiEquip2, x.Veiculo, x.Grupo, x.Local, x.CNPJTitular, estRotulo(estPorCnpj(x.CNPJTitular))].some(v => String(v || "").toLowerCase().includes(q));
+    const bateQ = !q || [x.Title, x.Modelo, x.CodigoID, pbDig(x.CodigoID), x.IdInterno, x.ImeiEquip1, x.ImeiEquip2, x.BateriaSerie, x.Veiculo, x.Grupo, x.Local, x.CNPJTitular, estRotulo(estPorCnpj(x.CNPJTitular))].some(v => String(v || "").toLowerCase().includes(q));
     if (PB_STATE.filtroGrupo && (PB_STATE.filtroGrupo === "—" ? !!x.Grupo : x.Grupo !== PB_STATE.filtroGrupo)) return false;
     const bateS = !PB_STATE.filtroStatus || x.Status === PB_STATE.filtroStatus;
     const bateL = !PB_STATE.filtroLocal || x.Local === PB_STATE.filtroLocal;
@@ -9296,7 +9296,8 @@ function paintPb() {
       <td class="pb-foto-td">${erpAvatar(fu, 32)}</td>
       <td class="nw"><b>${esc(x.IdInterno || "—")}</b>${x.Grupo ? `<div class="sup">${esc(x.Grupo)}</div>` : ""}</td>
       <td class="nw"><b>${esc(x.Modelo || "—")}</b></td>
-      <td class="nw"><b>${esc(x.Title || "—")}</b>${x.Title ? ` <button class="btn-copy" title="Copiar nº série" onclick="event.stopPropagation(); erpCopy(${jsArg(x.Title)})">📋</button>` : ""}${x.CodigoID ? `<div class="sup">IMEI RJ ${esc(x.CodigoID)} <button class="btn-copy" title="Copiar IMEI (RJ Consultores)" onclick="event.stopPropagation(); erpCopy(${jsArg(x.CodigoID)})">📋</button></div>` : ""}</td>
+      <td class="nw"><b>${esc(x.Title || "—")}</b>${x.Title ? ` <button class="btn-copy" title="Copiar nº série" onclick="event.stopPropagation(); erpCopy(${jsArg(x.Title)})">📋</button>` : ""}</td>
+      <td class="nw">${x.CodigoID ? `${esc(pbImeiTxt(x.CodigoID, PB_IMEI_RJ))} <button class="btn-copy" title="Copiar IMEI (RJ Consultores)" onclick="event.stopPropagation(); erpCopy(${jsArg(x.CodigoID)})">📋</button>` : `<span class="sup">—</span>`}</td>
       <td>${pbContaHtml(x.CNPJTitular)}</td>
       <td><span class="pill st-${stCls(x.Status) || "pend"}"><i></i>${esc(x.Status || "—")}</span></td>
       <td>${esc(x.Local || "—")}${x.Veiculo ? `<div class="sup">🚌 ${esc(x.Veiculo)}</div>` : ""}</td>
@@ -9306,95 +9307,182 @@ function paintPb() {
   };
   body.innerHTML = `${kpis}${abas}
     <div class="filters" role="search">
-      <input type="search" id="pbQ" class="span-2" placeholder="Buscar: ID, nº série, modelo, IMEI, veículo, local…" value="${esc(PB_STATE.q)}">
+      <input type="search" id="pbQ" class="span-2" placeholder="Buscar: ID, nº série, modelo, IMEI, bateria, veículo, local…" value="${esc(PB_STATE.q)}">
       ${grpOpts}${stOpts}${locOpts}
       <button class="btn ghost" onclick="PB_STATE.q = ''; PB_STATE.filtroStatus = ''; PB_STATE.filtroLocal = ''; PB_STATE.filtroGrupo = ''; paintPb();">Limpar</button>
     </div>
-    ${its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th title="Foto do responsável (editável em RH › Funcionários)"><span class="sr-only">Foto</span></th><th>ID</th><th>Modelo</th><th>Nº série</th><th>Conta</th><th>Status</th><th>Local · veículo</th><th>Responsável</th><th></th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhuma máquina no filtro</h3><p>${PB_STATE.itens.length ? "Troque o status, o local ou limpe os filtros." : (edita ? "Clique em \"Cadastrar máquina\" para começar." : "A lista está vazia.")}</p></div>`}
+    ${its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th title="Foto do responsável (editável em RH › Funcionários)"><span class="sr-only">Foto</span></th><th>ID</th><th>Modelo</th><th>Nº série</th><th>IMEI RJ</th><th>Conta</th><th>Status</th><th>Local · veículo</th><th>Responsável</th><th></th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhuma máquina no filtro</h3><p>${PB_STATE.itens.length ? "Troque o status, o local ou limpe os filtros." : (edita ? "Clique em \"Cadastrar máquina\" para começar." : "A lista está vazia.")}</p></div>`}
     <p class="hint">Dica: você pode baixar a relação pelo painel do PagBank em "Gerenciar maquininhas" (gerencianet.pagbank.com.br). Para bloquear ou ativar remotamente, use o próprio painel do PagBank.</p>`;
   const q = $("pbQ"); if (q) q.addEventListener("input", ev => { PB_STATE.q = ev.target.value; erpDeb("pbQ", () => keepFocus(paintPb)); });
 }
-window.pbForm = (id) => {
+/* v0.14.12.4 (pedido de 21/10 15:23): a máquina abre em modo de leitura, com o botão Editar; máscaras dos IMEIs; nº de série da
+   bateria; comentários editáveis e removíveis (administrador todos, cada pessoa os seus); "Cadastro de informações" com o
+   Histórico de movimentações (cada mudança de responsável, veículo, local, status etc. fica registrada: quem, quando, de → para). */
+const PB_IMEI_EQ = { n: 15, g: 3, ph: "000-000-000-000-000" }, PB_IMEI_RJ = { n: 20, g: 4, ph: "0000-0000-0000-0000-0000" };
+const pbDig = t => String(t || "").replace(/\D/g, "");
+const pbGrupos = (t, M) => { const d = pbDig(t).slice(0, M.n); return d ? d.match(new RegExp(`.{1,${M.g}}`, "g")).join("-") : ""; };
+/* mostra o IMEI no padrão; valor antigo que não é só número aparece como foi gravado */
+const pbImeiTxt = (t, M) => { const s = String(t || "").trim(); if (!s) return ""; return /^[\d\s.\-\/]+$/.test(s) && pbDig(s).length === M.n ? pbGrupos(s, M) : s; };   /* revisão M1: valor fora do padrão aparece como foi gravado */
+window.pbMascara = (el, qual) => { const M = qual === "rj" ? PB_IMEI_RJ : PB_IMEI_EQ; const v = el.value; if (!/^[\d\s.\-\/]*$/.test(v)) return; const f = pbGrupos(v, M); if (f !== v) el.value = f; };
+const PB_MOV_CAMPOS = [["IdInterno", "ID"], ["Grupo", "Grupo"], ["Modelo", "Modelo"], ["Title", "Nº de série"], ["CodigoID", "IMEI (RJ Consultores)"], ["ImeiEquip1", "IMEI 1 (equipamento)"], ["ImeiEquip2", "IMEI 2 (equipamento)"], ["BateriaSerie", "Nº de série da bateria"], ["CNPJTitular", "Conta (CNPJ)"], ["Status", "Status"], ["Local", "Local"], ["_resp", "Responsável"], ["UsuarioPagbank", "Alocação"], ["Veiculo", "Veículo associado"], ["DataAquisicao", "Data de aquisição"]];
+const pbFuncNome = id => { const f = id ? PB_STATE.funcs.find(x => String(x._id) === String(id)) : null; return f ? f.Title : (id ? `funcionário ${id}` : ""); };
+const pbMovVal = (x, k) => {
+  if (k === "_resp") return pbFuncNome(x.ResponsavelLookupId != null ? x.ResponsavelLookupId : x.ResponsavelId);
+  if (k === "CNPJTitular") return estDig(x[k]) || "";   /* revisão M3: o mesmo CNPJ com e sem máscara não é mudança */
+  if (k === "DataAquisicao") return x[k] ? fmtDate(x[k]) : "";
+  if (k === "ImeiEquip1" || k === "ImeiEquip2") return pbImeiTxt(x[k], PB_IMEI_EQ);
+  return String(x[k] == null ? "" : x[k]).trim();
+};
+const pbMovMostra = (k, v) => k === "CNPJTitular" && v ? rhfCnpjFmt(v) : v;
+function pbMovs(x) { try { const a = JSON.parse((x && x.Movimentacoes) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+/* compara o antes e o depois e devolve as movimentações novas */
+function pbMovDiff(antes, depois) {
+  const em = new Date().toISOString(), por = (session.me && session.me.displayName) || "—";
+  return PB_MOV_CAMPOS.map(([k, n]) => {
+    if (k === "_resp" && !PB_STATE.funcs.length) return null;   /* revisão M2: sem o RH carregado, não registra troca de responsável */
+    const de = pbMovVal(antes, k), para = pbMovVal(depois, k);
+    return de === para ? null : { em, por, c: n, de: pbMovMostra(k, de), para: pbMovMostra(k, para) };
+  }).filter(Boolean);
+}
+const pbMovOk = () => !PB_STATE.cols || PB_STATE.cols.has("Movimentacoes");
+const pbEu = () => normEmail((session.me && (session.me.mail || session.me.userPrincipalName)) || "");
+const pbComMeu = h => h && (h.e ? normEmail(h.e) === pbEu() && !!pbEu() : !!h.autor && h.autor !== "—" && h.autor === ((session.me && session.me.displayName) || ""));
+const pbComPode = h => !vcAtivo() && podeEditar("equip") && (!!session.n1 || pbComMeu(h));
+const PB_COM = { lista: [], edit: null };
+function pbComPintar(editar) {
+  const el = $("pbHistBox"); if (!el) return;
+  const L = PB_COM.lista;
+  el.innerHTML = L.length ? `<ul class="pb-hist">${L.map((h, i) => ({ h, i })).reverse().map(({ h, i }) => {
+    const acoes = editar && pbComPode(h) ? `<span class="pb-hist-acoes"><button type="button" class="btn-copy" title="Editar comentário" onclick="pbComEditar(${i})">✎</button><button type="button" class="btn-copy" title="Remover comentário" onclick="pbComRemover(${i})">×</button></span>` : "";
+    const ed = h.ed ? ` <span class="sup">· editado em ${esc(fmtDate(h.ed.em))} por ${esc(h.ed.por || "—")}</span>` : "";
+    if (PB_COM.edit === i) return `<li><div class="pb-hist-top"><b>${esc(h.autor || "—")}</b> · <span class="sup">${esc(h.data || "")}</span></div><textarea id="pbComEd" rows="2">${esc(h.texto || "")}</textarea><div style="margin-top:6px"><button type="button" class="btn sm primary" onclick="pbComOk()">Ok</button> <button type="button" class="btn sm ghost" onclick="PB_COM.edit=null; pbComPintar(true)">Cancelar</button> <span class="sup">vale ao salvar</span></div></li>`;
+    return `<li><div class="pb-hist-top"><b>${esc(h.autor || "—")}</b> · <span class="sup">${esc(h.data || "")}</span>${ed}${acoes}</div><div class="pb-hist-txt">${esc(h.texto || "").replace(/\n/g, "<br>")}</div></li>`;
+  }).join("")}</ul>` : `<div class="sup" style="padding:8px 0">Nenhum comentário ainda.</div>`;
+}
+window.pbComPintar = pbComPintar;
+window.pbComEditar = i => { if (PB_COM.edit != null && $("pbComEd") && !pbComOk()) return; PB_COM.edit = i; pbComPintar(true); const t = $("pbComEd"); if (t) t.focus(); };
+window.pbComOk = () => { const i = PB_COM.edit; if (i == null) return true; const v = String(($("pbComEd") || {}).value || "").trim(); if (!v) { toast("O comentário não pode ficar vazio. Para tirar, use o ×."); return false; }
+  const h = PB_COM.lista[i]; if (h && pbComPode(h) && h.texto !== v) PB_COM.lista[i] = Object.assign({}, h, { texto: v, ed: { por: (session.me && session.me.displayName) || "—", e: pbEu(), em: new Date().toISOString() } });
+  PB_COM.edit = null; pbComPintar(true); try { $("modal").dataset.sujo = "1"; } catch (e) {} return true; };
+window.pbComRemover = i => { const h = PB_COM.lista[i]; if (!h || !pbComPode(h)) return; if (!confirm("Remover este comentário? Vale ao salvar.")) return; PB_COM.lista.splice(i, 1); PB_COM.edit = null; pbComPintar(true); try { $("modal").dataset.sujo = "1"; } catch (e) {} };
+function pbMovHtml(x) {
+  const ms = pbMovs(x);
+  return ms.length ? `<div class="table-wrap pb-mov"><table class="cap-table"><thead><tr><th>Quando</th><th>Quem</th><th>Informação</th><th>De</th><th>Para</th></tr></thead><tbody>${ms.slice().reverse().map(m => `<tr><td class="nw">${esc(m.em ? new Date(m.em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "")}</td><td>${esc(m.por || "—")}</td><td><b>${esc(m.c || "")}</b></td><td>${m.de ? esc(m.de) : `<span class="sup">—</span>`}</td><td>${m.para ? esc(m.para) : `<span class="sup">—</span>`}</td></tr>`).join("")}</tbody></table></div>`
+    : `<div class="sup" style="padding:6px 0">Nenhuma movimentação registrada ainda. Cada mudança de responsável, veículo, local, status e dos demais dados fica registrada aqui.</div>`;
+}
+window.pbForm = (id, editar) => {
   if (!podeEditar("equip") && id === undefined) { toast("Seu acesso a Equipamentos é só de leitura."); return; }
   const x = id ? PB_STATE.itens.find(i => i._id === String(id)) : null, v = x || { Modelo: "Moderninha Smart 2", Status: "Aguardando ativação", Compartilhada: false, Local: "", UsuarioPagbank: "Nova Macabu" };
-  /* v0.12.82: alocação antiga com nome de pessoa e sem responsável: sugere a pessoa no Responsável */
+  const ed = !x || (!!editar && podeEditar("equip") && !vcAtivo()), dis = ed ? "" : "disabled";
   const nrm = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-  const sugResp = !v.ResponsavelLookupId && v.UsuarioPagbank && !["Nova Macabu", "PagBank"].includes(v.UsuarioPagbank) ? PB_STATE.funcs.find(f => nrm(f.Title) === nrm(v.UsuarioPagbank)) : null;
+  const sugResp = ed && !v.ResponsavelLookupId && v.UsuarioPagbank && !["Nova Macabu", "PagBank"].includes(v.UsuarioPagbank) ? PB_STATE.funcs.find(f => nrm(f.Title) === nrm(v.UsuarioPagbank)) : null;
   const respSel = String(v.ResponsavelLookupId || (sugResp ? sugResp._id : ""));
-  const funcOpts = `<option value="">(sem responsável)</option>` + PB_STATE.funcs.map(f => `<option value="${esc(f._id)}" ${respSel === String(f._id) ? "selected" : ""}>${esc(f.Title)}${f.Cargo ? " · " + esc(f.Cargo) : ""}</option>`).join("");
-  const locOpts = ["Caixa matriz", "Agência Macaé", "Agência Conceição", "Sub agência", "Em rota", "Escritório", "Depósito", "Outro"].map(o => `<option value="${esc(o)}" ${(v.Local || "Caixa matriz") === o ? "selected" : ""}>${o}</option>`).join("");   /* v0.12.48: sem "(sem local)" */
+  const respFora = respSel && !PB_STATE.funcs.some(f => String(f._id) === respSel);   /* revisão M2: RH não carregou (ou a pessoa saiu) — não perder o responsável gravado */
+  const funcOpts = `<option value="">(sem responsável)</option>${respFora ? `<option value="${esc(respSel)}" selected>${esc(pbFuncNome(respSel))} (não carregado)</option>` : ""}` + PB_STATE.funcs.map(f => `<option value="${esc(f._id)}" ${respSel === String(f._id) ? "selected" : ""}>${esc(f.Title)}${f.Cargo ? " · " + esc(f.Cargo) : ""}</option>`).join("");
+  const locais = ["Caixa matriz", "Agência Macaé", "Agência Conceição", "Sub agência", "Em rota", "Escritório", "Depósito", "Outro"];
+  const locOpts = locais.concat(v.Local && !locais.includes(v.Local) ? [v.Local] : []).map(o => `<option value="${esc(o)}" ${(v.Local || "Caixa matriz") === o ? "selected" : ""}>${esc(o)}</option>`).join("");
   const modelos = ["Moderninha Pro", "Moderninha Smart 2", "Moderninha Smart", "Moderninha X", "Minizinha Chip 3", "Outra"];
   const statusOps = ["Ativada", "Aguardando ativação", "Bloqueada", "Devolvida", "Em manutenção"];
-  /* v0.12.82: Alocação só Nova Macabu ou PagBank — as pessoas ficam no Responsável */
-  const usuariosAll = ["Nova Macabu", "PagBank"];
-  const uAnt = v.UsuarioPagbank && !usuariosAll.includes(v.UsuarioPagbank) ? v.UsuarioPagbank : "";
-  const uVal = uAnt ? "Nova Macabu" : (v.UsuarioPagbank || "Nova Macabu");
+  const usuariosAll = ["Nova Macabu", "PagBank"], uAnt = v.UsuarioPagbank && !usuariosAll.includes(v.UsuarioPagbank) ? v.UsuarioPagbank : "", uVal = uAnt ? "Nova Macabu" : (v.UsuarioPagbank || "Nova Macabu");
   const userOpts = usuariosAll.map(u => `<option value="${esc(u)}" ${uVal === u ? "selected" : ""}>${esc(u)}</option>`).join("");
-  /* v0.12.27 #16: histórico de comentários */
-  let hist = []; try { hist = v.Historico ? JSON.parse(v.Historico) : []; } catch (e) { hist = []; }
-  if (!Array.isArray(hist)) hist = [];
-  const histHtml = hist.length
-    ? `<ul class="pb-hist">${hist.slice().reverse().map(h => `<li><div class="pb-hist-top"><b>${esc(h.autor || "—")}</b> · <span class="sup">${esc(h.data || "")}</span></div><div class="pb-hist-txt">${esc(h.texto || "").replace(/\n/g, "<br>")}</div></li>`).join("")}</ul>`
-    : `<div class="sup" style="padding:8px 0">Nenhum comentário ainda.</div>`;
+  const grpSel = `<select id="pbGrupo" ${dis}><option value="">— escolha —</option>${PB_GRUPOS.map(g => `<option ${v.Grupo === g ? "selected" : ""}>${esc(g)}</option>`).join("")}</select>`;
+  let hist = []; try { hist = v.Historico ? JSON.parse(v.Historico) : []; } catch (e) { hist = []; } if (!Array.isArray(hist)) hist = [];
+  PB_COM.lista = hist.slice(); PB_COM.edit = null; PB_COM.mudou = false;
+  const rjTxt = pbImeiTxt(v.CodigoID, PB_IMEI_RJ);
   $("modal").className = "modal";
-  const grpSel = `<select id="pbGrupo"><option value="">— escolha —</option>${PB_GRUPOS.map(g => `<option ${v.Grupo === g ? "selected" : ""}>${esc(g)}</option>`).join("")}</select>`;
-  openModal(x ? "Editar máquina" : "Cadastrar maquininha Pagbank", `<div class="form-grid">
-      <div class="field"><label>ID</label><input id="pbIdInt" maxlength="30" value="${esc(v.IdInterno || "")}" placeholder="Ex.: MQ-01"></div>
+  openModal(!x ? "Cadastrar maquininha Pagbank" : ed ? "Editar máquina" : "Máquina Pagbank", `
+    <h3 class="pb-sec">Cadastro de informações</h3>
+    <div class="form-grid">
+      <div class="field"><label>ID</label><input id="pbIdInt" maxlength="30" value="${esc(v.IdInterno || "")}" placeholder="Ex.: MQ-01" ${dis}></div>
       <div class="field"><label>Grupo</label>${grpSel}<div class="hint">Frota (máquinas dos ônibus) ou Agência</div></div>
-      <div class="field"><label>Modelo<span class="req">*</span></label><select id="pbModelo">${modelos.map(m => `<option ${v.Modelo === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
-      <div class="field"><label>Nº de série<span class="req">*</span></label><input id="pbSerie" value="${esc(v.Title || "")}" placeholder="Ex.: PB3S259S71979"></div>
-      <div class="field"><label>IMEI (RJ Consultores)</label><input id="pbId" maxlength="40" value="${esc(v.CodigoID || "")}" placeholder="Identificação na RJ Consultores"></div>
-      <div class="field"><label>Conta (CNPJ)</label>${pbCnpjSelect(v.CNPJTitular) || `<input id="pbCnpj" data-mask="doc" inputmode="numeric" value="${esc(v.CNPJTitular || "")}" placeholder="00.000.000/0000-00"><div class="hint">Cadastre os CNPJs em Diretoria › Cadastros Mestres › CNPJs</div>`}</div>
-      <div class="field"><label>Status<span class="req">*</span></label><select id="pbStatus">${statusOps.map(s => `<option ${v.Status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
-      <div class="field"><label>Local</label><select id="pbLocal">${locOpts}</select></div>   <!-- v0.12.48: id próprio — o filtro da página também se chamava pbLoc e o Local do formulário nunca era gravado -->
-      <div class="field"><label>Responsável</label><select id="pbResp">${funcOpts}</select><div class="hint">${PB_STATE.funcs.length ? "Associado à lista RH — Funcionários." : "A lista RH — Funcionários está vazia. Cadastre funcionários antes de associar."}</div></div>
-      <div class="field"><label>Alocação</label><select id="pbUser">${userOpts}</select>${uAnt ? `<div class="hint">Antes: ${esc(uAnt)} — a pessoa fica no Responsável; ao salvar, a alocação passa a ser a escolhida aqui.</div>` : ""}</div>
-      <div class="field"><label>IMEI 1 (equipamento)</label><input id="pbImei1" inputmode="numeric" maxlength="20" value="${esc(v.ImeiEquip1 || "")}" placeholder="15 dígitos"></div>
-      <div class="field"><label>IMEI 2 (equipamento)</label><input id="pbImei2" inputmode="numeric" maxlength="20" value="${esc(v.ImeiEquip2 || "")}" placeholder="15 dígitos (se houver)"></div>
-      <div class="field"><label>Associada ao veículo</label>${frotaRefSelect("pbVeic", v.Veiculo, "", frotaRefsLista().length ? "Nenhum (opcional)" : "Prefixo (ex.: RJ 221.001)")}<div class="hint">Veículos cadastrados em Operacional › Frota › Geral</div></div>
-      <div class="field"><label>Data de aquisição</label><input type="date" id="pbAq" value="${esc(v.DataAquisicao ? ymd(v.DataAquisicao) : "")}"></div>
-      <div class="field full"><label>Observações</label><input id="pbObs" value="${esc(v.Observacoes || "")}"></div>
+      <div class="field"><label>Modelo<span class="req">*</span></label><select id="pbModelo" ${dis}>${modelos.concat(v.Modelo && !modelos.includes(v.Modelo) ? [v.Modelo] : []).map(m => `<option ${v.Modelo === m ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></div>
+      <div class="field"><label>Nº de série<span class="req">*</span></label><input id="pbSerie" value="${esc(v.Title || "")}" placeholder="Ex.: PB3S259S71979" ${dis}></div>
+      <div class="field"><label>IMEI (RJ Consultores)</label><input id="pbId" inputmode="numeric" maxlength="${/^[\d\s.\-\/]*$/.test(String(v.CodigoID || "")) ? 24 : 40}" value="${esc(rjTxt)}" placeholder="${PB_IMEI_RJ.ph}" oninput="pbMascara(this,'rj')" ${dis}></div>
+      <div class="field"><label>Conta (CNPJ)</label>${(pbCnpjSelect(v.CNPJTitular) || `<input id="pbCnpj" data-mask="doc" inputmode="numeric" value="${esc(v.CNPJTitular || "")}" placeholder="00.000.000/0000-00"><div class="hint">Cadastre os CNPJs em Diretoria › Cadastros Mestres › CNPJs</div>`).replace(/<(select|input) id="pbCnpj"/, `<$1 id="pbCnpj" ${dis}`)}</div>
+      <div class="field"><label>IMEI 1 (equipamento)</label><input id="pbImei1" inputmode="numeric" maxlength="19" value="${esc(pbImeiTxt(v.ImeiEquip1, PB_IMEI_EQ))}" placeholder="${PB_IMEI_EQ.ph}" oninput="pbMascara(this,'eq')" ${dis}></div>
+      <div class="field"><label>IMEI 2 (equipamento)</label><input id="pbImei2" inputmode="numeric" maxlength="19" value="${esc(pbImeiTxt(v.ImeiEquip2, PB_IMEI_EQ))}" placeholder="${PB_IMEI_EQ.ph}" oninput="pbMascara(this,'eq')" ${dis}></div>
+      <div class="field"><label>Nº de série da bateria</label><input id="pbBateria" maxlength="40" value="${esc(v.BateriaSerie || "")}" placeholder="Etiqueta da bateria" ${dis}></div>
+      <div class="field"><label>Status<span class="req">*</span></label><select id="pbStatus" ${dis}>${statusOps.concat(v.Status && !statusOps.includes(v.Status) ? [v.Status] : []).map(s => `<option ${v.Status === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>
+      <div class="field"><label>Local</label><select id="pbLocal" ${dis}>${locOpts}</select></div>
+      <div class="field"><label>Responsável</label><select id="pbResp" ${dis}>${funcOpts}</select><div class="hint">${PB_STATE.funcs.length ? "Associado à lista RH — Funcionários." : "A lista RH — Funcionários está vazia. Cadastre funcionários antes de associar."}</div></div>
+      <div class="field"><label>Alocação</label><select id="pbUser" ${dis}>${userOpts}</select>${uAnt && ed ? `<div class="hint">Antes: ${esc(uAnt)} — a pessoa fica no Responsável; ao salvar, a alocação passa a ser a escolhida aqui.</div>` : ""}</div>
+      <div class="field"><label>Associada ao veículo</label>${frotaRefSelect("pbVeic", v.Veiculo, dis, frotaRefsLista().length ? "Nenhum (opcional)" : "Prefixo (ex.: RJ 221.001)")}<div class="hint">Veículos cadastrados em Operacional › Frota › Geral</div></div>
+      <div class="field"><label>Data de aquisição</label><input type="date" id="pbAq" value="${esc(v.DataAquisicao ? ymd(v.DataAquisicao) : "")}" ${dis}></div>
+      <div class="field full"><label>Observações</label><input id="pbObs" value="${esc(v.Observacoes || "")}" ${dis}></div>
     </div>
-    <h3 style="margin:18px 0 6px">Histórico / comentários</h3>
-    <div id="pbHistBox">${histHtml}</div>
-    <div class="form-grid"><div class="field full"><label>Novo comentário</label><textarea id="pbComentNovo" rows="2" placeholder="Trocou de ponto, levou pra manutenção, chip novo…"></textarea></div></div>
+    ${x ? `<h3 class="pb-sec">Histórico de movimentações</h3>${pbMovHtml(x)}` : ""}
+    <h3 class="pb-sec">Histórico / comentários</h3>
+    <div id="pbHistBox"></div>
+    ${ed ? `<div class="form-grid"><div class="field full"><label>Novo comentário</label><textarea id="pbComentNovo" rows="2" placeholder="Trocou de ponto, levou pra manutenção, chip novo…"></textarea></div></div>` : ""}
     <div class="err-msg" id="pbErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
-    const g = k => $(k).value.trim();
+    if (!ed) return true;
+    const g = k => ($(k) ? String($(k).value || "").trim() : "");
     const err = m => { $("pbErr").style.display = "block"; $("pbErr").textContent = m; return false; };
+    if (PB_COM.edit != null && !pbComOk()) return false;
     if (!g("pbModelo") || !g("pbSerie") || !g("pbStatus")) return err("Preencha modelo, nº série e status.");
-    const imeiOk = t => !t || /^\d{14,16}$/.test(t.replace(/[\s.\-\/]/g, ""));
-    if (!imeiOk(g("pbImei1")) || !imeiOk(g("pbImei2"))) return err("IMEI do equipamento: use só números (normalmente 15 dígitos).");
-    const vSel = $("pbVeic") ? $("pbVeic").value.trim() : "";
-    const novas = { IdInterno: g("pbIdInt") || null, Grupo: g("pbGrupo") || null, ImeiEquip1: g("pbImei1").replace(/\D/g, "") || null, ImeiEquip2: g("pbImei2").replace(/\D/g, "") || null, Veiculo: (vSel && typeof frotaRefCanon === "function" && frotaRefCanon(vSel)) || vSel || null };
-    const faltam = Object.keys(novas).filter(k => !pbCol(k) && novas[k]);
-    if (faltam.length) return err(`A lista ainda não tem os campos novos (ID, Grupo, IMEIs, Veículo). ${session.n1 ? "Rode Sistema › Configuração › Executar tudo." : "Peça a um administrador para rodar a Configuração."}`);
-    if (novas.IdInterno && PB_STATE.itens.some(i => String(i.IdInterno || "").trim().toLowerCase() === novas.IdInterno.toLowerCase() && (!x || i._id !== x._id))) return err("Já existe uma máquina com este ID.");
-    const histNovo = hist.slice();
+    const e1Txt = pbImeiTxt(v.ImeiEquip1, PB_IMEI_EQ), e2Txt = pbImeiTxt(v.ImeiEquip2, PB_IMEI_EQ);
+    const mexeu1 = g("pbImei1") !== e1Txt, mexeu2 = g("pbImei2") !== e2Txt;   /* revisão M1: o que não foi mexido é gravado como estava */
+    if ((mexeu1 && g("pbImei1") && pbDig(g("pbImei1")).length !== 15) || (mexeu2 && g("pbImei2") && pbDig(g("pbImei2")).length !== 15)) return err(`IMEI do equipamento: 15 números (${PB_IMEI_EQ.ph}).`);
+    const e1 = mexeu1 ? pbDig(g("pbImei1")) : (v.ImeiEquip1 || ""), e2 = mexeu2 ? pbDig(g("pbImei2")) : (v.ImeiEquip2 || "");
+    let rj = g("pbId");
+    if (rj && rj !== rjTxt) { if (pbDig(rj).length !== 20 || !/^[\d\s.\-\/]+$/.test(rj)) return err(`IMEI (RJ Consultores): 20 números (${PB_IMEI_RJ.ph}).`); rj = pbGrupos(rj, PB_IMEI_RJ); }
+    else if (rj === rjTxt) rj = v.CodigoID || null;
+    const histNovo = PB_COM.lista.slice(), eu = (session.me && session.me.displayName) || "—";
     const nvComent = g("pbComentNovo");
-    if (nvComent) histNovo.push({ data: todayISO(), autor: (session.me && session.me.displayName) || "—", texto: nvComent });
-    if (uAnt && g("pbUser") !== uAnt) histNovo.push({ data: todayISO(), autor: (session.me && session.me.displayName) || "—", texto: `Alocação anterior: ${uAnt} (a Alocação passou a ser só Nova Macabu ou PagBank; a pessoa fica no Responsável).` });
+    if (nvComent) histNovo.push({ data: todayISO(), autor: eu, e: pbEu(), texto: nvComent });
+    if (uAnt && g("pbUser") !== uAnt) histNovo.push({ data: todayISO(), autor: eu, texto: `Alocação anterior: ${uAnt} (a Alocação passou a ser só Nova Macabu ou PagBank; a pessoa fica no Responsável).` });
     const f = {
-      Title: g("pbSerie"), Modelo: g("pbModelo"), CodigoID: g("pbId") || null, CNPJTitular: g("pbCnpj") || null,
-      Status: g("pbStatus"), GarantiaAte: v.GarantiaAte || null, Local: g("pbLocal") || null,   /* v0.12.48: garantia e compartilhada saíram do formulário; o valor gravado é mantido */
+      Title: g("pbSerie"), Modelo: g("pbModelo"), CodigoID: rj || null, CNPJTitular: g("pbCnpj") || null,
+      Status: g("pbStatus"), GarantiaAte: v.GarantiaAte || null, Local: g("pbLocal") || null,
       DataAquisicao: g("pbAq") || null, Compartilhada: !!v.Compartilhada, Observacoes: g("pbObs") || null,
       UsuarioPagbank: g("pbUser") || null,
       Historico: histNovo.length ? JSON.stringify(histNovo) : null
     };
-    Object.keys(novas).forEach(k => { if (PB_STATE.cols ? PB_STATE.cols.has(k) : novas[k] != null) f[k] = novas[k]; });   /* revisão M1: sem saber as colunas, campo vazio não é enviado */
+    const vSel = $("pbVeic") ? $("pbVeic").value.trim() : "";
+    const novas = { IdInterno: g("pbIdInt") || null, Grupo: g("pbGrupo") || null, ImeiEquip1: e1 || null, ImeiEquip2: e2 || null, BateriaSerie: g("pbBateria") || null, Veiculo: (vSel && typeof frotaRefCanon === "function" && frotaRefCanon(vSel)) || vSel || null };
+    const faltam = Object.keys(novas).filter(k => !pbCol(k) && novas[k]);
+    if (faltam.length) return err(`A lista ainda não tem todos os campos (ID, Grupo, IMEIs, bateria, veículo). ${session.n1 ? "Rode Sistema › Configuração › Executar tudo." : "Peça a um administrador para rodar a Configuração."}`);
+    if (novas.IdInterno && PB_STATE.itens.some(i => String(i.IdInterno || "").trim().toLowerCase() === novas.IdInterno.toLowerCase() && (!x || i._id !== x._id))) return err("Já existe uma máquina com este ID.");
+    Object.keys(novas).forEach(k => { if (PB_STATE.cols ? PB_STATE.cols.has(k) : novas[k] != null) f[k] = novas[k]; });
     const respId = $("pbResp").value;
-    /* v0.14.12.3: grava o responsável na coluna que existir (número ResponsavelId; lookup antigo "Responsavel", se houver); sem nenhuma, não manda o campo */
     const temResp = PB_STATE.cols ? PB_STATE.cols.has("ResponsavelId") : null, temLk = PB_STATE.cols ? PB_STATE.cols.has("Responsavel") : false;
     if (temResp === true) f.ResponsavelId = respId ? Number(respId) : null;
     else if (temLk) f.ResponsavelLookupId = respId ? Number(respId) : null;
     else if (respId) return err(`A lista ainda não tem a coluna do Responsável. ${session.n1 ? "Rode Sistema › Configuração › Executar tudo" : "Peça a um administrador para rodar a Configuração"} e salve de novo (ou deixe "(sem responsável)" por enquanto).`);
     const dup = PB_STATE.itens.find(i => i.Title === f.Title && (!x || i._id !== x._id));
     if (dup) return err("Já existe uma máquina com este nº de série.");
+    /* histórico de movimentações: o que mudou em relação ao gravado */
+    if (x && pbMovOk() && PB_STATE.cols) {
+      const depois = Object.assign({}, x, f, { ResponsavelLookupId: respId ? Number(respId) : null, ResponsavelId: respId ? Number(respId) : null });
+      const mov = pbMovDiff(x, depois); if (mov.length) f.Movimentacoes = JSON.stringify(pbMovs(x).concat(mov));
+    }
     if (x) await SP.update(PB_STATE.site.id, PB_STATE.list.id, x._id, f);
     else await SP.create(PB_STATE.site.id, PB_STATE.list.id, f);
     await loadPb(); toast(x ? "Máquina atualizada" : "Máquina cadastrada"); paintPb(); return true;
   });
-  if (x && podeExcluir("equip")) document.querySelector("#modal .modal-foot").insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="pbExcluir(${jsArg(x._id)})">Excluir</button>`);
+  pbComPintar(ed);
+  const foot = document.querySelector("#modal .modal-foot");
+  if (!ed && foot) {
+    const s = $("mSave"); if (s) s.style.display = "none";
+    const c = foot.querySelector(".btn:not(#mSave)"); if (c) c.textContent = "Fechar";
+    if (podeEditar("equip") && !vcAtivo()) foot.insertAdjacentHTML("beforeend", `<button class="btn primary" id="pbEditarBtn" onclick="pbForm(${jsArg(x._id)}, true)">✎ Editar</button>`);
+  }
+  if (x && ed && podeExcluir("equip") && foot) foot.insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="pbExcluir(${jsArg(x._id)})">Excluir</button>`);
 };
+/* ativar/bloquear direto da linha também entra no histórico de movimentações */
+{ const a0 = window.pbAlternaStatus;
+  window.pbAlternaStatus = async (id, novo) => {
+    const it = PB_STATE.itens.find(x => String(x._id) === String(id));
+    if (it && pbMovOk() && PB_STATE.cols && PB_STATE.cols.has("Movimentacoes") && podeEditar("equip") && it.Status !== novo) {
+      const mov = pbMovs(it).concat([{ em: new Date().toISOString(), por: (session.me && session.me.displayName) || "—", c: "Status", de: it.Status || "", para: novo }]);
+      try { await SP.update(PB_STATE.site.id, PB_STATE.list.id, it._id, { Status: novo, Movimentacoes: JSON.stringify(mov) }); it.Status = novo; it.Movimentacoes = JSON.stringify(mov); toast(`Máquina ${novo === "Ativada" ? "ativada" : novo === "Bloqueada" ? "bloqueada" : "atualizada"} — lembre de refletir também no painel do PagBank`, 5000); paintPb(); }
+      catch (e) { toast("Não foi possível atualizar: " + e.message, 6000); }
+      return;
+    }
+    return a0(id, novo);
+  }; }
+(function () { const s = document.createElement("style"); s.textContent = `.pb-sec{margin:16px 0 6px;font-size:15px}.pb-sec:first-child{margin-top:0}
+.pb-hist-acoes{margin-left:auto;display:inline-flex;gap:4px}.pb-hist-top{display:flex;gap:6px;align-items:center}.pb-mov table{font-size:12.5px}`; document.head.appendChild(s); })();
 /* v0.12.27 #16: cadastro em lote das 14 Moderninha Smart 2 — gera registros base para serem completados */
 window.pbCadastrar14 = async () => {
   if (!podeEditar("equip")) { toast("Seu acesso a Equipamentos é só de leitura."); return; }
@@ -17824,6 +17912,8 @@ LISTS.eq_pagbank = {
     { name: "Grupo",          displayName: "Grupo",              choice: choice(["Frota", "Agência"]), update: true },
     { name: "ImeiEquip1",     displayName: "IMEI 1 (equipamento)", text: { allowMultipleLines: false, maxLength: 20 } },
     { name: "ImeiEquip2",     displayName: "IMEI 2 (equipamento)", text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "BateriaSerie",   displayName: "Nº de série da bateria", text: { allowMultipleLines: false, maxLength: 40 } },   /* v0.14.12.4 */
+    { name: "Movimentacoes",  displayName: "Histórico de movimentações (JSON)", text: { allowMultipleLines: true, textType: "plain" } },   /* v0.14.12.4: quem, quando, campo, de → para */
     { name: "Veiculo",        displayName: "Associada ao veículo",  text: { allowMultipleLines: false, maxLength: 30 } }
   ]
 };
@@ -38710,7 +38800,7 @@ function tercNotasGuarda(method, path, body) {
 { const g0 = guardaEscrita; guardaEscrita = function (method, path, body) { const r = g0.apply(this, arguments); tercNotasGuarda(method, path, body); return r; }; window.guardaEscrita = guardaEscrita; }
 (function () { const s = document.createElement("style"); s.textContent = `.tnota-lapis{margin-left:auto}.tnota-lapis + .tav-x{margin-left:0}.tnota-ed{font-style:italic}
 .tnota-editando textarea{width:100%;margin-top:4px;min-height:60px}.tnota-ed-acoes{display:flex;gap:6px;align-items:center;margin-top:6px}`; document.head.appendChild(s); })();
-CONFIG.version = "v0.14.12.3";
+CONFIG.version = "v0.14.12.4";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

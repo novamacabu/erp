@@ -3778,7 +3778,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.12.2",
+  version: "v0.14.12.3",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -9198,6 +9198,7 @@ async function loadPb(force) {
   if (!PB_STATE.list) { PB_STATE.itens = []; PB_STATE.ready = false; return; }
   const items = await SP.items(PB_STATE.site.id, PB_STATE.list.id);
   PB_STATE.itens = items.map(it => Object.assign({ _id: String(it.id) }, it.fields || {}));
+  PB_STATE.itens.forEach(x => { if (x.ResponsavelLookupId == null && x.ResponsavelId != null && x.ResponsavelId !== "") x.ResponsavelLookupId = x.ResponsavelId; });   /* v0.14.12.3: a tela lê ResponsavelLookupId */
   try { PB_STATE.cols = new Set((await graphAll(`/sites/${PB_STATE.site.id}/lists/${PB_STATE.list.id}/columns?$select=name`)).map(c => c.name)); } catch (e) { PB_STATE.cols = null; }
   try { await frotaRefsCarregar(); } catch (e) {}   /* v0.14.12.2: veículos de Frota › Geral */
   /* carrega RH — Funcionários para o seletor Responsável */
@@ -9381,7 +9382,11 @@ window.pbForm = (id) => {
     };
     Object.keys(novas).forEach(k => { if (PB_STATE.cols ? PB_STATE.cols.has(k) : novas[k] != null) f[k] = novas[k]; });   /* revisão M1: sem saber as colunas, campo vazio não é enviado */
     const respId = $("pbResp").value;
-    if (respId) f.ResponsavelLookupId = Number(respId); else f.ResponsavelLookupId = null;
+    /* v0.14.12.3: grava o responsável na coluna que existir (número ResponsavelId; lookup antigo "Responsavel", se houver); sem nenhuma, não manda o campo */
+    const temResp = PB_STATE.cols ? PB_STATE.cols.has("ResponsavelId") : null, temLk = PB_STATE.cols ? PB_STATE.cols.has("Responsavel") : false;
+    if (temResp === true) f.ResponsavelId = respId ? Number(respId) : null;
+    else if (temLk) f.ResponsavelLookupId = respId ? Number(respId) : null;
+    else if (respId) return err(`A lista ainda não tem a coluna do Responsável. ${session.n1 ? "Rode Sistema › Configuração › Executar tudo" : "Peça a um administrador para rodar a Configuração"} e salve de novo (ou deixe "(sem responsável)" por enquanto).`);
     const dup = PB_STATE.itens.find(i => i.Title === f.Title && (!x || i._id !== x._id));
     if (dup) return err("Já existe uma máquina com este nº de série.");
     if (x) await SP.update(PB_STATE.site.id, PB_STATE.list.id, x._id, f);
@@ -9930,6 +9935,8 @@ async function loadRc(force) {
   if (!RC_STATE.list) { RC_STATE.ready = false; return; }
   const its = await SP.items(RC_STATE.site.id, RC_STATE.list.id);
   RC_STATE.itens = its.map(it => Object.assign({ _id: it.id }, it.fields || {}));
+  RC_STATE.itens.forEach(x => { if (x.ResponsavelLookupId == null && x.ResponsavelId != null && x.ResponsavelId !== "") x.ResponsavelLookupId = x.ResponsavelId; });   /* v0.14.12.3 */
+  try { RC_STATE.cols = new Set((await graphAll(`/sites/${RC_STATE.site.id}/lists/${RC_STATE.list.id}/columns?$select=name`)).map(c => c.name)); } catch (e) { RC_STATE.cols = null; }
   /* funcionários para o lookup de responsável */
   try { const siteRh = await SP.site(CONFIG.sites[LISTS.rh_func.siteKey]); const lsRh = await SP.lists(siteRh.id); const lFunc = lsRh.find(l => l.displayName === LISTS.rh_func.displayName); if (lFunc) { const fs = await SP.items(siteRh.id, lFunc.id); RC_STATE.funcs = fs.map(x => Object.assign({ _id: x.id }, x.fields || {})); } } catch (e) {}
   RC_STATE.ready = true;
@@ -10000,7 +10007,12 @@ window.rcForm = id => {
     const g = k => ($(k) || {}).value || "";
     const err = m => { $("rcErr").style.display = "block"; $("rcErr").textContent = m; return false; };
     const num = g("rcNum").trim(); if (!num) return err("Informe o número do cartão.");
-    const fields = { Title: num, Chip: g("rcChip").trim() || null, CNPJTitular: g("rcCnpj").trim() || null, Status: g("rcStatus"), Tipo: g("rcTipo") || null, Local: g("rcLocal").trim() || null, ResponsavelLookupId: g("rcResp") || null, Saldo: g("rcSaldo") ? Number(g("rcSaldo")) : null, DataAquisicao: g("rcDaq") || null, Observacoes: g("rcObs").trim() || null };
+    const fields = { Title: num, Chip: g("rcChip").trim() || null, CNPJTitular: g("rcCnpj").trim() || null, Status: g("rcStatus"), Tipo: g("rcTipo") || null, Local: g("rcLocal").trim() || null, Saldo: g("rcSaldo") ? Number(g("rcSaldo")) : null, DataAquisicao: g("rcDaq") || null, Observacoes: g("rcObs").trim() || null };
+    /* v0.14.12.3: responsável na coluna que existir; sem nenhuma, não manda o campo */
+    const rId = g("rcResp") ? Number(g("rcResp")) : null, cs = RC_STATE.cols;
+    if (cs ? cs.has("ResponsavelId") : false) fields.ResponsavelId = rId;
+    else if (cs ? cs.has("Responsavel") : false) fields.ResponsavelLookupId = rId;
+    else if (rId) return err(`A lista ainda não tem a coluna do Responsável. ${session.n1 ? "Rode Sistema › Configuração › Executar tudo" : "Peça a um administrador para rodar a Configuração"} e salve de novo (ou deixe o Responsável em branco por enquanto).`);
     try {
       if (x) await SP.update(RC_STATE.site.id, RC_STATE.list.id, x._id, fields);
       else await SP.create(RC_STATE.site.id, RC_STATE.list.id, fields);
@@ -17802,7 +17814,7 @@ LISTS.eq_pagbank = {
     { name: "GarantiaAte",    displayName: "Garantia até",       dateTime: dateOnly },
     { name: "Compartilhada",  displayName: "Compartilhada",      boolean: {} },
     { name: "Local",          displayName: "Local",              choice: choice(["Caixa matriz", "Agência Macaé", "Agência Conceição", "Sub agência", "Em rota", "Escritório", "Depósito", "Outro"], true), update: true },
-    { name: "Responsavel",    displayName: "Responsável",        lookupList: "RH — Funcionários", update: true },
+    { name: "ResponsavelId",  displayName: "Responsável (id em RH — Funcionários)", number: {} },   /* v0.14.12.3: o lookup "Responsável" apontava para outro site (RH) e nunca foi criado; o id do funcionário fica num número */
     { name: "DataAquisicao",  displayName: "Data de aquisição",  dateTime: dateOnly },
     { name: "UsuarioPagbank", displayName: "Usuário PagBank",    text: { allowMultipleLines: false, maxLength: 100 } },   /* v0.12.27 #16: login do painel do PagBank para esta máquina */
     { name: "Historico",      displayName: "Histórico (JSON)",   text: { allowMultipleLines: true, textType: "plain" } },   /* v0.12.27 #16: lista de comentários/eventos no registro */
@@ -19075,7 +19087,7 @@ LISTS.eq_riocard = {
     { name: "Status",         displayName: "Status",            required: true, choice: choice(["Ativo", "Bloqueado", "Perdido", "Em uso", "Em estoque"]), update: true },
     { name: "Tipo",           displayName: "Tipo",              choice: choice(["Vale Transporte", "Benefício", "Outro"]), update: true },
     { name: "Local",          displayName: "Local",             choice: choice(["Caixa matriz", "Agência Macaé", "Agência Conceição", "Sub agência", "Em rota", "Escritório", "Outro"], true), update: true },
-    { name: "Responsavel",    displayName: "Responsável",       lookupList: "RH — Funcionários", update: true },
+    { name: "ResponsavelId",  displayName: "Responsável (id em RH — Funcionários)", number: {} },   /* v0.14.12.3: o lookup entre sites (RH) nunca foi criado */
     { name: "DataAquisicao",  displayName: "Data de aquisição", dateTime: dateOnly },
     { name: "Saldo",          displayName: "Saldo atual (R$)",  number: money },
     { name: "Observacoes",    displayName: "Observações",       text: { allowMultipleLines: true, textType: "plain" } }
@@ -38698,7 +38710,7 @@ function tercNotasGuarda(method, path, body) {
 { const g0 = guardaEscrita; guardaEscrita = function (method, path, body) { const r = g0.apply(this, arguments); tercNotasGuarda(method, path, body); return r; }; window.guardaEscrita = guardaEscrita; }
 (function () { const s = document.createElement("style"); s.textContent = `.tnota-lapis{margin-left:auto}.tnota-lapis + .tav-x{margin-left:0}.tnota-ed{font-style:italic}
 .tnota-editando textarea{width:100%;margin-top:4px;min-height:60px}.tnota-ed-acoes{display:flex;gap:6px;align-items:center;margin-top:6px}`; document.head.appendChild(s); })();
-CONFIG.version = "v0.14.12.2";
+CONFIG.version = "v0.14.12.3";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

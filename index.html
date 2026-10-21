@@ -3778,7 +3778,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.12.6",
+  version: "v0.14.12.7",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -27774,7 +27774,7 @@ LISTS.di_invest = {
   ]
 };
 SETUP_ORDER.push("fin_imob", "di_invest");
-SETUP_TEXT.fin_imob = `Cria no site Diretoria a lista "Diretoria — Ativos da Empresa": um registro por bem (categoria, identificação, aquisição, valor, vida útil, valor residual, situação e baixa), com a depreciação linear calculada pelo ERP. Usada em Diretoria › Ativos da Empresa e no painel CAPEX / OPEX. Os bens da lista antiga "Financeiro — Imobilizado" são copiados pelo cartão "Ativos da Empresa — copiar do Financeiro".`;
+SETUP_TEXT.fin_imob = `Cria no site Diretoria a lista "Diretoria — Ativos da Empresa": um registro por bem (categoria, identificação, aquisição, valor, vida útil, valor residual, situação e baixa), com a depreciação linear calculada pelo ERP. Usada em Diretoria › Ativos da Empresa e no painel CAPEX / OPEX.`;
 SETUP_TEXT.di_invest = `Cria no site Diretoria a lista "Diretoria — Plano de investimentos": investimentos previstos (o quê, valor, mês, prioridade, status, forma de pagamento, entrada, prazo, juros e economia esperada). Usada em Diretoria › CAPEX / OPEX › Plano de investimentos.`;
 
 /* ---- estado e premissas ---- */
@@ -35986,18 +35986,7 @@ window.mstDeptosExcluir = async () => {
     mstDepLog(`Lista "${LISTS.rh_depts.displayName}" excluída (fica na lixeira do site RH por 93 dias).`, "ok");
   } catch (e) { mstDepLog("Não foi possível excluir: " + e.message, "warn"); }
 };
-{ const pc = pageConfig; pageConfig = function () {
-    let h = pc.apply(this, arguments); if (!session.n1) return h;
-    const card = `<section class="setup-card" id="mstMigCard"><h2>Cadastros Mestres — migração (administrador)</h2>
-      <p class="desc">Ferramentas para levar os cadastros antigos para Diretoria › Cadastros Mestres. Podem rodar de novo sem duplicar; nada é gravado antes da prévia e da sua confirmação.</p>
-      <div class="mst-mig-sec" data-sec="cc"><h3>Centros de custo (v0.14.0)</h3><p class="desc">1) "Executar tudo na ordem" cria a lista "${esc(LISTS.mst_cc.displayName)}" (site Diretoria) e as colunas de código. 2) Em Diretoria › Cadastros Mestres › Centros de Custo, crie os centros (há um botão para os 9 iniciais). 3) <b>Ler os valores em uso</b> → escolher o "de → para" → <b>Prévia</b> → <b>Gravar</b>. 4) No SharePoint, dê leitura da lista de centros a "Todos, exceto usuários externos".</p>
-      <div class="actions"><button class="btn" id="mstMigLerBtn" onclick="mstMigLer()">Ler os valores em uso</button></div>
-      <div id="mstMigCorpo"></div><div class="setup-log checks" id="mstMigLog" style="display:none;max-height:300px;overflow:auto"></div></div>
-      <div class="mst-mig-sec" data-sec="dep"><h3>Departamentos (RH) — cópia e exclusão</h3><p class="desc">A lista "${esc(LISTS.rh_depts.displayName)}" (site RH) saiu do ERP. 1) <b>Exportar</b>: o navegador baixa o arquivo .xlsx (pasta Downloads) — mande para o projeto. 2) <b>Excluir</b> a lista (vai para a lixeira do site RH).</p>
-      <div class="actions"><button class="btn" onclick="mstDeptosExportar()">Exportar Departamentos (.xlsx)</button><button class="btn" onclick="mstDeptosExcluir()">Excluir a lista Departamentos</button></div><div class="setup-log checks" id="mstDepLog" style="display:none;max-height:200px;overflow:auto"></div></div>
-    </section>`;
-    return h.replace("<h1>Configuração</h1>", "<h1>Configuração</h1>" + card);
-  }; window.pageConfig = pageConfig; }
+/* v0.14.12.7 (21/10): a ferramenta "Cadastros Mestres — migração" saiu da Configuração — não há mais o que migrar/zerar (conferido nos dados em 21/10). As funções ficam no arquivo, sem entrada na tela. */
 /* ---- RH: Departamentos saem; Funcionários › Departamento vira Centro de custo ---- */
 { const i = RHDB_CARDS.findIndex(c => c.id === "deptos"); if (i >= 0) RHDB_CARDS.splice(i, 1); if (PAG_DEF.rh_db) PAG_DEF.rh_db = PAG_DEF.rh_db.filter(p => p.k !== "deptos");
   const s = SETUP_ORDER.indexOf("rh_depts"); if (s >= 0) SETUP_ORDER.splice(s, 1); }
@@ -36399,12 +36388,7 @@ window.pcMigGravar = async () => {
   } catch (e) { pcLog("Interrompido: " + e.message, "warn"); }
   finally { btn.disabled = true; PC.mig.plano = null; }
 };
-{ const pc = pageConfig; pageConfig = function () {
-    let h = pc.apply(this, arguments); if (!session.n1) return h;
-    const bloco = `<div class="mst-mig-sec" data-sec="pc"><h3>Plano de contas (v0.14.1 · Caixa na v0.14.2)</h3><p class="desc">1) "Executar tudo na ordem" cria a lista "${esc(LISTS.mst_pc.displayName)}" e as colunas de código. 2) Em Diretoria › Cadastros Mestres › Plano de Contas, crie o plano inicial. 3) <b>Ler categorias em uso</b> → escolher o "para" → <b>Prévia</b> → <b>Gravar</b>. 4) No SharePoint, dê leitura da lista do plano a "Todos, exceto usuários externos".</p>
-      <div class="actions"><button class="btn" id="pcMigLerBtn" onclick="pcMigLer()">Ler categorias em uso</button></div><div id="pcMigCorpo"></div><div class="setup-log checks" id="pcMigLog" style="display:none;max-height:300px;overflow:auto"></div></div>`;
-    return h.replace(/(<section class="setup-card" id="mstMigCard">[\s\S]*?)(<\/section>)/, (m, a, b) => a + bloco + b);
-  }; window.pageConfig = pageConfig; }
+/* v0.14.12.7 (21/10): a ferramenta "Cadastros Mestres — migração: seção Plano de contas" saiu da Configuração — não há mais o que migrar/zerar (conferido nos dados em 21/10). As funções ficam no arquivo, sem entrada na tela. */
 
 /* =====================================================================
    v0.14.1 · CADASTROS MESTRES — R3: CNPJs (estabelecimentos da NMB) + menu da central
@@ -36677,13 +36661,7 @@ window.estRhExcluir = async () => {
     estLog(`Lista "${LISTS.rh_cnpjs_rh.displayName}" excluída (fica na lixeira do site RH por 93 dias).`, "ok");
   } catch (e) { estLog("Não foi possível excluir: " + e.message, "warn"); }
 };
-{ const pc = pageConfig; pageConfig = function () {
-    let h = pc.apply(this, arguments); if (!session.n1) return h;
-    const bloco = `<div class="mst-mig-sec" data-sec="est"><h3>CNPJs (v0.14.1)</h3><p class="desc">1) "Executar tudo na ordem" cria a lista "${esc(LISTS.rh_cnpjs.displayName)}" (site Diretoria). 2) Em Diretoria › Cadastros Mestres › CNPJs, clique em <b>Copiar do RH</b>. 3) <b>Exportar</b> a cópia da lista antiga e <b>excluir</b> "${esc(LISTS.rh_cnpjs_rh.displayName)}" (só depois de todos os CNPJs copiados). 4) No SharePoint, dê leitura da lista de CNPJs a "Todos, exceto usuários externos".</p>
-      <div class="actions"><button class="btn" onclick="estRhExportar()">Exportar CNPJs do RH (.xlsx)</button><button class="btn" onclick="estRhExcluir()">Excluir a lista CNPJs do RH</button></div><div class="setup-log checks" id="estMigLog" style="display:none;max-height:200px;overflow:auto"></div></div>`;
-    setTimeout(() => { mstMigAjustar().catch(() => {}); }, 0);
-    return h.replace(/(<section class="setup-card" id="mstMigCard">[\s\S]*?)(<\/section>)/, (m, a, b) => a + bloco + b);
-  }; window.pageConfig = pageConfig; }
+/* v0.14.12.7 (21/10): a ferramenta "Cadastros Mestres — migração: seção CNPJs" saiu da Configuração — não há mais o que migrar/zerar (conferido nos dados em 21/10). As funções ficam no arquivo, sem entrada na tela. */
 /* Configuração: cada ferramenta de migração sai sozinha quando não tem mais o que fazer
    cc/pc: a leitura não encontrou registro sem o código do cadastro (fica gravado em ERP — Parâmetros) · dep/est: a lista antiga já foi excluída */
 const MST_MIG_CONCL = { cc: "mst_cc_concluida", pc: "mst_pc_concluida_v2" };   /* v0.14.2: o plano reabre uma vez para incluir o Caixa */
@@ -38062,7 +38040,8 @@ async function paxExcel(its, rot, titulo) {
 
 /* =====================================================================
    v0.14.11 · Pedido de 20/10 (10:10): CAP do zero para começar a usar oficialmente.
-   Sistema › Configuração › "CAP — começar do zero" (só administrador): esvazia as listas "Lançamentos" (Faturas) e
+   [v0.14.12.7: a ferramenta saiu da Configuração; o código fica aqui, sem entrada na tela, caso seja preciso reativar.]
+   "CAP — começar do zero" (só administrador): esvazia as listas "Lançamentos" (Faturas) e
    "Obrigações" do site CAP. Antes de excluir, grava uma cópia em Excel na biblioteca do site CAP
    (Backups/CAP antes de zerar) e baixa a mesma cópia no computador; sem a cópia gravada, nada é excluído.
    As listas continuam as mesmas (o SharePoint não reaproveita os números dos itens, então Rio Card › Reparos e Imobilizado,
@@ -38152,7 +38131,7 @@ async function capzZerar() {
     catch (e) {   /* revisão M1: lote interrompido (rede, sessão) — registra e avisa; a cópia já está gravada */
       capzLog("Interrompido: " + e.message + ". Rode de novo para excluir o que sobrou (a cópia já está gravada).", "err");
       try { await erpParamGravar("cap_zerada", { em: new Date().toISOString(), por: capHistQuem(), faturas: cp.fats.length, obrigacoes: cp.obrs.length, falhas: "interrompido", copia: cp.nome, url: cp.url || "" }); } catch (e2) {}
-      toast("A exclusão foi interrompida — veja o registro em Configuração › CAP — começar do zero.", 9000); return; }
+      toast("A exclusão foi interrompida — veja o registro em ERP — Parâmetros (cap_zerada).", 9000); return; }
     try { await erpParamGravar("cap_zerada", { em: new Date().toISOString(), por: capHistQuem(), faturas: cp.fats.length, obrigacoes: cp.obrs.length, falhas: f1 + f2, copia: cp.nome, url: cp.url || "" }); } catch (e) { capzLog("Registro não gravado em ERP — Parâmetros: " + e.message, "err"); }
     if (!(typeof DIV !== "undefined" && DIV.on)) {   /* revisão M2: no modo Dívidas o estado em memória é o das Dívidas — não mexe */
       CAP_STATE.items = []; if (Array.isArray(CAP_STATE._todos)) CAP_STATE._todos = []; CAP_STATE.sel && CAP_STATE.sel.clear && CAP_STATE.sel.clear(); CAP_STATE.rev = (CAP_STATE.rev || 0) + 1;
@@ -38162,18 +38141,12 @@ async function capzZerar() {
     toast(f1 + f2 ? "CAP zerada com falhas — veja o registro na Configuração." : "CAP zerada. A cópia ficou no site CAP e no seu computador.", 8000);
   } finally { CAPZ.rodando = false; capzPintar(); }
 }
-{ const pc = pageConfig; pageConfig = function () {
-    const h = pc.apply(this, arguments); if (!session.n1) return h;
-    const card = `<section class="setup-card" id="capzCard"><h2>CAP — começar do zero</h2>
-      <p class="desc">Esvazia Faturas (lista "Lançamentos") e Obrigações do site CAP para começar a usar a plataforma oficialmente. Antes, grava uma cópia em Excel no site CAP e no seu computador.</p>
-      <div id="capzCorpo"><p class="desc">Contando…</p></div><div class="setup-log checks" id="capzLog" style="display:none;max-height:220px;overflow:auto"></div></section>`;
-    setTimeout(() => { capzPintar().catch(() => {}); }, 0);
-    return h.replace(/(<div class="setup-all">)/, card + "$1");
-  }; window.pageConfig = pageConfig; }
+/* v0.14.12.7 (21/10): a ferramenta "CAP — começar do zero" saiu da Configuração — não há mais o que migrar/zerar (conferido nos dados em 21/10). As funções ficam no arquivo, sem entrada na tela. */
 
 /* =====================================================================
    v0.14.11.2 · Pedido de 20/10 (12:06): Imobilizado vira Diretoria › Ativos da Empresa, com a lista no site Diretoria
-   ("Diretoria — Ativos da Empresa"), só para o time executivo. Cartão na Configuração (administrador) copia os bens da lista
+   ("Diretoria — Ativos da Empresa"), só para o time executivo. [v0.14.12.7: o cartão da cópia saiu da Configuração — nada a copiar.]
+   O cartão copiava os bens da lista
    antiga "Financeiro — Imobilizado" (site Financeiro), sem apagar nada; rodar de novo não duplica.
    ===================================================================== */
 const ATV_MIG = { rodando: false };
@@ -38189,7 +38162,7 @@ async function atvPintar() {
   const c = $("atvCorpo"); if (!c) return;
   try {
     const R = await atvLer(); if (!$("atvCorpo")) return;
-    if (!R.lF) { $("atvCard").remove(); return; }   /* lista antiga não existe: nada a copiar */
+    if (!R.lF) { const c = $("atvCard"); if (c) c.remove(); return; }   /* lista antiga não existe: nada a copiar */
     c.innerHTML = !R.lD ? `<p class="desc">Primeiro rode <b>Executar tudo</b> para criar a lista "${esc(LISTS.fin_imob.displayName)}" no site Diretoria.</p>`
       : `<p class="desc">Lista antiga (site Financeiro): <b>${R.velhos.length}</b> bem(ns) · lista nova (site Diretoria): <b>${R.novos.length}</b> · a copiar: <b>${R.falta.length}</b>.</p>
          ${R.falta.length ? `<button class="btn primary" id="atvGo">Copiar ${R.falta.length} bem(ns)</button>` : `<p class="desc ok">Tudo copiado. Confira em Diretoria › Ativos da Empresa e, depois, exclua a lista "Financeiro — Imobilizado" no site Financeiro (ou tire o acesso do Financeiro a ela).</p>`}`;
@@ -38221,14 +38194,7 @@ async function atvCopiar() {
     try { IMOB.list = undefined; IMOB.itens = []; CPX.carregado = false; } catch (e) {}
   } finally { ATV_MIG.rodando = false; atvPintar(); }
 }
-{ const pc = pageConfig; pageConfig = function () {
-    const h = pc.apply(this, arguments); if (!session.n1) return h;
-    const card = `<section class="setup-card" id="atvCard"><h2>Ativos da Empresa — copiar do Financeiro</h2>
-      <p class="desc">O Imobilizado virou Diretoria › Ativos da Empresa, com a lista no site Diretoria (só o time executivo). Copia os bens da lista antiga "Financeiro — Imobilizado" para a nova, sem apagar nada; rodar de novo não duplica.</p>
-      <div id="atvCorpo"><p class="desc">Lendo as listas…</p></div></section>`;
-    setTimeout(() => { atvPintar().catch(() => {}); }, 0);
-    return h.replace(/(<div class="setup-all">)/, card + "$1");
-  }; window.pageConfig = pageConfig; }
+/* v0.14.12.7 (21/10): a ferramenta "Ativos da Empresa — copiar do Financeiro" saiu da Configuração — não há mais o que migrar/zerar (conferido nos dados em 21/10). As funções ficam no arquivo, sem entrada na tela. */
 
 /* =====================================================================
    v0.14.11.3 · Pedidos de 20/10 (12:32–12:53), Banco de Dados — Terceiros (Fornecedores):
@@ -38807,7 +38773,7 @@ function tercNotasGuarda(method, path, body) {
 { const g0 = guardaEscrita; guardaEscrita = function (method, path, body) { const r = g0.apply(this, arguments); tercNotasGuarda(method, path, body); return r; }; window.guardaEscrita = guardaEscrita; }
 (function () { const s = document.createElement("style"); s.textContent = `.tnota-lapis{margin-left:auto}.tnota-lapis + .tav-x{margin-left:0}.tnota-ed{font-style:italic}
 .tnota-editando textarea{width:100%;margin-top:4px;min-height:60px}.tnota-ed-acoes{display:flex;gap:6px;align-items:center;margin-top:6px}`; document.head.appendChild(s); })();
-CONFIG.version = "v0.14.12.6";
+CONFIG.version = "v0.14.12.7";
 
 /* v0.14.12.5 (pedido de 21/10 16:50): o que falta ajustar antes de salvar aparece numa janela por cima, com a lista completa
    e um botão Ok, em vez de uma linha vermelha no fim do formulário. A janela de trás volta intacta ao clicar em Ok. */

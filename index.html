@@ -3860,6 +3860,7 @@ const MODULES = [
   { id: "roletas",    path: "#/operacional/controle-de-roletas", icon: "chart",  name: "Controle de Roletas", area: "Financeiro", groups: ["financeiro", "operacional", "diretoria"], status: "piloto", menu: false, hubDe: "agentes" },   /* v0.12.27 #14 · v0.12.71: do Financeiro para o Operacional (o endereço antigo redireciona) */
   { id: "recebimento", path: "#/financeiro/recebimento",       icon: "cash",    name: "Arrecadação",         area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto", menu: false, hubDe: "agentes" },   /* v0.12.27 #15: saiu de prévia */
   { id: "fin_tarefas", path: "#/financeiro/central-de-tarefas", icon: "tasks", name: "Central de Tarefas", area: "Financeiro", groups: ["financeiro", "diretoria"], status: "piloto", wide: true },   /* v0.12.94: a Central de Tarefas no Financeiro, com atribuição a pessoas (como o Planner) */
+  { id: "dir_tarefas", path: "#/diretoria/central-de-tarefas", icon: "tasks", name: "Central de Tarefas", area: "Diretoria", groups: ["diretoria"], status: "piloto", wide: true },   /* v0.14.12.11: Central de Tarefas da Diretoria */
   { id: "imob",       path: "#/diretoria/ativos-da-empresa",  icon: "imob",    name: "Ativos da Empresa",   area: "Diretoria",  groups: ["diretoria"], status: "piloto" },   /* v0.14.11.2: era Financeiro › Imobilizado — valor patrimonial, só para o time executivo */   /* v0.12.73: bens e depreciação (base do CAPEX) */
   { id: "sac",        path: "#/diretoria/sac",                 icon: "chart",   name: "SAC",                 area: "Diretoria",   groups: ["diretoria"],               status: "ativo", wide: true },
   { id: "pesquisa",   path: "#/diretoria/pesquisa-de-satisfacao", icon: "chart", name: "Pesquisa de Satisfação", area: "Diretoria", groups: ["diretoria"],               status: "ativo", wide: true },   /* v0.12.65 */
@@ -4915,7 +4916,7 @@ function route() {
   else if (mod.id === "itin") { main.innerHTML = pageItin(); renderItin(); }   /* v0.12.80 */
   else if (mod.id === "mapa_op") { main.innerHTML = pageMapaOp(); renderMapaOp(); }   /* v0.12.82 */
   else if (mod.id === "dre") { main.innerHTML = pageDre(); renderDre(); }   /* v0.12.84 */
-  else if (mod.id === "tarefas" || mod.id === "fin_tarefas") { tfUsar(mod.id); main.innerHTML = pageTarefas(); renderTarefas(); }   /* v0.12.87 · v0.12.94: também no Financeiro */
+  else if (mod.id === "tarefas" || mod.id === "fin_tarefas" || mod.id === "dir_tarefas") { tfUsar(mod.id); main.innerHTML = pageTarefas(); renderTarefas(); }   /* v0.12.87 · v0.12.94: Financeiro · v0.14.12.11: Diretoria */
   else if (mod.id === "diario") { main.innerHTML = pageDo(); renderDo(); }   /* v0.12.97 */
   else if (mod.id === "di_mestres") { main.innerHTML = pageMst(); renderMst(); }   /* v0.14.0 */
   else if (mod.id === "di_rel") { main.innerHTML = pageDiRel(); }   /* v0.14.3: Diretoria › Relatórios */
@@ -33249,8 +33250,13 @@ LISTS.fin_tarefas = Object.assign({}, LISTS.op_tarefas, { key: "fin_tarefas", di
   description: "Financeiro NMB · Central de Tarefas do Financeiro: tarefas da equipe, atribuídas a pessoas (como o Planner). Editada em Financeiro › Central de Tarefas.",
   columns: LISTS.op_tarefas.columns.filter(c => !["Veiculo", "Origem"].includes(c.name)) });
 SETUP_ORDER.push("fin_tarefas");
+LISTS.dir_tarefas = Object.assign({}, LISTS.op_tarefas, { key: "dir_tarefas", displayName: "Diretoria — Tarefas", siteKey: "diretoria",
+  description: "Diretoria NMB · Central de Tarefas da Diretoria: tarefas da equipe executiva, atribuídas a pessoas. Editada em Diretoria › Central de Tarefas.",
+  columns: LISTS.op_tarefas.columns.filter(c => !["Veiculo", "Origem"].includes(c.name)) });
+SETUP_ORDER.push("dir_tarefas");
 SETUP_TEXT.fin_tarefas = `Cria no site CAP a lista "Central de Tarefas": tarefas da equipe financeira atribuídas a pessoas, em Financeiro › Central de Tarefas. As tarefas antigas ("Financeiro — Tarefas", site Financeiro) são copiadas pela migração dos sites (cartão abaixo).`;
 SETUP_TEXT.op_tarefas = `Cria no site Operacional a lista "Operacional — Tarefas": tarefas manuais e o acompanhamento das tarefas automáticas (alertas do ERP) da Central de Tarefas, em Operacional › Central de Tarefas.`;
+SETUP_TEXT.dir_tarefas = `Cria no site Diretoria a lista "Diretoria — Tarefas": tarefas da equipe executiva atribuídas a pessoas, em Diretoria › Central de Tarefas.`;
 const TF_ST = [
   { k: "A fazer", c: "todo" }, { k: "Em andamento", c: "doing" }, { k: "Aguardando", c: "wait" }, { k: "Bloqueado", c: "block" }, { k: "Concluído", c: "done" }];
 const TF_PR = [{ k: "Urgente", w: 4, cor: "#B3271E" }, { k: "Alta", w: 3, cor: "#D6421F" }, { k: "Média", w: 2, cor: "#9A6A00" }, { k: "Baixa", w: 1, cor: "#5B6068" }, { k: "Sem prioridade", w: 0, cor: "transparent" }];
@@ -33259,6 +33265,7 @@ const TF = { ctx: "tarefas", list: undefined, itens: [], erro: "", vista: "lista
 function tfResetCtx(ctx) { const o = TF.ctx === ctx ? TF : (typeof TF_GUARDA !== "undefined" && TF_GUARDA[ctx]); if (!o) return; Object.assign(o, { kf: "", q: "", cal: "", gIni: "" }); ["dep", "sub", "pes"].forEach(k => o[k] && o[k].clear()); }
 MOD_RESET.tarefas = () => tfResetCtx("tarefas");
 MOD_RESET.fin_tarefas = () => tfResetCtx("fin_tarefas");   /* revisão: cada Central limpa só os próprios filtros */
+MOD_RESET.dir_tarefas = () => tfResetCtx("dir_tarefas");   /* v0.14.12.11 */
 try { const p = JSON.parse(localStorage.getItem("erp.tarefas") || "{}"); if (p.vista) TF.vista = p.vista; if (p.grupo) TF.grupo = p.grupo; if (p.gZoom) TF.gZoom = p.gZoom; if (p.calModo) TF.calModo = p.calModo; } catch (e) {}
 const tfPrefs = () => { try { localStorage.setItem("erp.tarefas", JSON.stringify({ vista: TF.vista, grupo: TF.grupo, gZoom: TF.gZoom, calModo: TF.calModo })); } catch (e) {} };
 const tfHoje = () => ymd(new Date());
@@ -33601,7 +33608,10 @@ const TF_CTX = {
     rapido: "Trocar lâmpada da garagem @Carlos 25/10 !alta #Manutenção predial" },
   fin_tarefas: { lista: "fin_tarefas", area: "Financeiro", dep: "Financeiro", auto: false, veic: false,
     lead: "Tarefas da equipe financeira, como no Planner: atribua a pessoas do Financeiro e cada uma vê o que está sob sua responsabilidade",
-    rapido: "Conciliar o extrato do banco @Ana 25/10 !alta #Conciliação" }
+    rapido: "Conciliar o extrato do banco @Ana 25/10 !alta #Conciliação" },
+  dir_tarefas: { lista: "dir_tarefas", area: "Diretoria", dep: "Diretoria", auto: false, veic: false,
+    lead: "Tarefas da equipe executiva: atribua a pessoas da Diretoria e cada uma vê o que está sob sua responsabilidade",
+    rapido: "Revisar o relatório gerencial @José 25/10 !alta #Relatórios" }
 };
 const TF_GUARDA = {};   /* estado de cada Central (Operacional e Financeiro) */
 function tfUsar(ctx) {
@@ -35694,6 +35704,7 @@ const MST_FONTES = [
   { k: "di_invest", n: "Area", c: "AreaCod", rot: "Plano de investimentos" },
   { k: "op_tarefas", n: "Departamento", c: "DepartamentoCod", rot: "Central de Tarefas (Operacional)" },
   { k: "fin_tarefas", n: "Departamento", c: "DepartamentoCod", rot: "Central de Tarefas (Financeiro)" },
+  { k: "dir_tarefas", n: "Departamento", c: "DepartamentoCod", rot: "Central de Tarefas (Diretoria)" },
   { k: "ti_chamados", n: "Departamento", c: "DepartamentoCod", rot: "TI — Chamados" },
   { k: "rh_depts", n: "Title", c: "", rot: "RH — Departamentos (lista que sai)" }
 ];
@@ -38774,7 +38785,7 @@ function tercNotasGuarda(method, path, body) {
 { const g0 = guardaEscrita; guardaEscrita = function (method, path, body) { const r = g0.apply(this, arguments); tercNotasGuarda(method, path, body); return r; }; window.guardaEscrita = guardaEscrita; }
 (function () { const s = document.createElement("style"); s.textContent = `.tnota-lapis{margin-left:auto}.tnota-lapis + .tav-x{margin-left:0}.tnota-ed{font-style:italic}
 .tnota-editando textarea{width:100%;margin-top:4px;min-height:60px}.tnota-ed-acoes{display:flex;gap:6px;align-items:center;margin-top:6px}`; document.head.appendChild(s); })();
-CONFIG.version = "v0.14.12.10";
+CONFIG.version = "v0.14.12.11";
 
 /* v0.14.12.5 (pedido de 21/10 16:50): o que falta ajustar antes de salvar aparece numa janela por cima, com a lista completa
    e um botão Ok, em vez de uma linha vermelha no fim do formulário. A janela de trás volta intacta ao clicar em Ok. */

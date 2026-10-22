@@ -3778,7 +3778,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.12.9",
+  version: "v0.14.12.10",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -38774,7 +38774,7 @@ function tercNotasGuarda(method, path, body) {
 { const g0 = guardaEscrita; guardaEscrita = function (method, path, body) { const r = g0.apply(this, arguments); tercNotasGuarda(method, path, body); return r; }; window.guardaEscrita = guardaEscrita; }
 (function () { const s = document.createElement("style"); s.textContent = `.tnota-lapis{margin-left:auto}.tnota-lapis + .tav-x{margin-left:0}.tnota-ed{font-style:italic}
 .tnota-editando textarea{width:100%;margin-top:4px;min-height:60px}.tnota-ed-acoes{display:flex;gap:6px;align-items:center;margin-top:6px}`; document.head.appendChild(s); })();
-CONFIG.version = "v0.14.12.9";
+CONFIG.version = "v0.14.12.10";
 
 /* v0.14.12.5 (pedido de 21/10 16:50): o que falta ajustar antes de salvar aparece numa janela por cima, com a lista completa
    e um botão Ok, em vez de uma linha vermelha no fim do formulário. A janela de trás volta intacta ao clicar em Ok. */
@@ -39188,6 +39188,243 @@ function tercMeusPedidosHtml() {
     return r;
   }; window.paintForn = paintForn; }
 (function () { const s = document.createElement("style"); s.textContent = `.terc-meus{border-color:#cfd6e4;background:#f6f8fc}`; document.head.appendChild(s); })();
+
+/* =====================================================================
+   v0.14.12.10 (pedidos de 22/10 16:05 e 16:38): documentos com histórico —
+   1. Máquinas Pagbank: anexar documentos de vários tipos a cada máquina;
+   2. Frota › veículo: documentos da vida útil do veículo (CRLV, CAT, vistoria/LIT, cronotacógrafo, extintor, fumaça preta,
+      seguro, DPVAT, acessibilidade, autos de infração, BO, fotos…), com emissão, validade e o arquivo — guardando o
+      HISTÓRICO, não só o documento atual. O "válido até" de cada tipo (vistoria, CAT, cronotacógrafo, extintor,
+      licenciamento) passa a ser preenchido pelo documento mais recente, então os painéis de vencimento seguem iguais.
+   Um componente só (DOCH) para os dois: coluna "Documentos (JSON)" na lista, arquivos na biblioteca do site Operacional,
+   remoção só marca o registro (o arquivo fica na pasta) e tudo fica na "Vida do ônibus".
+   ===================================================================== */
+LISTS.frota_veic.columns.push({ name: "Documentos", displayName: "Documentos com histórico (JSON)", text: { allowMultipleLines: true, textType: "plain" } });
+LISTS.eq_pagbank.columns.push({ name: "Documentos", displayName: "Documentos com histórico (JSON)", text: { allowMultipleLines: true, textType: "plain" } });
+SETUP_TEXT.frota_veic = (SETUP_TEXT.frota_veic || "") + ` A coluna "Documentos com histórico" (v0.14.12.10) guarda os documentos do veículo ao longo da vida (CRLV, CAT, vistoria, cronotacógrafo, seguro…), com emissão e validade.`;
+SETUP_TEXT.eq_pagbank = (SETUP_TEXT.eq_pagbank || "") + ` A coluna "Documentos com histórico" (v0.14.12.10) guarda os documentos anexados à máquina (nota fiscal, termo, garantia…).`;
+/* tipos: os da planilha de acompanhamento das licenças + os documentos que o Rafael mandou de exemplo. "campo": a data de
+   validade do documento mais recente alimenta este campo do veículo; "ano": o ano da emissão alimenta o campo. */
+const FROTA_DOC_TIPOS = [
+  { t: "CRLV",                       campo: null,               dica: "Certificado de Registro e Licenciamento (documento anual do veículo)" },
+  { t: "Licenciamento (pagamento)",  ano: "Licenciamento",      dica: "Guia/comprovante do licenciamento anual (DETRAN)" },
+  { t: "CAT (DETRO)",                campo: "ValidadeCAT",      dica: "Certificado de Autorização de Tráfego" },
+  { t: "Vistoria DETRO / LIT",       campo: "ValidadeVistoria", emissao: "UltimaVistoria", dica: "Vistoria anual do DETRO e laudo de inspeção" },
+  { t: "Cronotacógrafo (INMETRO)",   campo: "Tacografo",        dica: "Certificado de verificação do cronotacógrafo" },
+  { t: "Extintor",                   campo: "Extintor",         dica: "Recarga/validade do extintor" },
+  { t: "Fumaça preta (autocontrole)", campo: null,              dica: "Programa de autocontrole de emissão de fumaça preta" },
+  { t: "Seguro de passageiros",      campo: null,               dica: "Apólice de danos corporais e materiais a passageiros" },
+  { t: "DPVAT / seguro obrigatório", campo: null,               dica: "Bilhete do seguro obrigatório" },
+  { t: "Declaração de acessibilidade", campo: null,             dica: "Declaração/laudo de acessibilidade" },
+  { t: "Auto de infração",           campo: null,               dica: "Notificação ou auto de infração (a multa em si fica em Frota › Multas)" },
+  { t: "Boletim de ocorrência",      campo: null,               dica: "BO / BOPM envolvendo o veículo" },
+  { t: "Foto do veículo",            campo: null,               dica: "Foto de identificação, laudo fotográfico" },
+  { t: "Outro",                      campo: null,               dica: "" }
+];
+const PB_DOC_TIPOS = [
+  { t: "Nota fiscal", dica: "NF da compra ou do aluguel da máquina" }, { t: "Termo de responsabilidade", dica: "Assinado por quem recebeu a máquina" },
+  { t: "Garantia", dica: "Certificado ou termo de garantia" }, { t: "Comprovante de devolução", dica: "Devolução ao PagBank ou troca" },
+  { t: "Foto", dica: "Foto da máquina, etiqueta, IMEI" }, { t: "Outro", dica: "" }
+];
+/* contextos: de onde vem o item, onde grava, pasta na biblioteca e quem pode mexer */
+const DOCH_CTX = {
+  frota: { nome: "veículo", tipos: FROTA_DOC_TIPOS, pode: () => typeof frotaEd === "function" && frotaEd("veic") && !vcAtivo(), prop: () => !!session.n1 || podeExcluir("frota"),
+    item: id => (typeof frotaVeicPorId === "function" ? frotaVeicPorId(id) : null), site: () => FROTA.site, lista: () => FROTA.listVeic,
+    pasta: v => `Frota/Veículos/${docNomeSeguro(v.Title || "sem prefixo")}`, rotulo: v => v.Title || "", apos: v => { try { if (typeof frotaVeicPintar === "function" && $("fvBody")) frotaVeicPintar(); } catch (e) {} } },
+  pb: { nome: "máquina", tipos: PB_DOC_TIPOS, pode: () => podeEditar("equip") && !vcAtivo(), prop: () => !!session.n1 || podeExcluir("equip"),
+    item: id => (PB_STATE.itens || []).find(x => String(x._id) === String(id)) || null, site: () => PB_STATE.site, lista: () => PB_STATE.list,
+    pasta: x => `Equipamentos/Pagbank/${docNomeSeguro(x.NumeroSerie || x.Title || x.IdInterno || String(x._id))}`, rotulo: x => x.NumeroSerie || x.Title || "", apos: x => { try { dochPbRepintar(x); } catch (e) {} } }
+};
+function dochLer(x) { try { const a = JSON.parse((x && x.Documentos) || "[]"); return Array.isArray(a) ? a.filter(d => d && d.t) : []; } catch (e) { return []; } }
+const dochAtivos = x => dochLer(x).filter(d => !d.rem);
+/* o documento que vale hoje para cada tipo: o de emissão mais recente (empate: validade maior) entre os não removidos */
+function dochAtual(x) {
+  const m = new Map();
+  dochAtivos(x).forEach(d => { const k = d.t, q = m.get(k); if (!q || dochOrdem(d) > dochOrdem(q)) m.set(k, d); });
+  return m;
+}
+const dochMesmo = (a, b) => a === b || (!!a && !!b && ((a.k && a.k === b.k) || (!a.k && !b.k && a.id === b.id && a.t === b.t && a.em === b.em)));   /* a lista e o "atual" vêm de parses diferentes do JSON */
+const dochOrdem = d => `${d.emissao || d.validade || ymd(d.em || "") || ""}|${d.validade || ""}|${d.em || ""}`;
+function dochSit(d, atual) {   /* vigente · vence em N dias · vencido · histórico */
+  if (d.rem) return { st: "na", txt: `removido em ${fmtDate(d.rem.em)}${d.rem.motivo ? ` — ${d.rem.motivo}` : ""}` };
+  if (atual && !dochMesmo(atual, d)) return { st: "na", txt: "histórico (há um mais recente)" };
+  if (!d.validade) return { st: "ok", txt: "vigente (sem validade)" };
+  const dias = Math.round((dLocal(d.validade) - new Date(todayISO() + "T00:00:00")) / 86400000);
+  if (dias < 0) return { st: "erro", txt: `vencido há ${-dias} dia(s)` };
+  if (dias <= 30) return { st: "aviso", txt: `vence em ${dias} dia(s)` };
+  return { st: "ok", txt: `vigente até ${fmtDate(d.validade)}` };
+}
+async function dochDrive() { return rcDrive(); }   /* biblioteca do site Operacional (a mesma dos reparos do Rio Card) */
+function dochNome(ctx, x, tipo, arquivo, emissao) {
+  return `${emissao || (($("dochValidade") && $("dochValidade").value) || todayISO())}_${docSlug(ctx.rotulo(x) || ctx.nome)}_${docNomeSeguro(tipo).replace(/\s+/g, "-")}${docExt(arquivo.name) || ".pdf"}`;
+}
+/* campos do veículo alimentados pelo documento mais recente de cada tipo (só avança; nunca apaga o que já está) */
+function dochCamposDerivados(ctxKey, x) {
+  if (ctxKey !== "frota") return {};
+  const f = {}, atual = dochAtual(x);
+  FROTA_DOC_TIPOS.forEach(T => { const d = atual.get(T.t); if (!d) return;
+    if (T.campo && d.validade && (!x[T.campo] || ymd(x[T.campo]) < d.validade)) f[T.campo] = d.validade;
+    if (T.emissao && d.emissao && (!x[T.emissao] || ymd(x[T.emissao]) < d.emissao)) f[T.emissao] = d.emissao;
+    if (T.ano && d.emissao) { const ano = Number(d.emissao.slice(0, 4)); if (ano && (!x[T.ano] || Number(x[T.ano]) < ano)) f[T.ano] = ano; } });
+  return f;
+}
+/* lê de novo a coluna no SharePoint: serve para conferir que a coluna existe (antes de subir arquivo) e para juntar o que
+   outra pessoa gravou enquanto a página estava aberta (revisão B1/B2) */
+async function dochLerServidor(ctxKey, x) {
+  const ctx = DOCH_CTX[ctxKey], site = ctx.site(), lista = ctx.lista();
+  if (!site || !lista) throw new Error("A lista ainda não está carregada. Atualize a página e tente de novo.");
+  let r;
+  try { r = await graph(`/sites/${site.id}/lists/${lista.id}/items/${x._id}?$expand=fields($select=Documentos)`); }
+  catch (e) { if (e.status === 400 || /not recognized|n[aã]o (é )?reconhecid|does not exist|Invalid|inv[aá]lid/i.test(e.message || "")) { const e2 = new Error("A coluna \"Documentos com histórico\" ainda não existe nesta lista: peça a um administrador para rodar Sistema › Configuração (Executar tudo)."); e2.semColuna = true; throw e2; } throw e; }
+  return dochLer({ Documentos: r && r.fields ? r.fields.Documentos : null });
+}
+function dochJuntar(servidor, local) {   /* por chave k: o que só um lado tem entra; se algum lado marcou removido, fica removido */
+  const m = new Map(); servidor.forEach(d => { if (d.k) m.set(d.k, d); });
+  local.forEach(d => { if (!d.k) return; const q = m.get(d.k); if (!q) m.set(d.k, d); else if (d.rem && !q.rem) m.set(d.k, d); });
+  return [...m.values()];
+}
+async function dochGravar(ctxKey, x, docs) {
+  const ctx = DOCH_CTX[ctxKey], site = ctx.site(), lista = ctx.lista();
+  if (!site || !lista) throw new Error("A lista ainda não está carregada. Atualize a página e tente de novo.");
+  try { docs = dochJuntar(await dochLerServidor(ctxKey, x), docs); } catch (e) { if (e.semColuna) throw e; console.warn("doch: sem releitura, grava o local", e); }
+  const campos = Object.assign({ Documentos: docs.length ? JSON.stringify(docs) : null }, dochCamposDerivados(ctxKey, Object.assign({}, x, { Documentos: JSON.stringify(docs) })));
+  await SP.update(site.id, lista.id, x._id, campos);
+  Object.assign(x, campos);
+  return campos;
+}
+/* revisão B5: a data do cadastro veio deste documento? Remover não a desfaz — dizer isso */
+function dochAvisoCampo(ctxKey, x, d) {
+  if (ctxKey !== "frota" || !d.validade) return "";
+  const T = FROTA_DOC_TIPOS.find(q => q.t === d.t); if (!T || !T.campo || ymd(x[T.campo] || "") !== d.validade) return "";
+  return `<p class="sup"><b>Atenção:</b> o "${esc({ ValidadeVistoria: "vistoria válida até", ValidadeCAT: "CAT válido até", Tacografo: "cronotacógrafo", Extintor: "extintor" }[T.campo] || T.campo)}" do veículo (${esc(fmtDate(d.validade))}) veio deste documento e <b>continua</b> depois de remover. Se a data está errada, corrija em Editar cadastro.</p>`;
+}
+/* ---------- tela ---------- */
+const DOCH_UI = { filtro: "", removidos: false };
+function dochPill(s) { return `<span class="pill st-${s.st === "erro" ? "vencido" : s.st === "aviso" ? "aguardando" : s.st === "ok" ? "pago" : "cancelada"}"><i></i>${esc(s.txt)}</span>`; }
+function dochBloco(ctxKey, x) {
+  const ctx = DOCH_CTX[ctxKey], todos = dochLer(x), atual = dochAtual(x), pode = ctx.pode();
+  const vis = todos.filter(d => (DOCH_UI.removidos || !d.rem) && (!DOCH_UI.filtro || d.t === DOCH_UI.filtro)).sort((a, b) => dochOrdem(b).localeCompare(dochOrdem(a)));
+  const tipos = ctx.tipos.map(T => T.t), nT = t => todos.filter(d => d.t === t && !d.rem).length;
+  const chips = `<div class="doch-f"><button class="chip ${!DOCH_UI.filtro ? "on" : ""}" onclick="DOCH_UI.filtro='';dochRepintar('${ctxKey}',${jsArg(x._id)})">Todos <span class="sup">${todos.filter(d => !d.rem).length}</span></button>${tipos.filter(t => nT(t)).map(t => `<button class="chip ${DOCH_UI.filtro === t ? "on" : ""}" onclick="DOCH_UI.filtro=${jsArg(t)};dochRepintar('${ctxKey}',${jsArg(x._id)})">${esc(t)} <span class="sup">${nT(t)}</span></button>`).join("")}${todos.some(d => d.rem) ? `<label class="chip doch-rem"><input type="checkbox" ${DOCH_UI.removidos ? "checked" : ""} onchange="DOCH_UI.removidos=this.checked;dochRepintar('${ctxKey}',${jsArg(x._id)})"> mostrar removidos</label>` : ""}</div>`;
+  const resumo = ctxKey === "frota" ? `<div class="doch-resumo">${FROTA_DOC_TIPOS.filter(T => T.campo || T.t === "CRLV" || T.t === "Seguro de passageiros").map(T => { const d = atual.get(T.t), s = d ? dochSit(d, d) : { st: "na", txt: "sem documento" }; return `<span class="doch-res ${s.st}" title="${esc(s.txt)}">${frotaDot(s.st)}${esc(T.t)}<b>${d && d.validade ? esc(fmtDate(d.validade)) : d ? "—" : "—"}</b></span>`; }).join("")}</div>` : "";
+  const linha = d => { const s = dochSit(d, atual.get(d.t)), meu = normEmail(d.e || "") && normEmail(d.e || "") === tercQuemEmail();
+    return `<tr class="${d.rem ? "doch-removido" : ""}"><td class="nw">${esc(d.t)}</td>
+      <td>${d.id && d.d ? `<a href="#" onclick="docVerJson(${jsArg(JSON.stringify({ t: d.t, n: d.n, id: d.id, d: d.d, s: d.s, m: d.m, u: d.u }))}, ${jsArg(d.t)}); return false;" title="Ver dentro do ERP · ${esc(docTamanho(d.s))}">📄 ${esc(d.n || "arquivo")}</a>` : `<span class="sup">sem arquivo</span>`}${d.numero ? `<div class="sup">nº ${esc(d.numero)}</div>` : ""}${d.obs ? `<div class="sup">${esc(d.obs)}</div>` : ""}</td>
+      <td class="nw">${d.emissao ? esc(fmtDate(d.emissao)) : "—"}</td><td class="nw">${d.validade ? esc(fmtDate(d.validade)) : "—"}</td>
+      <td>${dochPill(s)}</td><td class="sup nw">${esc(d.por || "—")}<br>${esc(fmtDate(d.em))}</td>
+      <td class="nw">${pode && !d.rem && (ctx.prop() || meu) ? `<button class="btn sm ghost" title="Tirar este documento do histórico (o arquivo continua na pasta)" onclick="dochRemover('${ctxKey}',${jsArg(x._id)},${jsArg(d.k)})">✕</button>` : ""}</td></tr>`; };
+  const tabela = vis.length ? `<div class="table-wrap"><table class="cap-table doch-tab"><thead><tr><th>Tipo</th><th>Documento</th><th>Emissão</th><th>Validade</th><th>Situação</th><th>Quem · quando</th><th></th></tr></thead><tbody>${vis.map(linha).join("")}</tbody></table></div>`
+    : `<p class="sup doch-vazio">${todos.length ? "Nenhum documento neste filtro." : `Nenhum documento anexado a este ${ctx.nome} ainda.`}</p>`;
+  const form = pode ? `<details class="doch-novo" id="dochNovo"><summary class="btn sm">📎 Anexar documento</summary>
+    <div class="form-grid" style="margin-top:10px">
+      <div class="field"><label>Tipo<span class="req">*</span></label><select id="dochTipo" onchange="dochDica('${ctxKey}')">${ctx.tipos.map(T => `<option value="${esc(T.t)}">${esc(T.t)}</option>`).join("")}</select><div class="hint" id="dochDica">${esc(ctx.tipos[0].dica || "")}</div></div>
+      <div class="field"><label>Arquivo(s)<span class="req">*</span></label><input type="file" id="dochArq" accept="${DOC_ACEITA}" multiple><div class="hint">PDF, imagem ou planilha, até 60 MB cada. Vários arquivos do mesmo documento entram juntos.</div></div>
+      <div class="field"><label>Emissão</label><input type="date" id="dochEmissao"><div class="hint">Data do documento. É ela que ordena o histórico — num documento antigo, coloque a data de então.</div></div>
+      <div class="field"><label>Válido até</label><input type="date" id="dochValidade"><div class="hint">${ctxKey === "frota" ? "Preenche o \"válido até\" do veículo quando for mais recente que o atual." : "Opcional."}</div></div>
+      <div class="field"><label>Nº / referência</label><input id="dochNumero" maxlength="60" placeholder="Nº do certificado, apólice, auto…"></div>
+      <div class="field"><label>Observação</label><input id="dochObs" maxlength="200"></div>
+      <div class="field full" style="display:flex;gap:8px;align-items:center"><button class="btn primary" id="dochEnviar" onclick="dochAnexar('${ctxKey}',${jsArg(x._id)})">Enviar</button><span class="sup" id="dochProg"></span></div>
+    </div></details>` : "";
+  return `<div class="doch" id="dochBloco" data-ctx="${ctxKey}" data-id="${esc(String(x._id))}">${resumo}${chips}${tabela}${form}</div>`;
+}
+window.dochDica = ctxKey => { const s = $("dochTipo"), h = $("dochDica"); if (!s || !h) return; const T = DOCH_CTX[ctxKey].tipos.find(t => t.t === s.value); h.textContent = (T && T.dica) || ""; };
+window.dochRepintar = (ctxKey, id) => { const el = $("dochBloco"); if (!el) return; const x = DOCH_CTX[ctxKey].item(id); if (!x) return; const aberto = $("dochNovo") && $("dochNovo").open; el.outerHTML = dochBloco(ctxKey, x); if (aberto && $("dochNovo")) $("dochNovo").open = true; };
+window.dochAnexar = async (ctxKey, id) => {
+  const ctx = DOCH_CTX[ctxKey], x = ctx.item(id); if (!x) return;
+  if (!ctx.pode()) { toast(`Seu acesso não permite anexar documentos a este ${ctx.nome}.`); return; }
+  const tipo = $("dochTipo") ? $("dochTipo").value : "", arqs = $("dochArq") ? [...$("dochArq").files] : [];
+  const emissao = $("dochEmissao") ? $("dochEmissao").value : "", validade = $("dochValidade") ? $("dochValidade").value : "";
+  const numero = $("dochNumero") ? $("dochNumero").value.trim() : "", obs = $("dochObs") ? $("dochObs").value.trim() : "";
+  const falta = []; if (!tipo) falta.push("Tipo"); if (!arqs.length) falta.push("Arquivo");
+  if (validade && emissao && validade < emissao) falta.push("Validade anterior à emissão");
+  if (falta.length) { await erpAviso({ titulo: "Confira antes de enviar", itens: falta }); return; }
+  const bt = $("dochEnviar"), prog = $("dochProg"); if (bt) bt.disabled = true;
+  const novos = [];
+  try {
+    if (prog) prog.textContent = "Conferindo a lista…";
+    try { await dochLerServidor(ctxKey, x); } catch (e) { if (e.semColuna) { await erpAviso({ titulo: "Falta a coluna na lista", texto: e.message }); return; } throw e; }   /* revisão B2: nada sobe antes de saber que dá para gravar */
+    const drive = await dochDrive(), pasta = `${ctx.pasta(x)}/${docNomeSeguro(tipo)}`;
+    for (let i = 0; i < arqs.length; i++) { const a = arqs[i];
+      if (prog) prog.textContent = `Enviando ${i + 1} de ${arqs.length}: ${a.name}…`;
+      const item = await docEnviar(pasta, dochNome(ctx, x, tipo, a, emissao), a, p => { if (prog) prog.textContent = `Enviando ${i + 1} de ${arqs.length}: ${Math.round(p * 100)}%`; }, drive);
+      novos.push(Object.assign(docMeta(item, tipo, a, drive), { k: "d" + Date.now().toString(36) + i, e: tercQuemEmail(), emissao: emissao || null, validade: validade || null, numero: numero || null, obs: obs || null }));
+    }
+    const docs = dochLer(x).concat(novos);
+    const campos = await dochGravar(ctxKey, x, docs);
+    const mudou = Object.keys(campos).filter(k => k !== "Documentos");
+    toast(`${novos.length} documento(s) anexado(s)${mudou.length ? ` · ${ctx.nome} atualizado: ${mudou.map(k => ({ ValidadeVistoria: "vistoria válida até", UltimaVistoria: "última vistoria", ValidadeCAT: "CAT válido até", Tacografo: "cronotacógrafo", Extintor: "extintor", Licenciamento: "licenciamento" })[k] || k).join(", ")}` : ""}`, 7000);
+    DOCH_UI.filtro = ""; dochRepintar(ctxKey, id); ctx.apos(x);
+  } catch (e) {
+    if (novos.length) {   /* arquivos já na pasta, registro não gravado: não perder o que subiu */
+      try { await dochGravar(ctxKey, x, dochLer(x).concat(novos)); dochRepintar(ctxKey, id); toast(`Arquivo(s) enviado(s), mas houve um erro no meio: ${e.message}`, 9000); return; } catch (e2) {}
+    }
+    toast("Não foi possível anexar: " + e.message, 8000);
+  } finally { if (bt) bt.disabled = false; if (prog) prog.textContent = ""; }
+};
+window.dochRemover = async (ctxKey, id, k) => {
+  const ctx = DOCH_CTX[ctxKey], x = ctx.item(id); if (!x) return;
+  const docs = dochLer(x), d = docs.find(q => q.k === k); if (!d || d.rem) return;
+  if (!ctx.pode()) { toast("Seu acesso é só de leitura."); return; }
+  const meu = normEmail(d.e || "") && normEmail(d.e || "") === tercQuemEmail();
+  if (!ctx.prop() && !meu) { toast("Só quem anexou (ou o proprietário do módulo) tira um documento do histórico."); return; }
+  const r = await erpConfirmar({ titulo: "Tirar do histórico", perigo: true, sim: "Tirar do histórico", nao: "Voltar",
+    html: `<p><b>${esc(d.t)}</b> — ${esc(d.n || "")}${d.emissao ? ` · emitido em ${esc(fmtDate(d.emissao))}` : ""}.</p><p>O registro sai da lista (fica marcado como removido, com quem e quando) e <b>o arquivo continua na pasta</b> do SharePoint. Se o documento foi só substituído por um mais novo, não precisa remover: anexe o novo e este vira histórico.</p>${dochAvisoCampo(ctxKey, x, d)}${ctxKey === "pb" ? `<p class="sup">O formulário da máquina é fechado e reaberto em seguida — salve antes o que estiver editando.</p>` : ""}<p><label>Motivo<span class="req">*</span></label><br><input data-cf="motivo" maxlength="200" style="margin-top:6px;width:100%"></p>`,
+    validar: v => String(v.motivo || "").trim() ? "" : "Informe o motivo." });
+  if (!r) return;
+  d.rem = { por: tercQuem(), e: tercQuemEmail(), em: new Date().toISOString(), motivo: String(r.motivo || "").trim().slice(0, 200) };
+  try { await dochGravar(ctxKey, x, docs); toast("Documento tirado do histórico");
+    if (ctxKey === "pb" && !$("pbDocsWrap")) { try { pbForm(id); } catch (e) {} }   /* revisão B3: a confirmação fechou o formulário */
+    dochRepintar(ctxKey, id); ctx.apos(x); }
+  catch (e) { delete d.rem; toast("Não foi possível gravar: " + e.message, 7000); }
+};
+/* ---------- Frota: cartão na página do veículo, "Vida do ônibus" e o cartão "Documentos" ---------- */
+{ const p0 = frotaVeicPintar;
+  frotaVeicPintar = function () {
+    const r = p0.apply(this, arguments); const body = $("fvBody"); if (!body) return r;
+    try { const v = frotaVeicPorId(FV.id); if (!v) return r;
+      const duo = body.querySelector(".fv-duo"); const html = `<div class="cap-card doch-card"><div class="cap-card-h"><h3>Documentos do veículo</h3><span class="cap-card-s">a vida útil: CRLV, CAT, vistoria, cronotacógrafo, seguro, autos, BO… — com histórico</span></div>${dochBloco("frota", v)}</div>`;
+      if (duo) duo.insertAdjacentHTML("beforebegin", html); else body.insertAdjacentHTML("beforeend", html);
+      const card = [...body.querySelectorAll(".fv-saude .cap-card")].find(c => (c.querySelector("h3") || {}).textContent === "Documentos");
+      if (card) { card.style.cursor = "pointer"; card.title = "Ver o histórico de documentos e anexar"; card.onclick = () => { const d = body.querySelector(".doch-card"); if (d) d.scrollIntoView({ behavior: "smooth", block: "start" }); }; }
+    } catch (e) { console.warn("doch frota", e); }
+    return r;
+  }; window.frotaVeicPintar = frotaVeicPintar; }
+{ const v0 = frotaVida;
+  frotaVida = function (v) {
+    const ev = v0.apply(this, arguments);
+    try { dochLer(v).forEach(d => { ev.push({ k: "doc", d: d.emissao || ymd(d.em || ""), t: `Documento: ${d.t}${d.numero ? ` nº ${d.numero}` : ""}`, s: `${d.validade ? "válido até " + fmtDate(d.validade) + " · " : ""}${d.por || ""}${d.rem ? ` · removido em ${fmtDate(d.rem.em)}` : ""}`, st: d.rem ? "na" : dochSit(d, dochAtual(v).get(d.t)).st }); }); } catch (e) {}
+    return ev.filter(e => e.d).sort((a, b) => b.d.localeCompare(a.d));
+  }; window.frotaVida = frotaVida; }
+FROTA_VIDA_K.doc = "Documentos";
+/* o "válido até" da tela pode vir do documento (quando o documento é mais recente que o campo) */
+{ const d0 = frotaDocs;
+  frotaDocs = function (v) {
+    const base = d0.apply(this, arguments);
+    try { const atual = dochAtual(v), map = { "Vistoria DETRO": "Vistoria DETRO / LIT", "CAT": "CAT (DETRO)", "Cronotacógrafo": "Cronotacógrafo (INMETRO)", "Extintor": "Extintor" };
+      return base.map(b => { const d = atual.get(map[b.lbl]); return d && d.validade && (!b.x || ymd(b.x) < d.validade) ? frotaDoc(b.lbl, d.validade) : b; }); } catch (e) { return base; }
+  }; window.frotaDocs = frotaDocs; }
+/* formulário do veículo: dizer onde os documentos ficam */
+{ const f0 = window.veicForm;
+  if (typeof f0 === "function") window.veicForm = function () { const r = f0.apply(this, arguments);
+    try { const m = arguments[0] != null && arguments[0] !== "" ? document.querySelector("#modal .modal-body") : null; if (m && !m.querySelector(".doch-aviso-form")) m.insertAdjacentHTML("afterbegin", `<div class="hint doch-aviso-form">Os documentos do veículo (CRLV, CAT, vistoria, cronotacógrafo, seguro…) e o histórico deles ficam na <b>página do veículo</b> › Documentos do veículo. Ao anexar um documento com validade, as datas abaixo são atualizadas.</div>`); } catch (e) {}
+    return r; }; }
+/* ---------- Máquinas Pagbank: seção "Documentos" no formulário (leitura e edição) ---------- */
+function dochPbRepintar(x) { const w = $("pbDocsWrap"); if (w && x) w.innerHTML = dochBloco("pb", x); }
+{ const f0 = window.pbForm;
+  window.pbForm = function (id, editar) {
+    const r = f0.apply(this, arguments);
+    try { const x = id != null ? DOCH_CTX.pb.item(id) : null; if (!x) return r;
+      const h = [...document.querySelectorAll("#modal h3.pb-sec")].find(e => e.textContent.trim() === "Histórico / comentários");
+      if (h && !$("pbDocsWrap")) { DOCH_UI.filtro = ""; h.insertAdjacentHTML("beforebegin", `<h3 class="pb-sec">Documentos</h3><div id="pbDocsWrap">${dochBloco("pb", x)}</div>`); }
+    } catch (e) { console.warn("doch pb", e); }
+    return r;
+  }; }
+(function () { const s = document.createElement("style"); s.textContent = `
+.doch{display:grid;gap:10px}.doch-f{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.doch-f .chip.doch-rem{display:inline-flex;gap:6px;align-items:center;font-weight:400}
+.doch-resumo{display:flex;gap:8px;flex-wrap:wrap}.doch-res{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line,#e5e7eb);border-radius:999px;padding:4px 10px;font-size:12.5px;background:var(--bg-soft,#f8fafc)}.doch-res b{font-weight:600}
+.doch-tab td,.doch-tab th{font-size:13px;vertical-align:top}.doch-removido td{opacity:.55;text-decoration:line-through}.doch-removido td:nth-child(5){text-decoration:none}
+.doch-novo summary{list-style:none;display:inline-flex;cursor:pointer;width:max-content}.doch-novo summary::-webkit-details-marker{display:none}.doch-vazio{margin:0}
+.doch-aviso-form{margin-bottom:12px}.doch-card{margin-bottom:16px}`; document.head.appendChild(s); })();
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

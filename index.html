@@ -3778,7 +3778,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.12.8",
+  version: "v0.14.12.9",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -38774,7 +38774,7 @@ function tercNotasGuarda(method, path, body) {
 { const g0 = guardaEscrita; guardaEscrita = function (method, path, body) { const r = g0.apply(this, arguments); tercNotasGuarda(method, path, body); return r; }; window.guardaEscrita = guardaEscrita; }
 (function () { const s = document.createElement("style"); s.textContent = `.tnota-lapis{margin-left:auto}.tnota-lapis + .tav-x{margin-left:0}.tnota-ed{font-style:italic}
 .tnota-editando textarea{width:100%;margin-top:4px;min-height:60px}.tnota-ed-acoes{display:flex;gap:6px;align-items:center;margin-top:6px}`; document.head.appendChild(s); })();
-CONFIG.version = "v0.14.12.8";
+CONFIG.version = "v0.14.12.9";
 
 /* v0.14.12.5 (pedido de 21/10 16:50): o que falta ajustar antes de salvar aparece numa janela por cima, com a lista completa
    e um botão Ok, em vez de uma linha vermelha no fim do formulário. A janela de trás volta intacta ao clicar em Ok. */
@@ -38932,6 +38932,262 @@ async function obrExcFazer(o, ligadas, axO, semCap, lerCap) {
 (function () { const s = document.createElement("style"); s.textContent = `.obr-exc-lista{margin:8px 0 0 18px;display:grid;gap:6px}.obr-exc-lista li{font-size:13.5px}
 .obr-exc-parc{margin:6px 0 0 18px;display:grid;gap:4px;max-height:38vh;overflow:auto}.obr-exc-parc li{font-size:13px}
 .modal-foot .btn.obr-del{color:var(--err)}.modal-foot .btn.obr-del:first-child{margin-right:auto}`; document.head.appendChild(s); })();
+
+/* =====================================================================
+   v0.14.12.9 (pedido de 22/10 14:07): aprovação de Terceiros —
+   1. um pedido por CNPJ/CPF: o documento que já está num cadastro aguardando aprovação não entra de novo (nem pelo
+      formulário, nem por outra origem de gravação); a nota diz quem pediu, quando e com que nome;
+   2. "Meus pedidos" na página de Terceiros: quem pediu vê os próprios pedidos de inclusão e de exclusão, com a data e
+      o andamento;
+   3. cancelar o pedido, pelo quadro ou pela faixa do cadastro: a exclusão pedida volta atrás (o cadastro continua); a
+      inclusão de um cadastro que NASCEU pendente sai (ele nunca chegou a valer); e o cadastro já aprovado que voltou para
+      a fila por troca de CNPJ/CPF só sai da fila, com o documento de volta — nunca é excluído (revisão M1). Cada
+      cancelamento fica nas observações do cadastro, quando ele continua.
+   ===================================================================== */
+let TERC_CANCEL = null;
+const tercDocIgual = (a, b) => { const x = docClean(a), y = docClean(b); return !!x && x === y; };
+const tercMeuPedido = x => { const a = tercAprov(x); if (!a) return false; const e = tercQuemEmail();
+  return a.email ? !!e && normEmail(a.email) === e : !!a.por && a.por !== "—" && a.por === tercQuem(); };
+/* revisão M1: inclusão pedida tem dois casos bem diferentes — o cadastro que NASCEU aguardando aprovação (ainda não vale
+   nada: cancelar é desistir dele) e o cadastro JÁ APROVADO que voltou para a fila porque alguém trocou o CNPJ/CPF (ele
+   vale, tem faturas e obrigações: cancelar é desfazer a troca, nunca excluir). O segundo sempre traz "motivo". */
+const tercNasceuPend = x => { const a = tercAprov(x); return !!(a && a.tipo === "inclusao" && (a.novo === true || !a.motivo)); };
+/* documento que o cadastro tinha antes da troca (gravado em "antes" daqui para a frente; nos antigos, lido do motivo) */
+function tercDocAnterior(a) {
+  if (!a) return "";
+  if (a.antes && docClean(a.antes)) return a.antes;
+  const m = String(a.motivo || "").match(/alterado de ([\d./-]+) para/); return m && docClean(m[1]) ? m[1] : "";
+}
+/* revisão B3: na página de Terceiros a CAP e as Obrigações não são lidas — então dizer que não foi possível conferir,
+   em vez de mostrar "0 fatura(s)" como se estivesse conferido */
+function tercUsosHtml(x) {
+  const capOk = !!(CAP_STATE.list && Array.isArray(CAP_STATE.items)), obrOk = !!(OBR_STATE.list && Array.isArray(OBR_STATE.items));
+  if (!capOk || !obrOk) return `<p class="sup">Não foi possível conferir daqui quantas faturas e obrigações apontam para este cadastro (a Contas a Pagar não está carregada nesta tela). Se ele já foi usado, não exclua.</p>`;
+  const usadas = (typeof capTodos === "function" ? capTodos() : CAP_STATE.items).filter(it => tercDeCampos(it) === x).length;
+  const obrs = OBR_STATE.items.filter(ob => tercDeCampos(ob) === x).length;
+  return usadas || obrs ? `<p class="sup"><b>Atenção:</b> ${usadas} fatura(s) e ${obrs} obrigação(ões) apontam para ele e ficariam sem cadastro. Se ele vai ser usado, deixe o pedido na fila.</p>` : "";
+}
+/* revisão B4: o administrador pode ter decidido o pedido enquanto a página estava aberta — reler antes de gravar/excluir */
+async function tercRecarregarPedido(x, a) {   /* devolve o cadastro relido, ou null quando não se deve seguir */
+  try { await loadForn(false); } catch (e) { toast("Não foi possível conferir o pedido agora: " + e.message, 7000); return null; }
+  const y = (FORN_STATE.items || []).find(i => String(i._id) === String(x._id)), b = y && tercAprov(y);
+  if (!y) { toast("Este cadastro não existe mais."); try { closeModal(); } catch (e) {} try { if ($("fornBody")) paintForn(); } catch (e) {} return null; }
+  if (!b || b.tipo !== a.tipo || String(b.em || "") !== String(a.em || "")) { toast("O pedido mudou enquanto a tela estava aberta (o administrador já decidiu). Nada foi alterado.", 8000); tercRedesenhar(y); return null; }
+  return y;
+}
+{ const g0 = tercGuarda;   /* marca os pedidos novos daqui para a frente (os antigos são reconhecidos por não ter motivo) */
+  tercGuarda = function (method, path, body) {
+    const r = g0.apply(this, arguments), M = String(method || "GET").toUpperCase();
+    if (M === "POST" && !session.n1) { const f = (body && body.fields) || {}, a = tercJ1(f.Aprovacao);
+      if (a && a.tipo === "inclusao" && !a.motivo && a.novo !== true) f.Aprovacao = JSON.stringify(Object.assign({}, a, { novo: true })); }
+    if (M === "PATCH" && !session.n1 && body && typeof body === "object" && "Aprovacao" in body) {   /* troca de CNPJ/CPF: guardar o documento anterior para o cancelamento devolver */
+      const a = tercJ1(body.Aprovacao), p1 = String(path || "").split("?")[0].match(/\/lists\/([^/]+)\/items\/([^/]+)(?:\/fields)?$/);
+      const lf = FORN_STATE.list && FORN_STATE.list.id, ant = p1 && lf && p1[1] === lf ? (FORN_STATE.items || []).find(i => String(i._id) === decodeURIComponent(p1[2])) : null;
+      if (a && a.tipo === "inclusao" && a.motivo && !a.antes && ant && docClean(ant.CNPJ)) body.Aprovacao = JSON.stringify(Object.assign({}, a, { antes: ant.CNPJ }));
+    }
+    return r;
+  }; window.tercGuarda = tercGuarda; }
+/* outro cadastro com o mesmo documento aguardando a aprovação da inclusão */
+function tercPendPorDoc(doc, menos) {
+  if (!docClean(doc)) return null;
+  return (FORN_STATE.items || []).find(f => (menos == null || String(f._id) !== String(menos)) && tercDocIgual(f.CNPJ, doc) && tercAprovPendInc(f)) || null;
+}
+function tercPendTxt(f) {
+  const a = tercAprov(f) || {};
+  return `Este CNPJ/CPF já foi enviado para aprovação${a.por ? ` por ${a.por}` : ""}${a.em && tercDataTxt(a.em) ? ` em ${tercDataTxt(a.em)}` : ""}, no cadastro "${f.Title || "(sem nome)"}". ${session.n1 ? 'Decida o pedido em "Aprovações pendentes" ou use outro documento' : `Aguarde a decisão do administrador${tercMeuPedido(f) ? ' ou cancele o pedido em "Meus pedidos"' : ""}`}.`;
+}
+/* formulário: a nota do documento repetido passa a dizer que o pedido já está na fila */
+{ const s0 = fornSave;
+  fornSave = async function (existing) {
+    const pend = tercPendPorDoc($("gCNPJ") ? $("gCNPJ").value : "", existing && existing._id);
+    if (pend) { const e = $("gErr"); if (e) { e.style.display = "block"; e.textContent = tercPendTxt(pend); } return; }
+    return s0.apply(this, arguments);
+  }; window.fornSave = fornSave; }
+function tercPendGuarda(method, path, body, iid, meu) {
+  const M = String(method || "GET").toUpperCase(); if (M !== "POST" && M !== "PATCH") return;
+  if (vcAtivo() || session.n1) return;   /* revisão B6: o administrador decide a fila; no formulário ele recebe a nota, mas nenhum lote é abortado */
+  const p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0];
+  if (meu == null) { const m = p0.match(/\/lists\/([^/]+)\/items(?:\/([^/]+)(?:\/fields)?)?$/), lf = FORN_STATE.list && FORN_STATE.list.id;
+    meu = !!(m && lf && m[1] === lf); iid = meu && m[2] ? decodeURIComponent(m[2]) : null; }
+  if (!meu) return;
+  const f = (M === "POST" ? body && body.fields : body) || {};
+  if (!("CNPJ" in f)) return;
+  const pend = tercPendPorDoc(f.CNPJ, iid);
+  if (pend) { const e = new Error(tercPendTxt(pend)); e.status = 409; e.tercTrava = true; throw e; }
+}
+/* guarda: nenhuma origem grava um documento que já está em aprovação; e quem pediu pode desfazer o próprio pedido
+   (tirar a Aprovacao da exclusão, ou excluir o cadastro que nasceu pendente), só durante o cancelamento e só com
+   exatamente a gravação que o cancelamento montou */
+{ const g0 = guardaEscrita;
+  guardaEscrita = function (method, path, body) {
+    const M = String(method || "GET").toUpperCase(), p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0];
+    const lf = FORN_STATE.list && FORN_STATE.list.id, m = p0.match(/\/lists\/([^/]+)\/items(?:\/([^/]+)(?:\/fields)?)?$/);
+    const meu = m && lf && m[1] === lf, iid = meu && m[2] ? decodeURIComponent(m[2]) : null;
+    if (meu && iid && TERC_CANCEL && iid === String(TERC_CANCEL.id) && !vcAtivo() && podeEditar("forn")) {
+      const x = (FORN_STATE.items || []).find(i => String(i._id) === iid), a = x && tercAprov(x);
+      if (a && (session.n1 || tercMeuPedido(x))
+        && ((M === "DELETE" && TERC_CANCEL.del && tercNasceuPend(x) && !/\/fields$/.test(p0))   /* revisão M1/B3: só o cadastro que nasceu pendente, no caminho exato do item */
+          || (M === "PATCH" && body && typeof body === "object" && body.Aprovacao == null && Object.keys(body).every(k => ["Aprovacao", "CNPJ", "Notas", "Observacoes"].includes(k))
+            && JSON.stringify(body) === JSON.stringify(TERC_CANCEL.body || null)))) return;   /* revisão B7: só as chaves do cancelamento */
+    }
+    const r = g0.apply(this, arguments);
+    if (/\/\$batch$/.test(p0)) { ((body && body.requests) || []).forEach(q => tercPendGuarda(q.method, "/" + String(q.url || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").replace(/^\/+/, ""), q.body)); return r; }   /* revisão B2 */
+    tercPendGuarda(M, p0, body, iid, meu);
+    return r;
+  }; window.guardaEscrita = guardaEscrita; }
+window.tercCancelarPedido = async id => {
+  let x = (FORN_STATE.items || []).find(i => String(i._id) === String(id)); if (!x) return;
+  if (vcAtivo()) { toast(vcErro().message); return; }
+  const a = tercAprov(x); if (!a) { toast("Este pedido já foi decidido."); tercRedesenhar(x); return; }
+  if (!session.n1 && !tercMeuPedido(x)) { toast(`Só ${a.por || "quem fez o pedido"} (ou o administrador) pode cancelar este pedido.`, 6000); return; }
+  if (!podeEditar("forn")) { toast("Seu acesso a Fornecedores é só de leitura."); return; }
+  if (!tercColsOk("Aprovacao")) return;   /* revisão B6 */
+  const hoje = tercDataTxt(new Date().toISOString()), nome = esc(x.Title || "(sem nome)");
+  const grava = async (campos, ok) => { TERC_CANCEL = { id: String(x._id), body: campos }; try { return await tercGravar(x, campos, ok); } finally { TERC_CANCEL = null; } };
+  if (a.tipo === "exclusao") {
+    if (!(await erpConfirmar({ titulo: "Cancelar o pedido de exclusão", html: `<p>O cadastro <b>${nome}</b> continua como está e o pedido sai da fila do administrador.</p><p>Cancelar o pedido?</p>`, sim: "Cancelar o pedido", nao: "Voltar" }))) return;
+    x = await tercRecarregarPedido(x, a); if (!x) return;
+    await grava({ Aprovacao: null, ...tercNotaCampos(x, `Pedido de exclusão${a.motivo ? ` (${a.motivo})` : ""} cancelado por ${tercQuem()} em ${hoje}`) }, "Pedido de exclusão cancelado: o cadastro continua");
+    return;
+  }
+  /* revisão M1: cadastro aprovado que voltou para a fila por troca de CNPJ/CPF — cancelar desfaz a troca, não exclui */
+  if (!tercNasceuPend(x)) {
+    const volta = tercDocAnterior(a);
+    /* revisão B8: sem o documento anterior registrado, cancelar seria aprovar a própria troca — isso é do administrador */
+    if (!volta) { toast("Este cadastro já era aprovado e voltou para a fila por troca de CNPJ/CPF, mas o documento anterior não ficou registrado. Só o administrador pode decidir — nada foi alterado.", 11000); return; }
+    if (!(await tercDocLivre(volta, x))) return;   /* revisão B-D */
+    if (!(await erpConfirmar({ titulo: "Cancelar o pedido", sim: `Voltar para ${volta} e cancelar`, nao: "Voltar",
+      html: `<p>O cadastro <b>${nome}</b> <b>já era aprovado</b>: ele voltou para a fila porque o CNPJ/CPF foi alterado${a.motivo ? ` — <i>${esc(a.motivo)}</i>` : ""}.</p>
+        <p>Cancelar o pedido devolve o documento para <b>${esc(volta)}</b> e tira o cadastro da fila. Ele continua valendo, como antes.</p>
+        <p class="sup">O cadastro não é excluído. Para excluí-lo, use "Pedir exclusão".</p>` }))) return;
+    x = await tercRecarregarPedido(x, a); if (!x) return;
+    await grava({ Aprovacao: null, CNPJ: volta, ...tercNotaCampos(x, `Troca de CNPJ/CPF cancelada por ${tercQuem()} em ${hoje}: volta para ${volta}`) }, `Pedido cancelado: o CNPJ/CPF voltou para ${volta}`);
+    return;
+  }
+  /* inclusão que nasceu pendente: o cadastro ainda não vale — cancelar é desistir dele */
+  if (!(await erpConfirmar({ titulo: "Cancelar o pedido de inclusão", perigo: true, sim: "Cancelar e excluir o cadastro", nao: "Voltar",
+    html: `<p>O cadastro <b>${nome}</b>${x.CNPJ ? ` (${esc(x.CNPJ)})` : ""} ainda não foi aprovado, então ele é <b>excluído</b> ao cancelar o pedido.</p>
+      ${tercUsosHtml(x)}
+      <p class="sup">Para manter o cadastro, deixe o pedido na fila: ele passa a valer quando o administrador aprovar.</p>` }))) return;
+  x = await tercRecarregarPedido(x, a); if (!x) return;
+  TERC_CANCEL = { id: String(x._id), del: true };
+  try { await graph(`/sites/${FORN_STATE.site.id}/lists/${FORN_STATE.list.id}/items/${x._id}`, { method: "DELETE" }); }
+  catch (e) { toast("Não foi possível cancelar: " + e.message, 7000); return; }
+  finally { TERC_CANCEL = null; }
+  FORN_STATE.items = FORN_STATE.items.filter(i => i !== x); try { closeModal(); } catch (e) {}
+  toast("Pedido cancelado: o cadastro foi excluído");
+  try { await loadForn(false); } catch (e) {}
+  try { if ($("fornBody")) paintForn(); } catch (e) {}
+};
+/* revisão M-1 (2ª rodada): o administrador que RECUSA um pedido de troca de CNPJ/CPF não pode excluir o cadastro — ele já
+   era aprovado e tem faturas e obrigações. Recusar desfaz a troca (volta o documento anterior); aprovar registra o
+   documento novo na observação. Só a inclusão que NASCEU pendente continua sendo excluída ao ser recusada. */
+{ const d0 = window.tercDecidir;
+  window.tercDecidir = async (id, aprova) => {
+    const x = (FORN_STATE.items || []).find(i => String(i._id) === String(id)); if (!x) return d0(id, aprova);
+    const a = tercAprov(x);
+    if (!session.n1) return d0(id, aprova);
+    if (vcAtivo()) { toast(vcErro().message); return; }
+    if (!a) return d0(id, aprova);
+    if (a.tipo !== "inclusao" || tercNasceuPend(x)) {
+      /* revisão B-C: os dois caminhos que EXCLUEM o cadastro (recusar a inclusão, aprovar a exclusão) passam a dizer, na
+         janela, quantas faturas e obrigações apontam para ele — ou que não foi possível conferir daqui */
+      const apaga = (a.tipo === "inclusao" && !aprova) || (a.tipo === "exclusao" && aprova);
+      if (!apaga) return d0(id, aprova);
+      const hj = tercDataTxt(new Date().toISOString());
+      if (!(await erpConfirmar({ titulo: a.tipo === "inclusao" ? "Recusar a inclusão" : "Aprovar a exclusão", perigo: true, nao: "Voltar",
+        sim: a.tipo === "inclusao" ? "Recusar e excluir o cadastro" : "Aprovar e excluir o cadastro",
+        html: `<p>${a.tipo === "inclusao" ? `A inclusão de <b>${esc(x.Title || "(sem nome)")}</b>${x.CNPJ ? ` (${esc(x.CNPJ)})` : ""} foi pedida por ${esc(a.por || "—")} em ${esc(tercDataTxt(a.em))}. Recusar <b>exclui o cadastro</b> em definitivo.` : `A exclusão de <b>${esc(x.Title || "(sem nome)")}</b>${x.CNPJ ? ` (${esc(x.CNPJ)})` : ""} foi pedida por ${esc(a.por || "—")} em ${esc(tercDataTxt(a.em))}${a.motivo ? `: <i>${esc(a.motivo)}</i>` : ""}. Aprovar <b>exclui o cadastro</b> em definitivo.`}</p>
+          ${tercUsosHtml(x)}
+          <p class="sup">Se ele pode voltar a ser usado, ${a.tipo === "inclusao" ? "aprove e marque como Inativo" : "recuse e marque como Inativo"} em vez de excluir.</p>` }))) return;
+      const y = await tercRecarregarPedido(x, a); if (!y) return;
+      try { await graph(`/sites/${FORN_STATE.site.id}/lists/${FORN_STATE.list.id}/items/${y._id}`, { method: "DELETE" }); }
+      catch (e) { toast("Erro ao excluir: " + e.message, 7000); return; }
+      FORN_STATE.items = (FORN_STATE.items || []).filter(i => String(i._id) !== String(y._id)); try { closeModal(); } catch (e) {}
+      toast(a.tipo === "inclusao" ? "Inclusão recusada: cadastro excluído" : "Exclusão aprovada: cadastro excluído");
+      try { if (typeof BUSCA !== "undefined") BUSCA.cache = {}; } catch (e) {}
+      try { await loadForn(false); } catch (e) {} try { if ($("fornBody")) paintForn(); } catch (e) {}
+      void hj; return;
+    }
+    const hoje = tercDataTxt(new Date().toISOString()), nome = esc(x.Title || "(sem nome)"), volta = tercDocAnterior(a);
+    const cab = `<p>O cadastro <b>${nome}</b> <b>já era aprovado</b>: ele voltou para a fila porque ${esc(a.por || "alguém")} alterou o CNPJ/CPF${a.motivo ? ` — <i>${esc(a.motivo)}</i>` : ""}.</p><p>Documento agora: <b>${esc(x.CNPJ || "(vazio)")}</b>${volta ? ` · anterior: <b>${esc(volta)}</b>` : ""}.</p>`;
+    if (aprova) {
+      if (!(await erpConfirmar({ titulo: "Aprovar a troca de CNPJ/CPF", sim: "Aprovar a troca", nao: "Voltar",
+        html: `${cab}<p>Aprovar deixa valer o documento novo. O cadastro volta a receber faturas, obrigações e pagamentos.</p>` }))) return;
+      const y = await tercRecarregarPedido(x, a); if (!y) return;
+      return tercGravar(y, { Aprovacao: null, ...tercNotaCampos(y, `Troca de CNPJ/CPF para ${y.CNPJ || "(vazio)"} pedida por ${a.por || "—"} em ${tercDataTxt(a.em)}, aprovada por ${tercQuem()} em ${hoje}`) }, "Troca de CNPJ/CPF aprovada");
+    }
+    if (!volta) { await erpAviso({ titulo: "Recusar a troca de CNPJ/CPF", html: `${cab}<p>O documento anterior não ficou registrado, então o sistema não sabe para onde voltar — e <b>o cadastro não pode ser excluído</b>, porque ele já era aprovado e pode ter faturas e obrigações.</p><p>Edite o cadastro com o CNPJ/CPF certo e aprove, ou peça a quem alterou qual era o documento anterior.</p>` }); return; }
+    if (!(await tercDocLivre(volta, x))) return;   /* revisão B-D */
+    if (!(await erpConfirmar({ titulo: "Recusar a troca de CNPJ/CPF", sim: `Recusar e voltar para ${volta}`, nao: "Voltar",
+      html: `${cab}<p>Recusar devolve o documento para <b>${esc(volta)}</b> e tira o cadastro da fila. <b>O cadastro não é excluído</b> — ele já era aprovado.</p><p class="sup">Para excluí-lo, use Excluir no cadastro.</p>` }))) return;
+    const y = await tercRecarregarPedido(x, a); if (!y) return;
+    return tercGravar(y, { Aprovacao: null, CNPJ: volta, ...tercNotaCampos(y, `Troca de CNPJ/CPF (${a.motivo || "—"}) pedida por ${a.por || "—"} em ${tercDataTxt(a.em)}, recusada por ${tercQuem()} em ${hoje}: volta para ${volta}`) }, `Troca recusada: o CNPJ/CPF voltou para ${volta}`);
+  }; }
+/* revisão B-D: enquanto a troca está na fila o documento antigo fica livre; alguém pode ter cadastrado outro terceiro com
+   ele. Devolver o documento criaria dois cadastros com o mesmo CNPJ/CPF. */
+async function tercDocLivre(doc, x) {
+  try { await loadForn(false); } catch (e) {}
+  const outro = (FORN_STATE.items || []).find(f => String(f._id) !== String(x._id) && tercDocIgual(f.CNPJ, doc));
+  if (!outro) return true;
+  await erpAviso({ titulo: "Não dá para devolver o documento", html: `<p>O CNPJ/CPF <b>${esc(doc)}</b> foi cadastrado em <b>${esc(outro.Title || "(sem nome)")}</b> enquanto este pedido estava na fila, então devolvê-lo criaria dois cadastros com o mesmo documento.</p><p>Resolva o outro cadastro primeiro (ou aprove a troca, se o documento novo é o certo). Nada foi alterado.</p>` });
+  return false;
+}
+/* rótulos: a troca de documento não é "Inclusão" — no quadro do administrador, nas pílulas e na faixa do cadastro */
+{ const q0 = tercAprovQuadro;
+  tercAprovQuadro = function () {
+    let h = q0.apply(this, arguments); if (!h) return h;
+    (FORN_STATE.items || []).filter(x => tercAprov(x) && tercAprov(x).tipo === "inclusao" && !tercNasceuPend(x)).forEach(x => {
+      const alvo = `tercCadastroCard('id:${esc(String(x._id))}')`, i = h.indexOf(alvo); if (i < 0) return;
+      const ini = h.lastIndexOf("<tr>", i), fim = h.indexOf("</tr>", i); if (ini < 0 || fim < 0) return;
+      const tr = h.slice(ini, fim).replace("<i></i>Inclusão<", "<i></i>Troca de CNPJ/CPF<").replace(">Aprovar<", ">Aprovar a troca<").replace(">Recusar<", ">Recusar a troca<");
+      h = h.slice(0, ini) + tr + h.slice(fim);
+    });
+    return h;
+  }; window.tercAprovQuadro = tercAprovQuadro; }
+{ const p0 = tercSitPills;
+  tercSitPills = function (x) {
+    const h = p0.apply(this, arguments), a = tercAprov(x);
+    return a && a.tipo === "inclusao" && !tercNasceuPend(x) ? h.replace("<i></i>Aguardando aprovação<", "<i></i>Troca de CNPJ/CPF a aprovar<") : h;
+  }; window.tercSitPills = tercSitPills; }
+/* botão de cancelar na faixa do cadastro (cartão e formulário), para quem pediu */
+{ const s0 = tercSitCaixa;
+  tercSitCaixa = function (x) {
+    let h = s0.apply(this, arguments); const a = tercAprov(x);
+    if (a && a.tipo === "inclusao" && !tercNasceuPend(x) && h) {   /* revisão M-1: a troca de documento tem outro texto e outros botões */
+      const volta = tercDocAnterior(a);
+      h = h.replace("<b>⏳ Inclusão aguardando aprovação</b>", "<b>⏳ Troca de CNPJ/CPF aguardando aprovação</b>")
+        .replace(" Até a aprovação, não recebe faturas nem pagamentos.", ` Até a decisão, não recebe faturas nem pagamentos.${volta ? ` Documento anterior: ${esc(volta)}.` : ""} O cadastro já era aprovado e não é excluído se a troca for recusada.`)
+        .replace(">Aprovar inclusão<", ">Aprovar a troca<").replace(">Recusar<", ">Recusar a troca<");
+    }
+    if (!a || !tercMeuPedido(x) || vcAtivo() || !podeEditar("forn")) return h;
+    const bt = `<button type="button" class="btn sm ghost" onclick="tercCancelarPedido(${jsArg(x._id)})">Cancelar o pedido</button>`;
+    if (!h) return `<div class="terc-sitbox pend"><div class="terc-sitbt">${bt}</div></div>`;
+    return h.includes('class="terc-sitbt"') ? h.replace('<div class="terc-sitbt">', `<div class="terc-sitbt">${bt} `) : h.replace(/<\/div>$/, `<div class="terc-sitbt">${bt}</div></div>`);
+  }; window.tercSitCaixa = tercSitCaixa; }
+/* "Meus pedidos": o andamento do que eu pedi, na página de Terceiros */
+function tercMeusPedidosHtml() {
+  if (vcAtivo()) return "";
+  const meus = (FORN_STATE.items || []).filter(x => tercAprov(x) && tercMeuPedido(x)).sort((p, q) => String(tercAprov(p).em || "").localeCompare(String(tercAprov(q).em || "")));
+  if (!meus.length) return "";
+  const linha = x => { const a = tercAprov(x), tr = a.tipo === "inclusao" && !tercNasceuPend(x);
+    return `<tr><td><span class="pill st-aguardando"><i></i>${tr ? "Troca de CNPJ/CPF" : a.tipo === "inclusao" ? "Inclusão" : "Exclusão"}</span></td>
+      <td><a href="#" onclick="event.preventDefault();tercCadastroCard('id:${esc(String(x._id))}')">${esc(x.Title || "—")}</a><div class="sup">${esc(x.CNPJ || "sem CNPJ/CPF")}</div></td>
+      <td class="nw">${esc(tercDataTxt(a.em) || "—")}</td><td>${esc(a.motivo || "—")}</td>
+      <td>${tr ? "Aguardando o administrador aprovar a troca do documento. Até lá o cadastro não recebe faturas, obrigações nem pagamentos; cancelar devolve o documento anterior." : a.tipo === "inclusao" ? "Aguardando o administrador aprovar. Até lá o cadastro não recebe faturas, obrigações nem pagamentos; cancelar exclui o cadastro." : "Aguardando o administrador decidir. O cadastro continua valendo até lá."}</td>
+      <td style="white-space:nowrap">${podeEditar("forn") ? `<button class="btn sm" onclick="tercCancelarPedido(${jsArg(x._id)})">Cancelar</button>` : ""}</td></tr>`; };
+  return `<section class="terc-aprov terc-meus" id="tercMeus"><h3>Meus pedidos <span class="cap-views-n">${meus.length}</span> <span class="sup">aguardando o administrador</span></h3>
+    <div class="table-wrap"><table class="cap-table"><thead><tr><th>Pedido</th><th>Cadastro</th><th>Pedido em</th><th>Motivo</th><th>Andamento</th><th></th></tr></thead><tbody>${meus.map(linha).join("")}</tbody></table></div></section>`;
+}
+{ const pt = paintForn;
+  paintForn = function () {
+    const r = pt.apply(this, arguments), body = $("fornBody"); if (!body) return r;
+    try { if (!session.n1 && typeof tercSoCadastro === "function" && tercSoCadastro() && !$("tercMeus")) {
+      const h = tercMeusPedidosHtml(); if (h) { const q = $("tercAprov"); if (q) q.insertAdjacentHTML("afterend", h); else body.insertAdjacentHTML("afterbegin", h); } } }
+    catch (e) { console.warn("terc meus pedidos", e); }
+    return r;
+  }; window.paintForn = paintForn; }
+(function () { const s = document.createElement("style"); s.textContent = `.terc-meus{border-color:#cfd6e4;background:#f6f8fc}`; document.head.appendChild(s); })();
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -3778,7 +3778,7 @@ const CONFIG = {
   },
   /* v0.12.35: os grupos do Microsoft 365 não dão mais acesso a nada no ERP (ver canSee); ficam só como referência */
   groups: { admin: "ERP-Admins", financeiro: "Financeiro", diretoria: "Diretoria", operacional: "Operacional", rh: "RH", contabilidade: "Contabilidade", juridico: "Jurídico" },
-  version: "v0.14.12.7",
+  version: "v0.14.12.8",
   globalbusUrl: "https://bus.systemsatx.com.br/Default.aspx?idConfig=86",   /* v0.12.76: Operacional › GlobalBus › Portal (abre em nova aba) */
   maisMobiUrl: "https://portal-operadoras.mais.mobi/login",   /* v0.12.77: Financeiro › Rio Card › Mais Mobi (abre em nova aba) */
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
@@ -7916,7 +7916,8 @@ window.obrAbrir = (id, back, manterTudo) => {
       ${docs}
     </div>
     <div class="modal-foot">${back != null ? `<button class="btn" onclick="erpVoltar(${Number(back)})" style="margin-right:auto">← Voltar</button>` : ""}
-      ${edObr ? `<button class="btn" onclick="obrForm(${jsArg(o._id)}, null, true)"${back == null ? ` style="margin-right:auto"` : ""}>Editar obrigação</button>` : ""}
+      ${podeExcluir("obr") && !vcAtivo() ? `<button class="btn obr-del" onclick="obrExcluir(${jsArg(o._id)})" title="Excluir a obrigação e as parcelas ligadas a ela">Excluir</button>` : ""}
+      ${edObr ? `<button class="btn" onclick="obrForm(${jsArg(o._id)}, null, true)"${back == null && !podeExcluir("obr") ? ` style="margin-right:auto"` : ""}>Editar obrigação</button>` : ""}
       ${edCap && o.Status !== "Encerrada" ? `<button class="btn" onclick="obrNovaParcela(${jsArg(o._id)})" title="Lançar na CAP a próxima parcela desta obrigação, já vinculada">+ Parcela</button>` : ""}
       ${edObr && (o.Status === "Encerrada" || S.k === "quitada") ? `<button class="btn" onclick="obrNovaAPartir(${jsArg(o._id)})" title="Abre o cadastro de uma obrigação nova com os dados desta e o próximo ciclo (IPTU, IPVA, aluguel que se repete)">Nova obrigação a partir desta</button>` : ""}
       ${linkSP(OBR_STATE.list, o._id)}
@@ -38773,7 +38774,7 @@ function tercNotasGuarda(method, path, body) {
 { const g0 = guardaEscrita; guardaEscrita = function (method, path, body) { const r = g0.apply(this, arguments); tercNotasGuarda(method, path, body); return r; }; window.guardaEscrita = guardaEscrita; }
 (function () { const s = document.createElement("style"); s.textContent = `.tnota-lapis{margin-left:auto}.tnota-lapis + .tav-x{margin-left:0}.tnota-ed{font-style:italic}
 .tnota-editando textarea{width:100%;margin-top:4px;min-height:60px}.tnota-ed-acoes{display:flex;gap:6px;align-items:center;margin-top:6px}`; document.head.appendChild(s); })();
-CONFIG.version = "v0.14.12.7";
+CONFIG.version = "v0.14.12.8";
 
 /* v0.14.12.5 (pedido de 21/10 16:50): o que falta ajustar antes de salvar aparece numa janela por cima, com a lista completa
    e um botão Ok, em vez de uma linha vermelha no fim do formulário. A janela de trás volta intacta ao clicar em Ok. */
@@ -38807,6 +38808,130 @@ function erpAviso(o) {
 window.erpAviso = erpAviso;
 (function () { const s = document.createElement("style"); s.textContent = `.erp-aviso-lista{margin:10px 0 0 18px;display:grid;gap:6px}
 .erp-aviso-lista li{font-size:13.5px}.erp-aviso .modal-body{padding-top:14px}`; document.head.appendChild(s); })();
+
+/* =====================================================================
+   v0.14.12.8 (pedido de 22/10 14:04): excluir uma obrigação — na CAP e na Gestão de Dívidas.
+   Antes, a obrigação com parcelas lançadas não podia ser excluída (só "Encerrada"). Agora o proprietário do módulo exclui a
+   obrigação junto com as parcelas dela na CAP (e os documentos anexados de cada uma), com uma janela de confirmação que diz
+   exatamente o que vai sair: quantas parcelas, quantas estão pagas, o valor somado, os anexos e o que fica.
+   As parcelas só reconhecidas automaticamente (sem vínculo gravado) não são excluídas — ficam na CAP, soltas.
+   ===================================================================== */
+function obrExcLigadas(o) {
+  const D = obrCalcular(), lst = D.porObr.get(String(o._id)) || [];
+  const fortes = lst.filter(c => ["gravado", "gerada", "parcelamento"].includes(c.how)).map(c => c.it);
+  /* revisão B1: "gerada" (texto da observação) e "parcelamento" (nº igual) são reconhecimento, não vínculo gravado — vão
+     para a lista, mas aparecem marcados na confirmação */
+  const inferido = new Set(lst.filter(c => c.how === "gerada" || c.how === "parcelamento").map(c => String(c.it._id)));
+  /* cancelada não entra no cálculo das obrigações, mas se tem o vínculo gravado sai junto */
+  const canc = (CAP_STATE.items || []).filter(it => capCancelada(it) && it.ObrigacaoLookupId != null && String(it.ObrigacaoLookupId) === String(o._id));
+  const ligadas = [...new Map(fortes.concat(canc).map(x => [String(x._id), x])).values()];
+  return { ligadas, inferido, auto: lst.filter(c => c.how === "auto" || c.how === "outro-forn").map(c => c.it) };
+}
+/* anexos que saem com a fatura (os dos reparos do Rio Card pertencem ao reparo e ficam) */
+function obrExcAnexos(it) {
+  const todos = anexosDe(it);
+  if (typeof capEhReparo === "function" && capEhReparo(it)) return [];
+  return todos.filter(a => a && a.id && a.d && !(a.rc || a.rcs));
+}
+window.obrExcluir = async id => {
+  const o = OBR_STATE.items.find(x => String(x._id) === String(id)); if (!o) return;
+  if (vcAtivo()) { toast(vcErro().message); return; }
+  if (!podeExcluir("obr")) { toast("Só o proprietário do módulo pode excluir uma obrigação."); return; }
+  /* revisão M2/B2: a tela de Obrigações abre mesmo quando a leitura da CAP falha — sem ela não se sabe quais parcelas
+     existem, e excluir a obrigação deixaria todas apontando para um registro que não existe mais. Em vez de confiar no
+     que está na memória, relê a CAP agora (e de novo depois da confirmação, revisão B1: alguém pode ter lançado parcela
+     no meio). */
+  const qualCap = DIV.on ? "lista de parcelas das dívidas" : "Contas a Pagar";
+  let semCap = "";   /* revisão B-A/B-E: a falha fica local, não suja o aviso da tela */
+  /* devolve "ok" (leu), "sem" (este acesso não lê a CAP — situação permanente, segue com aviso na janela) ou
+     false (falha momentânea de rede/servidor: é só tentar de novo) */
+  const lerCap = async () => {
+    semCap = "";
+    try { await loadCAP({ soLeitura: true }); } catch (e) { semCap = e.message || "erro na leitura"; }
+    if (!semCap && !(CAP_STATE.list && Array.isArray(CAP_STATE.items))) semCap = "a lista não está carregada";
+    if (!semCap) { OBR_STATE.capErro = ""; return "ok"; }
+    if (!podeVerCap()) return "sem";
+    const msg = semCap; semCap = "";
+    toast(`Não foi possível ler a ${qualCap} agora (${msg}) — sem ela não é seguro excluir a obrigação. Tente de novo em instantes.`, 9000); return false;
+  };
+  if (!(await lerCap())) return;
+  const nome = o.Title || "(sem nome)", { ligadas, inferido, auto } = semCap ? { ligadas: [], inferido: new Set(), auto: [] } : obrExcLigadas(o);
+  if (ligadas.length && !podeExcluir("cap")) { toast(`Esta obrigação tem ${ligadas.length} parcela(s) na ${DIV.on ? "lista de parcelas" : "CAP"}. Só o proprietário da CAP pode excluir as parcelas junto.`, 7000); return; }
+  const pagas = ligadas.filter(x => x.Status === "Pago"), anexos = ligadas.reduce((n, x) => n + obrExcAnexos(x).length, 0);
+  const total = ligadas.reduce((s, x) => s + (typeof capValorEfetivo === "function" ? capValorEfetivo(x) : Number(x.Valor || 0)), 0);
+  const infs = ligadas.filter(x => inferido.has(String(x._id)));
+  const axO = anexosDe(o).filter(a => a && a.id && a.d);
+  const li = [];
+  li.push(`<li>A obrigação <b>${esc(nome)}</b>${o.FornecedorTexto ? ` (${esc(o.FornecedorTexto)})` : ""}${axO.length ? ` e ${axO.length} documento(s) anexado(s) a ela` : ""}.</li>`);
+  if (ligadas.length) li.push(`<li><b>${ligadas.length} parcela(s)</b> ligada(s) a ela, somando <b>${esc(fmtBRL(total))}</b>${pagas.length ? ` — <b>${pagas.length} já paga(s)</b>, que saem do Fluxo de Caixa, do CAPEX/OPEX e da DRE` : ""}:</li>`);
+  if (anexos) li.push(`<li>${anexos} documento(s) anexado(s) às parcelas (boleto, NF, comprovante).</li>`);
+  /* revisão B1: dizer quais faturas saem, uma por uma */
+  const linha = x => `<li><b>${esc(x.Title || "(sem título)")}</b> · ${esc(fmtDate(x.Vencimento))} · ${esc(fmtBRL(typeof capValorEfetivo === "function" ? capValorEfetivo(x) : Number(x.Valor || 0)))} · ${esc(x.Status || "—")}${inferido.has(String(x._id)) ? ` <span class="sup">(sem vínculo gravado: reconhecida pelo histórico ou pelo nº de parcelamento)</span>` : ""}</li>`;
+  const MAX = 12, lista = ligadas.length ? `<ul class="obr-exc-parc">${ligadas.slice(0, MAX).map(linha).join("")}${ligadas.length > MAX ? `<li class="sup">e mais ${ligadas.length - MAX} parcela(s).</li>` : ""}</ul>` : "";
+  let imob = 0;   /* revisão B9: bens do Imobilizado que apontam para estas parcelas perdem o vínculo (o CapRef guarda ids da CAP, então não vale no modo Dívidas) */
+  try { if (!DIV.on && typeof imobCapIds === "function" && IMOB && Array.isArray(IMOB.itens)) { const ids = new Set(ligadas.map(x => String(x._id)));
+    imob = IMOB.itens.filter(bem => imobCapIds(bem).some(i => ids.has(String(i)))).length; } } catch (e) {}
+  const fica = [];
+  if (auto.length) fica.push(`${auto.length} parcela(s) só reconhecida(s) pelo vencimento e pelo fornecedor — ficam na ${DIV.on ? "lista" : "CAP"}, sem obrigação`);
+  if (ligadas.some(x => typeof capEhReparo === "function" && capEhReparo(x))) fica.push("os arquivos dos reparos do Rio Card");
+  const html = `<p>Vai ser excluído <b>em definitivo</b>:</p><ul class="obr-exc-lista">${li.join("")}</ul>${lista}
+    ${semCap ? `<p class="sup"><b>Não foi possível conferir as parcelas:</b> seu acesso não lê a ${esc(qualCap)} (${esc(semCap)}). A obrigação sai e as parcelas que existirem <b>ficam soltas</b>, apontando para ela. Se pode haver parcelas, peça a quem tem acesso à CAP.</p>` : ""}
+    ${imob ? `<p class="sup"><b>${imob} bem(ns) do Imobilizado</b> aponta(m) para estas parcelas e perde(m) o vínculo.</p>` : ""}
+    ${!semCap && !DIV.on && imobNaoLido() && ligadas.length ? `<p class="sup">Não foi possível conferir daqui se algum bem do Imobilizado aponta para estas parcelas.</p>` : ""}
+    ${infs.length ? `<p class="sup"><b>Confira as ${infs.length} marcada(s) sem vínculo gravado:</b> elas foram reconhecidas pelo texto da observação ou pelo nº de parcelamento. Se alguma não é desta obrigação, cancele e desvincule antes.</p>` : ""}
+    ${fica.length ? `<p class="sup">Fica: ${esc(fica.join(" · "))}.</p>` : ""}
+    <p>${ligadas.length || semCap ? "Se a obrigação apenas terminou, o certo é mudar o Status para <b>Encerrada</b> — as parcelas continuam na CAP." : "Não dá para desfazer."}</p>
+    ${ligadas.length || semCap ? `<p><label>Para confirmar, digite <b>EXCLUIR</b>:</label><br><input data-cf="txt" autocomplete="off" aria-label="Digite EXCLUIR para confirmar" style="margin-top:6px"></p>` : ""}`;
+  const r = await erpConfirmar({ titulo: "Excluir obrigação", html, sim: ligadas.length ? `Excluir a obrigação e ${ligadas.length} parcela(s)` : "Excluir a obrigação", perigo: true,
+    validar: ligadas.length || semCap ? v => String(v.txt || "").trim().toUpperCase() === "EXCLUIR" ? "" : "Digite EXCLUIR para confirmar." : null });
+  if (!r) return;
+  if (OBR_EXC.has(String(o._id))) { toast("Esta obrigação já está sendo excluída."); return; }   /* revisão B-F */
+  OBR_EXC.add(String(o._id));
+  try { await obrExcFazer(o, ligadas, axO, semCap, lerCap); } finally { OBR_EXC.delete(String(o._id)); }
+};
+const OBR_EXC = new Set();
+const imobNaoLido = () => { try { return typeof IMOB === "undefined" || IMOB.list === undefined || !Array.isArray(IMOB.itens) || !!IMOB.erro; } catch (e) { return true; } };
+const podeVerCap = () => {   /* permModuloSo: o nível do módulo CAP sem o desvio das páginas (a aba Obrigações abriria a CAP para quem só tem Obrigações) */
+  try { const n = typeof window.permModuloSo === "function" ? window.permModuloSo("cap") : permModulo("cap"); return session.n1 || (n && n !== "nenhum"); } catch (e) { return true; }
+};
+async function obrExcFazer(o, ligadas, axO, semCap, lerCap) {
+  if (!semCap && (await lerCap()) !== "ok") {   /* revisão B1: a lista não pode ter mudado enquanto a janela estava aberta */
+    toast("Não foi possível conferir as parcelas de novo — nada foi excluído.", 8000); return;
+  }
+  { const agora = semCap ? [] : obrExcLigadas(o).ligadas, antes = ligadas.map(x => String(x._id)).sort().join(",");
+    if (agora.map(x => String(x._id)).sort().join(",") !== antes) {
+      toast(`A lista de parcelas desta obrigação mudou enquanto a janela estava aberta (agora são ${agora.length}). Nada foi excluído — confira e tente de novo.`, 10000);
+      obrRepintar(); return; } }
+  const sid = CAP_STATE.site && CAP_STATE.site.id, lid = CAP_STATE.list && CAP_STATE.list.id, gen = typeof DIV !== "undefined" ? DIV.gen : 0;
+  const trocou = () => (typeof DIV !== "undefined" && DIV.gen !== gen) || !OBR_STATE.list;
+  let saiu = [], falhas = 0, axFalha = 0;
+  try {
+    for (const it of ligadas) {
+      if (trocou()) { toast("A tela mudou — a exclusão foi interrompida.", 7000); break; }
+      try {
+        await graph(`/sites/${sid}/lists/${lid}/items/${it._id}`, { method: "DELETE" });
+        saiu.push(String(it._id));
+        for (const a of obrExcAnexos(it)) { try { await graph(`/drives/${a.d}/items/${a.id}`, { method: "DELETE" }); } catch (e) { axFalha++; console.warn("anexo não apagado", a.n, e); } }
+      } catch (e) { falhas++; console.warn("parcela não excluída", it.Title, e); }
+    }
+    if (saiu.length && CAP_STATE.list && CAP_STATE.list.id === lid) { try { capTirarLocal(saiu); } catch (e) {} }   /* revisão B-G: nunca na lista da outra tela */
+    if (falhas || trocou()) {   /* a obrigação fica, para não deixar parcela órfã sem referência */
+      toast(`${saiu.length} parcela(s) excluída(s) · ${falhas} não saiu(íram). A obrigação foi mantida — tente de novo.`, 9000);
+      await loadObr().catch(() => {}); obrRepintar(); return;
+    }
+    await graph(`/sites/${OBR_STATE.site.id}/lists/${OBR_STATE.list.id}/items/${o._id}`, { method: "DELETE" });
+    for (const a of axO) { try { await graph(`/drives/${a.d}/items/${a.id}`, { method: "DELETE" }); } catch (e) { axFalha++; console.warn("anexo da obrigação não apagado", a.n, e); } }
+    closeModal(); await loadObr().catch(() => {}); obrRepintar();
+    try { if (typeof BUSCA !== "undefined") BUSCA.cache = {}; } catch (e) {}
+    toast(`Obrigação excluída${saiu.length ? ` · ${saiu.length} parcela(s) junto` : ""}${axFalha ? ` · ${axFalha} anexo(s) ficaram na pasta` : ""}`, 6000);
+  } catch (e) {   /* revisão B7: se a obrigação não saiu depois das parcelas, dizer o que já foi apagado */
+    toast(`Erro ao excluir a obrigação: ${e.message}${saiu.length ? ` · atenção: ${saiu.length} parcela(s) já foram excluídas em definitivo. A obrigação continua — exclua de novo ou mude o Status para Encerrada.` : ""}`, 12000);
+    await loadObr().catch(() => {}); obrRepintar();
+  }
+};
+(function () { const s = document.createElement("style"); s.textContent = `.obr-exc-lista{margin:8px 0 0 18px;display:grid;gap:6px}.obr-exc-lista li{font-size:13.5px}
+.obr-exc-parc{margin:6px 0 0 18px;display:grid;gap:4px;max-height:38vh;overflow:auto}.obr-exc-parc li{font-size:13px}
+.modal-foot .btn.obr-del{color:var(--err)}.modal-foot .btn.obr-del:first-child{margin-right:auto}`; document.head.appendChild(s); })();
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

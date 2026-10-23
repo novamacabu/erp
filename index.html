@@ -4924,6 +4924,7 @@ function route() {
   else if (mod.id === "di_detro") { main.innerHTML = pageDiDetro(); }   /* v0.14.3: Diretoria › Detro RJ */
   else if (mod.id === "di_rj") { main.innerHTML = pageRj(); renderRj(); }   /* v0.14.3: Diretoria › RJ Consultores */
   else if (mod.id === "ocorr") { main.innerHTML = pageOc(); renderOc(); }   /* v0.14.4: Operacional › Ocorrências */
+  else if (mod.id === "rh_cons") { main.innerHTML = pageCons(); renderCons(); }   /* v0.14.13: RH › Consumíveis */
   else if (mod.id === "rh_aval") { main.innerHTML = pageAval(); renderAval(); }
   else if (mod.id === "ti_chamados") { main.innerHTML = pageTi(); renderTi(); }
   else if (PREVIAS[mod.id]) { main.innerHTML = pagePrevia(mod); renderPrevia(mod); }
@@ -39589,6 +39590,440 @@ tercProdAprender = async function () {
   }; window.fornSave = fornSave; }
 { const st = document.createElement("style"); st.textContent = `.terc-prod-bar{display:flex;align-items:center;gap:10px;margin-bottom:6px}.terc-prods.gerindo .terc-prod{position:relative;padding-right:8px}.tp-acoes{display:inline-flex;gap:2px;margin-left:4px}.tp-acoes button{border:0;background:none;cursor:pointer;font-size:13px;line-height:1;padding:0 3px;color:var(--ink-2)}.tp-acoes button:hover{color:var(--navy)}.tp-form{display:inline-flex;align-items:center;gap:4px;margin-left:6px;font-size:12px}.terc-prods .terc-prod.fora{border-style:dashed;opacity:.85}.tp-form input{width:170px;padding:2px 6px;font-size:12.5px;border:1px solid var(--line);border-radius:4px}.terc-prods.gerindo .terc-prod .tp-form button{white-space:nowrap}`; document.head.appendChild(st); }
 CONFIG.version = "v0.14.12.12";
+
+/* =====================================================================
+   v0.14.13 · Recursos Humanos › Consumíveis (prefixo cons/CONS_)
+   Cadastro de consumíveis (EPI, uniforme, limpeza, escritório…), entradas, saídas por funcionário, devoluções e ajustes
+   de inventário; estoque atual calculado pelas movimentações; histórico; Painel com indicadores e gráficos no padrão dos
+   painéis do Financeiro (CAP › Painel › Indicadores e Fluxo de Caixa › Painel).
+   Listas (site RH, criadas pela Configuração): "RH — Consumíveis" e "RH — Consumíveis Movimentações".
+   ===================================================================== */
+MODULES.push({ id: "rh_cons", path: "#/rh/consumiveis", icon: "box", name: "Consumíveis", area: "Recursos Humanos", groups: ["rh", "diretoria"], status: "piloto", wide: true });
+const CONS_CATS = ["EPI", "Uniforme", "Limpeza e higiene", "Escritório e papelaria", "Copa e cozinha", "Informática", "Manutenção e ferramentas", "Outros"];
+const CONS_UNID = ["un", "par", "cx", "pct", "kg", "g", "l", "ml", "m", "rolo", "galão"];
+const CONS_TIPOS = ["Entrada", "Saída", "Devolução", "Ajuste"];
+LISTS.rh_cons = {
+  key: "rh_cons", displayName: "RH — Consumíveis", siteKey: "rh", titleAs: "Item",
+  description: "Recursos Humanos NMB · cadastro de consumíveis (EPI, uniformes, limpeza, escritório, copa, informática…) com unidade, estoque mínimo, custo e estoque atual (calculado pelas movimentações). Editada em Recursos Humanos › Consumíveis.",
+  columns: [
+    { name: "Codigo",        displayName: "Código",                     text: { allowMultipleLines: false, maxLength: 30 } },
+    { name: "Categoria",     displayName: "Categoria",                  choice: choice(CONS_CATS, true) },
+    { name: "Unidade",       displayName: "Unidade",                    choice: choice(CONS_UNID, true) },
+    { name: "EstoqueMin",    displayName: "Estoque mínimo",             number: { decimalPlaces: "two", displayAs: "number", minimum: 0 } },
+    { name: "EstoqueAtual",  displayName: "Estoque atual",              number: { decimalPlaces: "two", displayAs: "number" } },
+    { name: "CustoUnit",     displayName: "Custo unitário (R$)",        number: money },
+    { name: "Local",         displayName: "Local de guarda",            text: { allowMultipleLines: false, maxLength: 80 } },
+    { name: "FornecedorTexto", displayName: "Fornecedor habitual",      text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "Ativo",         displayName: "Ativo",                      boolean: {} },
+    { name: "UltimaMov",     displayName: "Última movimentação",        dateTime: dateOnly },
+    { name: "Observacoes",   displayName: "Observações",                text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+LISTS.rh_cons_mov = {
+  key: "rh_cons_mov", displayName: "RH — Consumíveis Movimentações", siteKey: "rh", titleAs: "Descrição",
+  description: "Recursos Humanos NMB · entradas, saídas (com o funcionário que retirou e o departamento), devoluções e ajustes de inventário dos consumíveis; o saldo após cada movimentação fica gravado. Editada em Recursos Humanos › Consumíveis.",
+  columns: [
+    { name: "Data",          displayName: "Data",                       dateTime: dateOnly },
+    { name: "Tipo",          displayName: "Tipo",                       choice: choice(CONS_TIPOS) },
+    { name: "ItemId",        displayName: "Item (id)",                  text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "ItemNome",      displayName: "Item",                       text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "Categoria",     displayName: "Categoria",                  text: { allowMultipleLines: false, maxLength: 60 } },
+    { name: "Unidade",       displayName: "Unidade",                    text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Quantidade",    displayName: "Quantidade",                 number: { decimalPlaces: "two", displayAs: "number" } },
+    { name: "CustoUnit",     displayName: "Custo unitário (R$)",        number: money },
+    { name: "FuncId",        displayName: "Funcionário (id)",           text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "FuncNome",      displayName: "Funcionário",                text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "Matricula",     displayName: "Matrícula",                  text: { allowMultipleLines: false, maxLength: 30 } },
+    { name: "Departamento",  displayName: "Departamento",               text: { allowMultipleLines: false, maxLength: 60 } },
+    { name: "DepartamentoCod", displayName: "Centro de custo (código)", text: { allowMultipleLines: false, maxLength: 10 } },
+    { name: "Motivo",        displayName: "Motivo / observação",        text: { allowMultipleLines: false, maxLength: 200 } },
+    { name: "NF",            displayName: "Nota fiscal",                text: { allowMultipleLines: false, maxLength: 60 } },
+    { name: "SaldoApos",     displayName: "Saldo após",                 number: { decimalPlaces: "two", displayAs: "number" } },
+    { name: "RegistradoPor", displayName: "Registrada por",             text: { allowMultipleLines: false, maxLength: 120 } }
+  ]
+};
+SETUP_ORDER.push("rh_cons", "rh_cons_mov");
+SETUP_TEXT.rh_cons = `Cria no site RH a lista "RH — Consumíveis" (v0.14.13): cadastro dos consumíveis com unidade, estoque mínimo, custo e estoque atual.`;
+SETUP_TEXT.rh_cons_mov = `Cria no site RH a lista "RH — Consumíveis Movimentações" (v0.14.13): entradas, saídas por funcionário, devoluções e ajustes de inventário. O estoque é calculado por estas movimentações.`;
+MST_FONTES.push({ k: "rh_cons_mov", n: "Departamento", c: "DepartamentoCod", rot: "Consumíveis — Movimentações (RH)" });
+EXCLUI_QUEM_EDITA.add("rh_cons");   /* como na CAP e nas Obrigações (v0.14.12.11): quem edita também exclui */
+const CONS = { site: null, list: undefined, listMov: undefined, itens: [], movs: [], erro: "", em: 0, p: null, aba: "est", f: { q: "", cat: "", sit: "" }, fm: { q: "", tipo: "", item: "", func: "", per: "90" } };
+const consNum = v => { const n = Number(String(v ?? "").replace(",", ".")); return isFinite(n) ? n : 0; };
+const consQtd = (v, u) => `${consNum(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}${u ? " " + esc(u) : ""}`;
+const consSinal = m => m.Tipo === "Saída" ? -Math.abs(consNum(m.Quantidade)) : m.Tipo === "Ajuste" ? consNum(m.Quantidade) : Math.abs(consNum(m.Quantidade));
+const consDia = m => String(m.Data || "").slice(0, 10);
+async function consCarregar(force) {
+  if (!force && CONS.em && Date.now() - CONS.em < 120000) return CONS.itens;
+  if (CONS.p && !force) return CONS.p;
+  CONS.p = (async () => {
+    try {
+      if (!CONS.site) CONS.site = await SP.site(CONFIG.sites[LISTS.rh_cons.siteKey]);
+      if (force || CONS.list === undefined || CONS.listMov === undefined) { const ls = await SP.lists(CONS.site.id); CONS.list = ls.find(l => l.displayName === LISTS.rh_cons.displayName) || null; CONS.listMov = ls.find(l => l.displayName === LISTS.rh_cons_mov.displayName) || null; }
+      const [its, mvs] = await Promise.all([CONS.list ? SP.items(CONS.site.id, CONS.list.id) : [], CONS.listMov ? SP.items(CONS.site.id, CONS.listMov.id) : []]);
+      CONS.itens = its.map(it => Object.assign({ _id: String(it.id) }, it.fields || {}));
+      CONS.movs = mvs.map(it => Object.assign({ _id: String(it.id) }, it.fields || {})).sort((a, b) => consDia(b).localeCompare(consDia(a)) || Number(b._id) - Number(a._id));
+      CONS.erro = "";
+    } catch (e) { CONS.erro = String((e && e.message) || e); CONS.list = undefined; CONS.listMov = undefined; CONS.itens = []; CONS.movs = []; }
+    CONS.em = Date.now(); CONS.p = null; return CONS.itens;
+  })();
+  return CONS.p;
+}
+window.consCarregar = consCarregar;
+/* saldo de cada item = soma das movimentações (entrada e devolução somam, saída subtrai, ajuste é o acerto com sinal) */
+function consSaldos() { const s = new Map(); CONS.movs.forEach(m => { const k = String(m.ItemId || ""); s.set(k, (s.get(k) || 0) + consSinal(m)); }); return s; }
+const consSaldo = (id, S) => Math.round(((S || consSaldos()).get(String(id)) || 0) * 100) / 100;
+const consMovsDe = id => CONS.movs.filter(m => String(m.ItemId) === String(id));
+const consSit = (x, saldo) => x.Ativo === false ? "inativo" : saldo <= 0 ? "zerado" : consNum(x.EstoqueMin) > 0 && saldo < consNum(x.EstoqueMin) ? "baixo" : "ok";
+const consSitPill = s => `<span class="pill ${s === "ok" ? "st-pago" : s === "baixo" ? "st-aguardando" : s === "zerado" ? "st-vencido" : ""}"><i></i>${s === "ok" ? "Em dia" : s === "baixo" ? "Abaixo do mínimo" : s === "zerado" ? "Zerado" : "Inativo"}</span>`;
+const consTipoPill = t => `<span class="pill ${t === "Entrada" ? "st-pago" : t === "Saída" ? "st-vencido" : t === "Devolução" ? "st-aprovado" : "st-aguardando"}"><i></i>${esc(t || "—")}</span>`;
+const consPode = () => podeEditar("rh_cons");
+const consExc = () => podeExcluir("rh_cons") || podeEditar("rh_cons");   /* como na CAP e nas Obrigações (v0.14.12.12): quem edita também exclui */
+const consItemNome = x => `${x.Codigo ? x.Codigo + " · " : ""}${x.Title || ""}`;
+function pageCons() {
+  return `<div class="page" id="consRoot"><nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Recursos Humanos">Recursos Humanos</a><span>›</span><b>Consumíveis</b></nav>
+    <div class="cap-topo"><div><h1 style="margin:0">Consumíveis</h1><p class="sup" style="margin:2px 0 0">Estoque de EPIs, uniformes, material de limpeza, escritório e outros consumíveis: entradas, retiradas por funcionário, devoluções, ajustes de inventário e histórico. O estoque é calculado pelas movimentações.</p></div><span class="grow"></span><div id="consAcoes"></div></div>
+    <div id="consBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`;
+}
+window.pageCons = pageCons;
+async function renderCons() { await Promise.all([consCarregar(true), tercRhFuncs().catch(() => [])]); paintCons(); }
+window.renderCons = renderCons;
+window.consAba = a => { CONS.aba = a; paintCons(); };
+window.consF = (k, v) => { CONS.f[k] = v; paintCons(); };
+window.consFM = (k, v) => { CONS.fm[k] = v; CONS.aba = "mov"; paintCons(); };
+function paintCons() {
+  const body = $("consBody"); if (!body) return;
+  const ed = consPode(), ok = CONS.list && CONS.listMov;
+  $("consAcoes").innerHTML = `<button class="btn" onclick="renderCons()">Atualizar</button>${ed && ok ? `<button class="btn" onclick="consMov('Entrada')">Entrada</button><button class="btn" onclick="consMov('Saída')">Saída</button><button class="btn primary" onclick="consForm('')">+ Consumível</button>` : ""}`;
+  if (CONS.erro) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível ler os consumíveis</h3><p>${esc(CONS.erro.slice(0, 160))}</p></div>`; return; }
+  if (!ok) { body.innerHTML = `<div class="cap-empty"><h3>As listas de Consumíveis ainda não existem</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › Executar tudo</a> para criar "${esc(LISTS.rh_cons.displayName)}" e "${esc(LISTS.rh_cons_mov.displayName)}".` : "Peça a um administrador para rodar a Configuração."}</p></div>`; return; }
+  const abas = [["est", "Estoque"], ["mov", "Movimentações"], ["pan", "Painel"]];
+  body.innerHTML = `<div class="cap-views">${abas.map(([k, n]) => `<button class="tab ${CONS.aba === k ? "on" : ""}" onclick="consAba('${k}')">${n}</button>`).join("")}</div>` + (CONS.aba === "mov" ? consMovsHtml() : CONS.aba === "pan" ? consPainelHtml() : consEstoqueHtml());
+  const qi = $("consQ"); if (qi) qi.addEventListener("input", ev => { CONS.f.q = ev.target.value; erpDeb("consQ", () => keepFocus(paintCons)); });
+  const qm = $("consQM"); if (qm) qm.addEventListener("input", ev => { CONS.fm.q = ev.target.value; erpDeb("consQM", () => keepFocus(paintCons)); });
+  if (CONS.aba === "pan") consPainelCharts();
+}
+window.paintCons = paintCons;
+function consLinhas() {
+  const S = consSaldos();
+  return CONS.itens.map(x => { const saldo = consSaldo(x._id, S), sit = consSit(x, saldo); return Object.assign({ saldo, sit, valor: saldo > 0 ? saldo * consNum(x.CustoUnit) : 0 }, x); })
+    .sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR"));
+}
+function consEstoqueHtml() {
+  const F = CONS.f, q = normName(F.q), L = consLinhas(), ativos = L.filter(x => x.Ativo !== false), m = todayISO().slice(0, 7);
+  const its = L.filter(x => (!F.cat || x.Categoria === F.cat) && (F.sit ? x.sit === F.sit : x.Ativo !== false) && (!q || normName([x.Title, x.Codigo, x.Categoria, x.Local, x.FornecedorTexto].join(" ")).includes(q)));
+  const saidasMes = CONS.movs.filter(x => x.Tipo === "Saída" && consDia(x).startsWith(m));
+  const kpi = (l, v, sub, cls, on) => `<button class="kpi ${cls || ""}" ${on ? `onclick="${on}"` : ""}><div class="lbl">${esc(l)}</div><div class="val">${v}</div><div class="sub">${esc(sub)}</div></button>`;
+  const kpis = `<div class="cap-kpis">${kpi("Itens ativos", ativos.length, `${L.length - ativos.length} inativo(s)`, "", "consF('sit','')")}${kpi("Abaixo do mínimo", ativos.filter(x => x.sit === "baixo").length, "repor", ativos.some(x => x.sit === "baixo") ? "hoje" : "", "consF('sit','baixo')")}${kpi("Zerados", ativos.filter(x => x.sit === "zerado").length, "sem estoque", ativos.some(x => x.sit === "zerado") ? "venc" : "", "consF('sit','zerado')")}${kpi("Valor em estoque", `<span class="money">${esc(fmtBRL(ativos.reduce((s, x) => s + x.valor, 0)))}</span>`, "pelo custo unitário", "pago")}${kpi("Saídas no mês", saidasMes.length, `${esc(compLabel(m))} · ${esc(fmtBRL(saidasMes.reduce((s, x) => s + Math.abs(consNum(x.Quantidade)) * consNum(x.CustoUnit), 0)))}`, "", "consFM('tipo','Saída')")}</div>`;
+  const sel = (k, ops, vazio) => `<select onchange="consF('${k}', this.value)"><option value="">${vazio}</option>${ops.map(o => Array.isArray(o) ? o : [o, o]).map(([v, n]) => `<option value="${esc(v)}" ${F[k] === v ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+  const cats = [...new Set(CONS_CATS.concat(CONS.itens.map(x => x.Categoria).filter(Boolean)))];
+  const filtros = `<div class="filters" role="search"><input type="search" class="span-2" id="consQ" placeholder="Buscar: item, código, categoria, local…" value="${esc(F.q)}">${sel("cat", cats, "Todas as categorias")}${sel("sit", [["baixo", "Abaixo do mínimo"], ["zerado", "Zerados"], ["ok", "Em dia"], ["inativo", "Inativos"]], "Ativos")}</div>`;
+  const ed = consPode();
+  const linha = x => `<tr class="cons-l" onclick="consVer(${esc(jsArg(x._id))})" tabindex="0"><td><b>${esc(x.Title || "—")}</b><div class="sup">${esc([x.Codigo, x.Local].filter(Boolean).join(" · "))}</div></td><td>${esc(x.Categoria || "—")}</td>
+    <td class="right nw"><b>${consQtd(x.saldo, x.Unidade)}</b></td><td class="right nw">${consNum(x.EstoqueMin) ? consQtd(x.EstoqueMin, x.Unidade) : "—"}</td><td>${consSitPill(x.sit)}</td>
+    <td class="right nw">${consNum(x.CustoUnit) ? esc(fmtBRL(x.CustoUnit)) : "—"}</td><td class="right nw">${x.valor ? esc(fmtBRL(x.valor)) : "—"}</td><td class="nw">${x.UltimaMov ? esc(fmtDate(x.UltimaMov)) : "—"}</td>
+    <td class="act nw" onclick="event.stopPropagation()">${ed && x.Ativo !== false ? `<button class="btn mini" onclick="consMov('Entrada', ${esc(jsArg(x._id))})">Entrada</button> <button class="btn mini" onclick="consMov('Saída', ${esc(jsArg(x._id))})" ${x.saldo <= 0 ? "disabled" : ""}>Saída</button>` : ""}</td></tr>`;
+  return kpis + filtros + (its.length ? `<div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th>Item</th><th>Categoria</th><th class="right">Estoque</th><th class="right">Mínimo</th><th>Situação</th><th class="right">Custo unit.</th><th class="right">Valor</th><th>Última mov.</th><th></th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>`
+    : `<div class="cap-empty"><h3>${CONS.itens.length ? "Nenhum consumível neste filtro" : "Nenhum consumível cadastrado"}</h3>${ed && !CONS.itens.length ? `<p><button class="btn primary" onclick="consForm('')">+ Consumível</button></p>` : ""}</div>`);
+}
+function consMovsFiltradas() {
+  const F = CONS.fm, q = normName(F.q), lim = F.per ? (() => { const d = new Date(); d.setDate(d.getDate() - Number(F.per)); return d.toISOString().slice(0, 10); })() : "";
+  return CONS.movs.filter(m => (!F.tipo || m.Tipo === F.tipo) && (!F.item || String(m.ItemId) === F.item) && (!F.func || normName(m.FuncNome) === normName(F.func)) && (!lim || consDia(m) >= lim)
+    && (!q || normName([m.ItemNome, m.FuncNome, m.Matricula, m.Departamento, m.Motivo, m.NF, m.RegistradoPor].join(" ")).includes(q)));
+}
+function consMovsHtml() {
+  const F = CONS.fm, its = consMovsFiltradas();
+  const sel = (k, ops, vazio) => `<select onchange="consFM('${k}', this.value)"><option value="">${vazio}</option>${ops.map(o => Array.isArray(o) ? o : [o, o]).map(([v, n]) => `<option value="${esc(v)}" ${F[k] === v ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+  const itensOps = CONS.itens.slice().sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR")).map(x => [x._id, consItemNome(x)]);
+  const funcs = [...new Set(CONS.movs.map(m => m.FuncNome).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const filtros = `<div class="filters" role="search"><input type="search" class="span-2" id="consQM" placeholder="Buscar: item, funcionário, matrícula, motivo, NF…" value="${esc(F.q)}">${sel("tipo", CONS_TIPOS, "Todos os tipos")}${sel("item", itensOps, "Todos os itens")}${sel("func", funcs, "Todos os funcionários")}${sel("per", [["30", "Últimos 30 dias"], ["90", "Últimos 90 dias"], ["365", "Últimos 12 meses"]], "Todo o período")}
+    <span class="grow"></span>${its.length ? `<button class="btn sm" onclick="consExportar()">Exportar (${its.length})</button>` : ""}</div>`;
+  const linha = m => `<tr class="cons-l" onclick="consMovVer(${esc(jsArg(m._id))})" tabindex="0"><td class="nw">${esc(m.Data ? fmtDate(m.Data) : "—")}</td><td>${consTipoPill(m.Tipo)}</td><td><b>${esc(m.ItemNome || "—")}</b>${m.Categoria ? `<div class="sup">${esc(m.Categoria)}</div>` : ""}</td>
+    <td class="right nw"><b>${m.Tipo === "Saída" ? "−" : m.Tipo === "Ajuste" ? (consNum(m.Quantidade) < 0 ? "−" : "+") : "+"}${consQtd(Math.abs(consNum(m.Quantidade)), m.Unidade)}</b></td><td>${m.FuncNome ? `${esc(m.FuncNome)}<div class="sup">${esc([m.Matricula, m.Departamento].filter(Boolean).join(" · "))}</div>` : `<span class="sup">—</span>`}</td>
+    <td>${esc(m.Motivo || "")}${m.NF ? `<div class="sup">NF ${esc(m.NF)}</div>` : ""}</td><td class="right nw">${m.SaldoApos != null && m.SaldoApos !== "" ? consQtd(m.SaldoApos, m.Unidade) : "—"}</td><td class="nw sup">${esc(m.RegistradoPor || "")}</td></tr>`;
+  return filtros + (its.length ? `<div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th>Data</th><th>Tipo</th><th>Item</th><th class="right">Qtd.</th><th>Funcionário</th><th>Motivo</th><th class="right">Saldo após</th><th>Por</th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>`
+    : `<div class="cap-empty"><h3>Nenhuma movimentação neste filtro</h3></div>`);
+}
+window.consExportar = () => {
+  const its = consMovsFiltradas();
+  const cab = ["Data", "Tipo", "Item", "Código", "Categoria", "Quantidade", "Unidade", "Custo unitário", "Funcionário", "Matrícula", "Departamento", "Motivo", "NF", "Saldo após", "Registrada por"];
+  const byId = new Map(CONS.itens.map(x => [x._id, x]));
+  const linhas = its.map(m => { const it = byId.get(String(m.ItemId)) || {}; return [csvData(m.Data), m.Tipo || "", m.ItemNome || "", it.Codigo || "", m.Categoria || "", csvNum(consSinal(m)), m.Unidade || "", csvNum(m.CustoUnit), m.FuncNome || "", m.Matricula || "", m.Departamento || "", m.Motivo || "", m.NF || "", csvNum(m.SaldoApos), m.RegistradoPor || ""]; });
+  baixarTexto(`consumiveis_movimentacoes_${todayISO()}.xls`, csvTexto(cab, linhas), "application/vnd.ms-excel;charset=utf-8");
+};
+/* ---- Painel (no padrão dos painéis do Financeiro) ---- */
+function consPainelDados() {
+  const hoje = todayISO(), meses = []; for (let i = 11; i >= 0; i--) { const d = new Date(hoje.slice(0, 4), Number(hoje.slice(5, 7)) - 1 - i, 1); meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`); }
+  const lim = meses[0] + "-01", saidas = CONS.movs.filter(m => m.Tipo === "Saída" && consDia(m) >= lim), custo = m => Math.abs(consNum(m.Quantidade)) * consNum(m.CustoUnit);
+  const porMes = meses.map(c => { const ms = saidas.filter(m => consDia(m).startsWith(c)); return { c, n: ms.length, qtd: ms.reduce((s, m) => s + Math.abs(consNum(m.Quantidade)), 0), valor: ms.reduce((s, m) => s + custo(m), 0) }; });
+  const agr = (k, fn) => { const M = new Map(); saidas.forEach(m => { const g = fn(m) || "—"; const o = M.get(g) || { k: g, n: 0, qtd: 0, valor: 0 }; o.n++; o.qtd += Math.abs(consNum(m.Quantidade)); o.valor += custo(m); M.set(g, o); }); return [...M.values()].sort((a, b) => b.valor - a.valor || b.qtd - a.qtd); };
+  const L = consLinhas(), ativos = L.filter(x => x.Ativo !== false);
+  return { meses, porMes, itens: agr("item", m => m.ItemNome).slice(0, 10), deps: agr("dep", m => m.Departamento), cats: agr("cat", m => m.Categoria), funcs: agr("func", m => m.FuncNome).filter(x => x.k !== "—").slice(0, 10),
+    valorEstoque: ativos.reduce((s, x) => s + x.valor, 0), baixo: ativos.filter(x => x.sit === "baixo" || x.sit === "zerado"), saidas12: saidas.length, valor12: saidas.reduce((s, m) => s + custo(m), 0), valorMes: porMes[11].valor, mediaMes: saidas.length ? saidas.reduce((s, m) => s + custo(m), 0) / 12 : 0 };
+}
+function consPainelHtml() {
+  const D = consPainelDados(), m = todayISO().slice(0, 7);
+  const kpi = (l, v, sub, cls) => `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(l)}</div><div class="val">${v}</div><div class="sub">${esc(sub)}</div></div>`;
+  const kpis = `<div class="cap-kpis">${kpi("Valor em estoque", `<span class="money">${esc(fmtBRL(D.valorEstoque))}</span>`, "itens ativos, pelo custo unitário", "pago")}${kpi("Consumo no mês", `<span class="money">${esc(fmtBRL(D.valorMes))}</span>`, compLabel(m))}${kpi("Média mensal", `<span class="money">${esc(fmtBRL(D.mediaMes))}</span>`, "saídas dos últimos 12 meses")}${kpi("Saídas (12 meses)", D.saidas12, `${esc(fmtBRL(D.valor12))} no período`)}${kpi("Repor", D.baixo.length, "abaixo do mínimo ou zerados", D.baixo.length ? "venc" : "")}</div>`;
+  const card = (t, s, inner) => `<div class="cap-card"><div class="cap-card-h"><h3>${t}</h3><span class="cap-card-s">${s}</span></div>${inner}</div>`;
+  const tab = (rows, col) => rows.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>${col}</th><th class="right">Saídas</th><th class="right">Qtd.</th><th class="right">Valor</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.k)}</td><td class="right">${r.n}</td><td class="right">${consQtd(r.qtd)}</td><td class="right">${esc(fmtBRL(r.valor))}</td></tr>`).join("")}</tbody></table></div>` : `<p class="cap-muted">Sem saídas nos últimos 12 meses.</p>`;
+  const repor = D.baixo.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Item</th><th class="right">Estoque</th><th class="right">Mínimo</th><th>Situação</th></tr></thead><tbody>${D.baixo.map(x => `<tr class="cons-l" onclick="consVer(${esc(jsArg(x._id))})"><td>${esc(x.Title)}</td><td class="right">${consQtd(x.saldo, x.Unidade)}</td><td class="right">${consQtd(x.EstoqueMin, x.Unidade)}</td><td>${consSitPill(x.sit)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="cap-muted">Nenhum item abaixo do mínimo.</p>`;
+  return kpis + `<div class="cap-grid cons-grid">${card("Consumo por mês", "últimos 12 meses · valor das saídas pelo custo unitário", `<div class="cap-chart"><canvas id="consChMes" height="220"></canvas></div>`)}${card("Itens mais retirados", "12 meses · clique para ver as movimentações", `<div class="cap-chart" style="height:${Math.max(220, 26 * D.itens.length + 60)}px"><canvas id="consChItens"></canvas></div>`)}</div>
+    <div class="cap-grid cons-grid">${card("Por departamento", "12 meses", `<div class="cap-chart"><canvas id="consChDep" height="220"></canvas></div>`)}${card("Por categoria", "12 meses", `<div class="cap-chart"><canvas id="consChCat" height="220"></canvas></div>`)}</div>
+    <div class="cap-grid cons-grid">${card("Funcionários que mais retiraram", "12 meses", tab(D.funcs, "Funcionário"))}${card("Para repor", "abaixo do mínimo ou zerados", repor)}</div>`;
+}
+function consPainelCharts() {
+  if (!window.Chart || !Chart.getChart) return;
+  const D = consPainelDados(), css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+  const COL = { a: css("--navy") || "#0B1628", b: css("--orange") || "#F0541B", c: css("--ok") || "#197A46", d: css("--warn") || "#9A6A00", e: "#5B6068", f: "#1A2E52", g: "#8A5E00", h: "#B3271E" }, cores = Object.values(COL), eixo = "#3B4352";
+  const mk = (id, cfg) => { const el = $(id); if (!el) return; const old = Chart.getChart(el); if (old) old.destroy(); try { new Chart(el, cfg); } catch (e) { console.warn("chart", id, e); } };
+  const common = (onClick) => ({ responsive: true, maintainAspectRatio: false, animation: false, onClick, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 12 }, color: eixo } }, tooltip: { callbacks: { label: c => ` ${c.dataset.label || c.label}: ${fmtBRL(c.parsed.x !== undefined && c.chart.config.options.indexAxis === "y" ? c.parsed.x : c.parsed.y ?? c.parsed)}` } }, datalabels: { display: false } } });
+  const tk = { font: { size: 11 }, color: eixo };
+  mk("consChMes", { type: "bar", data: { labels: D.porMes.map(e => e.c.slice(5, 7) + "/" + e.c.slice(2, 4)), datasets: [{ label: "Saídas (R$)", data: D.porMes.map(e => Math.round(e.valor * 100) / 100), backgroundColor: COL.a }] },
+    options: Object.assign(common((ev, els) => { if (!els.length) return; CONS.fm = { q: "", tipo: "Saída", item: "", func: "", per: "365" }; CONS.aba = "mov"; paintCons(); }), { scales: { x: { ticks: tk }, y: { ticks: Object.assign({ callback: v => capMoneyShort(v) }, tk) } } }) });
+  if (D.itens.length) mk("consChItens", { type: "bar", data: { labels: D.itens.map(r => r.k), datasets: [{ label: "Valor (R$)", data: D.itens.map(r => Math.round(r.valor * 100) / 100), backgroundColor: COL.b }] },
+    options: Object.assign(common((ev, els) => { if (!els.length) return; const it = CONS.itens.find(x => x.Title === D.itens[els[0].index].k); CONS.fm = { q: "", tipo: "Saída", item: it ? it._id : "", func: "", per: "365" }; CONS.aba = "mov"; paintCons(); }), { indexAxis: "y", scales: { x: { ticks: Object.assign({ callback: v => capMoneyShort(v), maxTicksLimit: 5 }, tk) }, y: { ticks: tk } } }) });
+  const pizza = (id, rows) => rows.length && mk(id, { type: "doughnut", data: { labels: rows.map(r => r.k), datasets: [{ data: rows.map(r => Math.round(r.valor * 100) / 100), backgroundColor: rows.map((r, i) => cores[i % cores.length]) }] }, options: common() });
+  pizza("consChDep", D.deps.slice(0, 8)); pizza("consChCat", D.cats.slice(0, 8));
+}
+/* ---- cadastro do item ---- */
+window.consVer = id => {
+  const x = CONS.itens.find(i => i._id === String(id)); if (!x) return;
+  const saldo = consSaldo(x._id), movs = consMovsDe(x._id).slice(0, 15), ed = consPode();
+  openModal(`${x.Title || "Consumível"}`, `<dl class="fv-dados"><dt>Estoque</dt><dd>${consQtd(saldo, x.Unidade)} ${consSitPill(consSit(x, saldo))}</dd><dt>Mínimo</dt><dd>${consNum(x.EstoqueMin) ? consQtd(x.EstoqueMin, x.Unidade) : "—"}</dd><dt>Categoria</dt><dd>${esc(x.Categoria || "—")}</dd><dt>Código</dt><dd>${esc(x.Codigo || "—")}</dd><dt>Custo unitário</dt><dd>${consNum(x.CustoUnit) ? esc(fmtBRL(x.CustoUnit)) : "—"}</dd><dt>Local</dt><dd>${esc(x.Local || "—")}</dd><dt>Fornecedor</dt><dd>${esc(x.FornecedorTexto || "—")}</dd><dt>Observações</dt><dd>${esc(x.Observacoes || "—")}</dd></dl>
+    ${ed && x.Ativo !== false ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"><button class="btn sm" onclick="consMov('Entrada', ${esc(jsArg(x._id))})">Entrada</button><button class="btn sm" onclick="consMov('Saída', ${esc(jsArg(x._id))})" ${saldo <= 0 ? "disabled" : ""}>Saída</button><button class="btn sm" onclick="consMov('Devolução', ${esc(jsArg(x._id))})">Devolução</button><button class="btn sm" onclick="consMov('Ajuste', ${esc(jsArg(x._id))})">Ajuste de inventário</button></div>` : ""}
+    <h3 style="font-size:14px;margin:12px 0 6px">Últimas movimentações</h3>${movs.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Data</th><th>Tipo</th><th class="right">Qtd.</th><th>Funcionário</th><th class="right">Saldo</th></tr></thead><tbody>${movs.map(m => `<tr class="cons-l" onclick="consMovVer(${esc(jsArg(m._id))})"><td class="nw">${esc(m.Data ? fmtDate(m.Data) : "—")}</td><td>${consTipoPill(m.Tipo)}</td><td class="right nw">${consQtd(consSinal(m))}</td><td>${esc(m.FuncNome || "—")}</td><td class="right nw">${m.SaldoApos != null && m.SaldoApos !== "" ? consQtd(m.SaldoApos) : "—"}</td></tr>`).join("")}</tbody></table></div>${consMovsDe(x._id).length > 15 ? `<p class="sup"><button class="lnk" onclick="closeModal(); consFM('item', ${esc(jsArg(x._id))})">Ver todas (${consMovsDe(x._id).length})</button></p>` : ""}` : `<p class="sup">Nenhuma movimentação ainda.</p>`}`, async () => true);
+  const sv = $("mSave"); if (sv) sv.textContent = "Fechar";
+  if (ed) document.querySelector("#modal .modal-foot").insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto" onclick="consForm(${esc(jsArg(x._id))})">Editar</button>`);
+};
+window.consForm = id => {
+  if (!consPode() || !CONS.list) return;
+  const x = id ? CONS.itens.find(i => i._id === String(id)) : null, v = x || { Ativo: true, Unidade: "un", Categoria: "" };
+  const forns = typeof fornAtivos === "function" ? (() => { try { return fornAtivos().map(f => f.Title); } catch (e) { return []; } })() : [];
+  openModal(x ? `Editar · ${x.Title}` : "Novo consumível", `<div class="form-grid">
+      <div class="field full"><label>Nome<span class="req">*</span></label><input id="csT" maxlength="120" value="${esc(v.Title || "")}" placeholder="Ex.: Luva de raspa, Camisa polo M, Papel A4"></div>
+      <div class="field"><label>Código</label><input id="csCod" maxlength="30" value="${esc(v.Codigo || "")}" placeholder="Opcional"></div>
+      <div class="field"><label>Categoria</label><input id="csCat" list="csCatL" maxlength="60" value="${esc(v.Categoria || "")}" placeholder="Escolha ou digite"><datalist id="csCatL">${[...new Set(CONS_CATS.concat(CONS.itens.map(i => i.Categoria).filter(Boolean)))].map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
+      <div class="field"><label>Unidade</label><input id="csUn" list="csUnL" maxlength="20" value="${esc(v.Unidade || "un")}"><datalist id="csUnL">${CONS_UNID.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
+      <div class="field"><label>Estoque mínimo</label><input type="number" id="csMin" min="0" step="0.01" value="${esc(v.EstoqueMin ?? "")}"><div class="hint">Abaixo disso o item aparece em "Repor"</div></div>
+      <div class="field"><label>Custo unitário (R$)</label><input type="number" id="csCusto" min="0" step="0.01" value="${esc(v.CustoUnit ?? "")}"><div class="hint">Atualizado pela última entrada com custo</div></div>
+      <div class="field"><label>Local de guarda</label><input id="csLocal" maxlength="80" value="${esc(v.Local || "")}" placeholder="Ex.: Almoxarifado, armário do RH"></div>
+      <div class="field full"><label>Fornecedor habitual</label><input id="csForn" list="csFornL" maxlength="120" value="${esc(v.FornecedorTexto || "")}"><datalist id="csFornL">${forns.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
+      ${x ? "" : `<div class="field"><label>Estoque inicial</label><input type="number" id="csIni" min="0" step="0.01" placeholder="0"><div class="hint">Grava uma entrada "Estoque inicial"</div></div>`}
+      <div class="field"><label class="check"><input type="checkbox" id="csAtivo" ${v.Ativo !== false ? "checked" : ""}> Ativo</label></div>
+      <div class="field full"><label>Observações</label><textarea id="csObs" rows="2">${esc(v.Observacoes || "")}</textarea></div>
+    </div><div class="err" id="csErr" style="display:none"></div>`, async () => {
+    const g = k => ($(k) ? $(k).value.trim() : ""), err = m => { const e = $("csErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const nome = g("csT"); if (!nome) return err("Escreva o nome do consumível.");
+    if (CONS.itens.some(i => i._id !== (x && x._id) && normName(i.Title) === normName(nome))) return err("Já existe um consumível com esse nome.");
+    const num = k => g(k) === "" ? null : Math.max(0, consNum(g(k)));
+    const f = { Title: nome.slice(0, 120), Codigo: g("csCod") || null, Categoria: g("csCat") || null, Unidade: g("csUn") || "un", EstoqueMin: num("csMin"), CustoUnit: num("csCusto"), Local: g("csLocal") || null, FornecedorTexto: g("csForn") || null, Ativo: $("csAtivo").checked, Observacoes: g("csObs") || null };
+    try {
+      if (x) await SP.update(CONS.site.id, CONS.list.id, x._id, f);
+      else {
+        const r = await SP.create(CONS.site.id, CONS.list.id, Object.assign({ EstoqueAtual: 0 }, f)), nid = String((r && (r.id || r._id)) || ""), ini = num("csIni");
+        if (ini && !nid) toast("O item foi criado, mas o estoque inicial não foi gravado; registre uma Entrada.", 7000); if (ini && nid) await consGravarMov({ Tipo: "Entrada", ItemId: nid, ItemNome: f.Title, Categoria: f.Categoria, Unidade: f.Unidade, Quantidade: ini, CustoUnit: f.CustoUnit, Data: todayISO(), Motivo: "Estoque inicial" }, true);
+      }
+      await consCarregar(true); paintCons(); toast(x ? "Consumível atualizado." : "Consumível cadastrado."); return true;
+    } catch (e) { return err("Não foi possível gravar: " + e.message); }
+  });
+  if (x && consExc()) document.querySelector("#modal .modal-foot").insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="consExcluir(${esc(jsArg(x._id))})">Excluir</button>`);
+};
+window.consExcluir = id => {
+  const x = CONS.itens.find(i => i._id === String(id)); if (!x || !consExc()) return;
+  if (consMovsDe(x._id).length) { toast("Este item tem movimentações. Para tirá-lo do estoque, desmarque \"Ativo\".", 6000); return; }
+  (async () => { if (!(await erpConfirmar({ titulo: "Excluir consumível", texto: `Excluir "${x.Title}"? Não pode ser desfeito.`, sim: "Excluir", perigo: true }))) return;
+    try { await graph(`/sites/${CONS.site.id}/lists/${CONS.list.id}/items/${x._id}`, { method: "DELETE" }); closeModal(); await consCarregar(true); paintCons(); toast("Consumível excluído"); } catch (e) { toast("Erro: " + e.message, 6000); }
+  })();
+};
+/* ---- movimentações ---- */
+async function consGravarMov(f, semReler) {
+  if (!semReler) await consCarregar(true);   /* saldo com a lista relida: duas retiradas ao mesmo tempo não passam do estoque */
+  const saldo = consSaldo(f.ItemId), delta = consSinal(f), novo = Math.round((saldo + delta) * 100) / 100;
+  if (f.Tipo === "Saída" && novo < 0) throw new Error(`Estoque insuficiente: há ${consQtd(saldo, f.Unidade)} e a retirada é de ${consQtd(f.Quantidade, f.Unidade)}.`);
+  const quem = (session.me && session.me.displayName) || "";
+  const titulo = `${f.Tipo} · ${f.ItemNome}${f.FuncNome ? " · " + f.FuncNome : ""}`.slice(0, 255);
+  await SP.create(CONS.site.id, CONS.listMov.id, Object.assign({ Title: titulo, SaldoApos: novo, RegistradoPor: quem }, f));
+  const patch = { EstoqueAtual: novo, UltimaMov: f.Data || todayISO() }; if (f.Tipo === "Entrada" && consNum(f.CustoUnit) > 0) patch.CustoUnit = consNum(f.CustoUnit);
+  try { await SP.update(CONS.site.id, CONS.list.id, f.ItemId, patch); } catch (e) {}   /* o estoque de verdade é a soma das movimentações; a coluna é só a cópia */
+  return novo;
+}
+window.consMov = async (tipo, itemId) => {
+  if (!consPode() || !CONS.listMov) return;
+  tipo = CONS_TIPOS.includes(tipo) ? tipo : "Saída";
+  const funcs = await tercRhFuncs().catch(() => []), itens = consLinhas().filter(x => x.Ativo !== false), sel = itemId ? itens.find(x => x._id === String(itemId)) : null;
+  const comFunc = tipo === "Saída" || tipo === "Devolução";
+  openModal(tipo === "Ajuste" ? "Ajuste de inventário" : tipo === "Saída" ? "Saída (retirada)" : tipo, `<div class="form-grid">
+      <div class="field full"><label>Item<span class="req">*</span></label><select id="cmItem" onchange="consMovItem()"><option value="">— escolha —</option>${itens.map(x => `<option value="${esc(x._id)}" ${sel && sel._id === x._id ? "selected" : ""} data-saldo="${x.saldo}" data-un="${esc(x.Unidade || "")}" data-custo="${consNum(x.CustoUnit)}">${esc(consItemNome(x))} — ${consQtd(x.saldo, x.Unidade)}</option>`).join("")}</select><div class="hint" id="cmSaldo"></div></div>
+      <div class="field"><label>${tipo === "Ajuste" ? "Contagem física" : "Quantidade"}<span class="req">*</span></label><input type="number" id="cmQtd" min="0" step="0.01" placeholder="0"></div>
+      <div class="field"><label>Data<span class="req">*</span></label><input type="date" id="cmData" value="${todayISO()}"></div>
+      ${tipo === "Entrada" ? `<div class="field"><label>Custo unitário (R$)</label><input type="number" id="cmCusto" min="0" step="0.01" value="${sel && consNum(sel.CustoUnit) ? consNum(sel.CustoUnit) : ""}"><div class="hint">Atualiza o custo do item</div></div><div class="field"><label>Nota fiscal</label><input id="cmNF" maxlength="60"></div>` : ""}
+      ${comFunc ? `<div class="field"><label>Funcionário${tipo === "Saída" ? '<span class="req">*</span>' : ""}</label><input id="cmFunc" list="cmFuncL" autocomplete="off" placeholder="Nome (RH › Funcionários)" onchange="consMovFunc()"><datalist id="cmFuncL">${funcs.map(f => `<option value="${esc(f.Title)}">${esc([f.Matricula, f.Cargo].filter(Boolean).join(" · "))}</option>`).join("")}</datalist>${funcs.length ? "" : `<div class="hint"><b>Sem leitura da lista RH — Funcionários:</b> o nome fica só como texto.</div>`}</div>
+      <div class="field"><label>Departamento</label><input id="cmDep" list="cmDepL" maxlength="60" placeholder="Preenchido pelo funcionário"><datalist id="cmDepL">${CENTROS_CUSTO.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>` : ""}
+      <div class="field full"><label>${tipo === "Ajuste" ? "Motivo" : "Motivo / observação"}${tipo === "Ajuste" ? '<span class="req">*</span>' : ""}</label><input id="cmMot" maxlength="200" placeholder="${tipo === "Saída" ? "Ex.: troca de uniforme, uso na limpeza da garagem" : tipo === "Ajuste" ? "Ex.: contagem do inventário de outubro" : ""}"></div>
+    </div><div class="err" id="cmErr" style="display:none"></div>`, async () => {
+    const g = k => ($(k) ? $(k).value.trim() : ""), err = m => { const e = $("cmErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const it = CONS.itens.find(x => x._id === g("cmItem")); if (!it) return err("Escolha o item.");
+    const q = consNum(g("cmQtd")); if (g("cmQtd") === "" || q < 0 || (tipo !== "Ajuste" && q <= 0)) return err(tipo === "Ajuste" ? "Informe a contagem física." : "Informe a quantidade.");
+    if (!g("cmData")) return err("Informe a data.");
+    if (tipo === "Ajuste" && !g("cmMot")) return err("Explique o motivo do ajuste.");
+    let func = null, nomeF = comFunc ? g("cmFunc") : "";
+    if (tipo === "Saída" && !nomeF) return err("Informe quem retirou.");
+    if (nomeF) func = funcs.find(f => f.Title === nomeF) || funcs.find(f => normName(f.Title) === normName(nomeF)) || null;
+    const f = { Tipo: tipo, ItemId: it._id, ItemNome: it.Title, Categoria: it.Categoria || null, Unidade: it.Unidade || null, Data: g("cmData"), Motivo: g("cmMot") || null, CustoUnit: tipo === "Entrada" && g("cmCusto") !== "" ? consNum(g("cmCusto")) : (consNum(it.CustoUnit) || null), NF: tipo === "Entrada" ? (g("cmNF") || null) : null,
+      FuncId: func ? String(func._id) : null, FuncNome: nomeF || null, Matricula: func ? (func.Matricula || null) : null, Departamento: comFunc ? (g("cmDep") || null) : null };
+    if (tipo === "Ajuste") { await consCarregar(true); f.Quantidade = Math.round((q - consSaldo(it._id)) * 100) / 100; if (!f.Quantidade) return err(`O estoque já está em ${consQtd(q, it.Unidade)}; nada a ajustar.`); }
+    else f.Quantidade = q;
+    try { const novo = await consGravarMov(f, tipo === "Ajuste"); await consCarregar(true); paintCons(); toast(`${tipo} registrada · ${it.Title}: ${consQtd(novo, it.Unidade)} em estoque.`, 4000); return true; }
+    catch (e) { return err(e.message); }
+  });
+  consMovItem();
+};
+window.consMovItem = () => { const s = $("cmItem"), h = $("cmSaldo"); if (!s || !h) return; const o = s.options[s.selectedIndex]; if (!o || !o.value) { h.textContent = ""; return; } h.textContent = `Em estoque: ${consQtd(o.dataset.saldo, o.dataset.un)}`; const c = $("cmCusto"); if (c && !c.value && Number(o.dataset.custo) > 0) c.value = o.dataset.custo; };
+window.consMovFunc = async () => { const i = $("cmFunc"), d = $("cmDep"); if (!i || !d) return; const fs = await tercRhFuncs().catch(() => []), f = fs.find(x => x.Title === i.value) || fs.find(x => normName(x.Title) === normName(i.value)); if (f && !d.value) d.value = f.Departamento || f.Setor || ""; };
+window.consMovVer = id => {
+  const m = CONS.movs.find(i => i._id === String(id)); if (!m) return;
+  openModal(`${m.Tipo} · ${m.ItemNome || ""}`, `<dl class="fv-dados"><dt>Data</dt><dd>${esc(m.Data ? fmtDate(m.Data) : "—")}</dd><dt>Tipo</dt><dd>${consTipoPill(m.Tipo)}</dd><dt>Quantidade</dt><dd>${consQtd(consSinal(m), m.Unidade)}</dd><dt>Custo unitário</dt><dd>${consNum(m.CustoUnit) ? esc(fmtBRL(m.CustoUnit)) : "—"}</dd><dt>Funcionário</dt><dd>${esc(m.FuncNome || "—")}${m.Matricula ? ` <span class="sup">(${esc(m.Matricula)})</span>` : ""}</dd><dt>Departamento</dt><dd>${esc(m.Departamento || "—")}</dd><dt>Motivo</dt><dd>${esc(m.Motivo || "—")}</dd><dt>Nota fiscal</dt><dd>${esc(m.NF || "—")}</dd><dt>Saldo após</dt><dd>${m.SaldoApos != null && m.SaldoApos !== "" ? consQtd(m.SaldoApos, m.Unidade) : "—"}</dd><dt>Registrada por</dt><dd>${esc(m.RegistradoPor || "—")}</dd></dl>`, async () => true);
+  const sv = $("mSave"); if (sv) sv.textContent = "Fechar";
+  if (consExc()) document.querySelector("#modal .modal-foot").insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="consMovExcluir(${esc(jsArg(m._id))})">Excluir</button>`);
+};
+window.consMovExcluir = id => {
+  const m = CONS.movs.find(i => i._id === String(id)); if (!m || !consExc()) return;
+  (async () => { if (!(await erpConfirmar({ titulo: "Excluir movimentação", texto: `Excluir "${m.Tipo} · ${m.ItemNome || ""}" de ${m.Data ? fmtDate(m.Data) : "—"}? O estoque do item é recalculado${(m.Tipo === "Entrada" || m.Tipo === "Devolução") && consSaldo(m.ItemId) - Math.abs(consNum(m.Quantidade)) < 0 ? " e ficaria negativo — depois, acerte com um Ajuste de inventário" : ""}.`, sim: "Excluir", perigo: true }))) return;
+    try { await graph(`/sites/${CONS.site.id}/lists/${CONS.listMov.id}/items/${m._id}`, { method: "DELETE" }); closeModal(); await consCarregar(true);
+      try { await SP.update(CONS.site.id, CONS.list.id, m.ItemId, { EstoqueAtual: consSaldo(m.ItemId) }); } catch (e) {} paintCons(); toast("Movimentação excluída; estoque recalculado."); } catch (e) { toast("Erro: " + e.message, 6000); }
+  })();
+};
+/* gravações nas duas listas contam como o módulo Consumíveis */
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path) {
+    const p = String(path || ""), l1 = CONS.list, l2 = CONS.listMov;
+    if (/^(POST|PATCH|PUT|DELETE)$/i.test(method || "") && ((l1 && p.includes(l1.id)) || (l2 && p.includes(l2.id)))) { const m0 = session.modAtual; session.modAtual = "rh_cons"; try { return g0.apply(this, arguments); } finally { session.modAtual = m0; } }
+    return g0.apply(this, arguments);
+  }; }
+MOD_RESET.rh_cons = () => { CONS.aba = "est"; CONS.f = { q: "", cat: "", sit: "" }; CONS.fm = { q: "", tipo: "", item: "", func: "", per: "90" }; };
+/* =====================================================================
+   v0.14.13 · Terceiros › Banco de Dados: mais de um CNPJ por cadastro (pedido de 23/10, 10:35).
+   O CNPJ/CPF do cadastro continua sendo a chave; uma empresa pode ter "Outros CNPJs" (filiais, outras inscrições), cada um com
+   um rótulo. CPF continua único (pessoa física não tem outros). Coluna "Outros CNPJs (JSON)" criada pela Configuração.
+   Os outros CNPJs valem como documento do Terceiro em tudo que procura cadastro por documento: fatura da CAP (digitar o CNPJ
+   localiza o cadastro), guarda de bloqueio/aprovação, duplicidade no cadastro, pedido de aprovação por documento, busca da lista
+   e busca do topo, cartão do cadastro.
+   ===================================================================== */
+LISTS.forn.columns.push({ name: "CNPJsExtra", displayName: "Outros CNPJs (JSON)", text: { allowMultipleLines: true, textType: "plain" } });
+SETUP_TEXT.forn += ` v0.14.13: coluna "Outros CNPJs (JSON)" — CNPJs adicionais do mesmo Terceiro (filiais), cada um com rótulo.`;
+const tercCnpjsDe = x => tercJson(x && x.CNPJsExtra).map(e => ({ doc: docFmt(String((e && e.doc) || "")), rot: String((e && e.rot) || "").trim().slice(0, 60) })).filter(e => docClean(e.doc).length === 14);
+const tercCnpjTodos = x => [x && x.CNPJ].concat(tercCnpjsDe(x).map(e => e.doc)).map(docClean).filter(Boolean);
+const tercTemDoc = (x, d) => { d = docClean(d); return !!d && tercCnpjTodos(x).includes(d); };
+const tercDocOnde = (x, d) => { d = docClean(d); if (docClean(x && x.CNPJ) === d) return ""; const e = tercCnpjsDe(x).find(e => docClean(e.doc) === d); return e ? (e.rot || "CNPJ adicional") : ""; };
+/* achar por documento: primeiro pelo principal, depois pelos adicionais */
+fornByDoc = function (s) { const d = docClean(s); if (!d) return null; const its = FORN_STATE.items || []; return its.find(f => docClean(f.CNPJ) === d) || its.find(f => d.length === 14 && tercTemDoc(f, d)) || null; };
+window.fornByDoc = fornByDoc;
+{ const t0 = tercDeCampos;
+  tercDeCampos = function (f) {
+    const its = FORN_STATE.items || []; if (!its.length || !f) return null;
+    const tem = v => v != null && v !== "";
+    const id = tem(f.FornecedorRefId) ? f.FornecedorRefId : tem(f.FornecedorRefLookupId) ? f.FornecedorRefLookupId : tem(f.FornecedorId) ? f.FornecedorId : f.FornecedorLookupId;
+    if (!(id != null && id !== "" && its.some(i => String(i._id) === String(id)))) { const dc = docClean(f.CNPJ || ""); if (dc.length === 14 && !its.some(i => docClean(i.CNPJ) === dc)) { const x = its.find(i => tercTemDoc(i, dc)); if (x) return x; } }   /* CNPJ adicional vale antes do nome */
+    return t0.apply(this, arguments);
+  }; window.tercDeCampos = tercDeCampos; }
+tercPendPorDoc = function (doc, menos) {
+  if (!docClean(doc)) return null;
+  return (FORN_STATE.items || []).find(f => (menos == null || String(f._id) !== String(menos)) && tercTemDoc(f, doc) && tercAprovPendInc(f)) || null;
+}; window.tercPendPorDoc = tercPendPorDoc;
+{ const d0 = tercDocLivre;
+  tercDocLivre = async function (doc, x) {
+    try { await loadForn(false); } catch (e) {}
+    const outro = (FORN_STATE.items || []).find(f => String(f._id) !== String(x._id) && tercCnpjsDe(f).some(e => tercDocIgual(e.doc, doc)));
+    if (outro) { await erpAviso({ titulo: "Não dá para devolver o documento", html: `<p>O CNPJ <b>${esc(doc)}</b> está como CNPJ adicional de <b>${esc(outro.Title || "(sem nome)")}</b>, então devolvê-lo criaria dois cadastros com o mesmo documento.</p><p>Resolva o outro cadastro primeiro.</p>` }); return false; }
+    return d0.apply(this, arguments);
+  }; window.tercDocLivre = tercDocLivre; }
+/* busca da lista: também pelos outros CNPJs e rótulos (mantendo os demais filtros) */
+{ const ff = fornFiltered;
+  fornFiltered = function () {
+    let arr = ff.apply(this, arguments); const b = FORN_STATE.filter.busca, q = String(b || "").toLowerCase().trim(), dg = q.replace(/\D/g, "");
+    if (q && tercSoCadastro()) { FORN_STATE.filter.busca = ""; try { const tudo = ff.apply(this, arguments), tem = new Set(arr); const mais = tudo.filter(x => !tem.has(x) && tercCnpjsDe(x).some(e => (dg.length >= 3 && docClean(e.doc).includes(dg)) || e.doc.toLowerCase().includes(q) || e.rot.toLowerCase().includes(q))); if (mais.length) arr = arr.concat(mais); } finally { FORN_STATE.filter.busca = b; } }
+    return arr;
+  }; window.fornFiltered = fornFiltered; }
+{ const b0 = buscaDados;
+  buscaDados = async function () {
+    const itens = await b0.apply(this, arguments);
+    try { (itens || []).forEach(i => { if (i.t !== "Terceiro" || !i.ir || !i.ir.forn || i._cnpjx) return; const f = (FORN_STATE.items || []).find(x => String(x._id) === String(i.ir.forn)); const ex = f ? tercCnpjsDe(f) : []; i._cnpjx = 1; if (ex.length) i.chave += " " + buscaNorm(ex.flatMap(e => [e.doc, docClean(e.doc), e.rot]).join(" ")); }); } catch (e) {}
+    return itens;
+  }; window.buscaDados = buscaDados; }
+/* cartão do cadastro: linha "Outros CNPJs" logo abaixo do documento */
+{ const tc = tercCadastroCard;
+  tercCadastroCard = function (key) {
+    const r = tc.apply(this, arguments);
+    try { const id = String(key).replace(/^id:/, ""), cad = (FORN_STATE.items || []).find(x => String(x._id) === id), ex = cad ? tercCnpjsDe(cad) : [];
+      const dt = [...document.querySelectorAll("#modal .tcad-i dt")].find(d => /^CNPJ/.test(d.textContent.trim())); const li = dt && dt.closest(".tcad-i");
+      if (li) li.insertAdjacentHTML("afterend", `<div class="tcad-i full"><dt>Outros CNPJs</dt><dd>${ex.length ? ex.map(e => `<span class="tcad-mono">${esc(e.doc)}</span>${e.rot ? ` <span class="sup">${esc(e.rot)}</span>` : ""}`).join("<br>") : `<span class="tcad-vazio">—</span>`}</dd></div>`); } catch (e) {}
+    return r;
+  }; window.tercCadastroCard = tercCadastroCard; }
+/* formulário: bloco "Outros CNPJs" logo abaixo do CNPJ/CPF */
+let TERC_CNPJX = [], TERC_CNPJX_GRAVAR;
+const tercCnpjXChip = (e, i, ed) => `<span class="terc-papel terc-cnpjx" data-doc="${esc(docClean(e.doc))}"><span class="tcad-mono">${esc(e.doc)}</span>${e.rot ? `<small>${esc(e.rot)}</small>` : ""}${ed ? `<button type="button" title="Tirar" aria-label="Tirar ${esc(e.doc)}" onclick="tercCnpjXTirar(${i})">×</button>` : ""}</span>`;
+function tercCnpjXPintar() {
+  const el = $("gCnpjXLista"); if (!el) return; const ed = podeEditar("forn") && !(typeof vcAtivo === "function" && vcAtivo());
+  el.innerHTML = TERC_CNPJX.length ? `<div class="terc-cnpjx-l">${TERC_CNPJX.map((e, i) => tercCnpjXChip(e, i, ed)).join("")}</div>` : `<p class="sup" style="margin:0 0 6px">Nenhum CNPJ adicional.</p>`;
+  const add = $("gCnpjXAdd"); if (add) add.style.display = ed ? "" : "none";
+  const campo = $("gCnpjXField"); if (campo) { const dc = docClean($("gCNPJ") ? $("gCNPJ").value : ""); campo.style.display = dc.length === 11 ? "none" : ""; }   /* CPF: pessoa física não tem outros CNPJs */
+}
+window.tercCnpjXPintar = tercCnpjXPintar;
+window.tercCnpjXAdd = () => {
+  const i = $("gCnpjXDoc"), r = $("gCnpjXRot"), h = $("gCnpjXHint"); if (!i) return; const d = docClean(i.value), hint = m => { if (h) { h.textContent = m; h.className = "hint" + (m ? " warn" : ""); } };
+  if (!d) return;
+  if (d.length !== 14 || !docValido(d)) return hint("Informe um CNPJ válido (14 dígitos).");
+  if (d === docClean($("gCNPJ") ? $("gCNPJ").value : "")) return hint("Esse já é o CNPJ principal do cadastro.");
+  if (TERC_CNPJX.some(e => docClean(e.doc) === d)) return hint("Esse CNPJ já está na lista.");
+  const outro = (FORN_STATE.items || []).find(f => String(f._id) !== String((FORN_STATE.editando && FORN_STATE.editando._id) || "") && tercTemDoc(f, d));
+  if (outro) return hint(`Esse CNPJ já está em "${outro.Title}"${tercDocOnde(outro, d) ? ` (${tercDocOnde(outro, d)})` : ""}.`);
+  TERC_CNPJX.push({ doc: docFmt(d), rot: String(r ? r.value : "").trim().slice(0, 60) }); i.value = ""; if (r) r.value = ""; hint(""); tercCnpjXPintar(); $("modal").dataset.sujo = "1"; i.focus();
+};
+window.tercCnpjXTirar = i => { TERC_CNPJX.splice(i, 1); tercCnpjXPintar(); $("modal").dataset.sujo = "1"; };
+{ const fm = fornForm; fornForm = function (x) {
+    const h = fm.apply(this, arguments), v = x || {};
+    TERC_CNPJX = tercCnpjsDe(v);
+    const anc = '<div class="hint" id="gCNPJHint"></div></div>'; if (!h.includes(anc)) return h;
+    return h.replace(anc, anc + `<div class="field full" id="gCnpjXField"><label>Outros CNPJs <span class="sup" style="text-transform:none;font-weight:600">filiais e outras inscrições da mesma empresa — o CNPJ acima continua sendo a chave do cadastro</span></label>
+      <div id="gCnpjXLista"></div>
+      <div class="terc-cnpjx-add" id="gCnpjXAdd"><input id="gCnpjXDoc" data-mask="doc" inputmode="numeric" autocomplete="off" placeholder="CNPJ" onkeydown="if(event.key==='Enter'){event.preventDefault();tercCnpjXAdd();}"><input id="gCnpjXRot" maxlength="60" placeholder="Rótulo (ex.: Filial Macaé)" onkeydown="if(event.key==='Enter'){event.preventDefault();tercCnpjXAdd();}"><button type="button" class="btn sm" onclick="tercCnpjXAdd()">Adicionar</button></div><div class="hint" id="gCnpjXHint"></div></div>`);
+  }; window.fornForm = fornForm; }
+{ const fw = fornWireForm; fornWireForm = function () {
+    const r = fw.apply(this, arguments);
+    try { tercCnpjXPintar(); const c = $("gCNPJ"); if (c && !c._cnpjx) { c._cnpjx = 1; c.addEventListener("input", tercCnpjXPintar); } } catch (e) {}
+    return r;
+  }; window.fornWireForm = fornWireForm; }
+/* salvar: valida, barra duplicidades (principal × adicionais de qualquer cadastro) e grava a coluna junto com o cadastro */
+{ const fs = fornSave; fornSave = async function (existing) {
+    const err = m => { try { erpAviso({ titulo: "Não foi possível salvar", texto: m }); } catch (x) { const e = $("gErr"); if (e) { e.style.display = "block"; e.textContent = m; } } };   /* revisão: na janela com Ok, como os demais avisos do cadastro */
+    if ($("gCnpjXField")) {
+      const main = docClean($("gCNPJ") ? $("gCNPJ").value : ""), ex = TERC_CNPJX.slice(), pend = $("gCnpjXDoc") ? docClean($("gCnpjXDoc").value) : "";
+      if (pend) { err(`Clique em "Adicionar" para incluir o CNPJ ${docFmt(pend)} nos outros CNPJs (ou apague o número).`); return; }
+      if (ex.length && main.length === 11) { err("CPF é único: pessoa física não tem outros CNPJs. Tire os CNPJs adicionais ou troque o documento principal por um CNPJ."); return; }
+      if (ex.length && FORN_STATE.cols && !FORN_STATE.cols.has("CNPJsExtra")) { err(`A coluna "Outros CNPJs (JSON)" ainda não existe na lista. ${session.n1 ? "Rode Sistema › Configuração › Executar tudo." : "Peça a um administrador para rodar a Configuração."}`); return; }
+      const meuId = existing ? String(existing._id) : "", outros = (FORN_STATE.items || []).filter(f => String(f._id) !== meuId);
+      if (main) { const o = outros.find(f => tercCnpjsDe(f).some(e => docClean(e.doc) === main)); if (o) { err(`Este CNPJ/CPF já está em "${o.Title}" como CNPJ adicional${tercDocOnde(o, main) ? ` (${tercDocOnde(o, main)})` : ""}. Edite o existente.`); return; } }
+      for (const e of ex) { const d = docClean(e.doc);
+        if (d === main) { err(`O CNPJ ${e.doc} é o principal do cadastro; tire-o dos outros CNPJs.`); return; }
+        const o = outros.find(f => tercTemDoc(f, d)); if (o) { err(`O CNPJ ${e.doc} já está em "${o.Title}"${tercDocOnde(o, d) ? ` (${tercDocOnde(o, d)})` : ""}. Um documento só pode estar em um cadastro.`); return; }
+        const pd = tercPendPorDoc(d, existing && existing._id); if (pd) { err(`O CNPJ ${e.doc} já foi enviado para aprovação no cadastro "${pd.Title}".`); return; }
+      }
+      const antes = existing ? JSON.stringify(tercCnpjsDe(existing)) : "[]", agora = JSON.stringify(ex);
+      TERC_CNPJX_GRAVAR = (FORN_STATE.cols && !FORN_STATE.cols.has("CNPJsExtra")) ? undefined : (ex.length ? agora : (antes !== "[]" ? null : undefined));
+      if (!ex.length && antes === "[]") TERC_CNPJX_GRAVAR = undefined;
+    } else TERC_CNPJX_GRAVAR = undefined;
+    try { return await fs.apply(this, arguments); } finally { TERC_CNPJX_GRAVAR = undefined; }
+  }; window.fornSave = fornSave; }
+{ const c0 = SP.create, u0 = SP.update;
+  const junta = (listId, fields) => { if (TERC_CNPJX_GRAVAR !== undefined && FORN_STATE.list && listId === FORN_STATE.list.id && fields && !("CNPJsExtra" in fields)) fields = Object.assign({}, fields, { CNPJsExtra: TERC_CNPJX_GRAVAR }); return fields; };
+  SP.create = (siteId, listId, fields) => c0(siteId, listId, junta(listId, fields));
+  SP.update = (siteId, listId, itemId, fields) => u0(siteId, listId, itemId, junta(listId, fields)); }
+/* fatura da CAP: a dica diz que o CNPJ digitado é um CNPJ adicional do cadastro */
+["input", "focusout"].forEach(ev => document.addEventListener(ev, e => {
+  if (!e.target || e.target.id !== "fCNPJ") return;
+  setTimeout(() => { const h = $("fCNPJHint"), f = fornByDoc(e.target.value); if (!h || !f) return; const onde = tercDocOnde(f, e.target.value); if (onde && /Cadastro localizado/.test(h.textContent) && !/CNPJ adicional/.test(h.textContent)) h.textContent += ` · CNPJ adicional (${onde})`; }, 0);
+}));
+{ const st = document.createElement("style"); st.textContent = `.terc-cnpjx-l{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.terc-cnpjx{gap:8px;cursor:default}.terc-cnpjx small{color:var(--ink-2);font-size:11.5px}.terc-cnpjx button{border:0;background:none;cursor:pointer;font-size:15px;line-height:1;color:var(--ink-2);padding:0 2px}.terc-cnpjx-add{display:flex;gap:6px;flex-wrap:wrap}.terc-cnpjx-add input{flex:1 1 160px;min-width:0}.terc-cnpjx-add #gCnpjXDoc{flex:0 1 190px}`; document.head.appendChild(st); }
+CONFIG.version = "v0.14.13";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

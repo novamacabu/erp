@@ -39713,7 +39713,7 @@ function consEstoqueHtml() {
   const its = L.filter(x => (!F.cat || x.Categoria === F.cat) && (F.sit ? x.sit === F.sit : x.Ativo !== false) && (!q || normName([x.Title, x.Codigo, x.Categoria, x.Local, x.FornecedorTexto].join(" ")).includes(q)));
   const saidasMes = CONS.movs.filter(x => x.Tipo === "Saída" && consDia(x).startsWith(m));
   const kpi = (l, v, sub, cls, on) => `<button class="kpi ${cls || ""}" ${on ? `onclick="${on}"` : ""}><div class="lbl">${esc(l)}</div><div class="val">${v}</div><div class="sub">${esc(sub)}</div></button>`;
-  const kpis = `<div class="cap-kpis">${kpi("Itens ativos", ativos.length, `${L.length - ativos.length} inativo(s)`, "", "consF('sit','')")}${kpi("Abaixo do mínimo", ativos.filter(x => x.sit === "baixo").length, "repor", ativos.some(x => x.sit === "baixo") ? "hoje" : "", "consF('sit','baixo')")}${kpi("Zerados", ativos.filter(x => x.sit === "zerado").length, "sem estoque", ativos.some(x => x.sit === "zerado") ? "venc" : "", "consF('sit','zerado')")}${kpi("Valor em estoque", `<span class="money">${esc(fmtBRL(ativos.reduce((s, x) => s + x.valor, 0)))}</span>`, "pelo custo unitário", "pago")}${kpi("Saídas no mês", saidasMes.length, `${esc(compLabel(m))} · ${esc(fmtBRL(saidasMes.reduce((s, x) => s + Math.abs(consNum(x.Quantidade)) * consNum(x.CustoUnit), 0)))}`, "", "consFM('tipo','Saída')")}</div>`;
+  const kpis = `<div class="cap-kpis">${kpi("Itens ativos", ativos.length, `${L.length - ativos.length} inativo(s)`, "", "consF('sit','')")}${kpi("Abaixo do mínimo", ativos.filter(x => x.sit === "baixo").length, "repor", ativos.some(x => x.sit === "baixo") ? "hoje" : "", "consF('sit','baixo')")}${kpi("Zerados", ativos.filter(x => x.sit === "zerado").length, "sem estoque", ativos.some(x => x.sit === "zerado") ? "venc" : "", "consF('sit','zerado')")}${kpi("Saídas no mês", saidasMes.length, `${esc(compLabel(m))} · ${esc(fmtBRL(saidasMes.reduce((s, x) => s + Math.abs(consNum(x.Quantidade)) * consNum(x.CustoUnit), 0)))}`, "", "consFM('tipo','Saída')")}</div>`;
   const sel = (k, ops, vazio) => `<select onchange="consF('${k}', this.value)"><option value="">${vazio}</option>${ops.map(o => Array.isArray(o) ? o : [o, o]).map(([v, n]) => `<option value="${esc(v)}" ${F[k] === v ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
   const cats = [...new Set(CONS_CATS.concat(CONS.itens.map(x => x.Categoria).filter(Boolean)))];
   const filtros = `<div class="filters" role="search"><input type="search" class="span-2" id="consQ" placeholder="Buscar: item, código, categoria, local…" value="${esc(F.q)}">${sel("cat", cats, "Todas as categorias")}${sel("sit", [["baixo", "Abaixo do mínimo"], ["zerado", "Zerados"], ["ok", "Em dia"], ["inativo", "Inativos"]], "Ativos")}</div>`;
@@ -39733,10 +39733,9 @@ function consMovsFiltradas() {
 function consMovsHtml() {
   const F = CONS.fm, its = consMovsFiltradas();
   const sel = (k, ops, vazio) => `<select onchange="consFM('${k}', this.value)"><option value="">${vazio}</option>${ops.map(o => Array.isArray(o) ? o : [o, o]).map(([v, n]) => `<option value="${esc(v)}" ${F[k] === v ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
-  const itensOps = CONS.itens.slice().sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR")).map(x => [x._id, consItemNome(x)]);
+  const itensOps = CONS.itens.slice().sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR")).map(x => [x._id, x.Title || "—"]);   /* v0.14.13.2: só o nome */
   const funcs = [...new Set(CONS.movs.map(m => m.FuncNome).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
-  const filtros = `<div class="filters" role="search"><input type="search" class="span-2" id="consQM" placeholder="Buscar: item, funcionário, matrícula, motivo, NF…" value="${esc(F.q)}">${sel("tipo", CONS_TIPOS, "Todos os tipos")}${sel("item", itensOps, "Todos os itens")}${sel("func", funcs, "Todos os funcionários")}${sel("per", [["30", "Últimos 30 dias"], ["90", "Últimos 90 dias"], ["365", "Últimos 12 meses"]], "Todo o período")}
-    <span class="grow"></span>${its.length ? `<button class="btn sm" onclick="consExportar()">Exportar (${its.length})</button>` : ""}</div>`;
+  const filtros = `<div class="cons-fbar" role="search"><input type="search" id="consQM" placeholder="Buscar: item, funcionário, matrícula, motivo, NF…" value="${esc(F.q)}">${sel("tipo", CONS_TIPOS, "Todos os tipos")}${sel("item", itensOps, "Todos os itens")}${sel("func", funcs, "Todos os funcionários")}${sel("per", [["30", "Últimos 30 dias"], ["90", "Últimos 90 dias"], ["365", "Últimos 12 meses"]], "Todo o período")}${consExportarBtn()}</div>`;   /* v0.14.13.2: uma linha só; "Exportar" sem o total */
   const linha = m => `<tr class="cons-l" onclick="consMovVer(${esc(jsArg(m._id))})" tabindex="0"><td class="nw">${esc(m.Data ? fmtDate(m.Data) : "—")}</td><td>${consTipoPill(m.Tipo)}</td><td><b>${esc(m.ItemNome || "—")}</b>${m.Categoria ? `<div class="sup">${esc(m.Categoria)}</div>` : ""}</td>
     <td class="right nw"><b>${m.Tipo === "Saída" ? "−" : m.Tipo === "Ajuste" ? (consNum(m.Quantidade) < 0 ? "−" : "+") : "+"}${consQtd(Math.abs(consNum(m.Quantidade)), m.Unidade)}</b></td><td>${m.FuncNome ? `${esc(m.FuncNome)}<div class="sup">${esc([m.Matricula, m.Departamento].filter(Boolean).join(" · "))}</div>` : `<span class="sup">—</span>`}</td>
     <td>${esc(m.Motivo || "")}${m.NF ? `<div class="sup">NF ${esc(m.NF)}</div>` : ""}</td><td class="right nw">${m.SaldoApos != null && m.SaldoApos !== "" ? consQtd(m.SaldoApos, m.Unidade) : "—"}</td><td class="nw sup">${esc(m.RegistradoPor || "")}</td></tr>`;
@@ -40337,7 +40336,256 @@ function consPainelCharts() {
 { const st = document.createElement("style"); st.textContent = `.cons-alertas{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:300px;overflow:auto}.cons-alertas li{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:6px 8px;border-radius:6px;background:#FAFAF8;border:1px solid var(--line)}.cons-alertas li[onclick]{cursor:pointer}.cons-alertas li[onclick]:hover{background:#F6F7FB}.cons-alertas li i{flex:none;width:9px;height:9px;border-radius:50%;margin-top:5px;background:#A0A7B2}.cons-alertas li.cr i{background:#B3271E}.cons-alertas li.at i{background:#E8A013}
 .cons-tempo{list-style:none;margin:0;padding:0;max-height:360px;overflow:auto}.cons-tempo li{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}.cons-tempo li:hover{background:#F6F7FB}.cons-tempo .d{font-weight:700;color:var(--ink-2);min-width:62px}.cons-tempo .q{font-weight:800}.cons-tempo .por{margin-left:auto}
 .cons-kpis.cap-kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}@media (max-width:640px){.cons-tempo .por{margin-left:0}}`; document.head.appendChild(st); }
-CONFIG.version = "v0.14.13.1";
+/* =====================================================================
+   v0.14.13.2 · Consumíveis R3 (pedido de 23/10, 13:56)
+   1. Sai o cartão "Valor em estoque" (Estoque e Painel).
+   2. Exportar: Excel (.xlsx com a logo, no molde dos relatórios executivos) e Relatório em PDF (cabeçalho com a logo, KPIs, alertas,
+      reposição, gráficos, estoque e movimentações).
+   3–4. Movimentações: filtros numa linha; "Exportar" sem o total; filtro de item só com o nome.
+   5–10. Painel no padrão de Infrações/SAC: filtros (Categoria, Item, Departamento, Funcionário, Tipo e meses), chips do que está
+      filtrado, botão flutuante "Limpar filtros", clique no gráfico filtra; "Para repor" compacto (sem rolagem lateral); rótulos de
+      dados na página; Entradas × Saídas sem linhas de grade, últimos 12 meses com "Jan, Fev…" e o ano abaixo.
+   ===================================================================== */
+const CONS_MES_A = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+CONS.pf = { cat: "", item: "", dep: "", func: "", tipo: "", mes: "" };
+const consPfVazio = () => ({ cat: "", item: "", dep: "", func: "", tipo: "", mes: "" });
+const consPfAtivo = () => Object.values(CONS.pf).some(Boolean);
+window.consPF = (k, v) => { CONS.pf[k] = CONS.pf[k] === v ? "" : v; CONS.aba = "pan"; paintCons(); };
+window.consPFset = (k, v) => { CONS.pf[k] = v; CONS.aba = "pan"; paintCons(); };
+window.consPFlimpar = () => { CONS.pf = consPfVazio(); paintCons(); };
+{ const m0 = MOD_RESET.rh_cons; MOD_RESET.rh_cons = () => { if (m0) m0(); CONS.pf = consPfVazio(); }; }
+/* ---- botão Exportar (Excel e PDF) ---- */
+function consExportarBtn() { return `<details class="cons-exp"><summary class="btn sm">Exportar</summary><div class="cons-exp-m"><button type="button" onclick="this.closest('details').open=false; consExcel()">Excel (.xlsx)</button><button type="button" onclick="this.closest('details').open=false; consPdf()">Relatório em PDF</button></div></details>`; }
+window.consExportarBtn = consExportarBtn;
+document.addEventListener("click", e => { document.querySelectorAll("details.cons-exp[open]").forEach(d => { if (!d.contains(e.target)) d.open = false; }); });
+window.consExportar = () => consExcel();
+const consPerTxt = () => { const F = CONS.fm; return F.per ? (F.per === "365" ? "últimos 12 meses" : `últimos ${F.per} dias`) : "todo o período"; };
+const consFiltrosTxt = () => { const F = CONS.fm, it = F.item ? (CONS.itens.find(x => x._id === F.item) || {}).Title : ""; return [F.tipo && `Tipo: ${F.tipo}`, it && `Item: ${it}`, F.func && `Funcionário: ${F.func}`, F.q && `Busca: "${F.q}"`].filter(Boolean).join(" · ") || "sem filtros"; };
+window.consExcel = async () => {
+  try {
+    toast("Gerando o Excel…", 2500);
+    const { wb } = await xlsxNovo();
+    const NAVY = "FF0F1E3A", ORANGE = "FFD6421F", LINHA = "FFD5DAE1", CINZA = "FF5B6068", ZEBRA = "FFF8F9FB";
+    const logo = await ctbLogoPng().catch(() => null), logoId = logo ? wb.addImage({ base64: logo.url, extension: "png" }) : null;
+    const quem = typeof vcQuemEmite === "function" ? vcQuemEmite() : ((session.me && session.me.displayName) || "");
+    const MOEDA = '"R$" #,##0.00;[Red]-"R$" #,##0.00', QTD = '#,##0.##;[Red]-#,##0.##';
+    const folha = (nome, titulo, sub, cols) => {
+      const N = cols.length, LIN0 = 5;
+      const ws = wb.addWorksheet(nome, { views: [{ state: "frozen", ySplit: LIN0, showGridLines: false }], properties: { tabColor: { argb: ORANGE } }, pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } });
+      ws.getRow(1).height = 30; ws.getRow(2).height = 20; ws.getRow(3).height = 16; ws.getRow(4).height = 6;
+      if (logoId != null) ws.addImage(logoId, { tl: { col: 0.1, row: 0.15 }, ext: { width: Math.min(200, Math.round(58 * logo.w / Math.max(logo.h, 1))), height: 58 } });
+      const C0 = Math.min(3, N); ws.mergeCells(1, C0, 1, N); const t = ws.getCell(1, C0); t.value = titulo; t.font = { bold: true, size: 16, color: { argb: NAVY } }; t.alignment = { vertical: "middle" };
+      ws.mergeCells(2, C0, 2, N); const st = ws.getCell(2, C0); st.value = sub; st.font = { size: 10, color: { argb: CINZA } };
+      ws.mergeCells(3, C0, 3, N); const g = ws.getCell(3, C0); g.value = `Transportadora Nova Macabu · Recursos Humanos › Consumíveis · gerado pelo ERP NMB em ${new Date().toLocaleString("pt-BR")} por ${quem}`; g.font = { size: 9, italic: true, color: { argb: CINZA } };
+      const hr = ws.getRow(LIN0); cols.forEach((c, i) => { const cel = hr.getCell(i + 1); cel.value = c.h; cel.font = { bold: true, size: 10, color: { argb: "FFFFFFFF" } }; cel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } }; cel.alignment = { vertical: "middle", horizontal: c.num ? "right" : "left", wrapText: true }; cel.border = { bottom: { style: "medium", color: { argb: NAVY } } }; ws.getColumn(i + 1).width = c.w || 14; });
+      hr.height = 22;
+      ws.autoFilter = { from: { row: LIN0, column: 1 }, to: { row: LIN0, column: N } };
+      ws.__lin = LIN0; ws.__cols = cols; return ws;
+    };
+    const linhas = (ws, rows, totais) => {
+      const cols = ws.__cols;
+      rows.forEach((r, k) => { const row = ws.addRow(r); row.eachCell({ includeEmpty: true }, (cel, i) => { const c = cols[i - 1] || {}; if (c.fmt) cel.numFmt = c.fmt; cel.font = { size: 10, color: c.cor && c.cor(r) ? { argb: c.cor(r) } : undefined, bold: !!c.bold }; cel.alignment = { vertical: "top", horizontal: c.num ? "right" : "left", wrapText: !!c.wrap }; cel.border = { bottom: { style: "hair", color: { argb: LINHA } } }; if (k % 2) cel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } }; }); });
+      if (totais) { const row = ws.addRow(totais); row.eachCell({ includeEmpty: true }, (cel, i) => { const c = cols[i - 1] || {}; if (c.fmt) cel.numFmt = c.fmt; cel.font = { bold: true, size: 10, color: { argb: NAVY } }; cel.alignment = { horizontal: c.num ? "right" : "left" }; cel.border = { top: { style: "medium", color: { argb: NAVY } } }; cel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEEF1F5" } }; }); }
+    };
+    const pf0 = CONS.pf; CONS.pf = consPfVazio(); let D; try { D = consPainelDados(); } finally { CONS.pf = pf0; }   /* revisão: o Excel é da empresa toda (os filtros do Painel não entram) */
+    const L = consLinhas(), dt = v => { const s = String(v || "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(Number(s.slice(0, 4)), Number(s.slice(5, 7)) - 1, Number(s.slice(8, 10))) : null; };
+    /* Resumo */
+    const wsR = folha("Resumo", "Relatório de Consumíveis", `Situação do estoque em ${new Date().toLocaleDateString("pt-BR")} · movimentações dos últimos 12 meses`, [{ h: "Indicador", w: 34 }, { h: "Valor", w: 18, num: true }, { h: "Observação", w: 60, wrap: true }]);
+    linhas(wsR, [
+      ["Saúde do estoque (itens em dia)", D.pct / 100, `${D.emDia.length} de ${D.ativos.length} itens ativos em dia · ${D.faixa === "ok" ? "bom" : D.faixa === "at" ? "atenção" : "crítico"}`],
+      ["Itens ativos", D.ativos.length, ""], ["Abaixo do mínimo", D.baixo.length, "repor"], ["Zerados", D.zerados.length, "sem estoque"],
+      ["Cobertura média (dias)", D.cobMed == null ? "—" : D.cobMed, "estoque ÷ consumo médio diário dos últimos 90 dias"], ["Parados", D.parados.length, "com estoque e sem movimento há 90 dias ou mais"],
+      ["Entradas no mês (R$)", D.entMes, compLabel(D.m)], ["Saídas no mês (R$)", D.valorMes, compLabel(D.m)], ["Média mensal de saídas (R$)", D.mediaMes, "últimos 12 meses"], ["Saídas em 12 meses (retiradas)", D.saidas12, `${fmtBRL(D.valor12)} no período`]
+    ]);
+    wsR.getCell(wsR.__lin + 1, 2).numFmt = "0%"; [7, 8, 9].forEach(i => { wsR.getCell(wsR.__lin + i, 2).numFmt = MOEDA; });
+    let r0 = wsR.lastRow.number + 2; const cab2 = (r, txt) => { wsR.mergeCells(r, 1, r, 3); const c = wsR.getCell(r, 1); c.value = txt; c.font = { bold: true, size: 11, color: { argb: NAVY } }; c.border = { bottom: { style: "thin", color: { argb: NAVY } } }; };
+    cab2(r0, `Alertas (${D.alertas.length})`); D.alertas.forEach((a, i) => { const c = wsR.getCell(r0 + 1 + i, 1); wsR.mergeCells(r0 + 1 + i, 1, r0 + 1 + i, 3); c.value = `${a.n === "cr" ? "● Crítico" : a.n === "at" ? "● Atenção" : "● Cadastro"} — ${a.t}`; c.font = { size: 10, color: { argb: a.n === "cr" ? "FFB3271E" : a.n === "at" ? "FF9A6A00" : CINZA } }; c.alignment = { wrapText: true }; });
+    if (!D.alertas.length) wsR.getCell(r0 + 1, 1).value = "Nenhum alerta: estoque em dia.";
+    /* Estoque */
+    const wsE = folha("Estoque", "Estoque de consumíveis", `Posição em ${new Date().toLocaleDateString("pt-BR")} · ${L.filter(x => x.Ativo !== false).length} item(ns) ativo(s)`, [
+      { h: "Código", w: 10 }, { h: "Item", w: 34, bold: true }, { h: "Categoria", w: 22 }, { h: "Unid.", w: 7 }, { h: "Estoque", w: 11, num: true, fmt: QTD, cor: r => r[4] < 0 ? "FFB3271E" : null }, { h: "Mínimo", w: 10, num: true, fmt: QTD },
+      { h: "Situação", w: 16, cor: r => r[6] === "Zerado" ? "FFB3271E" : r[6] === "Abaixo do mínimo" ? "FF9A6A00" : r[6] === "Em dia" ? "FF197A46" : CINZA }, { h: "Dura (dias)", w: 11, num: true }, { h: "Sugestão de compra", w: 13, num: true, fmt: QTD },
+      { h: "Custo unit.", w: 13, num: true, fmt: MOEDA }, { h: "Valor em estoque", w: 15, num: true, fmt: MOEDA }, { h: "Local", w: 18 }, { h: "Fornecedor habitual", w: 28 }, { h: "Última mov.", w: 12, fmt: "dd/mm/yyyy" }]);
+    const dura = new Map(D.ativos.map(x => [x._id, x])), sitN = { ok: "Em dia", baixo: "Abaixo do mínimo", zerado: "Zerado", inativo: "Inativo" };
+    const LE = L.slice().sort((a, b) => String(a.Codigo || "~").localeCompare(String(b.Codigo || "~"), "pt-BR", { numeric: true }));
+    linhas(wsE, LE.map(x => { const a = dura.get(x._id) || {}, sug = x.sit === "baixo" || x.sit === "zerado" ? Math.max(0, Math.round((consNum(x.EstoqueMin) * 2 - x.saldo) * 100) / 100) : null; return [x.Codigo || "", x.Title || "", x.Categoria || "", x.Unidade || "", x.saldo, consNum(x.EstoqueMin) || null, sitN[x.sit] || x.sit, a.cobertura ?? null, sug, consNum(x.CustoUnit) || null, x.valor || null, x.Local || "", x.FornecedorTexto || "", dt(x.UltimaMov)]; }),
+      ["", "Total", "", "", null, null, "", null, null, null, LE.reduce((t, x) => t + (x.valor || 0), 0), "", "", null]);
+    /* Movimentações (os filtros da aba Movimentações) */
+    const MV = consMovsFiltradas(), byId = new Map(CONS.itens.map(x => [x._id, x]));
+    const wsM = folha("Movimentações", "Movimentações de consumíveis", `${consPerTxt()} · ${consFiltrosTxt()} · ${MV.length} movimentação(ões)`, [
+      { h: "Data", w: 11, fmt: "dd/mm/yyyy" }, { h: "Tipo", w: 11, cor: r => r[1] === "Saída" ? "FFB3271E" : r[1] === "Entrada" ? "FF197A46" : r[1] === "Ajuste" ? "FF9A6A00" : "FF1660A8" }, { h: "Código", w: 10 }, { h: "Item", w: 30, bold: true }, { h: "Categoria", w: 20 },
+      { h: "Quantidade", w: 11, num: true, fmt: QTD }, { h: "Unid.", w: 7 }, { h: "Custo unit.", w: 12, num: true, fmt: MOEDA }, { h: "Valor", w: 13, num: true, fmt: MOEDA }, { h: "Funcionário", w: 26 }, { h: "Matrícula", w: 11 }, { h: "Departamento", w: 18 },
+      { h: "Motivo / observação", w: 32, wrap: true }, { h: "NF", w: 12 }, { h: "Saldo após", w: 11, num: true, fmt: QTD }, { h: "Registrada por", w: 22 }]);
+    linhas(wsM, MV.map(m => { const q = consSinal(m), it = byId.get(String(m.ItemId)) || {}; return [dt(m.Data), m.Tipo || "", it.Codigo || "", m.ItemNome || "", m.Categoria || "", q, m.Unidade || "", consNum(m.CustoUnit) || null, consNum(m.CustoUnit) ? Math.round(Math.abs(q) * consNum(m.CustoUnit) * 100) / 100 : null, m.FuncNome || "", m.Matricula || "", m.Departamento || "", m.Motivo || "", m.NF || "", m.SaldoApos === "" || m.SaldoApos == null ? null : consNum(m.SaldoApos), m.RegistradoPor || ""]; }),
+      ["", "Total", "", "", "", null, "", null, MV.reduce((t, m) => t + Math.abs(consNum(m.Quantidade)) * consNum(m.CustoUnit), 0), "", "", "", `${MV.filter(m => m.Tipo === "Saída").length} saída(s) · ${MV.filter(m => m.Tipo === "Entrada").length} entrada(s)`, "", null, ""]);
+    /* Quem retirou */
+    const wsF = folha("Retiradas por funcionário", "Retiradas por funcionário", "Saídas dos últimos 12 meses", [{ h: "Funcionário", w: 30, bold: true }, { h: "Retiradas", w: 11, num: true }, { h: "Quantidade", w: 12, num: true, fmt: QTD }, { h: "Valor", w: 14, num: true, fmt: MOEDA }, { h: "Última retirada", w: 14, fmt: "dd/mm/yyyy" }]);
+    const FF = consPainelAgr(consPainelMovs(consPfVazio()).filter(m => m.Tipo === "Saída"), m => m.FuncNome).filter(x => x.k !== "—");
+    linhas(wsF, FF.map(r => [r.k, r.n, r.qtd, r.valor, dt(r.ult)]), ["Total", FF.reduce((t, r) => t + r.n, 0), FF.reduce((t, r) => t + r.qtd, 0), FF.reduce((t, r) => t + r.valor, 0), null]);
+    await xlsxBaixar(wb, `Consumiveis_${todayISO()}.xlsx`);
+  } catch (e) { toast("Não foi possível gerar o Excel: " + e.message, 7000); }
+};
+window.consPdf = async () => {
+  try {
+    const aba0 = CONS.aba;
+    if (aba0 !== "pan" || !$("consChMes")) { CONS.aba = "pan"; paintCons(); await new Promise(r => setTimeout(r, 60)); }
+    const img = (id, tit, sub) => { const c = Chart.getChart($(id)); let src = ""; try { src = c ? c.toBase64Image("image/png", 1) : ""; } catch (e) {} return `<div class="gr"><h3>${esc(tit)}${sub ? ` <span>${esc(sub)}</span>` : ""}</h3>${src ? `<img src="${src}">` : `<p class="mut">Sem dados no período.</p>`}</div>`; };
+    const D = consPainelDados(), pf = consPfTxt(), L = consLinhas().filter(x => x.Ativo !== false).sort((a, b) => String(a.Codigo || "~").localeCompare(String(b.Codigo || "~"), "pt-BR", { numeric: true })), MV = consMovsFiltradas();
+    const sitN = { ok: "Em dia", baixo: "Abaixo do mínimo", zerado: "Zerado", inativo: "Inativo" };
+    let h = printCab("Relatório de <b>Consumíveis</b>", `Recursos Humanos · posição em ${new Date().toLocaleDateString("pt-BR")}`, { doc: "RH-CONSUMIVEIS", meta: [["Itens ativos", String(D.ativos.length)], ["Filtros do painel", pf || "nenhum"]], stamp: D.faixa === "ok" ? "Estoque saudável" : D.faixa === "at" ? "Atenção" : "Crítico", stampCls: D.faixa === "ok" ? "ok" : "warn" });
+    h += printKpis([["Saúde do estoque", `${D.pct}%`, `${D.emDia.length} de ${D.ativos.length} em dia`, D.faixa === "ok" ? "pos" : "neg"], ["Abaixo do mínimo", String(D.baixo.length), "repor", D.baixo.length ? "neg" : ""], ["Zerados", String(D.zerados.length), "sem estoque", D.zerados.length ? "neg" : ""], ["Cobertura média", D.cobMed == null ? "—" : `${D.cobMed} dias`, "ritmo dos últimos 90 dias"], ["Parados", String(D.parados.length), "sem movimento há 90+ dias"]]);
+    h += printKpis([["Entradas no mês", fmtBRL(D.entMes), compLabel(D.m)], ["Saídas no mês", fmtBRL(D.valorMes), compLabel(D.m)], ["Saldo do mês", fmtBRL(D.entMes - D.valorMes), "entradas − saídas", D.entMes - D.valorMes < 0 ? "neg" : "pos"], ["Média mensal de saídas", fmtBRL(D.mediaMes), "últimos 12 meses"], ["Retiradas (12 meses)", String(D.saidas12), fmtBRL(D.valor12)]]);
+    h += `<div class="grid2"><div>${printSec("Alertas", `${D.alertas.length}`, 1)}${D.alertas.length ? `<ul class="al">${D.alertas.map(a => `<li class="${a.n}">${esc(a.t)}</li>`).join("")}</ul>` : `<p class="mut">Nenhum alerta: estoque em dia.</p>`}</div>
+      <div>${printSec("Para repor", "sugestão = 2 × mínimo − estoque", 2)}${D.repor.length ? `<table class="t"><thead><tr><th>Item</th><th class="r">Estoque</th><th class="r">Mínimo</th><th class="r">Dura</th><th class="r">Comprar</th></tr></thead><tbody>${D.repor.map(x => `<tr><td>${esc(x.Title)}</td><td class="r ${x.saldo <= 0 ? "neg" : ""}">${consQtd(x.saldo, x.Unidade)}</td><td class="r">${consQtd(x.EstoqueMin, x.Unidade)}</td><td class="r">${x.cobertura == null ? "—" : x.cobertura + " d"}</td><td class="r"><b>${x.sugestao ? consQtd(x.sugestao, x.Unidade) : "—"}</b></td></tr>`).join("")}</tbody></table>` : `<p class="mut">Nenhum item abaixo do mínimo.</p>`}</div></div>`;
+    h += printSec("Gráficos", pf ? `filtros: ${pf}` : "últimos 12 meses", 3) + `<div class="gall">${img("consChMes", "Entradas × Saídas por mês", "R$")}${img("consChItens", "Itens mais retirados", "quantidade")}${img("consChDep", "Saídas por departamento", "R$")}${img("consChCat", "Saídas por categoria", "R$")}${img("consChFunc", "Quem mais retirou", "R$")}</div>`;
+    h += `<div class="pg2"></div>` + printSec("Estoque", `${L.length} item(ns) ativo(s)`, 4) + `<table class="t"><thead><tr><th>Código</th><th>Item</th><th>Categoria</th><th class="r">Estoque</th><th class="r">Mínimo</th><th>Situação</th><th class="r">Custo unit.</th><th>Local</th><th>Última mov.</th></tr></thead><tbody>${L.map(x => `<tr><td class="nw">${esc(x.Codigo || "—")}</td><td><b>${esc(x.Title || "")}</b></td><td>${esc(x.Categoria || "—")}</td><td class="r ${x.saldo <= 0 ? "neg" : ""}">${consQtd(x.saldo, x.Unidade)}</td><td class="r">${consNum(x.EstoqueMin) ? consQtd(x.EstoqueMin, x.Unidade) : "—"}</td><td class="${x.sit === "ok" ? "pos" : x.sit === "inativo" ? "mut" : "neg"}">${esc(sitN[x.sit] || "")}</td><td class="r">${consNum(x.CustoUnit) ? esc(fmtBRL(x.CustoUnit)) : "—"}</td><td>${esc(x.Local || "—")}</td><td class="nw">${x.UltimaMov ? esc(fmtDate(x.UltimaMov)) : "—"}</td></tr>`).join("")}</tbody></table>`;
+    const MV2 = MV.slice(0, 400);
+    h += printSec("Movimentações", `${consPerTxt()} · ${consFiltrosTxt()}${MV.length > MV2.length ? ` · ${MV2.length} de ${MV.length} (o Excel traz todas)` : ""}`, 5) + (MV2.length ? `<table class="t"><thead><tr><th>Data</th><th>Tipo</th><th>Item</th><th class="r">Qtd.</th><th>Funcionário</th><th>Departamento</th><th>Motivo / NF</th><th class="r">Saldo após</th><th>Por</th></tr></thead><tbody>${MV2.map(m => `<tr><td class="nw">${esc(m.Data ? fmtDate(m.Data) : "—")}</td><td class="${m.Tipo === "Saída" ? "neg" : m.Tipo === "Entrada" ? "pos" : ""}">${esc(m.Tipo || "")}</td><td>${esc(m.ItemNome || "")}</td><td class="r">${consQtd(consSinal(m), m.Unidade)}</td><td>${esc(m.FuncNome || "—")}${m.Matricula ? ` <span class="mut">${esc(m.Matricula)}</span>` : ""}</td><td>${esc(m.Departamento || "—")}</td><td>${esc([m.Motivo, m.NF && "NF " + m.NF].filter(Boolean).join(" · ") || "—")}</td><td class="r">${m.SaldoApos === "" || m.SaldoApos == null ? "—" : consQtd(m.SaldoApos, m.Unidade)}</td><td class="mut">${esc(m.RegistradoPor || "")}</td></tr>`).join("")}</tbody></table>` : `<p class="mut">Nenhuma movimentação neste filtro.</p>`);
+    h += printRodape("Recursos Humanos · Consumíveis");
+    printDoc({ titulo: "Relatório de Consumíveis", html: `<div class="pg">${h}</div>`, paisagem: true, fonte: 10, css: `.gall{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;break-inside:avoid}.gall .gr{break-inside:avoid;border:.6px solid #C9CFD8;border-radius:3px;padding:6px 8px}.gall h3{font-size:10px;margin:0 0 4px;color:#1E2153;text-transform:uppercase;letter-spacing:.06em}.gall h3 span{color:#6B7280;text-transform:none;letter-spacing:0;font-weight:600}.gall img{width:100%;max-height:62mm;object-fit:contain}.pg2{page-break-before:always}ul.al{margin:0;padding:0 0 0 14px}ul.al li{margin:2px 0}ul.al li.cr{color:#B3271E}ul.al li.at{color:#9A6A00}ul.al li.info{color:#5B6068}` });
+    if (aba0 !== "pan") { CONS.aba = aba0; setTimeout(paintCons, 1200); }
+  } catch (e) { toast("Não foi possível gerar o PDF: " + e.message, 7000); }
+};
+/* ---- dados do Painel com filtros ---- */
+const consMesesUlt12 = () => { const h = todayISO(), out = []; for (let i = 11; i >= 0; i--) { const d = new Date(Number(h.slice(0, 4)), Number(h.slice(5, 7)) - 1 - i, 1); out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`); } return out; };
+function consPainelMovs(pf, sem) {   /* movimentações dos últimos 12 meses com os filtros do Painel, sem o filtro da própria dimensão */
+  const lim = consMesesUlt12()[0] + "-01", byId = new Map(CONS.itens.map(x => [x._id, x]));
+  return CONS.movs.filter(m => { const d = consDia(m); if (d < lim) return false; const it = byId.get(String(m.ItemId)) || {};
+    if (sem !== "cat" && pf.cat && (m.Categoria || it.Categoria || "—") !== pf.cat) return false;
+    if (sem !== "item" && pf.item && String(m.ItemId) !== pf.item) return false;
+    if (sem !== "dep" && pf.dep && (m.Departamento || "—") !== pf.dep) return false;
+    if (sem !== "func" && pf.func && (m.FuncNome || "—") !== pf.func) return false;
+    if (sem !== "tipo" && pf.tipo && m.Tipo !== pf.tipo) return false;
+    if (sem !== "mes" && pf.mes && !d.startsWith(pf.mes)) return false;
+    return true; });
+}
+function consPainelAgr(arr, fn) { const custo = m => Math.abs(consNum(m.Quantidade)) * consNum(m.CustoUnit), M = new Map(); arr.forEach(m => { const g = fn(m) || "—"; const o = M.get(g) || { k: g, n: 0, qtd: 0, valor: 0, ult: "" }; o.n++; o.qtd += Math.abs(consNum(m.Quantidade)); o.valor += custo(m); if (consDia(m) > o.ult) o.ult = consDia(m); M.set(g, o); }); return [...M.values()].sort((a, b) => b.valor - a.valor || b.qtd - a.qtd); }
+function consPfTxt() { const P = CONS.pf, it = P.item ? (CONS.itens.find(x => x._id === P.item) || {}).Title : ""; return [P.cat && `Categoria: ${P.cat}`, it && `Item: ${it}`, P.dep && `Departamento: ${P.dep}`, P.func && `Funcionário: ${P.func}`, P.tipo && `Tipo: ${P.tipo}`, P.mes && `Mês: ${CONS_MES_A[Number(P.mes.slice(5, 7)) - 1]}/${P.mes.slice(0, 4)}`].filter(Boolean).join(" · "); }
+{ const d0 = consPainelDados;
+  consPainelDados = function () {
+    const P = CONS.pf, D = d0.apply(this, arguments);
+    /* itens (saúde, alertas, reposição) seguem Categoria e Item */
+    const okIt = x => (!P.cat || (x.Categoria || "—") === P.cat) && (!P.item || x._id === P.item);
+    if (P.cat || P.item) {
+      const ativos = D.ativos.filter(okIt), emDia = ativos.filter(x => x.sit === "ok"), pct = ativos.length ? Math.round(100 * emDia.length / ativos.length) : 100;
+      const ids = new Set(ativos.map(x => x._id));
+      const parados = D.parados.filter(okIt), semCusto = ativos.filter(x => !consNum(x.CustoUnit)), semMin = ativos.filter(x => !consNum(x.EstoqueMin)), lst = a => a.slice(0, 5).map(x => x.Title).join(", ") + (a.length > 5 ? "…" : "");
+      const info = [parados.length && { n: "info", t: `${parados.length} item(ns) com estoque e sem movimentação há 90 dias ou mais: ${lst(parados)}` }, semCusto.length && { n: "info", t: `${semCusto.length} item(ns) sem custo unitário: ${lst(semCusto)}` }, semMin.length && { n: "info", t: `${semMin.length} item(ns) sem estoque mínimo (sem alerta de reposição): ${lst(semMin)}` }].filter(Boolean);
+      Object.assign(D, { ativos, emDia, baixo: D.baixo.filter(okIt), zerados: D.zerados.filter(okIt), negativos: D.negativos.filter(okIt), parados, repor: D.repor.filter(okIt), pct, faixa: pct >= 80 ? "ok" : pct >= 60 ? "at" : "cr", alertas: D.alertas.filter(a => a.id && ids.has(a.id)).concat(info) });   /* revisão: avisos de cadastro também seguem o filtro */
+      const cob = ativos.filter(x => x.cobertura != null).map(x => x.cobertura); D.cobMed = cob.length ? Math.round(cob.reduce((a, b) => a + b, 0) / cob.length) : null;
+    }
+    const meses = consMesesUlt12(), custo = m => Math.abs(consNum(m.Quantidade)) * consNum(m.CustoUnit);
+    const semMes = consPainelMovs(P, "mes");
+    D.meses = meses; D.porMes = meses.map(c => { const ms = semMes.filter(m => consDia(m).startsWith(c)), s = ms.filter(m => m.Tipo === "Saída"), e = ms.filter(m => m.Tipo === "Entrada"); return { c, n: s.length, qtd: s.reduce((t, m) => t + Math.abs(consNum(m.Quantidade)), 0), valor: s.reduce((t, m) => t + custo(m), 0), ent: e.reduce((t, m) => t + custo(m), 0), entN: e.length }; });
+    const sai = sem => consPainelMovs(P, sem).filter(m => m.Tipo === "Saída" || (sem === "tipo" && false));
+    D.itens = consPainelAgr(sai("item"), m => String(m.ItemId || "")).slice(0, 10).map(r => { const it = CONS.itens.find(x => x._id === r.k), mv = CONS.movs.find(m => String(m.ItemId) === r.k); return Object.assign(r, { id: r.k, k: (it && it.Title) || (mv && mv.ItemNome) || "—" }); });   /* revisão: agrupa pelo item (id), não pelo nome */
+    D.deps = consPainelAgr(sai("dep"), m => m.Departamento); const catDe = m => m.Categoria || (CONS.itens.find(x => x._id === String(m.ItemId)) || {}).Categoria || "—"; D.cats = consPainelAgr(sai("cat"), catDe);   /* revisão: mesma chave do filtro */ D.funcs = consPainelAgr(sai("func"), m => m.FuncNome).filter(x => x.k !== "—").slice(0, 10);
+    const todos = consPainelMovs(P), sTodos = todos.filter(m => m.Tipo === "Saída"), mesRef = P.mes || D.m;
+    D.saidas12 = sTodos.length; D.valor12 = sTodos.reduce((t, m) => t + custo(m), 0); D.mediaMes = D.valor12 / 12;
+    const noMes = consPainelMovs(Object.assign({}, P, { mes: mesRef }));
+    D.entMes = noMes.filter(m => m.Tipo === "Entrada").reduce((t, m) => t + custo(m), 0); D.valorMes = noMes.filter(m => m.Tipo === "Saída").reduce((t, m) => t + custo(m), 0); D.m = mesRef;
+    D.linhaTempo = todos.slice(0, 20);
+    return D;
+  }; }
+/* ---- Painel (padrão Infrações/SAC) ---- */
+consPainelHtml = function () {
+  const D = consPainelDados(), P = CONS.pf;
+  const sel = (k, ops, vazio) => `<div class="cons-campo"><label>${vazio}</label><select onchange="consPFset('${k}', this.value)"><option value="">Todos</option>${ops.map(o => Array.isArray(o) ? o : [o, o]).map(([v, n]) => `<option value="${esc(v)}" ${P[k] === v ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></div>`;
+  const lim = consMesesUlt12()[0] + "-01", mv12 = CONS.movs.filter(m => consDia(m) >= lim);
+  const cats = [...new Set(CONS.itens.map(x => x.Categoria).concat(mv12.map(m => m.Categoria)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const itens = CONS.itens.filter(x => !P.cat || x.Categoria === P.cat || x._id === P.item).slice().sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR")).map(x => [x._id, x.Title || "—"]);
+  const deps = [...new Set(mv12.map(m => m.Departamento).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")), funcs = [...new Set(mv12.map(m => m.FuncNome).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const seg = (k, ops) => `<div class="cons-seg">${ops.map(([v, n, cls]) => `<button type="button" class="${P[k] === v ? "ativo" : ""} ${cls || ""}" onclick="consPFset('${k}', ${esc(jsArg(v))})">${n}</button>`).join("")}</div>`;
+  const filtros = `<section class="cons-filtros">${sel("cat", cats, "Categoria")}${sel("item", itens, "Item")}${sel("dep", deps, "Departamento")}${sel("func", funcs, "Funcionário")}
+      <div class="cons-campo"><label>Tipo</label>${seg("tipo", [["", "Todos"], ["Entrada", "Entradas", "ent"], ["Saída", "Saídas", "sai"], ["Devolução", "Devoluções"], ["Ajuste", "Ajustes"]])}</div></section>
+    <section class="cons-filtros cons-meses">${seg("mes", [["", "12 meses"]].concat(D.meses.map(c => [c, `${CONS_MES_A[Number(c.slice(5, 7)) - 1]}<small>${c.slice(2, 4)}</small>`])))}</section>`;
+  const it = P.item ? (CONS.itens.find(x => x._id === P.item) || {}).Title : "";
+  const chips = [["cat", P.cat && `Categoria: ${P.cat}`], ["item", it && `Item: ${it}`], ["dep", P.dep && `Departamento: ${P.dep}`], ["func", P.func && `Funcionário: ${P.func}`], ["tipo", P.tipo && `Tipo: ${P.tipo}`], ["mes", P.mes && `Mês: ${CONS_MES_A[Number(P.mes.slice(5, 7)) - 1]}/${P.mes.slice(0, 4)}`]].filter(c => c[1]);
+  const ativos = chips.length ? `<div class="cons-ativos">${chips.map(([k, t]) => `<button type="button" class="cons-chip" onclick="consPFset('${k}','')" title="Tirar este filtro">${esc(t)} <b>×</b></button>`).join("")}<button type="button" class="cons-chip limpar" onclick="consPFlimpar()">Limpar tudo</button></div>` : "";
+  const k = (l, v, sub, cor, on) => `<${on ? "button" : "div"} class="cons-k" style="--c:${cor}" ${on ? `onclick="${on}"` : ""}><div class="r">${esc(l)}</div><div class="v">${v}</div><div class="s">${esc(sub)}</div></${on ? "button" : "div"}>`;
+  const corS = D.faixa === "ok" ? "#2F7D4F" : D.faixa === "at" ? "#E8A013" : "#B23A2F", mesTxt = `${CONS_MES_A[Number(D.m.slice(5, 7)) - 1]}/${D.m.slice(0, 4)}`;
+  const kpis = `<div class="cons-kpis2">${k("Saúde do estoque", `${D.pct}%`, `${D.emDia.length} de ${D.ativos.length} itens em dia · ${D.faixa === "ok" ? "bom" : D.faixa === "at" ? "atenção" : "crítico"}`, corS)}${k("Abaixo do mínimo", D.baixo.length, "repor", D.baixo.length ? "#E8A013" : "#2F7D4F", "CONS.f.sit='baixo'; consAba('est')")}${k("Zerados", D.zerados.length, "sem estoque", D.zerados.length ? "#B23A2F" : "#2F7D4F", "CONS.f.sit='zerado'; consAba('est')")}${k("Cobertura média", D.cobMed == null ? "—" : `${D.cobMed} d`, "dias de estoque no ritmo de 90 dias", "#1660A8")}${k("Parados", D.parados.length, "com estoque, sem movimento há 90+ dias", D.parados.length ? "#8A93A0" : "#2F7D4F")}</div>
+    <div class="cons-kpis2">${k("Entradas", `<span class="m">${esc(fmtBRL(D.entMes))}</span>`, mesTxt, "#2F7D4F", "consFM('tipo','Entrada')")}${k("Saídas", `<span class="m">${esc(fmtBRL(D.valorMes))}</span>`, mesTxt, "#232B33", "consFM('tipo','Saída')")}${k("Saldo do mês", `<span class="m">${esc(fmtBRL(D.entMes - D.valorMes))}</span>`, "entradas − saídas", D.entMes - D.valorMes < 0 ? "#D9480F" : "#2F7D4F")}${k("Média mensal de saídas", `<span class="m">${esc(fmtBRL(D.mediaMes))}</span>`, "últimos 12 meses", "#5C6670")}${k("Retiradas", D.saidas12, `${fmtBRL(D.valor12)} nos últimos 12 meses`, "#0E7C86", "consFM('per','365')")}</div>`;
+  const card = (t, s, inner, cls) => `<div class="cons-g ${cls || ""}"><h3>${t}</h3><div class="dica">${s}</div>${inner}</div>`;
+  const alertas = card("Alertas", `${D.alertas.length ? D.alertas.length + " aviso(s)" : "nada a tratar"} · vermelho crítico · amarelo atenção · cinza cadastro`, D.alertas.length ? `<ul class="cons-alertas">${D.alertas.map(a => `<li class="${a.n}" ${a.id ? `onclick="consVer(${esc(jsArg(a.id))})" tabindex="0"` : ""}><i></i>${esc(a.t)}</li>`).join("")}</ul>` : `<p class="cap-muted">Nenhum alerta: estoque em dia.</p>`);
+  const repor = card("Para repor", "abaixo do mínimo ou zerados · mais urgentes primeiro · comprar = 2 × mínimo − estoque", D.repor.length ? `<table class="cons-repor"><colgroup><col><col style="width:17%"><col style="width:14%"><col style="width:12%"><col style="width:17%"></colgroup><thead><tr><th>Item</th><th>Estoque</th><th>Mín.</th><th>Dura</th><th>Comprar</th></tr></thead><tbody>${D.repor.map(x => `<tr onclick="consVer(${esc(jsArg(x._id))})" tabindex="0"><td><i class="${x.sit === "zerado" ? "cr" : "at"}"></i><span title="${esc(x.Title)}">${esc(x.Title)}</span></td><td class="n ${x.saldo <= 0 ? "neg" : ""}">${consQtd(x.saldo, x.Unidade)}</td><td class="n">${consQtd(x.EstoqueMin)}</td><td class="n">${x.cobertura == null ? "—" : x.cobertura + " d"}</td><td class="n"><b>${x.sugestao ? consQtd(x.sugestao, x.Unidade) : "—"}</b></td></tr>`).join("")}</tbody></table>` : `<p class="cap-muted">Nenhum item abaixo do mínimo.</p>`);
+  const tempo = D.linhaTempo.length ? `<ul class="cons-tempo">${D.linhaTempo.map(m => `<li onclick="consMovVer(${esc(jsArg(m._id))})" tabindex="0"><span class="d">${esc(m.Data ? fmtDate(m.Data) : "—")}</span>${consTipoPill(m.Tipo)}<b>${esc(m.ItemNome || "—")}</b><span class="q">${consSinal(m) < 0 ? "−" : "+"}${consQtd(Math.abs(consNum(m.Quantidade)), m.Unidade)}</span><span class="sup">${esc([m.FuncNome, m.Departamento, m.Motivo].filter(Boolean).join(" · "))}</span><span class="sup por">${esc(m.RegistradoPor || "")}</span></li>`).join("")}</ul>` : `<p class="cap-muted">Nenhuma movimentação neste filtro.</p>`;
+  const cv = (id, h) => `<div class="cons-cv" style="height:${h}px"><canvas id="${id}"></canvas></div>`;
+  return `<div class="cons-pbar"><span class="sup">Clique num gráfico para filtrar a página; clique de novo para tirar.</span><span class="grow"></span>${consExportarBtn()}</div>` + filtros + ativos + kpis
+    + `<div class="cons-linha g-2">${alertas}${repor}</div>`
+    + `<div class="cons-linha g-1">${card("Entradas × Saídas por mês", "últimos 12 meses · R$ pelo custo unitário · clique num mês para filtrar", cv("consChMes", 290))}${card("Saídas por categoria", "R$ · clique para filtrar", cv("consChCat", 290))}</div>`
+    + `<div class="cons-linha g-2">${card("Itens mais retirados", "quantidade · clique para filtrar", cv("consChItens", Math.max(240, 30 * D.itens.length + 40)))}${card("Saídas por departamento", "R$ · clique para filtrar", cv("consChDep", Math.max(240, 30 * Math.max(D.itens.length, Math.min(10, D.deps.length)) + 40)))}</div>`
+    + `<div class="cons-linha g-2">${card("Quem mais retirou", "R$ · clique para filtrar pela pessoa", cv("consChFunc", Math.max(240, 30 * D.funcs.length + 40)))}${card("Linha do tempo", "últimas movimentações, da mais recente para a mais antiga", tempo)}</div>`
+    + `<button type="button" class="cons-fab" onclick="consPFlimpar()" title="Limpar todos os filtros" ${consPfAtivo() ? "" : "disabled"}>🧹 Limpar filtros</button>`;
+};
+consPainelCharts = function () {
+  if (!window.Chart || !Chart.getChart) return;
+  const D = consPainelDados(), P = CONS.pf, DL = window.ChartDataLabels ? [window.ChartDataLabels] : [];
+  const PAL = ["#1660A8", "#D9480F", "#2F7D4F", "#B7791F", "#0E7C86", "#B23A2F", "#6B4FA0", "#8A93A0", "#232B33", "#C2185B"], TX = "#1D242B", EIXO = "#3B4352", DIM = c => c + "55";
+  const mk = (id, cfg) => { const el = $(id); if (!el) return; const old = Chart.getChart(el); if (old) old.destroy(); cfg.plugins = DL.concat(cfg.plugins || []); try { new Chart(el, cfg); } catch (e) { console.warn("chart", id, e); } };
+  const mini = v => { const n = Number(v) || 0; return n >= 1000 ? (n / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " mil" : Math.round(n).toLocaleString("pt-BR"); };   /* rótulo curto (em R$) para caber sobre as barras lado a lado */
+  const brl = v => fmtBRL(v), curto = v => capMoneyShort(v), qtd = v => Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+  const base = (onClick, fmt, dl) => ({ responsive: true, maintainAspectRatio: false, animation: false, onClick, onHover: (ev, els) => { if (ev.native && ev.native.target) ev.native.target.style.cursor = els.length ? "pointer" : "default"; }, layout: { padding: { top: 18, right: 8 } },
+    plugins: { datalabels: dl || { display: false }, legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 12, weight: "600" }, color: EIXO } }, tooltip: { callbacks: { label: c => ` ${c.dataset.label || c.label}: ${fmt(c.chart.config.options.indexAxis === "y" ? c.parsed.x : (c.parsed.y ?? c.parsed))}` } } } });
+  /* rótulo no topo / à direita da barra, como no Painel da CAP e no SAC */
+  const dlBar = (fmt, horiz) => ({ erpKeep: true, display: ctx => { const v = ctx.dataset.data[ctx.dataIndex]; return v != null && v !== 0; }, anchor: "end", align: horiz ? "right" : "top", offset: 2, clamp: true, clip: false, color: TX, font: { size: 10.5, weight: "700" }, formatter: v => fmt(v) });
+  /* eixo de meses "Jan, Fev…" com o ano centrado abaixo, como em Infrações */
+  const meses = D.porMes.map(e => e.c), anos = []; meses.forEach((c, i) => { const a = c.slice(0, 4); if (!anos.length || anos[anos.length - 1].a !== a) anos.push({ a, ini: i, fim: i }); else anos[anos.length - 1].fim = i; });
+  const eixoAno = { id: "consEixoAno", afterDraw(ch) { const x = ch.scales.x, ca = ch.chartArea, ctx = ch.ctx; if (!x) return; const w = meses.length > 1 ? x.getPixelForValue(1) - x.getPixelForValue(0) : ca.right - ca.left, y = x.bottom + 12;
+      ctx.save(); ctx.font = "700 11px " + (FONT_UI || "sans-serif"); ctx.fillStyle = EIXO; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.strokeStyle = "#C9CFD8"; ctx.setLineDash([3, 3]);
+      anos.forEach((g, gi) => { const esq = Math.max(ca.left, x.getPixelForValue(g.ini) - w / 2), dir = Math.min(ca.right, x.getPixelForValue(g.fim) + w / 2); ctx.fillText(g.a, (esq + dir) / 2, y); if (gi > 0) { ctx.beginPath(); ctx.moveTo(esq, ca.top); ctx.lineTo(esq, y + 6); ctx.stroke(); } }); ctx.restore(); } };
+  const corMes = (c, cor) => !P.mes || P.mes === c ? cor : DIM(cor);
+  mk("consChMes", { type: "bar", data: { labels: meses.map(c => CONS_MES_A[Number(c.slice(5, 7)) - 1]), datasets: [
+      { label: "Entradas", data: D.porMes.map(e => Math.round(e.ent * 100) / 100), backgroundColor: meses.map(c => corMes(c, "#2F7D4F")), borderRadius: 3, maxBarThickness: 26 },
+      { label: "Saídas", data: D.porMes.map(e => Math.round(e.valor * 100) / 100), backgroundColor: meses.map(c => corMes(c, "#232B33")), borderRadius: 3, maxBarThickness: 26 }] },
+    plugins: [eixoAno],
+    options: Object.assign(base((ev, els) => { if (!els.length) return; consPF("mes", meses[els[0].index]); }, brl, Object.assign(dlBar(mini), { font: { size: 9.5, weight: "700" } })), { layout: { padding: { top: 6, right: 8, bottom: 18 } },
+      scales: { x: { grid: { display: false }, border: { color: "#C9CFD8" }, ticks: { color: EIXO, font: { size: 11, weight: "600" }, maxRotation: 0 } }, y: { grid: { display: false }, border: { display: false }, ticks: { display: false }, beginAtZero: true, grace: "14%" } } }) });
+  { const c = Chart.getChart($("consChMes")); if (c) { c.options.plugins.legend.position = "top"; c.options.plugins.legend.align = "end"; c.update("none"); } }   /* legenda em cima: o ano fica sozinho abaixo dos meses */
+  const barH = (id, rows, fmt, cor, dim, sel, ehSel) => rows.length ? mk(id, { type: "bar", data: { labels: rows.map(r => r.k.length > 26 ? r.k.slice(0, 25) + "…" : r.k), datasets: [{ label: dim, data: rows.map(r => Math.round((fmt === qtd ? r.qtd : r.valor) * 100) / 100), backgroundColor: rows.map(r => !sel || ehSel(r) ? cor : DIM(cor)), borderRadius: 3, maxBarThickness: 22 }] },
+    options: Object.assign(base((ev, els) => { if (!els.length) return; const r = rows[els[0].index]; consPF(id === "consChItens" ? "item" : id === "consChFunc" ? "func" : "dep", id === "consChItens" ? (r.id || "") : r.k); }, fmt), { indexAxis: "y", layout: { padding: { right: 56, top: 4 } },
+      plugins: Object.assign(base(null, fmt).plugins, { legend: { display: false }, datalabels: dlBar(fmt === qtd ? qtd : curto, true) }),
+      scales: { x: { display: false, grid: { display: false }, beginAtZero: true, grace: "8%" }, y: { grid: { display: false }, border: { display: false }, ticks: { color: TX, font: { size: 12, weight: "600" } } } } }) }) : $(id) && ($(id).parentElement.innerHTML = `<p class="cap-muted">Sem saídas neste filtro.</p>`);
+  barH("consChItens", D.itens, qtd, "#D9480F", "Quantidade", P.item, r => r.id === P.item);
+  barH("consChDep", D.deps.slice(0, 10), brl, "#1660A8", "Valor", P.dep, r => r.k === P.dep);
+  barH("consChFunc", D.funcs, brl, "#0E7C86", "Valor", P.func, r => r.k === P.func);
+  const cats = D.cats.slice(0, 8), tot = cats.reduce((t, r) => t + r.valor, 0);
+  if (cats.length && tot > 0) mk("consChCat", { type: "doughnut", data: { labels: cats.map(r => r.k), datasets: [{ data: cats.map(r => Math.round(r.valor * 100) / 100), backgroundColor: cats.map((r, i) => !P.cat || P.cat === r.k ? PAL[i % PAL.length] : DIM(PAL[i % PAL.length])), borderWidth: 2, borderColor: "#fff" }] },
+    plugins: [{ id: "consCentro", afterDraw(ch) { const ca = ch.chartArea, ctx = ch.ctx; ctx.save(); ctx.textAlign = "center"; ctx.fillStyle = TX; ctx.font = "800 15px " + (FONT_UI || "sans-serif"); ctx.fillText(capMoneyShort(tot), (ca.left + ca.right) / 2, (ca.top + ca.bottom) / 2 + 2); ctx.font = "600 10.5px " + (FONT_UI || "sans-serif"); ctx.fillStyle = EIXO; ctx.fillText("saídas", (ca.left + ca.right) / 2, (ca.top + ca.bottom) / 2 + 17); ctx.restore(); } }],
+    options: Object.assign(base((ev, els) => { if (!els.length) return; consPF("cat", cats[els[0].index].k); }, brl), { cutout: "58%", layout: { padding: 6 },
+      plugins: Object.assign(base(null, brl).plugins, { legend: { position: "bottom", labels: { boxWidth: 11, font: { size: 11.5, weight: "600" }, color: EIXO } }, datalabels: { erpKeep: true, display: ctx => tot > 0 && ctx.dataset.data[ctx.dataIndex] / tot >= 0.06, color: "#fff", font: { size: 11, weight: "800" }, formatter: v => Math.round(100 * v / tot) + "%" } }) }) });
+  else if ($("consChCat")) $("consChCat").parentElement.innerHTML = `<p class="cap-muted">Sem saídas neste filtro.</p>`;
+  if (window.erpChartButtons) setTimeout(() => erpChartButtons("#consBody"), 50);
+};
+window.consPainelCharts = consPainelCharts;
+{ const st = document.createElement("style"); st.textContent = `
+#consRoot .cons-fbar{display:flex;flex-wrap:nowrap;gap:8px;align-items:center;padding:10px 12px;margin-bottom:14px;border:1px solid var(--line);border-radius:var(--radius,8px);background:var(--surface,#fff)}
+#consRoot .cons-fbar input[type=search]{flex:2 1 220px;min-width:140px}#consRoot .cons-fbar select{flex:1 1 140px;min-width:110px}#consRoot .cons-fbar input,#consRoot .cons-fbar select{border:1px solid var(--line);border-radius:6px;padding:8px 10px;font:inherit;background:var(--surface,#fff);color:inherit}
+@media (max-width:900px){#consRoot .cons-fbar{flex-wrap:wrap}}
+#consRoot details.cons-exp{position:relative;flex:none}#consRoot details.cons-exp>summary{list-style:none;cursor:pointer;white-space:nowrap}#consRoot details.cons-exp>summary::-webkit-details-marker{display:none}#consRoot details.cons-exp>summary::after{content:" ▾";font-size:10px}
+#consRoot .cons-exp-m{position:absolute;right:0;top:calc(100% + 4px);z-index:30;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px;display:flex;flex-direction:column;min-width:170px}
+#consRoot .cons-exp-m button{all:unset;cursor:pointer;padding:8px 12px;border-radius:6px;font-size:13.5px;font-weight:600;color:var(--ink)}#consRoot .cons-exp-m button:hover{background:#FFF1EA}
+#consRoot .cons-pbar{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+#consRoot .cons-filtros{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:0 0 10px}
+#consRoot .cons-campo{display:flex;flex-direction:column;gap:4px;min-width:150px;flex:1 1 150px}#consRoot .cons-campo label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#5C6670}
+#consRoot .cons-campo select{border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:inherit;background:#fff}
+#consRoot .cons-seg{display:flex;flex-wrap:wrap;gap:6px}#consRoot .cons-seg button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font:inherit;font-size:12.5px;font-weight:700;color:#3B4352;cursor:pointer;line-height:1.1}
+#consRoot .cons-seg button small{display:block;font-size:9.5px;font-weight:600;color:#8A93A0}#consRoot .cons-seg button:hover{border-color:#232B33}
+#consRoot .cons-seg button.ativo{background:#232B33;border-color:#232B33;color:#fff}#consRoot .cons-seg button.ativo small{color:#F2B705}#consRoot .cons-seg button.ent.ativo{background:#2F7D4F;border-color:#2F7D4F}#consRoot .cons-seg button.sai.ativo{background:#B23A2F;border-color:#B23A2F}
+#consRoot .cons-meses{padding:10px 16px}#consRoot .cons-meses .cons-seg{justify-content:center;width:100%}
+#consRoot .cons-ativos{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}#consRoot .cons-chip{border:1px solid #F2B705;background:#FFF8E1;border-radius:999px;padding:4px 10px;font:inherit;font-size:12.5px;font-weight:700;color:#232B33;cursor:pointer}#consRoot .cons-chip b{margin-left:4px}#consRoot .cons-chip.limpar{border-color:#232B33;background:#232B33;color:#fff}
+#consRoot .cons-kpis2{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:0 0 12px}
+#consRoot .cons-k{all:unset;box-sizing:border-box;background:#fff;border:1px solid var(--line);border-top:4px solid var(--c);border-radius:10px;padding:14px 16px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}#consRoot button.cons-k{cursor:pointer}#consRoot button.cons-k:hover{box-shadow:0 4px 14px rgba(0,0,0,.08)}
+#consRoot .cons-k .r{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#5C6670}#consRoot .cons-k .v{font-size:28px;font-weight:800;color:#1D242B;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#consRoot .cons-k .v .m{font-size:21px}#consRoot .cons-k .s{font-size:12px;color:#5C6670}
+#consRoot .cons-linha{display:grid;gap:12px;margin:0 0 12px}#consRoot .cons-linha.g-1{grid-template-columns:1.7fr 1fr}#consRoot .cons-linha.g-2{grid-template-columns:1fr 1fr}@media (max-width:980px){#consRoot .cons-linha.g-1,#consRoot .cons-linha.g-2{grid-template-columns:1fr}}
+#consRoot .cons-g{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}#consRoot .cons-g h3{margin:0;font-size:15px;font-weight:800;color:var(--navy)}#consRoot .cons-g .dica{font-size:11.5px;color:#5C6670;margin:2px 0 10px}
+#consRoot .cons-cv{position:relative;width:100%}
+#consRoot table.cons-repor{width:100%;table-layout:fixed;border-collapse:collapse;font-size:12.5px}#consRoot table.cons-repor th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#5C6670;text-align:right;padding:6px 6px;border-bottom:1px solid var(--line);font-weight:800}#consRoot table.cons-repor th:first-child{text-align:left}
+#consRoot table.cons-repor td{padding:6px 6px;border-bottom:1px solid #EEF0F2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#consRoot table.cons-repor td.n{text-align:right}#consRoot table.cons-repor td.neg{color:#B23A2F;font-weight:700}#consRoot table.cons-repor tr{cursor:pointer}#consRoot table.cons-repor tr:hover td{background:#F6F7FB}
+#consRoot table.cons-repor td:first-child{display:flex;align-items:center;gap:6px}#consRoot table.cons-repor td:first-child span{overflow:hidden;text-overflow:ellipsis}#consRoot table.cons-repor td i{flex:none;width:8px;height:8px;border-radius:50%;background:#E8A013}#consRoot table.cons-repor td i.cr{background:#B23A2F}
+#consRoot .cons-fab{position:fixed;right:18px;bottom:18px;z-index:40;background:#232B33;color:#fff;border:2px solid #F2B705;border-radius:999px;padding:12px 18px;font:inherit;font-weight:800;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}#consRoot .cons-fab:disabled{opacity:.45;cursor:default;border-color:#8A93A0}
+body.vendo-como #consRoot .cons-fab{bottom:84px}@media print{#consRoot .cons-fab{display:none}}`; document.head.appendChild(st); }
+CONFIG.version = "v0.14.13.2";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

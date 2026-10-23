@@ -39853,7 +39853,9 @@ window.consMov = async (tipo, itemId) => {
   const funcs = await tercRhFuncs().catch(() => []), itens = consLinhas().filter(x => x.Ativo !== false), sel = itemId ? itens.find(x => x._id === String(itemId)) : null;
   const comFunc = tipo === "Saída" || tipo === "Devolução";
   openModal(tipo === "Ajuste" ? "Ajuste de inventário" : tipo === "Saída" ? "Saída (retirada)" : tipo, `<div class="form-grid">
-      <div class="field full"><label>Item<span class="req">*</span></label><select id="cmItem" onchange="consMovItem()"><option value="">— escolha —</option>${itens.map(x => `<option value="${esc(x._id)}" ${sel && sel._id === x._id ? "selected" : ""} data-saldo="${x.saldo}" data-un="${esc(x.Unidade || "")}" data-custo="${consNum(x.CustoUnit)}">${esc(consItemNome(x))} — ${consQtd(x.saldo, x.Unidade)}</option>`).join("")}</select><div class="hint" id="cmSaldo"></div></div>
+      <div class="field full"><label>Item<span class="req">*</span></label><input id="cmItemN" list="cmItemL" autocomplete="off" value="${sel ? esc(sel.Title) : ""}" placeholder="Digite para buscar o item" oninput="consMovItem()" onchange="consMovItem()"><datalist id="cmItemL">${itens.map(x => `<option value="${esc(x.Title)}">${esc([x.Codigo, consQtd(x.saldo, x.Unidade)].filter(Boolean).join(" · "))}</option>`).join("")}</datalist><input type="hidden" id="cmItem" value="${sel ? esc(sel._id) : ""}"><div class="hint" id="cmSaldo"></div></div>
+      <div class="field"><label>Código</label><input id="cmCod" value="${sel ? esc(sel.Codigo || "—") : ""}" readonly tabindex="-1"></div>
+      <div class="field"><label>Estoque atual</label><input id="cmEst" value="${sel ? consQtd(sel.saldo, sel.Unidade) : ""}" readonly tabindex="-1"></div>
       <div class="field"><label>${tipo === "Ajuste" ? "Contagem física" : "Quantidade"}<span class="req">*</span></label><input type="number" id="cmQtd" min="0" step="0.01" placeholder="0"></div>
       <div class="field"><label>Data<span class="req">*</span></label><input type="date" id="cmData" value="${todayISO()}"></div>
       ${tipo === "Entrada" ? `<div class="field"><label>Custo unitário (R$)</label><input type="number" id="cmCusto" min="0" step="0.01" value="${sel && consNum(sel.CustoUnit) ? consNum(sel.CustoUnit) : ""}"><div class="hint">Atualiza o custo do item</div></div><div class="field"><label>Nota fiscal</label><input id="cmNF" maxlength="60"></div>` : ""}
@@ -39878,7 +39880,13 @@ window.consMov = async (tipo, itemId) => {
   });
   consMovItem();
 };
-window.consMovItem = () => { const s = $("cmItem"), h = $("cmSaldo"); if (!s || !h) return; const o = s.options[s.selectedIndex]; if (!o || !o.value) { h.textContent = ""; return; } h.textContent = `Em estoque: ${consQtd(o.dataset.saldo, o.dataset.un)}`; const c = $("cmCusto"); if (c && !c.value && Number(o.dataset.custo) > 0) c.value = o.dataset.custo; };
+window.consMovItem = () => {   /* v0.14.13.1: item digitado com busca; código e estoque em campos fixos só de leitura */
+  const n = $("cmItemN"), h = $("cmItem"), hs = $("cmSaldo"); if (!n || !h) return;
+  const q = normName(n.value), L = consLinhas().filter(x => x.Ativo !== false), it = q ? (L.find(x => normName(x.Title) === q) || L.find(x => normName(x.Codigo || "") === q)) : null;
+  h.value = it ? it._id : ""; if ($("cmCod")) $("cmCod").value = it ? (it.Codigo || "—") : ""; if ($("cmEst")) $("cmEst").value = it ? consQtd(it.saldo, it.Unidade) : "";
+  if (hs) hs.textContent = it ? "" : (q ? "Escolha um item da lista." : "");
+  const c = $("cmCusto"); if (it && c && !c.value && consNum(it.CustoUnit) > 0) c.value = consNum(it.CustoUnit);
+};
 window.consMovFunc = async () => { const i = $("cmFunc"), d = $("cmDep"); if (!i || !d) return; const fs = await tercRhFuncs().catch(() => []), f = fs.find(x => x.Title === i.value) || fs.find(x => normName(x.Title) === normName(i.value)); if (f && !d.value) d.value = f.Departamento || f.Setor || ""; };
 window.consMovVer = id => {
   const m = CONS.movs.find(i => i._id === String(id)); if (!m) return;
@@ -40023,7 +40031,313 @@ window.tercCnpjXTirar = i => { TERC_CNPJX.splice(i, 1); tercCnpjXPintar(); $("mo
   setTimeout(() => { const h = $("fCNPJHint"), f = fornByDoc(e.target.value); if (!h || !f) return; const onde = tercDocOnde(f, e.target.value); if (onde && /Cadastro localizado/.test(h.textContent) && !/CNPJ adicional/.test(h.textContent)) h.textContent += ` · CNPJ adicional (${onde})`; }, 0);
 }));
 { const st = document.createElement("style"); st.textContent = `.terc-cnpjx-l{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.terc-cnpjx{gap:8px;cursor:default}.terc-cnpjx small{color:var(--ink-2);font-size:11.5px}.terc-cnpjx button{border:0;background:none;cursor:pointer;font-size:15px;line-height:1;color:var(--ink-2);padding:0 2px}.terc-cnpjx-add{display:flex;gap:6px;flex-wrap:wrap}.terc-cnpjx-add input{flex:1 1 160px;min-width:0}.terc-cnpjx-add #gCnpjXDoc{flex:0 1 190px}`; document.head.appendChild(st); }
-CONFIG.version = "v0.14.13";
+/* =====================================================================
+   v0.14.13.1 · Consumíveis R2 (pedido de 23/10, 11:32)
+   1. Catálogo de itens padrão com sugestões de categoria, unidade, estoque mínimo, custo médio de mercado e local (Armário do RH),
+      dimensionado para ~60 funcionários (13 motoristas, 15 administrativo). Item digitado que não existe entra no catálogo ao salvar;
+      item salvo com valores diferentes atualiza a sugestão para a próxima vez.
+   2. O nome do item é um campo com busca (datalist, como Estado/Cidade em Terceiros).
+   3. O administrador edita e exclui o catálogo (aba Catálogo). Lista "RH — Consumíveis Catálogo" (site RH) pela Configuração.
+   5. Fornecedor habitual pela lista de Terceiros › Banco de Dados (busca).
+   6. Observações uma a uma (comentários com data e autor), como em Terceiros.
+   ===================================================================== */
+const CONS_CATALOGO_BASE = [
+  /* EPI */
+  ["Luva de raspa", "EPI", "par", 10, 12.5], ["Luva nitrílica", "EPI", "par", 20, 4.5], ["Óculos de proteção", "EPI", "un", 6, 9], ["Protetor auricular (plug)", "EPI", "par", 20, 2.5],
+  ["Máscara PFF2", "EPI", "un", 30, 2.8], ["Botina de segurança", "EPI", "par", 6, 95], ["Capa de chuva", "EPI", "un", 5, 35], ["Colete refletivo", "EPI", "un", 5, 22], ["Protetor solar FPS 30", "EPI", "un", 6, 28],
+  /* Uniforme */
+  ["Camisa polo (uniforme)", "Uniforme", "un", 10, 45], ["Calça (uniforme)", "Uniforme", "un", 8, 75], ["Jaqueta (uniforme)", "Uniforme", "un", 4, 120], ["Crachá com cordão", "Uniforme", "un", 10, 8], ["Boné (uniforme)", "Uniforme", "un", 5, 20],
+  /* Limpeza e higiene */
+  ["Papel higiênico (rolo 30 m)", "Limpeza e higiene", "rolo", 48, 1.2], ["Papel toalha interfolha (pct 1000)", "Limpeza e higiene", "pct", 6, 22], ["Sabonete líquido 5 l", "Limpeza e higiene", "galão", 2, 38],
+  ["Álcool gel 5 l", "Limpeza e higiene", "galão", 2, 55], ["Detergente 5 l", "Limpeza e higiene", "galão", 2, 18], ["Desinfetante 5 l", "Limpeza e higiene", "galão", 3, 24], ["Água sanitária 5 l", "Limpeza e higiene", "galão", 3, 14],
+  ["Saco de lixo 100 l (pct 100)", "Limpeza e higiene", "pct", 3, 45], ["Saco de lixo 40 l (pct 100)", "Limpeza e higiene", "pct", 3, 22], ["Pano de chão", "Limpeza e higiene", "un", 10, 6.5], ["Esponja dupla face", "Limpeza e higiene", "un", 12, 1.5],
+  ["Vassoura", "Limpeza e higiene", "un", 3, 18], ["Rodo", "Limpeza e higiene", "un", 3, 20], ["Luva de látex (limpeza)", "Limpeza e higiene", "par", 10, 5], ["Desengraxante 5 l", "Limpeza e higiene", "galão", 2, 60], ["Limpa-vidros 500 ml", "Limpeza e higiene", "un", 4, 9],
+  /* Escritório e papelaria */
+  ["Papel A4 (resma 500)", "Escritório e papelaria", "pct", 10, 28], ["Caneta esferográfica", "Escritório e papelaria", "un", 24, 1.8], ["Lápis", "Escritório e papelaria", "un", 12, 0.9], ["Grampo 26/6 (cx 5000)", "Escritório e papelaria", "cx", 4, 6],
+  ["Clipe (cx 100)", "Escritório e papelaria", "cx", 4, 5.5], ["Pasta suspensa", "Escritório e papelaria", "un", 20, 3.5], ["Envelope ofício", "Escritório e papelaria", "un", 50, 0.35], ["Bloco de notas adesivas", "Escritório e papelaria", "un", 10, 6],
+  ["Marcador de texto", "Escritório e papelaria", "un", 6, 3.5], ["Toner de impressora", "Escritório e papelaria", "un", 2, 180], ["Fita adesiva", "Escritório e papelaria", "rolo", 6, 7], ["Pilha AA", "Escritório e papelaria", "un", 16, 4], ["Pilha AAA", "Escritório e papelaria", "un", 16, 4],
+  /* Copa e cozinha */
+  ["Café torrado 500 g", "Copa e cozinha", "pct", 12, 22], ["Açúcar 1 kg", "Copa e cozinha", "kg", 10, 5.5], ["Adoçante", "Copa e cozinha", "un", 2, 9], ["Copo descartável 180 ml (pct 100)", "Copa e cozinha", "pct", 10, 7.5],
+  ["Copo descartável 50 ml (pct 100)", "Copa e cozinha", "pct", 6, 4.5], ["Filtro de café (cx 30)", "Copa e cozinha", "cx", 6, 7], ["Água mineral (galão 20 l)", "Copa e cozinha", "galão", 6, 14], ["Chá (cx 10 sachês)", "Copa e cozinha", "cx", 3, 8], ["Guardanapo (pct 50)", "Copa e cozinha", "pct", 6, 4],
+  /* Informática */
+  ["Mouse", "Informática", "un", 2, 35], ["Teclado", "Informática", "un", 2, 60], ["Cabo de rede", "Informática", "un", 3, 12], ["Pen drive 32 GB", "Informática", "un", 2, 35], ["Cartucho de tinta", "Informática", "un", 2, 90],
+  /* Manutenção e ferramentas */
+  ["Estopa", "Manutenção e ferramentas", "kg", 5, 14], ["Fita isolante", "Manutenção e ferramentas", "rolo", 6, 5], ["Lâmpada LED", "Manutenção e ferramentas", "un", 10, 12], ["Pilha 9 V", "Manutenção e ferramentas", "un", 4, 15],
+  ["Lubrificante spray 300 ml", "Manutenção e ferramentas", "un", 3, 28], ["Abraçadeira de nylon (pct 100)", "Manutenção e ferramentas", "pct", 3, 18], ["Lixa", "Manutenção e ferramentas", "un", 10, 2.5], ["Parafuso sortido (cx)", "Manutenção e ferramentas", "cx", 2, 25]
+].map(([n, cat, un, min, custo]) => ({ n, cat, un, min, custo, local: "Armário do RH" }));
+const CONS_LOCAL_PADRAO = "Armário do RH";
+LISTS.rh_cons_cat = {
+  key: "rh_cons_cat", displayName: "RH — Consumíveis Catálogo", siteKey: "rh", titleAs: "Item",
+  description: "Recursos Humanos NMB · catálogo de consumíveis: sugestões de categoria, unidade, estoque mínimo, custo médio e local para o cadastro. Começa com os itens padrão do ERP; item novo digitado no cadastro entra aqui; o administrador edita e exclui em Consumíveis › Catálogo.",
+  columns: [
+    { name: "Categoria",    displayName: "Categoria",            choice: choice(CONS_CATS, true) },
+    { name: "Unidade",      displayName: "Unidade",              choice: choice(CONS_UNID, true) },
+    { name: "EstoqueMin",   displayName: "Estoque mínimo",       number: { decimalPlaces: "two", displayAs: "number", minimum: 0 } },
+    { name: "CustoUnit",    displayName: "Custo médio (R$)",     number: money },
+    { name: "Local",        displayName: "Local de guarda",      text: { allowMultipleLines: false, maxLength: 80 } },
+    { name: "Origem",       displayName: "Origem",               choice: choice(["Padrão do ERP", "Digitado no cadastro", "Editado"], true) },
+    { name: "AtualizadoEm", displayName: "Atualizado em",        dateTime: dateOnly }
+  ]
+};
+SETUP_ORDER.push("rh_cons_cat");
+SETUP_TEXT.rh_cons_cat = `Cria no site RH a lista "RH — Consumíveis Catálogo" (v0.14.13.1): itens padrão com sugestões (categoria, unidade, mínimo, custo médio, local). Em Consumíveis › Catálogo, "Carregar itens padrão" preenche a lista.`;
+CONS.cat = []; CONS.listCat = undefined;
+const consCatNorm = n => normName(String(n || ""));
+/* catálogo em uso: a lista (se existir) mais os itens padrão do código que ainda não estão nela */
+function consCatalogo() {
+  const out = new Map();
+  CONS_CATALOGO_BASE.forEach(b => out.set(consCatNorm(b.n), Object.assign({ base: true }, b)));
+  (CONS.cat || []).forEach(x => { const k = consCatNorm(x.Title); if (!k) return; out.set(k, { n: x.Title, cat: x.Categoria || "", un: x.Unidade || "un", min: consNum(x.EstoqueMin), custo: consNum(x.CustoUnit), local: x.Local || CONS_LOCAL_PADRAO, _id: x._id, origem: x.Origem || "" }); });
+  (CONS.catTirados || []).forEach(k => { const e = out.get(k); if (e && e.base && !e._id) out.delete(k); });
+  return [...out.values()].sort((a, b) => a.n.localeCompare(b.n, "pt-BR"));
+}
+const consCatDe = nome => consCatalogo().find(e => consCatNorm(e.n) === consCatNorm(nome)) || null;
+{ const c0 = consCarregar;
+  consCarregar = async function (force) {
+    const r = await c0.apply(this, arguments);
+    try {
+      if (CONS.site && (CONS.listCat === undefined || (force && !CONS.listCat))) { const ls = await SP.lists(CONS.site.id); CONS.listCat = ls.find(l => l.displayName === LISTS.rh_cons_cat.displayName) || null; }   /* revisão: relista só enquanto a lista não existe */
+      if (CONS.site && CONS.listCat) {
+        CONS.cat = (await (CONS.catP || (CONS.catP = SP.items(CONS.site.id, CONS.listCat.id).finally(() => { CONS.catP = null; })))).map(it => Object.assign({ _id: String(it.id) }, it.fields || {}));
+        CONS.catRemovidos = CONS.cat.filter(x => x.Origem === "Removido"); CONS.catTirados = CONS.catRemovidos.map(x => consCatNorm(x.Title));   /* padrão tirado pelo administrador fica marcado para não voltar */
+        CONS.cat = CONS.cat.filter(x => x.Origem !== "Removido");
+      } else { CONS.cat = []; CONS.catTirados = []; }
+    } catch (e) { CONS.cat = CONS.cat || []; }
+    return r;
+  }; window.consCarregar = consCarregar; }
+/* Terceiros para o campo Fornecedor habitual (sem travar a página se não houver leitura) */
+{ const r0 = renderCons; renderCons = async function () { try { if (typeof loadForn === "function" && !(FORN_STATE.items || []).length && !CONS.fornTentou && canSee(MODULES.find(m => m.id === "forn"))) { CONS.fornTentou = true; loadForn(true).catch(() => {}); } } catch (e) {} return r0.apply(this, arguments); }; window.renderCons = renderCons; }   /* revisão: Terceiros carregam em paralelo, sem segurar a página */
+/* gravar no catálogo (cria ou atualiza pelo nome) — quem edita o módulo grava; falha não impede o cadastro do item */
+async function consCatGravar(f, origem) {
+  if (!CONS.site || !CONS.listCat || !consPode()) return;
+  const k = consCatNorm(f.Title), atual = (CONS.cat || []).find(x => consCatNorm(x.Title) === k), emUso = consCatDe(f.Title);
+  const campos = { Categoria: f.Categoria || null, Unidade: f.Unidade || "un", EstoqueMin: f.EstoqueMin ?? null, CustoUnit: f.CustoUnit ?? null, Local: f.Local || CONS_LOCAL_PADRAO, AtualizadoEm: todayISO() };
+  const igual = e => e && String(e.cat || "") === String(campos.Categoria || "") && String(e.un || "un") === String(campos.Unidade) && consNum(e.min) === consNum(campos.EstoqueMin) && consNum(e.custo) === consNum(campos.CustoUnit) && String(e.local || CONS_LOCAL_PADRAO) === String(campos.Local);
+  try {
+    if (igual(emUso)) return;   /* igual à sugestão em uso (padrão do código ou da lista): nada a atualizar */
+    const rem = (CONS.catRemovidos || []).find(x => consCatNorm(x.Title) === k);
+    if (atual) await SP.update(CONS.site.id, CONS.listCat.id, atual._id, Object.assign(campos, { Origem: "Editado" }));
+    else if (rem) await SP.update(CONS.site.id, CONS.listCat.id, rem._id, Object.assign({ Title: f.Title, Origem: "Editado" }, campos));   /* revisão: reaproveita a linha marcada como removida */
+    else await SP.create(CONS.site.id, CONS.listCat.id, Object.assign({ Title: f.Title, Origem: emUso ? "Editado" : "Digitado no cadastro" }, campos));
+  } catch (e) { console.warn("catálogo", e); }
+}
+/* formulário do item: nome com busca no catálogo, sugestões, fornecedor pelos Terceiros, local padrão, observações uma a uma */
+/* código sequencial CON-01, CON-02… a partir do último lançado; fixo — só o administrador altera */
+function consProxCodigo() { const n = Math.max(0, ...CONS.itens.map(x => { const m = String(x.Codigo || "").trim().match(/^CON-(\d+)$/i); return m ? Number(m[1]) : 0; })); return `CON-${String(n + 1).padStart(2, "0")}`; }
+const CONS_OBS = { base: [], pend: [], tirou: false, leg: "" };
+function consObsDe(x) { try { const a = JSON.parse((x && x.Observacoes) || "[]"); return Array.isArray(a) ? a.filter(n => n && String(n.t || "").trim()) : []; } catch (e) { return []; } }
+const consObsLegado = x => { const s = String((x && x.Observacoes) || "").trim(); if (!s) return ""; try { const a = JSON.parse(s); return Array.isArray(a) ? "" : s; } catch (e) { return s; } };
+const consObsNova = txt => ({ t: String(txt).trim().slice(0, 2000), por: (session.me && session.me.displayName) || "", em: new Date().toISOString() });
+const consObsEu = n => { const eu = (session.me && session.me.displayName) || ""; return !!eu && n.por === eu; };
+function consObsHtml(n, k, podeTirar) {
+  return `<li class="tnota${n.pend ? " pend" : ""}"><div class="tnota-cab">${n.legado ? "Registro anterior" : `${esc(tercDataTxt(n.em))} · ${esc(n.por || "—")}`}${n.pend ? ` <em>a salvar</em>` : ""}${podeTirar ? ` <button type="button" class="tav-x" title="Tirar esta observação" onclick="consObsTirar(${k})">×</button>` : ""}</div><div class="tnota-t">${esc(n.t)}</div></li>`;
+}
+function consObsLista() {
+  const el = $("csObsLista"); if (!el) return; const adm = !!session.n1 || permModulo("rh_cons") === "proprietario";
+  const html = CONS_OBS.pend.map((n, j) => consObsHtml(Object.assign({ pend: true }, n), `'p${j}'`, true)).reverse()
+    .concat(CONS_OBS.base.map((n, i) => consObsHtml(n, i, adm || consObsEu(n))).reverse())
+    .concat(CONS_OBS.leg ? [consObsHtml({ t: CONS_OBS.leg, legado: true }, "'leg'", adm)] : []);
+  el.innerHTML = html.length ? html.join("") : `<li class="tnota-vazio">Nenhuma observação.</li>`;
+}
+window.consObsAdd = () => { const t = $("csObsNova"); if (!t || !t.value.trim()) { if (t) t.focus(); return; } CONS_OBS.pend.push(consObsNova(t.value)); t.value = ""; consObsLista(); $("modal").dataset.sujo = "1"; t.focus(); };
+window.consObsTirar = k => {
+  if (typeof k === "string" && k[0] === "p") { CONS_OBS.pend.splice(Number(k.slice(1)), 1); consObsLista(); return; }
+  if (k === "leg") CONS_OBS.leg = ""; else CONS_OBS.base.splice(Number(k), 1);
+  CONS_OBS.tirou = true; consObsLista(); $("modal").dataset.sujo = "1";
+};
+const consObsCampo = () => { const o = CONS_OBS.base.concat(CONS_OBS.pend); if (CONS_OBS.leg) o.unshift({ t: CONS_OBS.leg, por: "", em: "" }); return o.length ? JSON.stringify(o.slice(-200)) : null; };
+window.consSugerir = () => {
+  const i = $("csT"), h = $("csSug"); if (!i) return; const e = consCatDe(i.value); if (h) h.textContent = "";
+  if (!e || (CONS.formEdit && CONS.formEdit.Title && consCatNorm(CONS.formEdit.Title) === consCatNorm(i.value))) return;
+  const set = (id, v) => { const el = $(id); if (el && (el.value === "" || el.dataset.sug === "1")) { el.value = v == null ? "" : String(v); el.dataset.sug = "1"; } };
+  set("csCat", e.cat); set("csUn", e.un); set("csMin", e.min || ""); set("csCusto", e.custo || ""); set("csLocal", e.local || CONS_LOCAL_PADRAO);
+  if (h) h.textContent = `Sugestão do catálogo: ${e.cat || "—"} · ${e.un} · mínimo ${consQtd(e.min)} · ${e.custo ? fmtBRL(e.custo) : "sem custo"} · ${e.local || CONS_LOCAL_PADRAO}. Ajuste se precisar.`;
+};
+window.consForm = id => {
+  if (!consPode() || !CONS.list) return;
+  const x = id ? CONS.itens.find(i => i._id === String(id)) : null, v = x || { Ativo: true, Unidade: "un", Categoria: "", Local: CONS_LOCAL_PADRAO };
+  CONS.formEdit = x; CONS_OBS.base = consObsDe(v); CONS_OBS.pend = []; CONS_OBS.tirou = false; CONS_OBS.leg = consObsLegado(v);
+  const forns = (typeof fornAtivos === "function" ? fornAtivos() : []).map(f => f.Title).filter(Boolean).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const cat = consCatalogo();
+  openModal(x ? `Editar · ${x.Title}` : "Novo consumível", `<div class="form-grid">
+      <div class="field full"><label>Nome<span class="req">*</span></label><input id="csT" list="csTL" maxlength="120" autocomplete="off" value="${esc(v.Title || "")}" placeholder="Digite para buscar no catálogo ou escreva um item novo" oninput="consSugerir()" onchange="consSugerir()"><datalist id="csTL">${cat.map(e => `<option value="${esc(e.n)}">${esc(e.cat || "")}</option>`).join("")}</datalist><div class="hint" id="csSug"></div></div>
+      <div class="field"><label>Código</label><input id="csCod" maxlength="30" value="${esc(x ? (v.Codigo || "") : consProxCodigo())}" ${consAdm() ? "" : "readonly"}><div class="hint">${x ? "Fixo" : "Sequencial a partir do último"}${consAdm() ? " · só o administrador altera" : ""}</div></div>
+      <div class="field"><label>Categoria</label><input id="csCat" list="csCatL" maxlength="60" value="${esc(v.Categoria || "")}" placeholder="Escolha ou digite"><datalist id="csCatL">${[...new Set(CONS_CATS.concat(CONS.itens.map(i => i.Categoria).filter(Boolean)))].map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
+      <div class="field"><label>Unidade</label><input id="csUn" list="csUnL" maxlength="20" value="${esc(v.Unidade || "un")}"><datalist id="csUnL">${CONS_UNID.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
+      <div class="field"><label>Estoque mínimo</label><input type="number" id="csMin" min="0" step="0.01" value="${esc(v.EstoqueMin ?? "")}"><div class="hint">Abaixo disso o item aparece em "Repor"</div></div>
+      <div class="field"><label>Custo unitário (R$)</label><input type="number" id="csCusto" min="0" step="0.01" value="${esc(v.CustoUnit ?? "")}"><div class="hint">Atualizado pela última entrada com custo</div></div>
+      <div class="field"><label>Local de guarda</label><input id="csLocal" maxlength="80" value="${esc(v.Local || CONS_LOCAL_PADRAO)}" placeholder="${esc(CONS_LOCAL_PADRAO)}"></div>
+      <div class="field full"><label>Fornecedor habitual</label><input id="csForn" list="csFornL" maxlength="120" autocomplete="off" value="${esc(v.FornecedorTexto || "")}" placeholder="${forns.length ? "Digite para buscar em Terceiros › Banco de Dados" : "Sem leitura de Terceiros › Banco de Dados — digite o nome"}"><datalist id="csFornL">${forns.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
+      ${x ? "" : `<div class="field"><label>Estoque inicial</label><input type="number" id="csIni" min="0" step="0.01" placeholder="0"><div class="hint">Grava uma entrada "Estoque inicial"</div></div>`}
+      <div class="field"><label class="check"><input type="checkbox" id="csAtivo" ${v.Ativo !== false ? "checked" : ""}> Ativo</label></div>
+      <div class="field full"><label>Observações</label><div class="tnota-nova"><textarea id="csObsNova" rows="2" placeholder="Escreva uma observação e clique em Adicionar (fica registrada com a data e quem escreveu)"></textarea><button type="button" class="btn sm" onclick="consObsAdd()">Adicionar</button></div><ul class="tnotas" id="csObsLista"></ul></div>
+    </div><div class="err" id="csErr" style="display:none"></div>`, async () => {
+    const g = k => ($(k) ? $(k).value.trim() : ""), err = m => { const e = $("csErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const nome = g("csT"); if (!nome) return err("Escreva o nome do consumível.");
+    if (CONS.itens.some(i => i._id !== (x && x._id) && normName(i.Title) === normName(nome))) return err("Já existe um consumível com esse nome.");
+    if (g("csObsNova")) return err("Clique em \"Adicionar\" para registrar a observação (ou apague o texto).");
+    const num = k => g(k) === "" ? null : Math.max(0, consNum(g(k)));
+    let cod = g("csCod");
+    const auto = !x && (!consAdm() || !cod || cod.toUpperCase() === String(consProxCodigo()).toUpperCase());
+    if (!x) { await consCarregar(true); if (auto) cod = consProxCodigo(); }   /* relê a lista: dois cadastros ao mesmo tempo não repetem o número; o administrador pode digitar outro (ex.: CON-99) */
+    else if (!consAdm()) cod = x.Codigo || "";
+    if (cod && CONS.itens.some(i => i._id !== (x && x._id) && String(i.Codigo || "").trim().toUpperCase() === cod.toUpperCase())) return err(`O código ${cod} já é de outro consumível.`);
+    const f = { Title: nome.slice(0, 120), Codigo: cod || null, Categoria: g("csCat") || null, Unidade: g("csUn") || "un", EstoqueMin: num("csMin"), CustoUnit: num("csCusto"), Local: g("csLocal") || CONS_LOCAL_PADRAO, FornecedorTexto: g("csForn") || null, Ativo: $("csAtivo").checked, Observacoes: consObsCampo() };
+    try {
+      if (x) await SP.update(CONS.site.id, CONS.list.id, x._id, f);
+      else {
+        const r = await SP.create(CONS.site.id, CONS.list.id, Object.assign({ EstoqueAtual: 0 }, f)), nid = String((r && (r.id || r._id)) || ""), ini = num("csIni");
+        if (ini && !nid) toast("O item foi criado, mas o estoque inicial não foi gravado; registre uma Entrada.", 7000); if (ini && nid) await consGravarMov({ Tipo: "Entrada", ItemId: nid, ItemNome: f.Title, Categoria: f.Categoria, Unidade: f.Unidade, Quantidade: ini, CustoUnit: f.CustoUnit, Data: todayISO(), Motivo: "Estoque inicial" }, true);
+        if (auto && nid) { try { await consCarregar(true); const mesmos = CONS.itens.filter(i => String(i.Codigo || "").toUpperCase() === cod.toUpperCase()).sort((a, b) => Number(a._id) - Number(b._id)); if (mesmos.length > 1 && mesmos[0]._id !== nid) { const novo = consProxCodigo(); await SP.update(CONS.site.id, CONS.list.id, nid, { Codigo: novo }); f.Codigo = novo; } } catch (e) {} }   /* revisão: dois cadastros ao mesmo tempo — o segundo ganha o número seguinte */
+      }
+      if (!x || normName(x.Title) !== normName(f.Title)) await consCatGravar(f);   /* revisão: só o cadastro novo (ou renomeado) atualiza a sugestão — editar um item (custo pago, Ativo) não mexe no catálogo; o administrador ajusta na aba Catálogo */
+      await consCarregar(true); paintCons(); toast(x ? "Consumível atualizado." : "Consumível cadastrado."); return true;
+    } catch (e) { return err("Não foi possível gravar: " + e.message); }
+  });
+  if (!x) ["csUn", "csLocal"].forEach(id => { const el = $(id); if (el) el.dataset.sug = "1"; });   /* "un" e "Armário do RH" são só padrão: a sugestão do catálogo pode trocar */
+  consObsLista(); const ta = $("csObsNova"); if (ta) ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); consObsAdd(); } });
+  ["csCat", "csUn", "csMin", "csCusto", "csLocal"].forEach(id => { const el = $(id); if (el) el.addEventListener("input", () => { el.dataset.sug = ""; }); });
+  if (x && consExc()) document.querySelector("#modal .modal-foot").insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="consExcluir(${esc(jsArg(x._id))})">Excluir</button>`);
+};
+/* detalhe do item: observações como lista */
+{ const v0 = consVer; consVer = function (id) {
+    const r = v0.apply(this, arguments); const x = CONS.itens.find(i => i._id === String(id)); if (!x) return r;
+    try { const dd = [...document.querySelectorAll("#modal .fv-dados dt")].find(d => d.textContent.trim() === "Observações"); const obs = consObsDe(x), leg = consObsLegado(x);
+      if (dd && dd.nextElementSibling) dd.nextElementSibling.innerHTML = obs.length || leg ? `<ul class="tnotas" style="margin:0">${obs.slice().reverse().map(n => consObsHtml(n, 0, false)).join("")}${leg ? consObsHtml({ t: leg, legado: true }, 0, false) : ""}</ul>` : "—"; } catch (e) {}
+    return r;
+  }; window.consVer = consVer; }
+/* aba Catálogo (administrador edita e exclui; quem edita vê e carrega os itens padrão) */
+const consAdm = () => !!session.n1 || permModulo("rh_cons") === "proprietario";
+{ const p0 = paintCons; paintCons = function () {
+    p0.apply(this, arguments);
+    const body = $("consBody"); if (!body || !CONS.list) return;
+    const views = body.querySelector(".cap-views"); if (views && !views.querySelector("[data-aba=cat]")) views.insertAdjacentHTML("beforeend", `<button class="tab ${CONS.aba === "cat" ? "on" : ""}" data-aba="cat" onclick="consAba('cat')">Catálogo</button>`);
+    if (CONS.aba === "cat") { [...body.children].forEach(c => { if (c !== views) c.remove(); }); body.insertAdjacentHTML("beforeend", consCatHtml()); const q = $("consQC"); if (q) q.addEventListener("input", ev => { CONS.fc = ev.target.value; erpDeb("consQC", () => keepFocus(paintCons)); }); }
+  }; window.paintCons = paintCons; }
+function consCatHtml() {
+  const adm = consAdm(), ed = consPode(), cat = consCatalogo(), q = normName(CONS.fc || ""), its = cat.filter(e => !q || normName([e.n, e.cat, e.local].join(" ")).includes(q));
+  const faltam = CONS.listCat ? CONS_CATALOGO_BASE.filter(b => !(CONS.cat || []).some(x => consCatNorm(x.Title) === consCatNorm(b.n)) && !(CONS.catTirados || []).includes(consCatNorm(b.n))).length : 0;
+  const topo = `<div class="filters" role="search"><input type="search" class="span-2" id="consQC" placeholder="Buscar no catálogo…" value="${esc(CONS.fc || "")}"><span class="grow"></span>${CONS.listCat && ed && faltam ? `<button class="btn sm" onclick="consCatCarregarPadrao()">Carregar ${faltam} item(ns) padrão na lista</button>` : ""}${CONS.listCat && adm ? `<button class="btn sm primary" onclick="consCatForm('')">+ Item do catálogo</button>` : ""}</div>
+    <p class="sup" style="margin:0 0 10px">${CONS.listCat ? `Sugestões usadas no cadastro (categoria, unidade, mínimo, custo médio e local). Item digitado no cadastro entra aqui; valores salvos diferentes viram a sugestão seguinte.${adm ? " Clique numa linha para editar." : ""}` : `A lista "${esc(LISTS.rh_cons_cat.displayName)}" ainda não existe — valem os ${CONS_CATALOGO_BASE.length} itens padrão do ERP. ${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › Executar tudo</a>.` : "Peça a um administrador para rodar a Configuração."}`}</p>`;
+  const linha = e => `<tr class="${adm && e._id ? "cons-l" : ""}" ${adm && e._id ? `onclick="consCatForm(${esc(jsArg(e._id))})"` : ""}><td><b>${esc(e.n)}</b>${e._id ? "" : ` <span class="sup">padrão</span>`}</td><td>${esc(e.cat || "—")}</td><td>${esc(e.un || "—")}</td><td class="right">${consQtd(e.min)}</td><td class="right">${e.custo ? esc(fmtBRL(e.custo)) : "—"}</td><td>${esc(e.local || "—")}</td><td class="nw sup">${esc(e.origem || (e._id ? "" : "Padrão do ERP"))}</td></tr>`;
+  return topo + (its.length ? `<div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th>Item</th><th>Categoria</th><th>Unid.</th><th class="right">Mínimo</th><th class="right">Custo médio</th><th>Local</th><th>Origem</th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nada no catálogo com esse filtro</h3></div>`);
+}
+window.consCatCarregarPadrao = async () => {
+  if (!CONS.listCat || !consPode()) return;
+  const faltam = CONS_CATALOGO_BASE.filter(b => !(CONS.cat || []).some(x => consCatNorm(x.Title) === consCatNorm(b.n)) && !(CONS.catTirados || []).includes(consCatNorm(b.n)));
+  let n = 0; for (const b of faltam) { try { await SP.create(CONS.site.id, CONS.listCat.id, { Title: b.n, Categoria: b.cat, Unidade: b.un, EstoqueMin: b.min, CustoUnit: b.custo, Local: b.local, Origem: "Padrão do ERP", AtualizadoEm: todayISO() }); n++; } catch (e) {} }
+  await consCarregar(true); paintCons(); toast(`${n} item(ns) padrão carregado(s) no catálogo.`);
+};
+window.consCatForm = id => {
+  if (!consAdm() || !CONS.listCat) return;
+  const x = id ? (CONS.cat || []).find(i => i._id === String(id)) : null, v = x || { Local: CONS_LOCAL_PADRAO, Unidade: "un" };
+  openModal(x ? `Catálogo · ${x.Title}` : "Novo item do catálogo", `<div class="form-grid">
+      <div class="field full"><label>Item<span class="req">*</span></label><input id="ccT" maxlength="120" value="${esc(v.Title || "")}"></div>
+      <div class="field"><label>Categoria</label><input id="ccCat" list="csCatL2" maxlength="60" value="${esc(v.Categoria || "")}"><datalist id="csCatL2">${CONS_CATS.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
+      <div class="field"><label>Unidade</label><input id="ccUn" list="csUnL2" maxlength="20" value="${esc(v.Unidade || "un")}"><datalist id="csUnL2">${CONS_UNID.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
+      <div class="field"><label>Estoque mínimo</label><input type="number" id="ccMin" min="0" step="0.01" value="${esc(v.EstoqueMin ?? "")}"></div>
+      <div class="field"><label>Custo médio (R$)</label><input type="number" id="ccCusto" min="0" step="0.01" value="${esc(v.CustoUnit ?? "")}"></div>
+      <div class="field full"><label>Local de guarda</label><input id="ccLocal" maxlength="80" value="${esc(v.Local || CONS_LOCAL_PADRAO)}"></div>
+    </div><div class="err" id="ccErr" style="display:none"></div>`, async () => {
+    const g = k => ($(k) ? $(k).value.trim() : ""), err = m => { const e = $("ccErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const nome = g("ccT"); if (!nome) return err("Escreva o nome do item.");
+    if ((CONS.cat || []).some(i => i._id !== (x && x._id) && consCatNorm(i.Title) === consCatNorm(nome))) return err("Já existe esse item no catálogo.");
+    const rem = !x ? (CONS.catRemovidos || []).find(i => consCatNorm(i.Title) === consCatNorm(nome)) : null;
+    const num = k => g(k) === "" ? null : Math.max(0, consNum(g(k)));
+    const f = { Title: nome.slice(0, 120), Categoria: g("ccCat") || null, Unidade: g("ccUn") || "un", EstoqueMin: num("ccMin"), CustoUnit: num("ccCusto"), Local: g("ccLocal") || CONS_LOCAL_PADRAO, Origem: "Editado", AtualizadoEm: todayISO() };
+    try { if (x) await SP.update(CONS.site.id, CONS.listCat.id, x._id, f); else if (rem) await SP.update(CONS.site.id, CONS.listCat.id, rem._id, f); else await SP.create(CONS.site.id, CONS.listCat.id, f); await consCarregar(true); paintCons(); toast("Catálogo atualizado."); return true; }
+    catch (e) { return err("Não foi possível gravar: " + e.message); }
+  });
+  if (x) document.querySelector("#modal .modal-foot").insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="consCatExcluir(${esc(jsArg(x._id))})">Excluir do catálogo</button>`);
+};
+window.consCatExcluir = id => {
+  const x = (CONS.cat || []).find(i => i._id === String(id)); if (!x || !consAdm()) return;
+  (async () => { if (!(await erpConfirmar({ titulo: "Excluir do catálogo", texto: `Tirar "${x.Title}" do catálogo de sugestões? Os consumíveis já cadastrados com esse nome continuam no estoque.`, sim: "Excluir", perigo: true }))) return;
+    try {
+      const ehPadrao = CONS_CATALOGO_BASE.some(b => consCatNorm(b.n) === consCatNorm(x.Title));
+      if (ehPadrao) await SP.update(CONS.site.id, CONS.listCat.id, x._id, { Origem: "Removido" });   /* padrão do código: fica marcado para não voltar com "Carregar itens padrão" */
+      else await graph(`/sites/${CONS.site.id}/lists/${CONS.listCat.id}/items/${x._id}`, { method: "DELETE" });
+      closeModal(); await consCarregar(true); paintCons(); toast("Item tirado do catálogo.");
+    } catch (e) { toast("Erro: " + e.message, 6000); }
+  })();
+};
+/* gravações no catálogo contam como o módulo Consumíveis */
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path) {
+    const l = CONS.listCat;
+    if (l && /^(POST|PATCH|PUT|DELETE)$/i.test(method || "") && String(path || "").includes(l.id)) { const m0 = session.modAtual; session.modAtual = "rh_cons"; try { return g0.apply(this, arguments); } finally { session.modAtual = m0; } }
+    return g0.apply(this, arguments);
+  }; }
+{ const m0 = MOD_RESET.rh_cons; MOD_RESET.rh_cons = () => { if (m0) m0(); CONS.fc = ""; }; }
+{ const st = document.createElement("style"); st.textContent = `#csObsLista{max-height:220px}.cons-tab tr.cons-l{cursor:pointer}`; document.head.appendChild(st); }
+/* ---- v0.14.13.1 · Painel de Consumíveis R2 (pedido de 23/10, 11:43): saúde do estoque, alertas, entradas × saídas, linha do tempo,
+   quem retira, rótulos de dados e expansão dos gráficos como no Painel da CAP ---- */
+function consPainelDados() {
+  const hoje = todayISO(), meses = []; for (let i = 11; i >= 0; i--) { const d = new Date(Number(hoje.slice(0, 4)), Number(hoje.slice(5, 7)) - 1 - i, 1); meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`); }
+  const lim = meses[0] + "-01", custo = m => Math.abs(consNum(m.Quantidade)) * consNum(m.CustoUnit), dias = (a, b) => Math.round((dLocal(a) - dLocal(b)) / 864e5);
+  const movs12 = CONS.movs.filter(m => consDia(m) >= lim), saidas = movs12.filter(m => m.Tipo === "Saída"), entradas = movs12.filter(m => m.Tipo === "Entrada");
+  const porMes = meses.map(c => { const s = saidas.filter(m => consDia(m).startsWith(c)), e = entradas.filter(m => consDia(m).startsWith(c)); return { c, n: s.length, qtd: s.reduce((t, m) => t + Math.abs(consNum(m.Quantidade)), 0), valor: s.reduce((t, m) => t + custo(m), 0), ent: e.reduce((t, m) => t + custo(m), 0), entN: e.length }; });
+  const agr = (fn, arr) => { const M = new Map(); (arr || saidas).forEach(m => { const g = fn(m) || "—"; const o = M.get(g) || { k: g, n: 0, qtd: 0, valor: 0, ult: "" }; o.n++; o.qtd += Math.abs(consNum(m.Quantidade)); o.valor += custo(m); if (consDia(m) > o.ult) o.ult = consDia(m); M.set(g, o); }); return [...M.values()].sort((a, b) => b.valor - a.valor || b.qtd - a.qtd); };
+  const L = consLinhas(), ativos = L.filter(x => x.Ativo !== false), lim90 = (() => { const d = new Date(); d.setDate(d.getDate() - 90); return ymd(d); })();
+  /* cobertura: saldo ÷ consumo médio por dia (saídas dos últimos 90 dias) */
+  ativos.forEach(x => { const s90 = CONS.movs.filter(m => String(m.ItemId) === String(x._id) && m.Tipo === "Saída" && consDia(m) >= lim90).reduce((t, m) => t + Math.abs(consNum(m.Quantidade)), 0); x.ritmo = s90 / 90; x.cobertura = x.ritmo > 0 ? Math.floor(x.saldo / x.ritmo) : null; const ult = CONS.movs.filter(m => String(m.ItemId) === String(x._id)).map(consDia).sort().pop() || ""; x.ultMov = ult; x.paradoDias = ult ? dias(hoje, ult) : null; });
+  const emDia = ativos.filter(x => x.sit === "ok"), baixo = ativos.filter(x => x.sit === "baixo"), zerados = ativos.filter(x => x.sit === "zerado"), negativos = ativos.filter(x => x.saldo < 0);
+  const pct = ativos.length ? Math.round(100 * emDia.length / ativos.length) : 100, faixa = pct >= 80 ? "ok" : pct >= 60 ? "at" : "cr";
+  const alertas = [];
+  negativos.forEach(x => alertas.push({ n: "cr", t: `${x.Title}: estoque negativo (${consQtd(x.saldo, x.Unidade)}) — acerte com um Ajuste de inventário`, id: x._id }));
+  zerados.filter(x => x.saldo >= 0).forEach(x => alertas.push({ n: "cr", t: `${x.Title}: zerado${x.ritmo > 0 ? ` · consumo de ${consQtd(Math.round(x.ritmo * 30 * 10) / 10, x.Unidade)}/mês` : ""}`, id: x._id }));
+  baixo.forEach(x => alertas.push({ n: "at", t: `${x.Title}: abaixo do mínimo (${consQtd(x.saldo, x.Unidade)} de ${consQtd(x.EstoqueMin, x.Unidade)})${x.cobertura != null ? ` · dura ~${x.cobertura} dia(s)` : ""}`, id: x._id }));
+  ativos.filter(x => x.sit === "ok" && x.cobertura != null && x.cobertura <= 15).forEach(x => alertas.push({ n: "at", t: `${x.Title}: no ritmo atual zera em ~${x.cobertura} dia(s) (${consQtd(x.saldo, x.Unidade)} em estoque)`, id: x._id }));
+  const parados = ativos.filter(x => x.saldo > 0 && (x.paradoDias == null || x.paradoDias >= 90));
+  if (parados.length) alertas.push({ n: "info", t: `${parados.length} item(ns) com estoque e sem movimentação há 90 dias ou mais: ${parados.slice(0, 5).map(x => x.Title).join(", ")}${parados.length > 5 ? "…" : ""}` });
+  const semCusto = ativos.filter(x => !consNum(x.CustoUnit)), semMin = ativos.filter(x => !consNum(x.EstoqueMin));
+  if (semCusto.length) alertas.push({ n: "info", t: `${semCusto.length} item(ns) sem custo unitário (não entram no valor em estoque): ${semCusto.slice(0, 5).map(x => x.Title).join(", ")}${semCusto.length > 5 ? "…" : ""}` });
+  if (semMin.length) alertas.push({ n: "info", t: `${semMin.length} item(ns) sem estoque mínimo (sem alerta de reposição): ${semMin.slice(0, 5).map(x => x.Title).join(", ")}${semMin.length > 5 ? "…" : ""}` });
+  const m = hoje.slice(0, 7), mes = porMes[11], cob = ativos.filter(x => x.cobertura != null).map(x => x.cobertura), cobMed = cob.length ? Math.round(cob.reduce((a, b) => a + b, 0) / cob.length) : null;
+  const funcs = agr(x => x.FuncNome).filter(x => x.k !== "—").slice(0, 10);
+  const repor = ativos.filter(x => x.sit === "baixo" || x.sit === "zerado").map(x => Object.assign({ sugestao: Math.max(0, Math.round((consNum(x.EstoqueMin) * 2 - x.saldo) * 100) / 100) }, x)).sort((a, b) => (a.cobertura ?? -1) - (b.cobertura ?? -1));
+  const linhaTempo = CONS.movs.slice(0, 20);
+  return { meses, porMes, itens: agr(x => x.ItemNome).slice(0, 10), deps: agr(x => x.Departamento), cats: agr(x => x.Categoria), funcs, ativos, emDia, baixo, zerados, negativos, pct, faixa, alertas, parados, cobMed, repor, linhaTempo,
+    valorEstoque: ativos.reduce((s, x) => s + x.valor, 0), saidas12: saidas.length, valor12: saidas.reduce((s, m) => s + custo(m), 0), valorMes: mes.valor, entMes: mes.ent, mediaMes: saidas.length ? saidas.reduce((s, m) => s + custo(m), 0) / 12 : 0, m };
+}
+function consPainelHtml() {
+  const D = consPainelDados();
+  const kpi = (l, v, sub, cls, on) => `<${on ? "button" : "div"} class="kpi ${on ? "" : "static"} ${cls || ""}" ${on ? `onclick="${on}"` : ""}><div class="lbl">${esc(l)}</div><div class="val">${v}</div><div class="sub">${esc(sub)}</div></${on ? "button" : "div"}>`;
+  const sem = D.faixa === "ok" ? "pago" : D.faixa === "at" ? "hoje" : "venc";
+  const saude = `<div class="cap-kpis cons-kpis">${kpi("Saúde do estoque", `${D.pct}%`, `${D.emDia.length} de ${D.ativos.length} itens em dia · ${D.faixa === "ok" ? "bom" : D.faixa === "at" ? "atenção" : "crítico"}`, sem)}${kpi("Abaixo do mínimo", D.baixo.length, "repor", D.baixo.length ? "hoje" : "", "CONS.f.sit='baixo'; consAba('est')")}${kpi("Zerados", D.zerados.length, "sem estoque", D.zerados.length ? "venc" : "", "CONS.f.sit='zerado'; consAba('est')")}${kpi("Cobertura média", D.cobMed == null ? "—" : `${D.cobMed} d`, "dias de estoque no ritmo dos últimos 90 dias")}${kpi("Parados", D.parados.length, "com estoque, sem movimento há 90+ dias")}${kpi("Valor em estoque", `<span class="money">${esc(fmtBRL(D.valorEstoque))}</span>`, "itens ativos, pelo custo unitário", "pago")}</div>
+    <div class="cap-kpis cons-kpis">${kpi("Entradas no mês", `<span class="money">${esc(fmtBRL(D.entMes))}</span>`, compLabel(D.m), "", "consFM('tipo','Entrada')")}${kpi("Saídas no mês", `<span class="money">${esc(fmtBRL(D.valorMes))}</span>`, compLabel(D.m), "", "consFM('tipo','Saída')")}${kpi("Saldo do mês", `<span class="money">${esc(fmtBRL(D.entMes - D.valorMes))}</span>`, "entradas − saídas", D.entMes - D.valorMes < 0 ? "hoje" : "")}${kpi("Média mensal de saídas", `<span class="money">${esc(fmtBRL(D.mediaMes))}</span>`, "últimos 12 meses")}${kpi("Saídas (12 meses)", D.saidas12, `${esc(fmtBRL(D.valor12))} no período`, "", "consFM('per','365')")}</div>`;
+  const card = (t, s, inner, cls) => `<div class="cap-card ${cls || ""}"><div class="cap-card-h"><h3>${t}</h3><span class="cap-card-s">${s}</span></div>${inner}</div>`;
+  const alertas = card("Alertas", `${D.alertas.length ? D.alertas.length + " aviso(s)" : "nada a tratar"} · vermelho = crítico, amarelo = atenção, cinza = cadastro`, D.alertas.length ? `<ul class="cons-alertas">${D.alertas.map(a => `<li class="${a.n}" ${a.id ? `onclick="consVer(${esc(jsArg(a.id))})" tabindex="0"` : ""}><i></i>${esc(a.t)}</li>`).join("")}</ul>` : `<p class="cap-muted">Nenhum alerta: estoque em dia.</p>`);
+  const tab = (rows, col, extra) => rows.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>${col}</th><th class="right">Retiradas</th><th class="right">Qtd.</th><th class="right">Valor</th>${extra ? "<th>Última</th>" : ""}</tr></thead><tbody>${rows.map(r => `<tr class="cons-l" onclick="${extra ? `consFM('func',${esc(jsArg(r.k))})` : `consFM('q',${esc(jsArg(r.k))})`}"><td>${esc(r.k)}</td><td class="right">${r.n}</td><td class="right">${consQtd(r.qtd)}</td><td class="right">${esc(fmtBRL(r.valor))}</td>${extra ? `<td class="nw">${r.ult ? esc(fmtDate(r.ult)) : "—"}</td>` : ""}</tr>`).join("")}</tbody></table></div>` : `<p class="cap-muted">Sem saídas nos últimos 12 meses.</p>`;
+  const repor = D.repor.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Item</th><th class="right">Estoque</th><th class="right">Mínimo</th><th class="right">Dura</th><th class="right">Sugestão de compra</th><th>Situação</th></tr></thead><tbody>${D.repor.map(x => `<tr class="cons-l" onclick="consVer(${esc(jsArg(x._id))})"><td>${esc(x.Title)}</td><td class="right">${consQtd(x.saldo, x.Unidade)}</td><td class="right">${consQtd(x.EstoqueMin, x.Unidade)}</td><td class="right">${x.cobertura == null ? "—" : x.cobertura + " d"}</td><td class="right">${x.sugestao ? consQtd(x.sugestao, x.Unidade) : "—"}</td><td>${consSitPill(x.sit)}</td></tr>`).join("")}</tbody></table></div><p class="sup" style="margin:6px 0 0">Sugestão = 2 × mínimo − estoque. "Dura" = estoque ÷ consumo médio por dia dos últimos 90 dias.</p>` : `<p class="cap-muted">Nenhum item abaixo do mínimo.</p>`;
+  const tempo = D.linhaTempo.length ? `<ul class="cons-tempo">${D.linhaTempo.map(m => `<li onclick="consMovVer(${esc(jsArg(m._id))})" tabindex="0"><span class="d">${esc(m.Data ? fmtDate(m.Data) : "—")}</span>${consTipoPill(m.Tipo)}<b>${esc(m.ItemNome || "—")}</b><span class="q">${m.Tipo === "Saída" ? "−" : consNum(m.Quantidade) < 0 ? "−" : "+"}${consQtd(Math.abs(consNum(m.Quantidade)), m.Unidade)}</span><span class="sup">${esc([m.FuncNome, m.Departamento, m.Motivo].filter(Boolean).join(" · "))}</span><span class="sup por">${esc(m.RegistradoPor || "")}</span></li>`).join("")}</ul><p class="sup" style="margin:6px 0 0"><button class="lnk" onclick="consFM('per','')">Ver todas as movimentações</button></p>` : `<p class="cap-muted">Nenhuma movimentação ainda.</p>`;
+  return saude + `<div class="cap-grid cons-grid">${alertas}${card("Para repor", "abaixo do mínimo ou zerados, os mais urgentes primeiro", repor)}</div>
+    <div class="cap-grid cons-grid">${card("Entradas × Saídas por mês", "últimos 12 meses · em R$ pelo custo unitário · clique numa barra para ver o mês", `<div class="cap-chart"><canvas id="consChMes" height="230"></canvas></div>`)}${card("Itens mais retirados", "12 meses · quantidade · clique para ver as movimentações", `<div class="cap-chart" style="height:${Math.max(230, 26 * D.itens.length + 60)}px"><canvas id="consChItens"></canvas></div>`)}</div>
+    <div class="cap-grid cons-grid">${card("Por departamento", "12 meses · valor das saídas", `<div class="cap-chart"><canvas id="consChDep" height="230"></canvas></div>`)}${card("Por categoria", "12 meses · valor das saídas", `<div class="cap-chart"><canvas id="consChCat" height="230"></canvas></div>`)}</div>
+    <div class="cap-grid cons-grid">${card("Quem mais retirou", "12 meses · clique para ver as retiradas da pessoa", tab(D.funcs, "Funcionário", true))}${card("Linha do tempo", "últimas 20 movimentações, da mais recente para a mais antiga", tempo)}</div>`;
+}
+function consPainelCharts() {
+  if (!window.Chart || !Chart.getChart) return;
+  const D = consPainelDados(), css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+  const COL = { a: css("--navy") || "#0B1628", b: css("--orange") || "#F0541B", c: css("--ok") || "#197A46", d: css("--warn") || "#9A6A00", e: "#5B6068", f: "#1A2E52", g: "#8A5E00", h: "#B3271E" }, cores = Object.values(COL), eixo = "#3B4352";
+  const mk = (id, cfg) => { const el = $(id); if (!el) return; const old = Chart.getChart(el); if (old) old.destroy(); try { new Chart(el, cfg); } catch (e) { console.warn("chart", id, e); } };
+  const brl = v => fmtBRL(v), qtd = v => Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+  /* rótulos de dados como no Painel da CAP (erpKeep: o gráfico ampliado mantém o mesmo formato) */
+  const rot = (fmt, horiz, pizza) => ({ erpKeep: true, display: ctx => { const v = ctx.dataset.data[ctx.dataIndex]; return v != null && v !== 0; }, anchor: pizza ? "center" : "end", align: pizza ? "center" : (horiz ? "right" : "top"), offset: 2, clamp: true, clip: false, color: pizza ? "#fff" : "#1D242B", font: { size: 10.5, weight: "700" }, formatter: v => fmt(v), backgroundColor: pizza ? "rgba(0,0,0,.25)" : "rgba(255,255,255,.8)", borderRadius: 3, padding: { top: 1, bottom: 0, left: 3, right: 3 } });
+  const common = (onClick, fmt, dl) => ({ responsive: true, maintainAspectRatio: false, animation: false, onClick, layout: { padding: { top: 14, right: 24 } }, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 12 }, color: eixo } }, tooltip: { callbacks: { label: c => ` ${c.dataset.label || c.label}: ${fmt(c.parsed.x !== undefined && c.chart.config.options.indexAxis === "y" ? c.parsed.x : (c.parsed.y ?? c.parsed))}` } }, datalabels: dl } });
+  const tk = { font: { size: 11 }, color: eixo };
+  mk("consChMes", { type: "bar", data: { labels: D.porMes.map(e => e.c.slice(5, 7) + "/" + e.c.slice(2, 4)), datasets: [
+      { label: "Entradas (R$)", data: D.porMes.map(e => Math.round(e.ent * 100) / 100), backgroundColor: COL.c }, { label: "Saídas (R$)", data: D.porMes.map(e => Math.round(e.valor * 100) / 100), backgroundColor: COL.a }] },
+    options: Object.assign(common((ev, els, chart) => { if (!els.length) return; const c = D.porMes[els[0].index].c, d = new Date(); const dias = Math.max(1, Math.round((d - new Date(Number(c.slice(0, 4)), Number(c.slice(5, 7)) - 1, 1)) / 864e5)); CONS.fm = { q: "", tipo: els[0].datasetIndex === 0 ? "Entrada" : "Saída", item: "", func: "", per: String(dias) }; CONS.aba = "mov"; paintCons(); }, brl, rot(v => capMoneyShort(v))), { scales: { x: { ticks: tk }, y: { ticks: Object.assign({ callback: v => capMoneyShort(v) }, tk) } } }) });
+  if (D.itens.length) mk("consChItens", { type: "bar", data: { labels: D.itens.map(r => r.k), datasets: [{ label: "Quantidade", data: D.itens.map(r => Math.round(r.qtd * 100) / 100), backgroundColor: COL.b }] },
+    options: Object.assign(common((ev, els) => { if (!els.length) return; const it = CONS.itens.find(x => x.Title === D.itens[els[0].index].k); CONS.fm = { q: it ? "" : D.itens[els[0].index].k, tipo: "Saída", item: it ? it._id : "", func: "", per: "365" }; CONS.aba = "mov"; paintCons(); }, qtd, rot(qtd, true)), { indexAxis: "y", scales: { x: { ticks: Object.assign({ maxTicksLimit: 5 }, tk) }, y: { ticks: tk } } }) });
+  const pizza = (id, rows) => rows.length && mk(id, { type: "doughnut", data: { labels: rows.map(r => r.k), datasets: [{ data: rows.map(r => Math.round(r.valor * 100) / 100), backgroundColor: rows.map((r, i) => cores[i % cores.length]) }] }, options: common(null, brl, rot(v => capMoneyShort(v), false, true)) });
+  pizza("consChDep", D.deps.slice(0, 8)); pizza("consChCat", D.cats.slice(0, 8));
+  if (window.erpChartButtons) setTimeout(() => erpChartButtons("#consBody"), 50);   /* ⛶ expandir, como no Painel da CAP */
+}
+{ const st = document.createElement("style"); st.textContent = `.cons-alertas{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:300px;overflow:auto}.cons-alertas li{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:6px 8px;border-radius:6px;background:#FAFAF8;border:1px solid var(--line)}.cons-alertas li[onclick]{cursor:pointer}.cons-alertas li[onclick]:hover{background:#F6F7FB}.cons-alertas li i{flex:none;width:9px;height:9px;border-radius:50%;margin-top:5px;background:#A0A7B2}.cons-alertas li.cr i{background:#B3271E}.cons-alertas li.at i{background:#E8A013}
+.cons-tempo{list-style:none;margin:0;padding:0;max-height:360px;overflow:auto}.cons-tempo li{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}.cons-tempo li:hover{background:#F6F7FB}.cons-tempo .d{font-weight:700;color:var(--ink-2);min-width:62px}.cons-tempo .q{font-weight:800}.cons-tempo .por{margin-left:auto}
+.cons-kpis.cap-kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}@media (max-width:640px){.cons-tempo .por{margin-left:0}}`; document.head.appendChild(st); }
+CONFIG.version = "v0.14.13.1";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

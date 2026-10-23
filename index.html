@@ -6707,6 +6707,13 @@ function obrResumo(o, contas, hj, erpBase) {
     else if (cl.dias !== null && cl.dias < 0) { R.vencidas++; R.vVencido += v; R.atrasoMax = Math.max(R.atrasoMax, -cl.dias); const vv = c.it.Vencimento ? ymd(c.it.Vencimento) : null; if (!R.primeiraVencida && vv && (!R.vencExtra || vv < R.vencExtra)) R.vencExtra = vv; }
     else { R.abertas++; R.vAberto += v; } });
   R.saldo = modo === "parcelas" ? R.vAberto + R.vVencido + (R.naoLanc + R.previstas) * vp : null;
+  /* v0.14.15 (pedido 23/10 16:27): saldo do mês corrente — parcelas em aberto (lançadas ou previstas) com vencimento no mês de hoje */
+  { const mes = String(hj).slice(0, 7); let sm = 0;
+    for (const r of lista) { if (!r.venc || String(r.venc).slice(0, 7) !== mes) continue;
+      if (r.contas.length) r.contas.forEach(c => { if (c.it.Status !== "Pago" && !isIsenta(c.it)) sm += Number(c.it.Valor || 0); });
+      else if (r.st === "naolanc" || r.st === "prevista") sm += vp || 0; }
+    extras.forEach(c => { const vv = c.it.Vencimento ? ymd(c.it.Vencimento) : ""; if (vv.slice(0, 7) === mes && c.it.Status !== "Pago" && !isIsenta(c.it)) sm += Number(c.it.Valor || 0); });
+    R.saldoMes = Math.round(sm * 100) / 100; }
   return R;
 }
 function obrSituacao(o, R) {
@@ -6859,14 +6866,14 @@ function paintObr() {
   const soma = (arr, f) => arr.reduce((s, o) => s + (f(o) || 0), 0);
   const mensal = soma(ativas.filter(o => o.Tipo !== "Anual"), o => Number(o.ValorParcela || 0));
   const vencido = soma(ativas, o => R(o).vVencido), naoLanc = soma(ativas.filter(o => R(o).sit.k === "atencao"), o => R(o).naoLanc);
-  const comSaldo = ativas.filter(o => R(o).saldo != null), saldo = soma(comSaldo, o => R(o).saldo);
+  const comSaldoMes = ativas.filter(o => R(o).saldoMes > 0), saldo = soma(comSaldoMes, o => R(o).saldoMes);   /* v0.14.15: só o mês corrente */
   const K = (lbl, val, sub, cls, sit) => `<button class="kpi ${cls || ""} ${U.view === "todas" && sit && U.sit === sit ? "on" : ""}" onclick="obrFiltrar('${sit || ""}')"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div><div class="sub">${esc(sub)}</div></button>`;
   const kpis = `<div class="cap-kpis">
     ${K("Obrigações ativas", ativas.length, `${capMoneyShort(mensal)} por mês`, "", "")}
     ${K("Em atraso", n("atraso"), vencido ? `${fmtBRL(vencido)} vencido` : "nenhuma parcela vencida", n("atraso") ? "venc" : "", "atraso")}
     ${K("Atenção", n("atencao"), naoLanc ? `${naoLanc} parcela(s) vencida(s) sem lançamento na CAP` : "1 vencida há até 5 dias ou vence sem lançamento", "", "atencao")}
     ${K("Em dia", n("emdia"), n("sem") ? `${n("sem")} obrigação(ões) sem lançamentos na CAP` : "parcelas pagas ou já na CAP", "pago", "emdia")}
-    ${K("Saldo a pagar", capMoneyShort(saldo), `${comSaldo.length} obrigação(ões) com nº de parcelas`, "", "")}
+    ${K("Saldo a pagar", capMoneyShort(saldo), `${compLabel(todayISO().slice(0, 7))} · ${comSaldoMes.length} obrigação(ões) com parcela em aberto no mês`, "", "")}
   </div>`;
   const aviso = OBR_STATE.capErro ? `<div class="import-help" style="margin-bottom:14px">Não foi possível ler a Contas a Pagar (${esc(OBR_STATE.capErro)}). Sem as contas, a situação de pagamento fica como "Sem lançamentos".</div>` : "";
   const views = `<div class="cap-views"><button class="${U.view === "carteiras" ? "on" : ""}" onclick="obrSetView('carteiras')">Carteiras</button><button class="${U.view === "todas" ? "on" : ""}" onclick="obrSetView('todas')">Todas as obrigações (${D.obrs.length})</button></div>`;
@@ -8209,14 +8216,14 @@ function paintObr() {
   const soma = (arr, f) => arr.reduce((s, o) => s + (f(o) || 0), 0);
   const mensal = soma(ativas.filter(o => o.Tipo !== "Anual"), o => Number(o.ValorParcela || 0));
   const vencido = soma(ativas, o => R(o).vVencido), naoLanc = soma(ativas.filter(o => R(o).sit.k === "atencao"), o => R(o).naoLanc);
-  const comSaldo = ativas.filter(o => R(o).saldo != null), saldo = soma(comSaldo, o => R(o).saldo);
+  const comSaldoMes = ativas.filter(o => R(o).saldoMes > 0), saldo = soma(comSaldoMes, o => R(o).saldoMes);   /* v0.14.15: só o mês corrente */
   const K = (lbl, val, sub, cls, sit) => `<button class="kpi ${cls || ""} ${U.view === "todas" && sit && U.sit === sit ? "on" : ""}" onclick="obrFiltrar('${sit || ""}')"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div><div class="sub">${esc(sub)}</div></button>`;
   const kpis = `<div class="cap-kpis">
     ${K("Obrigações ativas", ativas.length, `${capMoneyShort(mensal)} por mês`, "", "")}
     ${K("Em atraso", n("atraso"), vencido ? `${fmtBRL(vencido)} vencido` : "nenhuma parcela vencida", n("atraso") ? "venc" : "", "atraso")}
     ${K("Atenção", n("atencao"), naoLanc ? `${naoLanc} parcela(s) vencida(s) sem lançamento na CAP` : "1 vencida há até 5 dias ou vence sem lançamento", "", "atencao")}
     ${K("Em dia", n("emdia"), n("sem") ? `${n("sem")} obrigação(ões) sem lançamentos na CAP` : "parcelas pagas ou já na CAP", "pago", "emdia")}
-    ${K("Saldo a pagar", capMoneyShort(saldo), `${comSaldo.length} obrigação(ões) com nº de parcelas`, "", "")}
+    ${K("Saldo a pagar", capMoneyShort(saldo), `${compLabel(todayISO().slice(0, 7))} · ${comSaldoMes.length} obrigação(ões) com parcela em aberto no mês`, "", "")}
   </div>`;
   const aviso = OBR_STATE.capErro ? `<div class="import-help" style="margin-bottom:14px">Não foi possível ler a Contas a Pagar (${esc(OBR_STATE.capErro)}). Sem as contas, a situação de pagamento fica como "Sem lançamentos".</div>` : "";
   const views = `<div class="obr-topo"><div class="cap-views"><button class="${U.view === "carteiras" && !U.busca ? "on" : ""}" onclick="obrSetView('carteiras')">Carteiras</button><button class="${U.view === "todas" && !U.busca ? "on" : ""}" onclick="obrSetView('todas')">Todas as obrigações (${vis.length})</button></div>
@@ -16463,6 +16470,8 @@ function paintCAP() {
       ${kpi("hoje", "", "Próximos 3 dias", k.hoje)}
       ${kpi("sete", "", "De 4 a 7 dias", k.sete)}
       ${kpi("pagas", "pago", "Pagas no mês", k.pagas)}
+      ${(() => { const mes = todayISO().slice(0, 7); const its = CAP_STATE.items.filter(it => { const c = classifyItem(it); return !c.pago && !c.isenta && !capEhTransf(it) && it.Vencimento && ymd(it.Vencimento).slice(0, 7) === mes; }); const v = its.reduce((t, it) => t + Number(it.Valor || 0), 0);
+        return `<button class="kpi ${!f.kpi && f.venc === "mes" ? "on" : ""}" onclick="capKpiMes()" title="Lançamentos em aberto com vencimento no mês corrente"><div class="lbl">Saldo a pagar</div><div class="val money">${esc(capMoneyShort(v))}</div><div class="sub">${esc(compLabel(mes))} · ${its.length} lançamento(s) em aberto</div></button>`; })()}
     </div>
     <div class="cap-chipbar">
       <div class="row"><span class="lbl">Situação</span>${chipsHtml("capSitChips", sitOpts, capLista(f.sit), "capChipSit", "Todas")}</div>
@@ -39629,7 +39638,7 @@ CONFIG.version = "v0.14.12.12";
    Listas (site RH, criadas pela Configuração): "RH — Consumíveis" e "RH — Consumíveis Movimentações".
    ===================================================================== */
 MODULES.push({ id: "rh_cons", path: "#/rh/consumiveis", icon: "box", name: "Consumíveis", area: "Recursos Humanos", groups: ["rh", "diretoria"], status: "piloto", wide: true });
-const CONS_CATS = ["EPI", "Uniforme", "Limpeza e higiene", "Escritório e papelaria", "Copa e cozinha", "Informática", "Manutenção e ferramentas", "Outros"];
+const CONS_CATS = ["EPI", "Uniforme", "Limpeza e Higiene", "Escritório e Papelaria", "Copa e Cozinha", "Informática", "Manutenção e Ferramentas", "Outros"];
 const CONS_UNID = ["un", "par", "cx", "pct", "kg", "g", "l", "ml", "m", "rolo", "galão"];
 const CONS_TIPOS = ["Entrada", "Saída", "Devolução", "Ajuste"];
 LISTS.rh_cons = {
@@ -40076,23 +40085,23 @@ const CONS_CATALOGO_BASE = [
   ["Máscara PFF2", "EPI", "un", 30, 2.8], ["Botina de segurança", "EPI", "par", 6, 95], ["Capa de chuva", "EPI", "un", 5, 35], ["Colete refletivo", "EPI", "un", 5, 22], ["Protetor solar FPS 30", "EPI", "un", 6, 28],
   /* Uniforme */
   ["Camisa polo (uniforme)", "Uniforme", "un", 10, 45], ["Calça (uniforme)", "Uniforme", "un", 8, 75], ["Jaqueta (uniforme)", "Uniforme", "un", 4, 120], ["Crachá com cordão", "Uniforme", "un", 10, 8], ["Boné (uniforme)", "Uniforme", "un", 5, 20],
-  /* Limpeza e higiene */
-  ["Papel higiênico (rolo 30 m)", "Limpeza e higiene", "rolo", 48, 1.2], ["Papel toalha interfolha (pct 1000)", "Limpeza e higiene", "pct", 6, 22], ["Sabonete líquido 5 l", "Limpeza e higiene", "galão", 2, 38],
-  ["Álcool gel 5 l", "Limpeza e higiene", "galão", 2, 55], ["Detergente 5 l", "Limpeza e higiene", "galão", 2, 18], ["Desinfetante 5 l", "Limpeza e higiene", "galão", 3, 24], ["Água sanitária 5 l", "Limpeza e higiene", "galão", 3, 14],
-  ["Saco de lixo 100 l (pct 100)", "Limpeza e higiene", "pct", 3, 45], ["Saco de lixo 40 l (pct 100)", "Limpeza e higiene", "pct", 3, 22], ["Pano de chão", "Limpeza e higiene", "un", 10, 6.5], ["Esponja dupla face", "Limpeza e higiene", "un", 12, 1.5],
-  ["Vassoura", "Limpeza e higiene", "un", 3, 18], ["Rodo", "Limpeza e higiene", "un", 3, 20], ["Luva de látex (limpeza)", "Limpeza e higiene", "par", 10, 5], ["Desengraxante 5 l", "Limpeza e higiene", "galão", 2, 60], ["Limpa-vidros 500 ml", "Limpeza e higiene", "un", 4, 9],
-  /* Escritório e papelaria */
-  ["Papel A4 (resma 500)", "Escritório e papelaria", "pct", 10, 28], ["Caneta esferográfica", "Escritório e papelaria", "un", 24, 1.8], ["Lápis", "Escritório e papelaria", "un", 12, 0.9], ["Grampo 26/6 (cx 5000)", "Escritório e papelaria", "cx", 4, 6],
-  ["Clipe (cx 100)", "Escritório e papelaria", "cx", 4, 5.5], ["Pasta suspensa", "Escritório e papelaria", "un", 20, 3.5], ["Envelope ofício", "Escritório e papelaria", "un", 50, 0.35], ["Bloco de notas adesivas", "Escritório e papelaria", "un", 10, 6],
-  ["Marcador de texto", "Escritório e papelaria", "un", 6, 3.5], ["Toner de impressora", "Escritório e papelaria", "un", 2, 180], ["Fita adesiva", "Escritório e papelaria", "rolo", 6, 7], ["Pilha AA", "Escritório e papelaria", "un", 16, 4], ["Pilha AAA", "Escritório e papelaria", "un", 16, 4],
-  /* Copa e cozinha */
-  ["Café torrado 500 g", "Copa e cozinha", "pct", 12, 22], ["Açúcar 1 kg", "Copa e cozinha", "kg", 10, 5.5], ["Adoçante", "Copa e cozinha", "un", 2, 9], ["Copo descartável 180 ml (pct 100)", "Copa e cozinha", "pct", 10, 7.5],
-  ["Copo descartável 50 ml (pct 100)", "Copa e cozinha", "pct", 6, 4.5], ["Filtro de café (cx 30)", "Copa e cozinha", "cx", 6, 7], ["Água mineral (galão 20 l)", "Copa e cozinha", "galão", 6, 14], ["Chá (cx 10 sachês)", "Copa e cozinha", "cx", 3, 8], ["Guardanapo (pct 50)", "Copa e cozinha", "pct", 6, 4],
+  /* Limpeza e Higiene */
+  ["Papel higiênico (rolo 30 m)", "Limpeza e Higiene", "rolo", 48, 1.2], ["Papel toalha interfolha (pct 1000)", "Limpeza e Higiene", "pct", 6, 22], ["Sabonete líquido 5 l", "Limpeza e Higiene", "galão", 2, 38],
+  ["Álcool gel 5 l", "Limpeza e Higiene", "galão", 2, 55], ["Detergente 5 l", "Limpeza e Higiene", "galão", 2, 18], ["Desinfetante 5 l", "Limpeza e Higiene", "galão", 3, 24], ["Água sanitária 5 l", "Limpeza e Higiene", "galão", 3, 14],
+  ["Saco de lixo 100 l (pct 100)", "Limpeza e Higiene", "pct", 3, 45], ["Saco de lixo 40 l (pct 100)", "Limpeza e Higiene", "pct", 3, 22], ["Pano de chão", "Limpeza e Higiene", "un", 10, 6.5], ["Esponja dupla face", "Limpeza e Higiene", "un", 12, 1.5],
+  ["Vassoura", "Limpeza e Higiene", "un", 3, 18], ["Rodo", "Limpeza e Higiene", "un", 3, 20], ["Luva de látex (limpeza)", "Limpeza e Higiene", "par", 10, 5], ["Desengraxante 5 l", "Limpeza e Higiene", "galão", 2, 60], ["Limpa-vidros 500 ml", "Limpeza e Higiene", "un", 4, 9],
+  /* Escritório e Papelaria */
+  ["Papel A4 (resma 500)", "Escritório e Papelaria", "pct", 10, 28], ["Caneta esferográfica", "Escritório e Papelaria", "un", 24, 1.8], ["Lápis", "Escritório e Papelaria", "un", 12, 0.9], ["Grampo 26/6 (cx 5000)", "Escritório e Papelaria", "cx", 4, 6],
+  ["Clipe (cx 100)", "Escritório e Papelaria", "cx", 4, 5.5], ["Pasta suspensa", "Escritório e Papelaria", "un", 20, 3.5], ["Envelope ofício", "Escritório e Papelaria", "un", 50, 0.35], ["Bloco de notas adesivas", "Escritório e Papelaria", "un", 10, 6],
+  ["Marcador de texto", "Escritório e Papelaria", "un", 6, 3.5], ["Toner de impressora", "Escritório e Papelaria", "un", 2, 180], ["Fita adesiva", "Escritório e Papelaria", "rolo", 6, 7], ["Pilha AA", "Escritório e Papelaria", "un", 16, 4], ["Pilha AAA", "Escritório e Papelaria", "un", 16, 4],
+  /* Copa e Cozinha */
+  ["Café torrado 500 g", "Copa e Cozinha", "pct", 12, 22], ["Açúcar 1 kg", "Copa e Cozinha", "kg", 10, 5.5], ["Adoçante", "Copa e Cozinha", "un", 2, 9], ["Copo descartável 180 ml (pct 100)", "Copa e Cozinha", "pct", 10, 7.5],
+  ["Copo descartável 50 ml (pct 100)", "Copa e Cozinha", "pct", 6, 4.5], ["Filtro de café (cx 30)", "Copa e Cozinha", "cx", 6, 7], ["Água mineral (galão 20 l)", "Copa e Cozinha", "galão", 6, 14], ["Chá (cx 10 sachês)", "Copa e Cozinha", "cx", 3, 8], ["Guardanapo (pct 50)", "Copa e Cozinha", "pct", 6, 4],
   /* Informática */
   ["Mouse", "Informática", "un", 2, 35], ["Teclado", "Informática", "un", 2, 60], ["Cabo de rede", "Informática", "un", 3, 12], ["Pen drive 32 GB", "Informática", "un", 2, 35], ["Cartucho de tinta", "Informática", "un", 2, 90],
-  /* Manutenção e ferramentas */
-  ["Estopa", "Manutenção e ferramentas", "kg", 5, 14], ["Fita isolante", "Manutenção e ferramentas", "rolo", 6, 5], ["Lâmpada LED", "Manutenção e ferramentas", "un", 10, 12], ["Pilha 9 V", "Manutenção e ferramentas", "un", 4, 15],
-  ["Lubrificante spray 300 ml", "Manutenção e ferramentas", "un", 3, 28], ["Abraçadeira de nylon (pct 100)", "Manutenção e ferramentas", "pct", 3, 18], ["Lixa", "Manutenção e ferramentas", "un", 10, 2.5], ["Parafuso sortido (cx)", "Manutenção e ferramentas", "cx", 2, 25]
+  /* Manutenção e Ferramentas */
+  ["Estopa", "Manutenção e Ferramentas", "kg", 5, 14], ["Fita isolante", "Manutenção e Ferramentas", "rolo", 6, 5], ["Lâmpada LED", "Manutenção e Ferramentas", "un", 10, 12], ["Pilha 9 V", "Manutenção e Ferramentas", "un", 4, 15],
+  ["Lubrificante spray 300 ml", "Manutenção e Ferramentas", "un", 3, 28], ["Abraçadeira de nylon (pct 100)", "Manutenção e Ferramentas", "pct", 3, 18], ["Lixa", "Manutenção e Ferramentas", "un", 10, 2.5], ["Parafuso sortido (cx)", "Manutenção e Ferramentas", "cx", 2, 25]
 ].map(([n, cat, un, min, custo]) => ({ n, cat, un, min, custo, local: "Armário do RH" }));
 const CONS_LOCAL_PADRAO = "Armário do RH";
 LISTS.rh_cons_cat = {
@@ -40246,7 +40255,7 @@ const consAdm = () => !!session.n1 || permModulo("rh_cons") === "proprietario";
 function consCatHtml() {
   const adm = consAdm(), ed = consPode(), cat = consCatalogo(), q = normName(CONS.fc || ""), its = cat.filter(e => !q || normName([e.n, e.cat, e.local].join(" ")).includes(q));
   const faltam = CONS.listCat ? CONS_CATALOGO_BASE.filter(b => !(CONS.cat || []).some(x => consCatNorm(x.Title) === consCatNorm(b.n)) && !(CONS.catTirados || []).includes(consCatNorm(b.n))).length : 0;
-  const topo = `<div class="filters" role="search"><input type="search" class="span-2" id="consQC" placeholder="Buscar no catálogo…" value="${esc(CONS.fc || "")}"><span class="grow"></span>${CONS.listCat && ed && faltam ? `<button class="btn sm" onclick="consCatCarregarPadrao()">Carregar ${faltam} item(ns) padrão na lista</button>` : ""}${CONS.listCat && adm ? `<button class="btn sm primary" onclick="consCatForm('')">+ Item do catálogo</button>` : ""}</div>
+  const topo = `<div class="cons-fbar" role="search"><input type="search" id="consQC" placeholder="Buscar no catálogo…" value="${esc(CONS.fc || "")}"><span class="grow"></span>${CONS.listCat && ed && faltam ? `<button class="btn sm" onclick="consCatCarregarPadrao()">Carregar ${faltam} item(ns) padrão na lista</button>` : ""}${CONS.listCat && adm ? `<button class="btn sm primary" onclick="consCatForm('')">+ Item do catálogo</button>` : ""}</div>
     <p class="sup" style="margin:0 0 10px">${CONS.listCat ? `Sugestões usadas no cadastro (categoria, unidade, mínimo, custo médio e local). Item digitado no cadastro entra aqui; valores salvos diferentes viram a sugestão seguinte.${adm ? " Clique numa linha para editar." : ""}` : `A lista "${esc(LISTS.rh_cons_cat.displayName)}" ainda não existe — valem os ${CONS_CATALOGO_BASE.length} itens padrão do ERP. ${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › Executar tudo</a>.` : "Peça a um administrador para rodar a Configuração."}`}</p>`;
   const linha = e => `<tr class="${adm && e._id ? "cons-l" : ""}" ${adm && e._id ? `onclick="consCatForm(${esc(jsArg(e._id))})"` : ""}><td><b>${esc(e.n)}</b>${e._id ? "" : ` <span class="sup">padrão</span>`}</td><td>${esc(e.cat || "—")}</td><td>${esc(e.un || "—")}</td><td class="right">${consQtd(e.min)}</td><td class="right">${e.custo ? esc(fmtBRL(e.custo)) : "—"}</td><td>${esc(e.local || "—")}</td><td class="nw sup">${esc(e.origem || (e._id ? "" : "Padrão do ERP"))}</td></tr>`;
   return topo + (its.length ? `<div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th>Item</th><th>Categoria</th><th>Unid.</th><th class="right">Mínimo</th><th class="right">Custo médio</th><th>Local</th><th>Origem</th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nada no catálogo com esse filtro</h3></div>`);
@@ -40543,7 +40552,7 @@ consPainelHtml = function () {
   const cv = (id, h) => `<div class="cons-cv" style="height:${h}px"><canvas id="${id}"></canvas></div>`;
   return `<div class="cons-pbar"><span class="sup">Clique num gráfico para filtrar a página; clique de novo para tirar.</span><span class="grow"></span>${consExportarBtn()}</div>` + filtros + ativos + kpis
     + `<div class="cons-linha g-2">${alertas}${repor}</div>`
-    + `<div class="cons-linha g-1">${card("Entradas × Saídas por mês", "últimos 12 meses · R$ pelo custo unitário · clique num mês para filtrar", cv("consChMes", 290))}${card("Saídas por categoria", "R$ · clique para filtrar", cv("consChCat", 290))}</div>`
+    + `<div class="cons-linha g-1">${card(`Entradas × Saídas por mês <span class="seg-tabs cons-segmes" role="tablist"><button type="button" class="${CONS.grafMes === "line" ? "" : "on"}" onclick="consGrafMes('bar')">Barras</button><button type="button" class="${CONS.grafMes === "line" ? "on" : ""}" onclick="consGrafMes('line')">Linhas</button></span>`, "últimos 12 meses · R$ pelo custo unitário · clique num mês para filtrar", cv("consChMes", 290))}${card("Saídas por categoria", "R$ · clique para filtrar", cv("consChCat", 290))}</div>`
     + `<div class="cons-linha g-2">${card("Itens mais retirados", "quantidade · clique para filtrar", cv("consChItens", Math.max(240, 30 * D.itens.length + 40)))}${card("Saídas por departamento", "R$ · clique para filtrar", cv("consChDep", Math.max(240, 30 * Math.max(D.itens.length, Math.min(10, D.deps.length)) + 40)))}</div>`
     + `<div class="cons-linha g-2">${card("Quem mais retirou", "R$ · clique para filtrar pela pessoa", cv("consChFunc", Math.max(240, 30 * D.funcs.length + 40)))}${card("Linha do tempo", "últimas movimentações, da mais recente para a mais antiga", tempo)}</div>`
     + `<button type="button" class="cons-fab" onclick="consPFlimpar()" title="Limpar todos os filtros" ${consPfAtivo() ? "" : "disabled"}>🧹 Limpar filtros</button>`;
@@ -40565,9 +40574,9 @@ consPainelCharts = function () {
       ctx.save(); ctx.font = "700 11px " + (FONT_UI || "sans-serif"); ctx.fillStyle = EIXO; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.strokeStyle = "#C9CFD8"; ctx.setLineDash([3, 3]);
       anos.forEach((g, gi) => { const esq = Math.max(ca.left, x.getPixelForValue(g.ini) - w / 2), dir = Math.min(ca.right, x.getPixelForValue(g.fim) + w / 2); ctx.fillText(g.a, (esq + dir) / 2, y); if (gi > 0) { ctx.beginPath(); ctx.moveTo(esq, ca.top); ctx.lineTo(esq, y + 6); ctx.stroke(); } }); ctx.restore(); } };
   const corMes = (c, cor) => !P.mes || P.mes === c ? cor : DIM(cor);
-  mk("consChMes", { type: "bar", data: { labels: meses.map(c => CONS_MES_A[Number(c.slice(5, 7)) - 1]), datasets: [
-      { label: "Entradas", data: D.porMes.map(e => Math.round(e.ent * 100) / 100), backgroundColor: meses.map(c => corMes(c, "#2F7D4F")), borderRadius: 3, maxBarThickness: 26 },
-      { label: "Saídas", data: D.porMes.map(e => Math.round(e.valor * 100) / 100), backgroundColor: meses.map(c => corMes(c, "#232B33")), borderRadius: 3, maxBarThickness: 26 }] },
+  mk("consChMes", { type: CONS.grafMes === "line" ? "line" : "bar", data: { labels: meses.map(c => CONS_MES_A[Number(c.slice(5, 7)) - 1]), datasets: [
+      { label: "Entradas", data: D.porMes.map(e => Math.round(e.ent * 100) / 100), backgroundColor: meses.map(c => corMes(c, CONS_COR.ent)), borderColor: CONS_COR.ent, borderRadius: 3, maxBarThickness: 26, tension: .3, pointRadius: 4, pointBackgroundColor: CONS_COR.ent, fill: false },
+      { label: "Saídas", data: D.porMes.map(e => Math.round(e.valor * 100) / 100), backgroundColor: meses.map(c => corMes(c, CONS_COR.sai)), borderColor: CONS_COR.sai, borderRadius: 3, maxBarThickness: 26, tension: .3, pointRadius: 4, pointBackgroundColor: CONS_COR.sai, fill: false }] },
     plugins: [eixoAno],
     options: Object.assign(base((ev, els) => { if (!els.length) return; consPF("mes", meses[els[0].index]); }, brl, Object.assign(dlBar(mini), { font: { size: 9.5, weight: "700" } })), { layout: { padding: { top: 6, right: 8, bottom: 18 } },
       scales: { x: { grid: { display: false }, border: { color: "#C9CFD8" }, ticks: { color: EIXO, font: { size: 11, weight: "600" }, maxRotation: 0 } }, y: { grid: { display: false }, border: { display: false }, ticks: { display: false }, beginAtZero: true, grace: "14%" } } }) });
@@ -40601,7 +40610,7 @@ window.consPainelCharts = consPainelCharts;
 #consRoot .cons-campo select{border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:inherit;background:#fff}
 #consRoot .cons-seg{display:flex;flex-wrap:wrap;gap:6px}#consRoot .cons-seg button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font:inherit;font-size:12.5px;font-weight:700;color:#3B4352;cursor:pointer;line-height:1.1}
 #consRoot .cons-seg button small{display:block;font-size:9.5px;font-weight:600;color:#8A93A0}#consRoot .cons-seg button:hover{border-color:#232B33}
-#consRoot .cons-seg button.ativo{background:#232B33;border-color:#232B33;color:#fff}#consRoot .cons-seg button.ativo small{color:#F2B705}#consRoot .cons-seg button.ent.ativo{background:#2F7D4F;border-color:#2F7D4F}#consRoot .cons-seg button.sai.ativo{background:#B23A2F;border-color:#B23A2F}
+#consRoot .cons-seg button.ativo{background:#232B33;border-color:#232B33;color:#fff}#consRoot .cons-seg button.ativo small{color:#F2B705}#consRoot .cons-seg button.ent.ativo{background:#56B37F;border-color:#56B37F}#consRoot .cons-seg button.sai.ativo{background:#E57368;border-color:#E57368}
 #consRoot .cons-meses{padding:10px 16px}#consRoot .cons-meses .cons-seg{justify-content:center;width:100%}
 #consRoot .cons-ativos{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}#consRoot .cons-chip{border:1px solid #F2B705;background:#FFF8E1;border-radius:999px;padding:4px 10px;font:inherit;font-size:12.5px;font-weight:700;color:#232B33;cursor:pointer}#consRoot .cons-chip b{margin-left:4px}#consRoot .cons-chip.limpar{border-color:#232B33;background:#232B33;color:#fff}
 #consRoot .cons-kpis2{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:0 0 12px}
@@ -40618,6 +40627,608 @@ body.vendo-como #consRoot .cons-fab{bottom:84px}@media print{#consRoot .cons-fab
 CONFIG.version = "v0.14.13.2";
 /* v0.14.14 · CAP — terminologia aprovada em 23/10 (lançamento, Em aberto, Cobrança, Tipo do lançamento, Pagar / Desfazer pagamento) */
 CONFIG.version = "v0.14.14";
+
+/* v0.14.15 (pedido 23/10 16:28): KPI "Saldo a pagar" (mês corrente) também na aba Lançamentos — clique filtra o mês, só em aberto */
+window.capKpiMes = () => { const f = CAP_STATE.filter; const on = !f.kpi && f.venc === "mes"; f.kpi = null; f.venc = on ? "" : "mes"; f.sit = on ? [] : ["vencida", "hoje", "pendente", "aguardando"]; f.status = ""; CAP_STATE.pageN = 60; paintCAP(); };
+/* =====================================================================
+   v0.14.15 · Consumíveis R4 (pedidos de 23/10, 16:19–16:28) + CAP/Obrigações: credor só de Terceiros; Saldo a pagar do mês
+   1 cores Entrada/Saída mais claras · 2 barras ou linhas no Entradas × Saídas · 3 editar movimentações · 4 "+ Item do catálogo"
+   à direita · 5 categorias com iniciais maiúsculas · 6 aba Ordem de Compra (3 fornecedores, aprovação, CAP, recebimento, fases
+   via Miro/Parâmetros) · 7 PDF do Painel em retrato numa folha · 8 obrigação e lançamento só com credor cadastrado (CNPJ/CPF).
+   ===================================================================== */
+const CONS_COR = { ent: "#56B37F", sai: "#E57368" };
+CONS.grafMes = "bar";
+window.consGrafMes = m => { CONS.grafMes = m === "line" ? "line" : "bar"; paintCons(); };
+/* ---- 5 · categorias: primeira letra de cada palavra em maiúscula ("Copa e Cozinha"); conectivos ficam em minúscula ---- */
+function consCatCase(c) {
+  c = String(c || "").trim(); if (!c) return c;
+  return c.split(/\s+/).map((w, i) => i > 0 && /^(e|de|da|do|das|dos|para|com|em)$/i.test(w) ? w.toLowerCase() : (w.length <= 3 && w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())).join(" ");
+}
+window.consCatCase = consCatCase;
+{ const c0 = consCarregar; consCarregar = async function () {
+    const r = await c0.apply(this, arguments);
+    try { CONS.itens.forEach(x => { if (x.Categoria) x.Categoria = consCatCase(x.Categoria); }); CONS.movs.forEach(m => { if (m.Categoria) m.Categoria = consCatCase(m.Categoria); }); (CONS.cat || []).forEach(x => { if (x.Categoria) x.Categoria = consCatCase(x.Categoria); }); } catch (e) {}
+    return r;
+  }; window.consCarregar = consCarregar; }
+{ const f0 = consForm; consForm = function () { const r = f0.apply(this, arguments); const el = $("csCat"); if (el) el.addEventListener("change", () => { el.value = consCatCase(el.value); }); return r; }; window.consForm = consForm; }
+{ const f0 = consCatForm; consCatForm = function () { const r = f0.apply(this, arguments); const el = $("ccCat"); if (el) el.addEventListener("change", () => { el.value = consCatCase(el.value); }); return r; }; window.consCatForm = consCatForm; }
+LISTS.rh_cons.columns.forEach(c => { if (c.name === "Categoria") c.update = true; }); LISTS.rh_cons_cat.columns.forEach(c => { if (c.name === "Categoria") c.update = true; });
+/* ---- 3 · editar movimentação: quantidade, data, custo, NF, funcionário, departamento e motivo; o item e o tipo ficam.
+   Depois de gravar, o "saldo após" de todas as movimentações do item é refeito na ordem (data, id) e o estoque do item atualizado ---- */
+async function consRecalcSaldos(itemId) {
+  await consCarregar(true);
+  const ms = consMovsDe(itemId).slice().sort((a, b) => consDia(a).localeCompare(consDia(b)) || Number(a._id) - Number(b._id));
+  let s = 0; const reqs = [];
+  ms.forEach(m => { s = Math.round((s + consSinal(m)) * 100) / 100; if (Math.abs(consNum(m.SaldoApos) - s) >= 0.005 || m.SaldoApos == null || m.SaldoApos === "") { reqs.push({ method: "PATCH", url: `/sites/${CONS.site.id}/lists/${CONS.listMov.id}/items/${m._id}/fields`, body: { SaldoApos: s } }); m.SaldoApos = s; } });
+  if (reqs.length) { try { await graphBatch(reqs); } catch (e) { console.warn("saldo após", e); } }
+  try { const it = CONS.itens.find(x => x._id === String(itemId)); const ult = ms.length ? consDia(ms[ms.length - 1]) : null; const patch = { EstoqueAtual: s }; if (ult) patch.UltimaMov = ult; const ue = ms.filter(m => m.Tipo === "Entrada" && consNum(m.CustoUnit) > 0).pop(); if (ue) patch.CustoUnit = consNum(ue.CustoUnit); await SP.update(CONS.site.id, CONS.list.id, itemId, patch); if (it) Object.assign(it, patch); } catch (e) {}
+  return s;
+}
+window.consMov = async (tipo, itemId, movId) => {
+  if (!consPode() || !CONS.listMov) return;
+  const mv = movId ? CONS.movs.find(m => m._id === String(movId)) : null;
+  if (mv) { tipo = mv.Tipo; itemId = mv.ItemId; }
+  tipo = CONS_TIPOS.includes(tipo) ? tipo : "Saída";
+  const funcs = await tercRhFuncs().catch(() => []), itens = consLinhas().filter(x => x.Ativo !== false || (mv && x._id === String(itemId))), sel = itemId ? itens.find(x => x._id === String(itemId)) : null;
+  const comFunc = tipo === "Saída" || tipo === "Devolução", v = mv || {};
+  openModal(mv ? `Editar ${tipo.toLowerCase()} · ${mv.ItemNome || ""}` : tipo === "Ajuste" ? "Ajuste de inventário" : tipo === "Saída" ? "Saída (retirada)" : tipo, `<div class="form-grid">
+      <div class="field full"><label>Item<span class="req">*</span></label><input id="cmItemN" list="cmItemL" autocomplete="off" value="${sel ? esc(sel.Title) : ""}" placeholder="Digite para buscar o item" oninput="consMovItem()" onchange="consMovItem()" ${mv ? "readonly" : ""}><datalist id="cmItemL">${itens.map(x => `<option value="${esc(x.Title)}">${esc([x.Codigo, consQtd(x.saldo, x.Unidade)].filter(Boolean).join(" · "))}</option>`).join("")}</datalist><input type="hidden" id="cmItem" value="${sel ? esc(sel._id) : ""}"><div class="hint" id="cmSaldo">${mv ? "Na edição o item e o tipo não mudam — para trocar, exclua e registre de novo." : ""}</div></div>
+      <div class="field"><label>Código</label><input id="cmCod" value="${sel ? esc(sel.Codigo || "—") : ""}" readonly tabindex="-1"></div>
+      <div class="field"><label>Estoque atual</label><input id="cmEst" value="${sel ? consQtd(sel.saldo, sel.Unidade) : ""}" readonly tabindex="-1"></div>
+      <div class="field"><label>${tipo === "Ajuste" ? (mv ? "Ajuste (±)" : "Contagem física") : "Quantidade"}<span class="req">*</span></label><input type="number" id="cmQtd" ${tipo === "Ajuste" && mv ? "" : 'min="0"'} step="0.01" placeholder="0" value="${mv ? esc(String(tipo === "Ajuste" ? consNum(mv.Quantidade) : Math.abs(consNum(mv.Quantidade)))) : ""}"></div>
+      <div class="field"><label>Data<span class="req">*</span></label><input type="date" id="cmData" value="${mv ? esc(consDia(mv)) : todayISO()}"></div>
+      ${tipo === "Entrada" ? `<div class="field"><label>Custo unitário (R$)</label><input type="number" id="cmCusto" min="0" step="0.01" value="${mv ? esc(String(consNum(mv.CustoUnit) || "")) : (sel && consNum(sel.CustoUnit) ? consNum(sel.CustoUnit) : "")}"><div class="hint">Atualiza o custo do item</div></div><div class="field"><label>Nota fiscal</label><input id="cmNF" maxlength="60" value="${esc(v.NF || "")}"></div>` : ""}
+      ${comFunc ? `<div class="field"><label>Funcionário${tipo === "Saída" ? '<span class="req">*</span>' : ""}</label><input id="cmFunc" list="cmFuncL" autocomplete="off" placeholder="Nome (RH › Funcionários)" onchange="consMovFunc()" value="${esc(v.FuncNome || "")}"><datalist id="cmFuncL">${funcs.map(f => `<option value="${esc(f.Title)}">${esc([f.Matricula, f.Cargo].filter(Boolean).join(" · "))}</option>`).join("")}</datalist>${funcs.length ? "" : `<div class="hint"><b>Sem leitura da lista RH — Funcionários:</b> o nome fica só como texto.</div>`}</div>
+      <div class="field"><label>Departamento</label><input id="cmDep" list="cmDepL" maxlength="60" placeholder="Preenchido pelo funcionário" value="${esc(v.Departamento || "")}"><datalist id="cmDepL">${CENTROS_CUSTO.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>` : ""}
+      <div class="field full"><label>${tipo === "Ajuste" ? "Motivo" : "Motivo / observação"}${tipo === "Ajuste" ? '<span class="req">*</span>' : ""}</label><input id="cmMot" maxlength="200" value="${esc(v.Motivo || "")}" placeholder="${tipo === "Saída" ? "Ex.: troca de uniforme, uso na limpeza da garagem" : tipo === "Ajuste" ? "Ex.: contagem do inventário de outubro" : ""}"></div>
+    </div><div class="err" id="cmErr" style="display:none"></div>`, async () => {
+    const g = k => ($(k) ? $(k).value.trim() : ""), err = m => { const e = $("cmErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const it = CONS.itens.find(x => x._id === g("cmItem")); if (!it) return err("Escolha o item.");
+    const q = consNum(g("cmQtd")); if (g("cmQtd") === "" || (!(tipo === "Ajuste" && mv) && q < 0) || (tipo !== "Ajuste" && q <= 0)) return err(tipo === "Ajuste" ? "Informe a contagem física." : "Informe a quantidade.");
+    if (!g("cmData")) return err("Informe a data.");
+    if (tipo === "Ajuste" && !g("cmMot")) return err("Explique o motivo do ajuste.");
+    let func = null, nomeF = comFunc ? g("cmFunc") : "";
+    if (tipo === "Saída" && !nomeF) return err("Informe quem retirou.");
+    if (nomeF) func = funcs.find(f => f.Title === nomeF) || funcs.find(f => normName(f.Title) === normName(nomeF)) || null;
+    const f = { Tipo: tipo, ItemId: it._id, ItemNome: it.Title, Categoria: it.Categoria || null, Unidade: it.Unidade || null, Data: g("cmData"), Motivo: g("cmMot") || null, CustoUnit: tipo === "Entrada" && g("cmCusto") !== "" ? consNum(g("cmCusto")) : (mv ? (consNum(mv.CustoUnit) || null) : (consNum(it.CustoUnit) || null)), NF: tipo === "Entrada" ? (g("cmNF") || null) : null,
+      FuncId: func ? String(func._id) : null, FuncNome: nomeF || null, Matricula: func ? (func.Matricula || null) : null, Departamento: comFunc ? (g("cmDep") || null) : null };
+    if (mv) {   /* edição */
+      f.Quantidade = tipo === "Ajuste" ? q : q;
+      if (tipo === "Ajuste" && !f.Quantidade) return err("Ajuste zero não muda nada.");
+      try {
+        await consCarregar(true);
+        const atual = CONS.movs.find(m => m._id === mv._id); if (!atual) return err("A movimentação não existe mais (foi excluída).");
+        const semEla = consSaldo(it._id) - consSinal(atual), novo = Math.round((semEla + consSinal(f)) * 100) / 100;
+        if (tipo === "Saída" && novo < 0) return err(`Estoque insuficiente: sem esta retirada há ${consQtd(semEla, it.Unidade)}.`);
+        const titulo = `${f.Tipo} · ${f.ItemNome}${f.FuncNome ? " · " + f.FuncNome : ""}`.slice(0, 255);
+        await SP.update(CONS.site.id, CONS.listMov.id, mv._id, Object.assign({ Title: titulo }, f));
+        const s = await consRecalcSaldos(it._id); paintCons(); toast(`Movimentação atualizada · ${it.Title}: ${consQtd(s, it.Unidade)} em estoque.`, 4000); return true;
+      } catch (e) { return err(e.message); }
+    }
+    if (tipo === "Ajuste") { await consCarregar(true); f.Quantidade = Math.round((q - consSaldo(it._id)) * 100) / 100; if (!f.Quantidade) return err(`O estoque já está em ${consQtd(q, it.Unidade)}; nada a ajustar.`); }
+    else f.Quantidade = q;
+    try { const novo = await consGravarMov(f, tipo === "Ajuste"); await consCarregar(true); paintCons(); toast(`${tipo} registrada · ${it.Title}: ${consQtd(novo, it.Unidade)} em estoque.`, 4000); return true; }
+    catch (e) { return err(e.message); }
+  });
+  if (!mv) consMovItem();
+};
+{ const v0 = consMovVer; consMovVer = function (id) {
+    const r = v0.apply(this, arguments); const m = CONS.movs.find(i => i._id === String(id));
+    if (m && consPode()) { const foot = document.querySelector("#modal .modal-foot"); const exc = foot && foot.querySelector("button"); const b = document.createElement("button"); b.className = "btn"; b.textContent = "Editar"; b.onclick = () => consMov(m.Tipo, m.ItemId, m._id); if (exc && exc.textContent.trim() === "Excluir") exc.insertAdjacentElement("afterend", b); else if (foot) { b.style.marginRight = "auto"; foot.insertAdjacentElement("afterbegin", b); } }
+    return r;
+  }; window.consMovVer = consMovVer; }
+/* ---- 7 · Relatório em PDF do Painel: retrato, tudo numa folha (KPIs, alertas, para repor e os cinco gráficos) — estoque e
+   movimentações completos ficam no Excel ---- */
+window.consPdf = async () => {
+  try {
+    const aba0 = CONS.aba;
+    if (aba0 !== "pan" || !$("consChMes")) { CONS.aba = "pan"; paintCons(); await new Promise(r => setTimeout(r, 80)); }
+    const img = (id, tit, sub) => { const c = Chart.getChart($(id)); let src = ""; try { src = c ? c.toBase64Image("image/png", 1) : ""; } catch (e) {} return `<div class="gr"><h3>${esc(tit)}${sub ? ` <span>${esc(sub)}</span>` : ""}</h3>${src ? `<img src="${src}">` : `<p class="mut">Sem dados no período.</p>`}</div>`; };
+    const D = consPainelDados(), pf = consPfTxt(), mesTxt = compLabel(D.m);
+    let h = printCab("Relatório de <b>Consumíveis</b>", `Recursos Humanos · posição em ${new Date().toLocaleDateString("pt-BR")}${pf ? ` · filtros: ${pf}` : ""}`, { doc: "RH-CONSUMIVEIS", meta: [["Itens ativos", String(D.ativos.length)], ["Período", "últimos 12 meses"]], stamp: D.faixa === "ok" ? "Estoque saudável" : D.faixa === "at" ? "Atenção" : "Crítico", stampCls: D.faixa === "ok" ? "ok" : "warn" });
+    h += printKpis([["Saúde do estoque", `${D.pct}%`, `${D.emDia.length} de ${D.ativos.length} em dia`, D.faixa === "ok" ? "pos" : "neg"], ["Abaixo do mínimo", String(D.baixo.length), "repor", D.baixo.length ? "neg" : ""], ["Zerados", String(D.zerados.length), "sem estoque", D.zerados.length ? "neg" : ""], ["Cobertura média", D.cobMed == null ? "—" : `${D.cobMed} dias`, "ritmo de 90 dias"], ["Parados", String(D.parados.length), "90+ dias sem movimento"]]);
+    h += printKpis([["Entradas", fmtBRL(D.entMes), mesTxt], ["Saídas", fmtBRL(D.valorMes), mesTxt], ["Saldo do mês", fmtBRL(D.entMes - D.valorMes), "entradas − saídas", D.entMes - D.valorMes < 0 ? "neg" : "pos"], ["Média mensal de saídas", fmtBRL(D.mediaMes), "12 meses"], ["Retiradas", String(D.saidas12), fmtBRL(D.valor12) + " em 12 meses"]]);
+    const al = D.alertas.slice(0, 6), rp = D.repor.slice(0, 8);
+    h += `<div class="g2"><div>${printSec("Alertas", `${D.alertas.length}${D.alertas.length > al.length ? ` · ${al.length} mostrados` : ""}`, 1)}${al.length ? `<ul class="al">${al.map(a => `<li class="${a.n}">${esc(a.t)}</li>`).join("")}</ul>` : `<p class="mut">Nenhum alerta: estoque em dia.</p>`}</div>
+      <div>${printSec("Para repor", `comprar = 2 × mínimo − estoque${D.repor.length > rp.length ? ` · ${rp.length} de ${D.repor.length}` : ""}`, 2)}${rp.length ? `<table class="t"><thead><tr><th>Item</th><th class="r">Estoque</th><th class="r">Mín.</th><th class="r">Dura</th><th class="r">Comprar</th></tr></thead><tbody>${rp.map(x => `<tr><td>${esc(x.Title)}</td><td class="r ${x.saldo <= 0 ? "neg" : ""}">${consQtd(x.saldo, x.Unidade)}</td><td class="r">${consQtd(x.EstoqueMin)}</td><td class="r">${x.cobertura == null ? "—" : x.cobertura + " d"}</td><td class="r"><b>${x.sugestao ? consQtd(x.sugestao, x.Unidade) : "—"}</b></td></tr>`).join("")}</tbody></table>` : `<p class="mut">Nenhum item abaixo do mínimo.</p>`}</div></div>`;
+    h += printSec("Gráficos", pf ? `filtros: ${pf}` : "últimos 12 meses", 3) + `<div class="gall"><div class="w2">${img("consChMes", "Entradas × Saídas por mês", "R$")}</div>${img("consChCat", "Saídas por categoria", "R$")}${img("consChItens", "Itens mais retirados", "quantidade")}${img("consChDep", "Saídas por departamento", "R$")}${img("consChFunc", "Quem mais retirou", "R$")}</div>`;
+    h += `<p class="mut nota">A posição completa do estoque e as movimentações estão no Excel (Exportar › Excel).</p>` + printRodape("Recursos Humanos · Consumíveis");
+    printDoc({ titulo: "Relatório de Consumíveis", html: `<div class="pg">${h}</div>`, paisagem: false, umaPagina: true, fonte: 9.5, css: `.g2{display:grid;grid-template-columns:1fr 1.2fr;gap:6px 12px}.gall{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}.gall .w2{grid-column:1/3}.gall .gr{border:.6px solid #C9CFD8;border-radius:3px;padding:4px 6px}.gall h3{font-size:9px;margin:0 0 2px;color:#1E2153;text-transform:uppercase;letter-spacing:.06em}.gall h3 span{color:#6B7280;text-transform:none;letter-spacing:0;font-weight:600}.gall img{width:100%;max-height:48mm;object-fit:contain}.gall .w2 img{max-height:46mm}ul.al{margin:0;padding:0 0 0 12px}ul.al li{margin:1px 0;font-size:8.5px}ul.al li.cr{color:#B3271E}ul.al li.at{color:#9A6A00}ul.al li.info{color:#5B6068}.nota{font-size:8px;margin:4px 0 0}table.t td,table.t th{padding:2px 4px}` });
+    if (aba0 !== "pan") { CONS.aba = aba0; setTimeout(paintCons, 1200); }
+  } catch (e) { toast("Não foi possível gerar o PDF: " + e.message, 7000); }
+};
+/* ---- 8 · CAP e Obrigações: o fornecedor/credor precisa estar em Terceiros › Banco de Dados com CNPJ ou CPF ---- */
+function consCredorOk(nome, doc) {
+  const f = (typeof fornByName === "function" && fornByName(nome)) || (doc && typeof fornByDoc === "function" && fornByDoc(doc)) || null;
+  if (!f) return { ok: false, msg: `"${nome}" não está em Terceiros › Banco de Dados. Cadastre o fornecedor/credor com CNPJ ou CPF antes de lançar.` };
+  const docs = typeof tercCnpjTodos === "function" ? tercCnpjTodos(f) : [docClean(f.CNPJ)].filter(Boolean);
+  if (!docs.length) return { ok: false, msg: `"${f.Title}" está em Terceiros sem CNPJ/CPF. Complete o cadastro antes de lançar.`, f };
+  return { ok: true, f };
+}
+window.consCredorOk = consCredorOk;
+{ const s0 = capSave; capSave = async function (existing) {
+    try {
+      const nome = $("fForn") ? $("fForn").value.trim() : "", tipoL = $("fTipoL") ? $("fTipoL").value : "", semDoc = !!($("fSemDoc") && $("fSemDoc").checked);
+      const tipoFav = $("fTipoFav") ? $("fTipoFav").value : "";
+      if (nome && tipoL !== "Transferência entre contas" && !semDoc && tipoFav !== "Funcionário" && (!existing || String(existing.Fornecedor || "").trim() !== nome)) {   /* revisão D2: funcionário vem de RH › Funcionários */   /* lançamento novo ou troca de fornecedor */
+        if (typeof loadForn === "function" && !(FORN_STATE.items || []).length) { try { await loadForn(true); } catch (e) {} }
+        const r = consCredorOk(nome, $("fCNPJ") ? $("fCNPJ").value : "");
+        if (!r.ok) { const e = $("fErr"); if (e) { e.style.display = "block"; e.innerHTML = `${esc(r.msg)} <a href="#" onclick="capCadastrarForn(); return false;">Cadastrar em Terceiros</a>`; } return; }
+      }
+    } catch (e) {}
+    return s0.apply(this, arguments);
+  }; window.capSave = capSave; }
+{ const o0 = obrSalvar; obrSalvar = async function (o) {
+    try {
+      const nome = $("oForn") ? $("oForn").value.trim() : "";
+      if (nome && (!o || String(o.FornecedorTexto || "").trim() !== nome)) {
+        if (typeof loadForn === "function" && !(FORN_STATE.items || []).length) { try { await loadForn(true); } catch (e) {} }
+        const r = consCredorOk(nome, "");
+        if (!r.ok) { const e = $("oErr"); if (e) { e.style.display = "block"; e.textContent = r.msg; } else toast(r.msg, 8000); return false; }
+      }
+    } catch (e) {}
+    return o0.apply(this, arguments);
+  }; window.obrSalvar = obrSalvar; }
+/* =====================================================================
+   6 · Consumíveis › Ordem de Compra — pedido de itens em baixo estoque ou novos, orçado em até 3 fornecedores, aprovado por
+   um administrador ou pela gerência do RH (cargo em RH › Funcionários), pago pela CAP e recebido item a item.
+   Lista "RH — Consumíveis Ordens de Compra" (site RH) pela Configuração. Cotações gravadas no Terceiro (coluna "Cotações (JSON)").
+   Fases do fluxo: padrão no código; podem ser ajustadas em ERP — Parâmetros (chave cons_oc_fases), espelhando o quadro do Miro.
+   ===================================================================== */
+const CONS_OC_MIRO = "https://miro.com/app/board/uXjVEWWIVZg=/";   /* quadro do fluxo (criado em 23/10/2026); pode ser trocado em "Fases e Miro…" */
+const CONS_OC_ST = ["Em elaboração", "Aguardando aprovação", "Aguardando pagamento", "Aguardando recebimento", "Concluída", "Reprovada", "Cancelada"];
+const CONS_OC_FASES = [
+  { k: "solic", n: "Solicitação", d: "itens em baixo estoque ou novos, com quantidade" },
+  { k: "orc", n: "Orçamentos", d: "até 3 fornecedores de Terceiros, preço por item" },
+  { k: "aprov", n: "Aprovação", d: "administrador ou gerência do RH escolhe o fornecedor" },
+  { k: "pag", n: "Pagamento", d: "lançamento na CAP com vencimento em até 3 dias" },
+  { k: "receb", n: "Recebimento", d: "conferência item a item; entradas no estoque" },
+  { k: "fim", n: "Concluída", d: "estoque atualizado" }
+];
+LISTS.rh_cons_oc = {
+  key: "rh_cons_oc", displayName: "RH — Consumíveis Ordens de Compra", siteKey: "rh", titleAs: "Número",
+  description: "Recursos Humanos NMB · ordens de compra de consumíveis: itens, orçamentos de até 3 fornecedores, aprovação, pagamento pela CAP e recebimento. Editada em Recursos Humanos › Consumíveis › Ordem de Compra.",
+  columns: [
+    { name: "Data",          displayName: "Data",                       dateTime: dateOnly },
+    { name: "Status",        displayName: "Status",                     choice: choice(CONS_OC_ST), update: true },
+    { name: "Solicitante",   displayName: "Solicitante",                text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "Justificativa", displayName: "Justificativa",              text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Itens",         displayName: "Itens (JSON)",               text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Cotacoes",      displayName: "Cotações (JSON)",            text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Vencedor",      displayName: "Fornecedor aprovado (seção)", number: { decimalPlaces: "none", displayAs: "number" } },
+    { name: "TotalAprovado", displayName: "Total aprovado (R$)",        number: money },
+    { name: "Aprovador",     displayName: "Aprovador",                  text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "DataDecisao",   displayName: "Data da decisão",            dateTime: dateOnly },
+    { name: "MotivoDecisao", displayName: "Motivo da decisão",          text: { allowMultipleLines: false, maxLength: 255 } },
+    { name: "CapId",         displayName: "Lançamento na CAP (id)",     text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "PagoEm",        displayName: "Pago em",                    dateTime: dateOnly },
+    { name: "Recebimento",   displayName: "Recebimento (JSON)",         text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Historico",     displayName: "Histórico (JSON)",           text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+SETUP_ORDER.push("rh_cons_oc");
+SETUP_TEXT.rh_cons_oc = `Cria no site RH a lista "RH — Consumíveis Ordens de Compra" (v0.14.15): itens, orçamentos de 3 fornecedores, aprovação, pagamento pela CAP e recebimento.`;
+LISTS.forn.columns.push({ name: "Cotacoes", displayName: "Cotações (JSON)", text: { allowMultipleLines: true, textType: "plain" } });
+SETUP_TEXT.forn += ` v0.14.15: coluna "Cotações (JSON)" — preços orçados nas ordens de compra de consumíveis (histórico por item).`;
+CONS.oc = []; CONS.listOc = undefined; CONS.ocSel = null; CONS.ocFases = null; CONS.fo = { q: "", st: "" };
+const consOcJson = (s, d) => { try { const v = JSON.parse(s || ""); return v == null ? d : v; } catch (e) { return d; } };
+const consOcItens = o => consOcJson(o && o.Itens, []).filter(x => x && (x.nome || x.id));
+const consOcCot = o => { const c = consOcJson(o && o.Cotacoes, []); while (c.length < 3) c.push({}); return c.slice(0, 3).map(x => x || {}); };
+const consOcRec = o => consOcJson(o && o.Recebimento, []);
+const consOcHist = o => consOcJson(o && o.Historico, []);
+const consOcQuem = () => (session.me && session.me.displayName) || "";
+const consOcTotal = (o, c) => { const its = consOcItens(o), p = (c && c.precos) || {}; let t = 0, n = 0; its.forEach((it, i) => { const u = consNum(p[i]); if (u > 0) { t += u * consNum(it.qtd); n++; } }); return { total: Math.round((t + consNum(c && c.frete)) * 100) / 100, n, completo: n === its.length && its.length > 0 }; };
+const consOcSecoes = o => consOcCot(o).map((c, i) => Object.assign({ i, tem: !!(c.fornId || c.forn) }, c, consOcTotal(o, c)));
+function consOcFases() { const p = CONS.ocFases && Array.isArray(CONS.ocFases.fases) && CONS.ocFases.fases.length ? CONS.ocFases.fases : CONS_OC_FASES; return CONS_OC_FASES.map(b => Object.assign({}, b, p.find(x => x && x.k === b.k) || {})); }
+/* índice da fase atual (0-5) e das concluídas, pelo status */
+function consOcFase(o) {
+  const st = o.Status || "Em elaboração", its = consOcItens(o).length, sec = consOcSecoes(o).filter(s => s.tem).length;
+  if (st === "Concluída") return { atual: 5, feitas: [0, 1, 2, 3, 4, 5], parado: false };
+  if (st === "Aguardando recebimento") return { atual: 4, feitas: [0, 1, 2, 3], parado: false };
+  if (st === "Aguardando pagamento") return { atual: 3, feitas: [0, 1, 2], parado: false };
+  if (st === "Aguardando aprovação") return { atual: 2, feitas: [0, 1], parado: false };
+  if (st === "Cancelada" && o.CapId) return { atual: 3, feitas: [0, 1, 2], parado: true };
+  if (st === "Reprovada" || st === "Cancelada") return { atual: 2, feitas: [0, 1], parado: true };
+  return { atual: its ? 1 : 0, feitas: its ? [0] : [], parado: false, parcial: sec };
+}
+const consOcPill = st => `<span class="pill ${({ "Em elaboração": "st-aguardando", "Aguardando aprovação": "st-pendente", "Aguardando pagamento": "st-aprovado", "Aguardando recebimento": "st-aprovado", "Concluída": "st-pago", "Reprovada": "st-vencido", "Cancelada": "st-cancelada" })[st] || ""}"><i></i>${esc(st || "—")}</span>`;
+/* quem aprova: administrador do sistema, proprietário do módulo ou gerência do RH (cargo em RH › Funcionários, pelo e-mail) */
+async function consOcAprovador() {
+  if (!consPode()) return false;   /* revisão D3: aprovar grava na ordem — exige edição em Consumíveis */
+  if (session.n1 || consAdm()) return true;
+  try { const eu = normEmail((session.me && (session.me.mail || session.me.userPrincipalName)) || ""); if (!eu) return false; const fs = await tercRhFuncs(); const f = fs.find(x => normEmail(x.Email || "") === eu); return !!(f && /gerente|gerência|gerencia|diretor|coordenad/i.test(String(f.Cargo || "")) && /\brh\b|recursos humanos|pessoas|departamento pessoal/i.test(String(f.Cargo || "") + " " + String(f.Setor || ""))); } catch (e) { return false; }
+}
+{ const c0 = consCarregar; consCarregar = async function (force) {
+    const em0 = CONS.em, r = await c0.apply(this, arguments);
+    try {
+      if (CONS.site && (CONS.listOc === undefined || (force && !CONS.listOc))) { const ls = await SP.lists(CONS.site.id); CONS.listOc = ls.find(l => l.displayName === LISTS.rh_cons_oc.displayName) || null; }
+      if (CONS.em !== em0 || CONS.ocEm == null) { CONS.oc = CONS.site && CONS.listOc ? (await SP.items(CONS.site.id, CONS.listOc.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})).sort((a, b) => Number(b._id) - Number(a._id)) : []; CONS.ocEm = Date.now(); }   /* revisão D6: respeita o cache da base */
+      if (CONS.ocFases === null) { const p = await erpParamLer("cons_oc_fases").catch(() => undefined); CONS.ocFases = (p && p.valor) || false; }
+    } catch (e) { CONS.oc = CONS.oc || []; }
+    return r;
+  }; window.consCarregar = consCarregar; }
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path) {
+    const l = CONS.listOc;
+    if (l && /^(POST|PATCH|PUT|DELETE)$/i.test(method || "") && String(path || "").includes(l.id)) { const m0 = session.modAtual; session.modAtual = "rh_cons"; try { return g0.apply(this, arguments); } finally { session.modAtual = m0; } }
+    return g0.apply(this, arguments);
+  }; }
+/* aba */
+{ const p0 = paintCons; paintCons = function () {
+    p0.apply(this, arguments);
+    const body = $("consBody"); if (!body || !CONS.list) return;
+    const views = body.querySelector(".cap-views"); if (views && !views.querySelector("[data-aba=oc]")) { const cat = views.querySelector("[data-aba=cat]"); const h = `<button class="tab ${CONS.aba === "oc" ? "on" : ""}" data-aba="oc" onclick="consAba('oc')">Ordem de Compra${CONS.oc.some(o => o.Status === "Aguardando aprovação") ? ` <span class="cap-views-n">${CONS.oc.filter(o => o.Status === "Aguardando aprovação").length}</span>` : ""}</button>`; if (cat) cat.insertAdjacentHTML("beforebegin", h); else views.insertAdjacentHTML("beforeend", h); }
+    if (CONS.aba === "oc") { [...body.children].forEach(c => { if (c !== views) c.remove(); }); body.insertAdjacentHTML("beforeend", CONS.ocSel ? consOcDetalhe() : consOcLista()); const q = $("consQO"); if (q) q.addEventListener("input", ev => { CONS.fo.q = ev.target.value; erpDeb("consQO", () => keepFocus(paintCons)); }); if (!CONS.ocSel) consOcPagosChecar(); }
+  }; window.paintCons = paintCons; }
+{ const m0 = MOD_RESET.rh_cons; MOD_RESET.rh_cons = () => { if (m0) m0(); CONS.ocSel = null; CONS.fo = { q: "", st: "" }; }; }
+window.consOcAbrir = id => { CONS.ocSel = id ? String(id) : null; CONS.aba = "oc"; paintCons(); window.scrollTo({ top: 0 }); };
+window.consOcF = (k, v) => { CONS.fo[k] = v; paintCons(); };
+function consOcFluxoHtml(o, compacto) {
+  const F = consOcFases(), st = o ? consOcFase(o) : null;
+  return `<ol class="cons-fluxo ${compacto ? "mini" : ""}">${F.map((f, i) => { const feita = st && st.feitas.includes(i), atual = st && st.atual === i && !feita, parado = st && st.parado && st.atual === i; return `<li class="${feita ? "ok" : ""} ${atual ? "atual" : ""} ${parado ? "parado" : ""}" title="${esc(f.d || "")}"><span class="n">${feita ? "✓" : i + 1}</span><span class="t">${esc(f.n)}</span>${compacto ? "" : `<span class="d">${esc(f.d || "")}</span>`}</li>`; }).join("")}</ol>`;
+}
+function consOcLista() {
+  const ed = consPode(), q = normName(CONS.fo.q), st = CONS.fo.st;
+  if (!CONS.listOc) return `<div class="cap-empty"><h3>A lista "${esc(LISTS.rh_cons_oc.displayName)}" ainda não existe</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › Executar tudo</a>.` : "Peça a um administrador para rodar a Configuração."}</p></div>`;
+  const its = CONS.oc.filter(o => (!st || o.Status === st) && (!q || normName([o.Title, o.Solicitante, o.Justificativa, consOcItens(o).map(x => x.nome).join(" "), consOcCot(o).map(c => c.forn).join(" ")].join(" ")).includes(q)));
+  const n = s => CONS.oc.filter(o => o.Status === s).length;
+  const K = (l, v, s, cls, f) => `<button class="kpi ${cls || ""} ${CONS.fo.st === f ? "on" : ""}" onclick="consOcF('st', ${jsArg(CONS.fo.st === f ? "" : f)})"><div class="lbl">${esc(l)}</div><div class="val">${v}</div><div class="sub">${esc(s)}</div></button>`;
+  const kpis = `<div class="cap-kpis">${K("Em elaboração", n("Em elaboração"), "orçando", "", "Em elaboração")}${K("Aguardando aprovação", n("Aguardando aprovação"), "administrador ou gerência do RH", n("Aguardando aprovação") ? "hoje" : "", "Aguardando aprovação")}${K("Aguardando pagamento", n("Aguardando pagamento"), "lançadas na CAP", "", "Aguardando pagamento")}${K("Aguardando recebimento", n("Aguardando recebimento"), "pagas; conferir a entrega", "", "Aguardando recebimento")}${K("Concluídas", n("Concluída"), "no estoque", "pago", "Concluída")}</div>`;
+  const miro = (CONS.ocFases && CONS.ocFases.miro) || CONS_OC_MIRO ? `<a class="btn sm" href="${esc((CONS.ocFases && CONS.ocFases.miro) || CONS_OC_MIRO)}" target="_blank" rel="noopener" title="Quadro do fluxo no Miro">Fluxo no Miro ↗</a>` : "";
+  const topo = `<div class="cons-g cons-fluxo-card"><div class="cons-fluxo-cab"><h3>Fluxo da ordem de compra</h3><span class="sup">${CONS.ocFases && CONS.ocFases.atualizadoEm ? `fases atualizadas em ${esc(fmtDate(CONS.ocFases.atualizadoEm))}` : "fases padrão do ERP"}</span><span class="grow"></span>${miro}${session.n1 ? `<button class="btn sm" onclick="consOcFasesEditar()">Fases e Miro…</button>` : ""}</div>${consOcFluxoHtml(null)}</div>`;
+  const linha = o => { const S = consOcSecoes(o), v = o.Vencedor != null && o.Vencedor !== "" ? S[Number(o.Vencedor)] : null, its = consOcItens(o); return `<tr class="cons-l" onclick="consOcAbrir(${esc(jsArg(o._id))})" tabindex="0"><td class="nw"><b>${esc(o.Title || "—")}</b><div class="sup">${esc(o.Data ? fmtDate(o.Data) : "")}</div></td><td>${its.length} item(ns)<div class="sup">${esc(its.slice(0, 3).map(x => x.nome).join(", "))}${its.length > 3 ? "…" : ""}</div></td><td>${S.filter(s => s.tem).map(s => `<div class="${v && v.i === s.i ? "cons-venc" : ""}">${esc(s.forn || "")}${s.completo ? ` <span class="sup">${esc(fmtBRL(s.total))}</span>` : ""}</div>`).join("") || `<span class="sup">sem orçamento</span>`}</td><td class="right nw">${v ? `<b>${esc(fmtBRL(o.TotalAprovado || v.total))}</b>` : "—"}</td><td>${consOcPill(o.Status)}</td><td class="sup">${esc(o.Solicitante || "")}</td></tr>`; };
+  return topo + kpis + `<div class="cons-fbar" role="search"><input type="search" id="consQO" placeholder="Buscar ordem, item, fornecedor, solicitante…" value="${esc(CONS.fo.q)}"><span class="grow"></span>${ed ? `<button class="btn sm primary" onclick="consOcNova()">+ Ordem de compra</button>` : ""}</div>`
+    + (its.length ? `<div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th>Ordem</th><th>Itens</th><th>Orçamentos</th><th class="right">Aprovado</th><th>Status</th><th>Solicitante</th></tr></thead><tbody>${its.map(linha).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>${CONS.oc.length ? "Nenhuma ordem neste filtro" : "Nenhuma ordem de compra ainda"}</h3><p>${ed && !CONS.oc.length ? "Clique em \"+ Ordem de compra\" para pedir itens em baixo estoque ou novos consumíveis." : ""}</p></div>`);
+}
+window.consOcFasesEditar = async () => {
+  if (!session.n1) return;
+  const F = consOcFases(), P = CONS.ocFases || {};
+  openModal("Fases do fluxo e quadro do Miro", `<p class="sup">As fases são as do processo documentado no Miro. Quando o processo mudar lá, ajuste aqui os nomes e as descrições (a ordem e o que cada fase faz no ERP não mudam).</p><div class="form-grid">
+      <div class="field full"><label>Link do quadro no Miro</label><input id="ofMiro" value="${esc(P.miro || CONS_OC_MIRO)}" placeholder="https://miro.com/app/board/…"></div>
+      ${F.map((f, i) => `<div class="field"><label>Fase ${i + 1} · nome</label><input id="ofN${i}" maxlength="40" value="${esc(f.n)}"></div><div class="field"><label>Descrição</label><input id="ofD${i}" maxlength="120" value="${esc(f.d || "")}"></div>`).join("")}
+    </div><div class="err" id="ofErr" style="display:none"></div>`, async () => {
+    const g = k => ($(k) ? $(k).value.trim() : "");
+    const fases = CONS_OC_FASES.map((b, i) => ({ k: b.k, n: g(`ofN${i}`) || b.n, d: g(`ofD${i}`) }));
+    try { const v = { fases, miro: g("ofMiro") || "", atualizadoEm: todayISO(), por: consOcQuem() }; await erpParamGravar("cons_oc_fases", v); CONS.ocFases = v; paintCons(); toast("Fases atualizadas."); return true; }
+    catch (e) { const el = $("ofErr"); el.style.display = "block"; el.textContent = "Não foi possível gravar: " + e.message; return false; }
+  });
+};
+/* ---- nova ordem / edição (status Em elaboração) ---- */
+function consOcNumero() { const y = todayISO().slice(0, 4), n = Math.max(0, ...CONS.oc.map(o => { const m = String(o.Title || "").match(/^OCC-(\d{4})-(\d+)$/); return m && m[1] === y ? Number(m[2]) : 0; })); return `OCC-${y}-${String(n + 1).padStart(3, "0")}`; }
+window.consOcNova = async () => {
+  if (!consPode() || !CONS.listOc) return;
+  if (!(FORN_STATE.items || []).length && typeof loadForn === "function") { try { await loadForn(true); } catch (e) {} }
+  const L = consLinhas().filter(x => x.Ativo !== false), baixo = L.filter(x => x.sit === "baixo" || x.sit === "zerado");
+  const sug = baixo.map(x => ({ id: x._id, nome: x.Title, cod: x.Codigo || "", un: x.Unidade || "un", cat: x.Categoria || "", qtd: Math.max(1, Math.round((consNum(x.EstoqueMin) * 2 - x.saldo) * 100) / 100) }));
+  try {
+    const quem = consOcQuem(), f = { Title: consOcNumero(), Data: todayISO(), Status: "Em elaboração", Solicitante: quem, Itens: JSON.stringify(sug), Cotacoes: "[]", Historico: JSON.stringify([{ f: "solic", em: new Date().toISOString(), por: quem, t: sug.length ? `aberta com ${sug.length} item(ns) abaixo do mínimo` : "aberta" }]) };
+    const r = await SP.create(CONS.site.id, CONS.listOc.id, f); await consCarregar(true); const id = String((r && (r.id || r._id)) || ""); CONS.ocSel = id || null; paintCons(); if (sug.length) toast(`${sug.length} item(ns) abaixo do mínimo já entraram na ordem com a sugestão de compra.`, 6000);
+  } catch (e) { toast("Não foi possível criar a ordem: " + e.message, 7000); }
+};
+function consOcDe(id) { return CONS.oc.find(o => o._id === String(id)); }
+async function consOcGravar(o, campos, fase, txt) {
+  const h = consOcHist(o); if (fase) h.push({ f: fase, em: new Date().toISOString(), por: consOcQuem(), t: txt || "" });
+  const f = Object.assign({}, campos, { Historico: JSON.stringify(h.slice(-60)) });
+  Object.assign(o, f);   /* revisão B1: a memória muda antes da gravação — o próximo campo digitado já parte do valor novo */
+  CONS.ocFila = (CONS.ocFila || Promise.resolve()).then(() => SP.update(CONS.site.id, CONS.listOc.id, o._id, f));   /* e os PATCHes saem em fila, na ordem */
+  await CONS.ocFila;
+}
+/* histórico de preços gravado nos Terceiros: melhor preço recente de cada item (12 meses) */
+function consOcHistPrecos() {
+  const out = new Map(), lim = (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); })();
+  (FORN_STATE.items || []).forEach(f => consOcJson(f.Cotacoes, []).forEach(c => { if (!c || !c.item || !(consNum(c.preco) > 0) || String(c.data || "") < lim) return; const k = normName(c.item), a = out.get(k) || []; a.push(Object.assign({ forn: f.Title, fornId: f._id }, c)); out.set(k, a); }));
+  return out;
+}
+function consOcForns() {   /* revisão B2: a OC precisa dos Terceiros mesmo para quem não tem o módulo na matriz (a leitura da lista é do SharePoint) */
+  if ((FORN_STATE.items || []).length || CONS.fornOcTentou || typeof loadForn !== "function") return; CONS.fornOcTentou = true;
+  loadForn(true).then(() => { if (CONS.aba === "oc" && $("consBody")) paintCons(); }).catch(() => {});
+}
+function consOcDetalhe() {
+  const o = consOcDe(CONS.ocSel); if (!o) { CONS.ocSel = null; return consOcLista(); }
+  consOcForns();
+  const ed = consPode() && o.Status === "Em elaboração", its = consOcItens(o), S = consOcSecoes(o), venc = o.Vencedor != null && o.Vencedor !== "" ? Number(o.Vencedor) : null, fase = consOcFase(o), F = consOcFases(), hist = consOcHistPrecos();
+  const forns = (typeof fornAtivos === "function" ? fornAtivos() : []).filter(f => !f.Bloqueio || f.Bloqueio === "").map(f => f.Title).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const melhor = S.filter(s => s.tem && s.completo).sort((a, b) => a.total - b.total)[0] || null;
+  const L = consLinhas(), cat = consCatalogo();
+  const itLinha = (it, i) => `<tr><td><b>${esc(it.nome)}</b>${it.novo ? ` <span class="pill st-aguardando"><i></i>Novo</span>` : ""}<div class="sup">${esc([it.cod, it.cat].filter(Boolean).join(" · "))}</div></td><td class="right nw">${ed ? `<input type="number" class="oc-qtd" data-i="${i}" min="0.01" step="0.01" value="${esc(String(it.qtd || ""))}" style="width:84px" onchange="consOcItemQtd(${i}, this.value)">` : consQtd(it.qtd)} ${esc(it.un || "")}</td><td class="nw sup">${(() => { const x = L.find(y => y._id === it.id); return x ? `${consQtd(x.saldo, x.Unidade)} em estoque · mín. ${consQtd(x.EstoqueMin)}` : "item novo"; })()}</td>${ed ? `<td class="act nw"><button class="btn mini" onclick="consOcItemTirar(${i})">Tirar</button></td>` : ""}</tr>`;
+  const itens = `<div class="cons-g"><h3>1 · Itens da solicitação</h3><div class="dica">${ed ? "Itens abaixo do mínimo entram com a sugestão de compra; acrescente outros do estoque ou um consumível novo." : `${its.length} item(ns)`}</div>
+    ${its.length ? `<div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th>Item</th><th class="right">Quantidade</th><th>Estoque</th>${ed ? "<th></th>" : ""}</tr></thead><tbody>${its.map(itLinha).join("")}</tbody></table></div>` : `<p class="cap-muted">Nenhum item ainda.</p>`}
+    ${ed ? `<div class="oc-add"><input id="ocItemN" list="ocItemL" autocomplete="off" placeholder="Item do estoque ou do catálogo — ou escreva um novo"><datalist id="ocItemL">${L.filter(x => x.Ativo !== false).map(x => `<option value="${esc(x.Title)}">${esc([x.Codigo, consQtd(x.saldo, x.Unidade)].filter(Boolean).join(" · "))}</option>`).join("")}${cat.filter(c => !L.some(x => consCatNorm(x.Title) === consCatNorm(c.n))).map(c => `<option value="${esc(c.n)}">catálogo · ${esc(c.cat || "")}</option>`).join("")}</datalist><input type="number" id="ocItemQ" min="0.01" step="0.01" placeholder="Qtd." style="width:90px"><button class="btn sm" onclick="consOcItemAdd()">Adicionar</button></div>` : ""}
+    <div class="field full" style="margin-top:10px"><label>Justificativa</label>${ed ? `<textarea id="ocJust" rows="2" placeholder="Por que comprar agora (opcional)" onchange="consOcJust(this.value)">${esc(o.Justificativa || "")}</textarea>` : `<div class="static">${esc(o.Justificativa || "—")}</div>`}</div></div>`;
+  const resumo = `<div class="cons-g oc-resumo"><h3>Resumo dos orçamentos</h3><div class="dica">total orçado em cada fornecedor · ${melhor ? `menor total: <b>${esc(melhor.forn)}</b> (${esc(fmtBRL(melhor.total))})` : "preencha os preços dos itens"}</div><div class="oc-res">${S.map(s => `<div class="oc-res-k ${venc === s.i ? "venc" : ""} ${melhor && melhor.i === s.i ? "melhor" : ""}"><div class="r">Fornecedor ${s.i + 1}</div><div class="f">${esc(s.forn || "—")}</div><div class="v">${s.tem ? esc(fmtBRL(s.total)) : "—"}</div><div class="s">${s.tem ? (s.completo ? `${s.n} de ${its.length} itens` : `${s.n} de ${its.length} itens com preço`) : "sem fornecedor"}${venc === s.i ? " · <b>aprovado</b>" : melhor && melhor.i === s.i ? " · menor preço" : ""}</div></div>`).join("")}</div></div>`;
+  const secao = s => { const c = consOcCot(o)[s.i] || {}, p = c.precos || {};
+    const linha = (it, i) => { const h = (hist.get(normName(it.nome)) || []).filter(x => x.fornId !== c.fornId).sort((a, b) => consNum(a.preco) - consNum(b.preco))[0]; const u = consNum(p[i]); const dica = h && u > 0 && consNum(h.preco) < u ? `<div class="sup oc-dica">↓ ${esc(h.forn)} orçou ${esc(fmtBRL(h.preco))} em ${esc(fmtDate(h.data))}</div>` : "";
+      return `<tr><td>${esc(it.nome)}<div class="sup">${esc(consQtd(it.qtd, it.un))}</div></td><td class="right nw">${ed ? `<input type="number" min="0" step="0.01" value="${u ? esc(String(u)) : ""}" style="width:100px" placeholder="R$ unit." onchange="consOcPreco(${s.i}, ${i}, this.value)">` : (u ? esc(fmtBRL(u)) : "—")}${dica}</td><td class="right nw" id="ocLin${s.i}_${i}">${u ? esc(fmtBRL(u * consNum(it.qtd))) : "—"}</td></tr>`; };
+    return `<div class="cons-g oc-sec ${venc === s.i ? "venc" : ""}"><h3>${s.i + 1} · Fornecedor ${s.i + 1}${venc === s.i ? ` <span class="pill st-pago"><i></i>Aprovado</span>` : ""}</h3>
+      <div class="form-grid" style="margin:8px 0">
+        <div class="field full"><label>Fornecedor (Terceiros › Banco de Dados)</label>${ed ? `<input id="ocForn${s.i}" list="ocFornL${s.i}" autocomplete="off" value="${esc(c.forn || "")}" placeholder="Digite para buscar" onchange="consOcForn(${s.i}, this.value)"><datalist id="ocFornL${s.i}">${forns.map(n => `<option value="${esc(n)}">`).join("")}</datalist>` : `<div class="static">${esc(c.forn || "—")}${c.cnpj ? ` <span class="sup">${esc(c.cnpj)}</span>` : ""}</div>`}</div>
+        <div class="field"><label>Prazo de entrega (dias)</label>${ed ? `<input type="number" min="0" value="${esc(String(c.prazo ?? ""))}" onchange="consOcCampo(${s.i}, 'prazo', this.value)">` : `<div class="static">${c.prazo != null && c.prazo !== "" ? esc(String(c.prazo)) + " dia(s)" : "—"}</div>`}</div>
+        <div class="field"><label>Frete (R$)</label>${ed ? `<input type="number" min="0" step="0.01" value="${esc(String(c.frete ?? ""))}" onchange="consOcCampo(${s.i}, 'frete', this.value)">` : `<div class="static">${c.frete ? esc(fmtBRL(c.frete)) : "—"}</div>`}</div>
+        <div class="field full"><label>Condições / observação</label>${ed ? `<input value="${esc(c.obs || "")}" maxlength="200" placeholder="Pagamento, validade da proposta, nº do orçamento…" onchange="consOcCampo(${s.i}, 'obs', this.value)">` : `<div class="static">${esc(c.obs || "—")}</div>`}</div>
+      </div>
+      ${its.length ? `<div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th>Item</th><th class="right">Unitário</th><th class="right">Total</th></tr></thead><tbody>${its.map(linha).join("")}<tr class="tot"><td><b>Total com frete</b></td><td></td><td class="right"><b id="ocTot${s.i}">${s.tem ? esc(fmtBRL(s.total)) : "—"}</b></td></tr></tbody></table></div>` : `<p class="cap-muted">Adicione os itens na seção 1 — eles aparecem aqui para cada fornecedor.</p>`}</div>`; };
+  const H = consOcHist(o).slice().reverse();
+  const statusCard = `<div class="cons-g oc-status"><div class="r">Status atual</div><div class="st">${consOcPill(o.Status)}</div>
+    ${consOcFluxoHtml(o, true)}
+    ${o.Aprovador ? `<div class="sup" style="margin-top:8px">${o.Status === "Reprovada" ? "Reprovada" : "Aprovada"} por <b>${esc(o.Aprovador)}</b>${o.DataDecisao ? " em " + esc(fmtDate(o.DataDecisao)) : ""}${o.MotivoDecisao ? `<br>${esc(o.MotivoDecisao)}` : ""}</div>` : ""}
+    ${o.CapId ? `<div class="sup" style="margin-top:6px">Lançamento na CAP: <a href="#/financeiro/contas-a-pagar" onclick="setTimeout(() => { try { capEdit(${esc(jsArg(o.CapId))}); } catch (e) {} }, 900)">#${esc(o.CapId)}</a>${o.PagoEm ? ` · pago em ${esc(fmtDate(o.PagoEm))}` : " · em aberto"}</div>` : ""}
+    <h4>Histórico</h4>${H.length ? `<ul class="oc-hist">${H.map(h => `<li><span class="d">${esc(tercDataTxt(h.em))}</span><b>${esc((F.find(f => f.k === h.f) || {}).n || h.f || "")}</b> ${esc(h.t || "")}<span class="sup"> · ${esc(h.por || "")}</span></li>`).join("")}</ul>` : `<p class="cap-muted">—</p>`}</div>`;
+  const acoes = [];
+  if (ed) { acoes.push(`<button class="btn primary" onclick="consOcEnviar()">Enviar para aprovação</button>`); acoes.push(`<button class="btn" onclick="consOcCancelar()" style="color:var(--err)">Cancelar ordem</button>`); }
+  if (o.Status === "Aguardando aprovação") { acoes.push(`<button class="btn primary" id="ocBtnAprov" onclick="consOcAprovar()">Aprovar…</button><button class="btn" id="ocBtnRepr" onclick="consOcReprovar()" style="color:var(--err)">Reprovar…</button>`); if (consPode()) acoes.push(`<button class="btn" onclick="consOcVoltar()">Voltar para elaboração</button>`); }
+  if (o.Status === "Aguardando pagamento" && !o.CapId && typeof podeEditar === "function" && podeEditar("cap")) acoes.push(`<button class="btn primary" onclick="consOcLancarCap()">Lançar na CAP</button>`);
+  if (o.Status === "Aguardando pagamento" && o.CapId && consPode()) acoes.push(`<button class="btn" onclick="consOcPagosChecar(true)">Conferir pagamento na CAP</button>`);
+  if (o.Status === "Aguardando recebimento" && consPode()) acoes.push(`<button class="btn primary" onclick="consOcReceber()">Confirmar recebimento…</button>`);
+  if (o.Status !== "Em elaboração") acoes.push(`<button class="btn" onclick="consOcPdf(${esc(jsArg(o._id))})">Relatório (PDF)</button>`);
+  if (consExc() && (o.Status === "Em elaboração" || o.Status === "Cancelada" || o.Status === "Reprovada")) acoes.push(`<button class="btn" onclick="consOcExcluir()" style="color:var(--err)">Excluir</button>`);
+  const topo = `<div class="oc-topo"><button class="btn" onclick="consOcAbrir('')">← Ordens</button><h2 style="margin:0">${esc(o.Title || "Ordem de compra")}</h2><span class="sup">${esc(o.Data ? fmtDate(o.Data) : "")} · ${esc(o.Solicitante || "")}</span><span class="grow"></span>${acoes.join("")}</div>`;
+  setTimeout(() => { if ($("ocBtnAprov")) consOcAprovador().then(ok => { if (!ok) { ["ocBtnAprov", "ocBtnRepr"].forEach(k => { const b = $(k); if (b) { b.disabled = true; b.title = consPode() ? "Só administradores ou a gerência do RH aprovam" : "Aprovar exige edição em Consumíveis"; } }); } }); }, 0);
+  return topo + `<div class="oc-grid"><div class="oc-main">${itens}${resumo}${S.map(secao).join("")}</div><div class="oc-side">${statusCard}</div></div>`;
+}
+/* edição em memória + gravação a cada mudança (ordem em elaboração) */
+async function consOcSet(f, fase, txt, soTotais) { const o = consOcDe(CONS.ocSel); if (!o || o.Status !== "Em elaboração" || !consPode()) return; const p = consOcGravar(o, f, fase, txt).catch(e => toast("Não foi possível gravar: " + e.message, 6000)); if (soTotais) consOcTotaisPinta(); else { await p; paintCons(); } }
+/* revisão B1: preço/frete digitado atualiza só o resumo e os totais das seções (a página não é redesenhada enquanto a pessoa digita) */
+function consOcTotaisPinta() {
+  const o = consOcDe(CONS.ocSel); if (!o) return; const its = consOcItens(o), S = consOcSecoes(o), venc = o.Vencedor != null && o.Vencedor !== "" ? Number(o.Vencedor) : null, melhor = S.filter(s => s.tem && s.completo).sort((a, b) => a.total - b.total)[0] || null;
+  const res = document.querySelector("#consBody .oc-res"); if (res) res.innerHTML = S.map(s => `<div class="oc-res-k ${venc === s.i ? "venc" : ""} ${melhor && melhor.i === s.i ? "melhor" : ""}"><div class="r">Fornecedor ${s.i + 1}</div><div class="f">${esc(s.forn || "—")}</div><div class="v">${s.tem ? esc(fmtBRL(s.total)) : "—"}</div><div class="s">${s.tem ? (s.completo ? `${s.n} de ${its.length} itens` : `${s.n} de ${its.length} itens com preço`) : "sem fornecedor"}${venc === s.i ? " · <b>aprovado</b>" : melhor && melhor.i === s.i ? " · menor preço" : ""}</div></div>`).join("");
+  const dica = document.querySelector("#consBody .oc-resumo .dica"); if (dica) dica.innerHTML = `total orçado em cada fornecedor · ${melhor ? `menor total: <b>${esc(melhor.forn)}</b> (${esc(fmtBRL(melhor.total))})` : "preencha os preços dos itens"}`;
+  S.forEach(s => { const p = s.precos || {}; its.forEach((it, i) => { const c = $(`ocLin${s.i}_${i}`); if (c) { const u = consNum(p[i]); c.textContent = u ? fmtBRL(u * consNum(it.qtd)) : "—"; } }); const t = $(`ocTot${s.i}`); if (t) t.textContent = s.tem ? fmtBRL(s.total) : "—"; });
+}
+window.consOcItemQtd = (i, v) => { const o = consOcDe(CONS.ocSel); if (!o) return; const its = consOcItens(o); if (!its[i]) return; its[i].qtd = Math.max(0.01, consNum(v)); consOcSet({ Itens: JSON.stringify(its) }); };
+window.consOcItemTirar = i => { const o = consOcDe(CONS.ocSel); if (!o) return; const its = consOcItens(o); its.splice(i, 1); const C = consOcCot(o).map(c => { const p = {}; Object.keys(c.precos || {}).forEach(k => { const n = Number(k); if (n < i) p[n] = c.precos[k]; else if (n > i) p[n - 1] = c.precos[k]; }); return Object.assign({}, c, { precos: p }); }); consOcSet({ Itens: JSON.stringify(its), Cotacoes: JSON.stringify(C) }); };
+window.consOcItemAdd = () => {
+  const o = consOcDe(CONS.ocSel); if (!o) return; const n = ($("ocItemN") ? $("ocItemN").value : "").trim(), q = consNum($("ocItemQ") ? $("ocItemQ").value : ""); if (!n) { toast("Escreva o item."); return; } if (!(q > 0)) { toast("Informe a quantidade."); return; }
+  const its = consOcItens(o); if (its.some(x => normName(x.nome) === normName(n))) { toast("Esse item já está na ordem."); return; }
+  const x = consLinhas().find(y => normName(y.Title) === normName(n)), c = x ? null : consCatDe(n);
+  its.push(x ? { id: x._id, nome: x.Title, cod: x.Codigo || "", un: x.Unidade || "un", cat: x.Categoria || "", qtd: q } : { novo: true, nome: n.slice(0, 120), un: c ? c.un : "un", cat: c ? consCatCase(c.cat) : "", min: c ? c.min : null, qtd: q });
+  consOcSet({ Itens: JSON.stringify(its) }, null);
+};
+window.consOcForn = (i, nome) => { const o = consOcDe(CONS.ocSel); if (!o) return; const C = consOcCot(o); nome = String(nome || "").trim(); const f = nome ? (fornByName(nome) || (FORN_STATE.items || []).find(x => x.NomeFantasia && normName(x.NomeFantasia) === normName(nome)) || null) : null; if (nome && !f) { toast(`"${nome}" não está em Terceiros › Banco de Dados — cadastre com CNPJ/CPF antes.`, 7000); paintCons(); return; } C[i] = Object.assign({}, C[i], { forn: f ? f.Title : "", fornId: f ? String(f._id) : "", cnpj: f ? (f.CNPJ || "") : "" }); if (C.filter(c => c.fornId).map(c => c.fornId).some((v, k, a) => a.indexOf(v) !== k)) { toast("Cada seção deve ter um fornecedor diferente."); paintCons(); return; } consOcSet({ Cotacoes: JSON.stringify(C) }); };
+window.consOcCampo = (i, k, v) => { const o = consOcDe(CONS.ocSel); if (!o) return; const C = consOcCot(o); C[i] = Object.assign({}, C[i], { [k]: k === "obs" ? String(v).slice(0, 200) : (v === "" ? "" : consNum(v)) }); consOcSet({ Cotacoes: JSON.stringify(C) }, null, "", true); };
+window.consOcPreco = (i, j, v) => { const o = consOcDe(CONS.ocSel); if (!o) return; const C = consOcCot(o); const p = Object.assign({}, C[i].precos || {}); if (v === "" || !(consNum(v) > 0)) delete p[j]; else p[j] = consNum(v); C[i] = Object.assign({}, C[i], { precos: p }); consOcSet({ Cotacoes: JSON.stringify(C) }, null, "", true); };
+window.consOcJust = v => consOcSet({ Justificativa: String(v || "").trim().slice(0, 2000) || null }, null, "", true);   /* revisão: justificativa gravada ao sair do campo */
+window.consOcEnviar = async () => {
+  const o = consOcDe(CONS.ocSel); if (!o || !consPode()) return; const its = consOcItens(o), S = consOcSecoes(o).filter(s => s.tem);
+  const just = $("ocJust") ? $("ocJust").value.trim() : (o.Justificativa || "");
+  if (!its.length) { toast("Adicione pelo menos um item."); return; }
+  if (!S.length) { toast("Informe pelo menos um fornecedor com os preços."); return; }
+  const inc = S.filter(s => !s.completo); if (inc.length) { toast(`Faltam preços em: ${inc.map(s => s.forn).join(", ")}.`, 7000); return; }
+  if (S.length < 3 && !(await erpConfirmar({ titulo: "Menos de 3 orçamentos", texto: `A ordem tem ${S.length} orçamento(s). O fluxo pede até 3 fornecedores; enviar assim mesmo para aprovação?`, sim: "Enviar" }))) return;
+  try { await consOcGravar(o, { Status: "Aguardando aprovação", Justificativa: just || null }, "orc", `${S.length} orçamento(s) · menor total ${fmtBRL(S.slice().sort((a, b) => a.total - b.total)[0].total)}`); paintCons(); toast("Ordem enviada para aprovação."); } catch (e) { toast("Erro: " + e.message, 6000); }
+};
+window.consOcVoltar = async () => { const o = consOcDe(CONS.ocSel); if (!o || !consPode()) return; try { await consOcGravar(o, { Status: "Em elaboração" }, "orc", "voltou para elaboração"); paintCons(); } catch (e) { toast("Erro: " + e.message, 6000); } };
+window.consOcCancelar = async () => { const o = consOcDe(CONS.ocSel); if (!o || !consPode()) return; if (!(await erpConfirmar({ titulo: "Cancelar ordem", texto: `Cancelar a ordem ${o.Title}? Ela continua na lista como cancelada.`, sim: "Cancelar ordem", perigo: true }))) return; try { await consOcGravar(o, { Status: "Cancelada" }, "aprov", "cancelada"); paintCons(); } catch (e) { toast("Erro: " + e.message, 6000); } };
+window.consOcExcluir = async () => { const o = consOcDe(CONS.ocSel); if (!o || !consExc()) return; if (!(await erpConfirmar({ titulo: "Excluir ordem", texto: `Excluir a ordem ${o.Title}? Não pode ser desfeito.`, sim: "Excluir", perigo: true }))) return; try { await graph(`/sites/${CONS.site.id}/lists/${CONS.listOc.id}/items/${o._id}`, { method: "DELETE" }); CONS.ocSel = null; await consCarregar(true); paintCons(); toast("Ordem excluída."); } catch (e) { toast("Erro: " + e.message, 6000); } };
+/* ---- aprovação: escolhe o fornecedor; grava as cotações nos 3 Terceiros; lança na CAP com o relatório anexo ---- */
+window.consOcAprovar = async () => {
+  const o = consOcDe(CONS.ocSel); if (!o || o.Status !== "Aguardando aprovação") return; if (!(await consOcAprovador())) { toast("Só administradores ou a gerência do RH aprovam."); return; }
+  const S = consOcSecoes(o).filter(s => s.tem && s.completo), melhor = S.slice().sort((a, b) => a.total - b.total)[0];
+  openModal(`Aprovar ${o.Title}`, `<p class="sup">Escolha o fornecedor. O menor total está marcado; ao aprovar, as cotações dos ${S.length} fornecedores ficam registradas em Terceiros e o lançamento entra na CAP com vencimento em até 3 dias.</p>
+    <div class="oc-escolha">${S.map(s => `<label class="oc-opt ${melhor && melhor.i === s.i ? "melhor" : ""}"><input type="radio" name="ocVenc" value="${s.i}" ${melhor && melhor.i === s.i ? "checked" : ""}><div><b>${esc(s.forn)}</b> <span class="sup">${esc(s.cnpj || "")}</span><div>${esc(fmtBRL(s.total))}${s.prazo != null && s.prazo !== "" ? ` · ${esc(String(s.prazo))} dia(s)` : ""}${melhor && melhor.i === s.i ? ` · <b>menor preço</b>` : melhor ? ` · +${esc(fmtBRL(s.total - melhor.total))}` : ""}</div>${s.obs ? `<div class="sup">${esc(s.obs)}</div>` : ""}</div></label>`).join("")}</div>
+    <div class="field full" style="margin-top:10px"><label>Motivo (obrigatório se não for o menor preço)</label><input id="ocMot" maxlength="255" placeholder="Ex.: prazo de entrega, qualidade, fornecedor homologado"></div><div class="err" id="ocErr" style="display:none"></div>`, async () => {
+    const err = m => { const e = $("ocErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const r = document.querySelector("input[name=ocVenc]:checked"); if (!r) return err("Escolha o fornecedor.");
+    const i = Number(r.value), s = S.find(x => x.i === i), mot = ($("ocMot") ? $("ocMot").value : "").trim();
+    if (melhor && melhor.i !== i && !mot) return err(`${s.forn} não é o menor preço (${fmtBRL(s.total - melhor.total)} a mais que ${melhor.forn}). Explique o motivo.`);
+    try {
+      await consOcGravar(o, { Status: "Aguardando pagamento", Vencedor: i, TotalAprovado: s.total, Aprovador: consOcQuem(), DataDecisao: todayISO(), MotivoDecisao: mot || null }, "aprov", `aprovada: ${s.forn} · ${fmtBRL(s.total)}${mot ? " · " + mot : ""}`);
+      await consOcRegistrarCotacoes(o).then(() => consOcGravar(o, {}, "aprov", "cotações registradas nos Terceiros")).catch(e => toast("Ordem aprovada, mas as cotações não foram gravadas nos Terceiros (" + e.message + ") — serão gravadas ao lançar na CAP.", 9000));
+      await consOcLancarCap(true);
+      paintCons(); return true;
+    } catch (e) { return err("Não foi possível aprovar: " + e.message); }
+  });
+};
+window.consOcReprovar = async () => {
+  const o = consOcDe(CONS.ocSel); if (!o || o.Status !== "Aguardando aprovação") return; if (!(await consOcAprovador())) { toast("Só administradores ou a gerência do RH aprovam."); return; }
+  openModal(`Reprovar ${o.Title}`, `<div class="field full"><label>Motivo<span class="req">*</span></label><input id="ocMot" maxlength="255"></div><div class="err" id="ocErr" style="display:none"></div>`, async () => {
+    const mot = ($("ocMot") ? $("ocMot").value : "").trim(); if (!mot) { const e = $("ocErr"); e.style.display = "block"; e.textContent = "Informe o motivo."; return false; }
+    try { await consOcGravar(o, { Status: "Reprovada", Aprovador: consOcQuem(), DataDecisao: todayISO(), MotivoDecisao: mot }, "aprov", "reprovada: " + mot); await consOcRegistrarCotacoes(o).catch(() => {}); paintCons(); return true; } catch (e) { const el = $("ocErr"); el.style.display = "block"; el.textContent = e.message; return false; }
+  });
+};
+/* cotações nos Terceiros: cada fornecedor orçado (vencedor ou não) recebe os preços por item — base das recomendações e da avaliação de variação */
+async function consOcRegistrarCotacoes(o) {
+  if (!FORN_STATE.site || !FORN_STATE.list) { try { await loadForn(true); } catch (e) { return; } }
+  if (FORN_STATE.cols && !FORN_STATE.cols.has("Cotacoes")) throw new Error("a coluna \"Cotações (JSON)\" ainda não existe em Terceiros — rode a Configuração");
+  const its = consOcItens(o), venc = o.Vencedor != null && o.Vencedor !== "" ? Number(o.Vencedor) : null;
+  for (const s of consOcSecoes(o)) { if (!s.tem || !s.fornId) continue; const f = (FORN_STATE.items || []).find(x => String(x._id) === String(s.fornId)); if (!f) continue;
+    const arr = consOcJson(f.Cotacoes, []).filter(c => !(c && c.oc === o.Title));
+    its.forEach((it, i) => { const u = consNum((s.precos || {})[i]); if (u > 0) arr.push({ oc: o.Title, data: o.DataDecisao || todayISO(), item: it.nome, un: it.un || "", qtd: consNum(it.qtd), preco: u, venc: venc === s.i, st: o.Status === "Reprovada" ? "reprovada" : venc === s.i ? "aprovado" : "perdeu" }); });
+    const val = JSON.stringify(arr.slice(-400)); const m0 = session.modAtual; session.modAtual = "forn"; try { await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, f._id, { Cotacoes: val }); } finally { session.modAtual = m0; } f.Cotacoes = val; }
+}
+/* lançamento na CAP: fornecedor aprovado, vencimento em 3 dias, tipo Despesa, categoria Material de Consumo; relatório do orçamento anexado em "Outro" */
+window.consOcLancarCap = async (silencioso) => {
+  const o = consOcDe(CONS.ocSel); if (!o || o.Status !== "Aguardando pagamento" || o.CapId) return;
+  const S = consOcSecoes(o), s = S[Number(o.Vencedor)]; if (!s || !s.tem) return;
+  if (!podeEditar("cap")) { if (!silencioso) toast("Lançar na CAP exige edição na Contas a Pagar — quem tem acesso usa o botão \"Lançar na CAP\" na ordem.", 8000); return; }
+  try {
+    if (!consOcHist(o).some(h => /cotações registradas/.test(h.t || ""))) { try { await consOcRegistrarCotacoes(o); await consOcGravar(o, {}, "aprov", "cotações registradas nos Terceiros"); } catch (e) {} }   /* revisão D3: segunda chance para as cotações */
+    await loadCAP({ soLeitura: true }); const f = (FORN_STATE.items || []).find(x => String(x._id) === String(s.fornId)) || fornByName(s.forn);
+    const venc = (() => { const d = new Date(); d.setDate(d.getDate() + 3); return ymd(d); })();
+    const campos = { Title: `${o.Title} · consumíveis · ${s.forn}`.slice(0, 255), Fornecedor: s.forn, CNPJ: (f && f.CNPJ) || s.cnpj || null, Categoria: CATEGORIAS.includes("Material de Consumo") ? "Material de Consumo" : (f && f.CategoriaPadrao) || null, Vencimento: venc, Competencia: venc.slice(0, 7), Valor: s.total, Status: "Em aberto", TipoLancamento: "Despesa", TipoFavorecido: "Fornecedor", RefDocumento: o.Title, Banco: (f && f.BancoPadrao) || null, FormaPagamento: (f && f.FormaPadrao) || null, CentroCusto: (f && f.CentroCustoPadrao) || null, Estabelecimento: (f && f.Estabelecimento) || null, Observacoes: `Ordem de compra de consumíveis ${o.Title} aprovada por ${o.Aprovador || ""} em ${fmtDate(o.DataDecisao || todayISO())} · ${consOcItens(o).length} item(ns)` };
+    if (f && CAP_STATE.cols && CAP_STATE.cols.has("FornecedorRefId")) campos.FornecedorRefLookupId = Number(f._id);
+    if (CAP_STATE.cols) Object.keys(campos).forEach(k => { if (k !== "Title" && k !== "FornecedorRefLookupId" && !CAP_STATE.cols.has(k)) delete campos[k]; });
+    let capId = "";
+    const m0 = session.modAtual; session.modAtual = "cap";
+    try { const r = await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, campos); capId = String((r && (r.id || r._id)) || ""); } finally { session.modAtual = m0; }
+    if (!capId) throw new Error("o lançamento não devolveu o id");
+    await consOcGravar(o, { CapId: capId }, "pag", `lançado na CAP (#${capId}) · vencimento ${fmtDate(venc)}`);
+    try { const blob = await consOcPdfBlob(o), file = new File([blob], `${o.Title}_orcamento_aprovado.pdf`, { type: "application/pdf" }), it = Object.assign({ _id: capId }, campos), dest = docDestinoConta(it, "Outro", file), drive = await docDrive();
+      const item = await docEnviar(dest.pasta, dest.nome.replace("_Outro", `_Orcamento_${o.Title}`), file, null), anexo = docMeta(item, "Outro", file, drive);
+      session.modAtual = "cap"; try { await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, capId, { Anexos: JSON.stringify([anexo]) }); } finally { session.modAtual = m0; }
+    } catch (e) { toast("Lançamento criado na CAP, mas o relatório do orçamento não pôde ser anexado: " + e.message, 9000); }
+    if (!silencioso) { paintCons(); toast(`Lançado na CAP com vencimento em ${fmtDate(venc)}.`, 6000); } else toast(`Aprovada e lançada na CAP (vencimento ${fmtDate(venc)}).`, 6000);
+  } catch (e) { if (!silencioso) toast("Não foi possível lançar na CAP: " + e.message, 8000); else toast("Aprovada; o lançamento na CAP não foi criado (" + e.message + "). Use \"Lançar na CAP\" na ordem.", 9000); }
+};
+/* pagamento: quando o lançamento da CAP está pago, a ordem passa a "Aguardando recebimento" */
+async function consOcPagosChecar(avisa) {
+  const pend = CONS.oc.filter(o => o.Status === "Aguardando pagamento" && o.CapId); if (!pend.length || !consPode()) return;
+  if (!avisa && CONS.ocChk && Date.now() - CONS.ocChk < 60000) return; CONS.ocChk = Date.now();
+  if (!canSee(MODULES.find(m => m.id === "cap"))) return;
+  try { await loadCAP({ soLeitura: true }); let n = 0;
+    for (const o of pend) { const c = CAP_STATE.items.find(x => String(x._id) === String(o.CapId)); if (c && c.Status === "Pago") { await consOcGravar(o, { Status: "Aguardando recebimento", PagoEm: c.DataPagamento ? ymd(c.DataPagamento) : todayISO() }, "pag", `pago em ${fmtDate(c.DataPagamento || todayISO())} · ${fmtBRL(capValorEfetivo(c))}`); n++; } else if (c && c.Status === "Cancelada") { await consOcGravar(o, { Status: "Cancelada" }, "pag", "lançamento cancelado na CAP"); n++; } }
+    if (n) { paintCons(); toast(`${n} ordem(ns) com pagamento confirmado — aguardando recebimento.`, 6000); } else if (avisa) toast("O lançamento ainda não está pago na CAP.", 5000);
+  } catch (e) { if (avisa) toast("Não foi possível ler a CAP: " + e.message, 6000); }
+}
+window.consOcPagosChecar = consOcPagosChecar;
+/* recebimento: confirma item a item; entradas no estoque (item novo é cadastrado antes) */
+window.consOcReceber = () => {
+  const o = consOcDe(CONS.ocSel); if (!o || o.Status !== "Aguardando recebimento" || !consPode()) return;
+  const its = consOcItens(o), R = consOcRec(o), s = consOcSecoes(o)[Number(o.Vencedor)] || {}, p = s.precos || {};
+  const falta = its.map((it, i) => ({ it, i, rec: R.filter(r => r.i === i).reduce((t, r) => t + consNum(r.qtd), 0) })).filter(x => x.rec < consNum(x.it.qtd) - 0.005);
+  if (!falta.length) { toast("Todos os itens já foram recebidos."); return; }
+  openModal(`Recebimento · ${o.Title}`, `<p class="sup">Confira o que chegou de <b>${esc(s.forn || "")}</b>. Cada item confirmado vira uma Entrada no estoque com o custo do orçamento${falta.some(x => x.it.novo) ? "; itens novos são cadastrados antes" : ""}.</p>
+    <div class="field full"><label>Nota fiscal</label><input id="ocNF" maxlength="60" placeholder="Nº da NF (opcional)"></div>
+    <div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th></th><th>Item</th><th class="right">Pedido</th><th class="right">Recebido</th></tr></thead><tbody>${falta.map(x => `<tr><td><input type="checkbox" class="ocRecOk" data-i="${x.i}" checked></td><td>${esc(x.it.nome)}${x.it.novo ? ` <span class="pill st-aguardando"><i></i>Novo</span>` : ""}<div class="sup">${esc(fmtBRL(consNum(p[x.i])))} / ${esc(x.it.un || "un")}</div></td><td class="right nw">${consQtd(consNum(x.it.qtd) - x.rec, x.it.un)}</td><td class="right"><input type="number" class="ocRecQ" data-i="${x.i}" min="0" max="${esc(String(Math.round((consNum(x.it.qtd) - x.rec) * 100) / 100))}" step="0.01" value="${esc(String(Math.round((consNum(x.it.qtd) - x.rec) * 100) / 100))}" style="width:90px"></td></tr>`).join("")}</tbody></table></div>
+    <div class="err" id="ocErr" style="display:none"></div>`, async () => {
+    const err = m => { const e = $("ocErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const nf = ($("ocNF") ? $("ocNF").value : "").trim(), marc = [...document.querySelectorAll(".ocRecOk:checked")].map(c => Number(c.dataset.i));
+    if (!marc.length) return err("Marque pelo menos um item recebido.");
+    const linhas = marc.map(i => { const el = document.querySelector(`.ocRecQ[data-i="${i}"]`); return { i, q: Math.min(consNum(el && el.value), consNum(el && el.max) || Infinity) }; }).filter(x => x.q > 0);
+    if (!linhas.length) return err("Informe as quantidades recebidas.");
+    try {
+      await consCarregar(true); const o2 = consOcDe(o._id) || o, its2 = consOcItens(o2), R2 = consOcRec(o2), novosIts = its2.slice();
+      for (const l of linhas) { const it = its2[l.i]; if (!it) continue; let id = it.id;
+        if (!id) { const c = consCatDe(it.nome); const f = { Title: it.nome, Codigo: consProxCodigo(), Categoria: consCatCase(it.cat || (c && c.cat) || ""), Unidade: it.un || (c && c.un) || "un", EstoqueMin: it.min ?? (c ? c.min : null), CustoUnit: consNum(p[l.i]) || null, Local: (c && c.local) || CONS_LOCAL_PADRAO, FornecedorTexto: s.forn || null, Ativo: true, EstoqueAtual: 0 };
+          const r = await SP.create(CONS.site.id, CONS.list.id, f); id = String((r && (r.id || r._id)) || ""); if (!id) throw new Error(`não foi possível cadastrar "${it.nome}"`); await consCarregar(true); novosIts[l.i] = Object.assign({}, it, { id, novo: false, cod: f.Codigo }); try { await consCatGravar(f); } catch (e) {} }
+        const x = CONS.itens.find(y => y._id === id) || {}; await consGravarMov({ Tipo: "Entrada", ItemId: id, ItemNome: x.Title || it.nome, Categoria: x.Categoria || it.cat || null, Unidade: x.Unidade || it.un || null, Quantidade: l.q, CustoUnit: consNum(p[l.i]) || null, Data: todayISO(), NF: nf || null, Motivo: `Ordem de compra ${o.Title} · ${s.forn || ""}` }, true);
+        R2.push({ i: l.i, qtd: l.q, em: todayISO(), por: consOcQuem(), nf: nf || "" }); }
+      const completo = its2.every((it, i) => R2.filter(r => r.i === i).reduce((t, r) => t + consNum(r.qtd), 0) >= consNum(it.qtd) - 0.005);
+      await consOcGravar(o2, Object.assign({ Recebimento: JSON.stringify(R2), Itens: JSON.stringify(novosIts) }, completo ? { Status: "Concluída" } : {}), completo ? "fim" : "receb", completo ? `recebimento completo (${linhas.length} item(ns) agora)${nf ? " · NF " + nf : ""}` : `recebimento parcial: ${linhas.length} item(ns)${nf ? " · NF " + nf : ""}`);
+      await consCarregar(true); paintCons(); toast(completo ? "Recebimento completo: ordem concluída e estoque atualizado." : "Recebimento parcial registrado; o restante continua aguardando.", 6000); return true;
+    } catch (e) { return err("Não foi possível registrar: " + e.message); }
+  });
+};
+/* relatório do orçamento (PDF via jsPDF): itens, as 3 seções, decisão — anexado na CAP e disponível na ordem */
+async function consOcPdfBlob(o) {
+  const J = await erpLib("jspdf"); await erpLib("jspdf_autotable"); const autoTable = window.autoTable, T = ctbPdfTxt;
+  if (!J || !J.jsPDF || typeof autoTable !== "function") throw new Error("biblioteca de PDF indisponível");
+  const doc = new J.jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true }), W = doc.internal.pageSize.getWidth(), M = 12;
+  const its = consOcItens(o), S = consOcSecoes(o), venc = o.Vencedor != null && o.Vencedor !== "" ? Number(o.Vencedor) : null;
+  try { const lg = await ctbLogoPng(); if (lg && lg.url) doc.addImage(lg.url, "PNG", M, 10, Math.min(40, 14 * lg.w / Math.max(lg.h, 1)), 14); } catch (e) {}
+  doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(30, 33, 83); doc.text(T(`Ordem de compra de consumíveis ${o.Title}`), W - M, 15, { align: "right" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(107, 114, 128);
+  doc.text(T(`Transportadora Nova Macabu · Recursos Humanos · ${o.Status}${o.Aprovador ? ` · decisão de ${o.Aprovador} em ${fmtDate(o.DataDecisao)}` : ""}`), W - M, 20, { align: "right" });
+  doc.text(T(`Solicitada em ${fmtDate(o.Data)} por ${o.Solicitante || ""}${o.Justificativa ? ` · ${o.Justificativa}` : ""}`), M, 30);
+  let y = 34;
+  autoTable(doc, { startY: y, margin: { left: M, right: M }, styles: { font: "helvetica", fontSize: 8.5, cellPadding: 1.6, textColor: [27, 34, 48] }, headStyles: { fillColor: [30, 33, 83], textColor: 255, fontStyle: "bold" }, alternateRowStyles: { fillColor: [248, 249, 251] },
+    head: [["Item", "Qtd.", ...S.filter(s => s.tem).map(s => T(`${s.forn}${venc === s.i ? " (aprovado)" : ""}`))]],
+    body: its.map((it, i) => [T(it.nome + (it.novo ? " (novo)" : "")), T(consQtd(it.qtd, it.un)), ...S.filter(s => s.tem).map(s => { const u = consNum((s.precos || {})[i]); return u ? T(`${fmtBRL(u)} · ${fmtBRL(u * consNum(it.qtd))}`) : "-"; })]),
+    foot: [["Total", "", ...S.filter(s => s.tem).map(s => T(`${fmtBRL(s.total)}${s.frete ? ` (frete ${fmtBRL(s.frete)})` : ""}`))]], footStyles: { fillColor: [238, 241, 245], textColor: [30, 33, 83], fontStyle: "bold" },
+    columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } } });
+  y = doc.lastAutoTable.finalY + 6;
+  doc.setFontSize(9); doc.setTextColor(27, 34, 48);
+  S.filter(s => s.tem).forEach(s => { doc.setFont("helvetica", venc === s.i ? "bold" : "normal"); doc.text(T(`Fornecedor ${s.i + 1}: ${s.forn}${s.cnpj ? " · " + s.cnpj : ""}${s.prazo != null && s.prazo !== "" ? ` · prazo ${s.prazo} dia(s)` : ""}${s.obs ? " · " + s.obs : ""}${venc === s.i ? " · APROVADO" : ""}`), M, y, { maxWidth: W - 2 * M }); y += 5; });
+  if (o.MotivoDecisao) { y += 2; doc.setFont("helvetica", "italic"); doc.text(T(`Motivo: ${o.MotivoDecisao}`), M, y, { maxWidth: W - 2 * M }); y += 6; }
+  const H = consOcHist(o); if (H.length) { y += 3; doc.setFont("helvetica", "bold"); doc.text("Histórico", M, y); y += 4; doc.setFont("helvetica", "normal"); doc.setFontSize(8); H.forEach(h => { doc.text(T(`${tercDataTxt(h.em)} · ${(consOcFases().find(f => f.k === h.f) || {}).n || ""} · ${h.t || ""} · ${h.por || ""}`), M, y, { maxWidth: W - 2 * M }); y += 4; }); }
+  doc.setFontSize(7.5); doc.setTextColor(107, 114, 128); doc.text(T(`ERP NMB · gerado em ${new Date().toLocaleString("pt-BR")} por ${consOcQuem()}`), M, doc.internal.pageSize.getHeight() - 8);
+  return doc.output("blob");
+}
+window.consOcPdf = async id => { const o = consOcDe(id); if (!o) return; try { toast("Gerando o PDF…", 2500); capBaixarBlob(await consOcPdfBlob(o), `${o.Title}_orcamento.pdf`); } catch (e) { toast("Não foi possível gerar o PDF: " + e.message, 7000); } };
+/* ---- Terceiros › cartão: histórico de cotações e recomendação ---- */
+{ const x0 = tercCardExtras; tercCardExtras = function (key) {
+    const r = x0.apply(this, arguments);
+    try {
+      const id = String(key).replace(/^id:/, ""), cad = FORN_STATE.items.find(x => String(x._id) === id), body = document.querySelector("#modal .modal-body.tcad"); if (!cad || !body) return r;
+      const cot = consOcJson(cad.Cotacoes, []).filter(c => c && c.item).sort((a, b) => String(b.data).localeCompare(String(a.data)));
+      if (!cot.length) return r;
+      const porItem = new Map(); cot.forEach(c => { const k = normName(c.item); if (!porItem.has(k)) porItem.set(k, []); porItem.get(k).push(c); });
+      const hist = consOcHistPrecos();
+      const linhas = [...porItem.values()].map(a => { const ult = a[0], ant = a.find(c => c !== ult && consNum(c.preco) > 0), var_ = ant ? (consNum(ult.preco) - consNum(ant.preco)) / consNum(ant.preco) : null;
+        const outros = (hist.get(normName(ult.item)) || []).filter(x => String(x.fornId) !== id && consNum(x.preco) > 0).sort((x, y) => consNum(x.preco) - consNum(y.preco))[0];
+        const rec = outros && consNum(outros.preco) < consNum(ult.preco) ? `<span class="oc-rec">↓ ${esc(outros.forn)}: ${esc(fmtBRL(outros.preco))} (${Math.round(100 * (consNum(ult.preco) - consNum(outros.preco)) / consNum(ult.preco))}% menos)</span>` : `<span class="sup">melhor preço conhecido</span>`;
+        return `<tr><td>${esc(ult.item)}<div class="sup">${a.length} cotação(ões)</div></td><td class="right nw">${esc(fmtBRL(ult.preco))}<div class="sup">${esc(fmtDate(ult.data))} · ${esc(ult.oc)}${ult.venc ? " · aprovado" : ""}</div></td><td class="right nw">${var_ == null ? "—" : `<span class="${var_ > 0.005 ? "neg" : var_ < -0.005 ? "pos" : ""}">${var_ > 0 ? "+" : ""}${(100 * var_).toFixed(1).replace(".", ",")}%</span>`}</td><td>${rec}</td></tr>`; });
+      const n = cot.filter(c => c.venc).length;
+      const html = `<section class="tcad-sec"><h4>Cotações de consumíveis <span>${cot.length} preço(s) orçado(s) · ${n} aprovado(s) · variação é contra a cotação anterior do mesmo item</span></h4><div class="table-wrap"><table class="cap-table"><thead><tr><th>Item</th><th class="right">Último preço</th><th class="right">Variação</th><th>Recomendação</th></tr></thead><tbody>${linhas.join("")}</tbody></table></div></section>`;
+      const nota = body.querySelector(".tcad-nota"); if (nota) nota.insertAdjacentHTML("beforebegin", html); else body.insertAdjacentHTML("beforeend", html);
+    } catch (e) { console.warn("cotações", e); }
+    return r;
+  }; window.tercCardExtras = tercCardExtras; }
+{ const st = document.createElement("style"); st.textContent = `
+#consRoot .cons-segmes{margin-left:10px;vertical-align:middle;font-size:11px}#consRoot .cons-segmes button{padding:3px 9px;font-size:11.5px}
+#consRoot .oc-topo{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 12px}#consRoot .oc-topo h2{font-size:20px}
+#consRoot .oc-grid{display:grid;grid-template-columns:1fr 300px;gap:12px;align-items:start}@media (max-width:980px){#consRoot .oc-grid{grid-template-columns:1fr}}
+#consRoot .oc-main>.cons-g{margin:0 0 12px}#consRoot .oc-side{position:sticky;top:76px}
+#consRoot .oc-status .r{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#5C6670}#consRoot .oc-status .st{margin:4px 0 10px;font-size:15px}#consRoot .oc-status h4{margin:12px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#5C6670}
+#consRoot .oc-hist{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto;font-size:12px}#consRoot .oc-hist li{padding:4px 0;border-bottom:1px solid #EEF0F2}#consRoot .oc-hist .d{display:block;font-size:10.5px;color:#8A93A0}
+#consRoot .cons-fluxo{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,1fr);gap:6px;counter-reset:f}#consRoot .cons-fluxo li{position:relative;background:#F6F7FB;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+#consRoot .cons-fluxo li .n{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#C9CFD8;color:#fff;font-weight:800;font-size:12px;margin-right:6px}#consRoot .cons-fluxo li .t{font-weight:800;font-size:13px}#consRoot .cons-fluxo li .d{display:block;font-size:11px;color:#5C6670;margin-top:3px}
+#consRoot .cons-fluxo li.ok{background:#E3F4EA;border-color:#9ED4B4}#consRoot .cons-fluxo li.ok .n{background:#2F7D4F}#consRoot .cons-fluxo li.atual{background:#FFF8E1;border-color:#F2B705}#consRoot .cons-fluxo li.atual .n{background:#F2B705;color:#232B33}#consRoot .cons-fluxo li.parado{background:#FFE1D6;border-color:#E57368}#consRoot .cons-fluxo li.parado .n{background:#B23A2F}
+#consRoot .cons-fluxo.mini{grid-template-columns:1fr;gap:4px}#consRoot .cons-fluxo.mini li{padding:5px 8px;display:flex;align-items:center}#consRoot .cons-fluxo.mini li .t{font-size:12.5px}
+@media (max-width:900px){#consRoot .cons-fluxo:not(.mini){grid-template-columns:repeat(3,1fr)}}
+#consRoot .cons-fluxo-card{margin:0 0 12px}#consRoot .cons-fluxo-cab{display:flex;align-items:center;gap:10px;margin:0 0 8px;flex-wrap:wrap}#consRoot .cons-fluxo-cab h3{margin:0}
+#consRoot .oc-res{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}#consRoot .oc-res-k{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#F6F7FB}#consRoot .oc-res-k .r{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#5C6670}#consRoot .oc-res-k .f{font-weight:800;margin:2px 0}#consRoot .oc-res-k .v{font-size:20px;font-weight:800;color:#1D242B}#consRoot .oc-res-k .s{font-size:11.5px;color:#5C6670}
+#consRoot .oc-res-k.melhor{border-color:#2F7D4F}#consRoot .oc-res-k.venc{background:#E3F4EA;border-color:#2F7D4F;box-shadow:0 0 0 2px #9ED4B4 inset}#consRoot .oc-sec.venc{border-color:#2F7D4F;box-shadow:0 0 0 2px #9ED4B4 inset}
+#consRoot .cons-venc{font-weight:800;color:#1d6b3e}#consRoot .oc-add{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}#consRoot .oc-add input:first-child{flex:1 1 240px}#consRoot .oc-dica{color:#B23A2F}
+#consRoot table.cons-tab tr.tot td{border-top:2px solid var(--line)}
+.oc-escolha{display:flex;flex-direction:column;gap:8px}.oc-opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:pointer}.oc-opt.melhor{border-color:#2F7D4F;background:#F3FBF6}.oc-opt input{margin-top:4px}
+.oc-rec{color:#B23A2F;font-weight:700;font-size:12px}.tcad-sec .pos{color:#1d6b3e;font-weight:700}.tcad-sec .neg{color:#B23A2F;font-weight:700}
+.cap-views .cap-views-n{background:#F2B705;color:#232B33;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:800;margin-left:4px}`; document.head.appendChild(st); }
+/* v0.14.15 (pedido 23/10 16:38): títulos de seção dos formulários (Terceiros, lançamento, obrigação, carteira…) viram seções que abrem e
+   fecham pelo título. Abrem expandidas; o que a pessoa fechou fica lembrado enquanto o ERP está aberto. Vale para todo .form-sec /
+   .obr-sec dentro da janela (modal). */
+const SEC_FECHADAS = new Set();
+function secAlvo(h) { const out = []; let e = h.nextElementSibling; while (e && !e.classList.contains("form-sec") && !e.classList.contains("obr-sec")) { out.push(e); e = e.nextElementSibling; } return out; }
+function secAplicar(h, fechada) { h.classList.toggle("sec-fechada", fechada); h.setAttribute("aria-expanded", fechada ? "false" : "true"); secAlvo(h).forEach(e => e.classList.toggle("sec-oculto", fechada)); }
+function secDecorar(root) {
+  root.querySelectorAll(".form-grid .form-sec, .modal .obr-sec").forEach(h => {
+    if (h.dataset.sec) return; h.dataset.sec = "1"; h.setAttribute("role", "button"); h.tabIndex = 0;
+    const k = h.textContent.trim().replace(/\s*\(\d+\)\s*$/, "").toLowerCase();
+    h.insertAdjacentHTML("beforeend", `<span class="sec-seta" aria-hidden="true">▾</span>`);
+    const tog = () => { const f = !h.classList.contains("sec-fechada"); secAplicar(h, f); if (f) SEC_FECHADAS.add(k); else SEC_FECHADAS.delete(k); };
+    h.addEventListener("click", ev => { if (ev.target.closest("a,button,input,select,textarea,label")) return; tog(); });
+    h.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); tog(); } });
+    if (SEC_FECHADAS.has(k)) secAplicar(h, true);
+  });
+}
+{ const m = $("modal"); if (m) { new MutationObserver(() => secDecorar(m)).observe(m, { childList: true, subtree: true }); secDecorar(m); }
+  const st = document.createElement("style"); st.textContent = `.form-grid .form-sec[role=button],.modal .obr-sec[role=button]{cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px}.form-grid .form-sec[role=button]:hover,.modal .obr-sec[role=button]:hover{color:var(--orange,#F0541B)}
+.sec-seta{margin-left:auto;font-size:12px;transition:transform .15s;opacity:.7}.sec-fechada .sec-seta{transform:rotate(-90deg)}.sec-oculto{display:none !important}`; document.head.appendChild(st); }
+/* v0.14.15 (pedido 23/10 16:45): nos campos de fornecedor (Razão Social) dá para digitar o Nome Fantasia — a lista mostra a Razão
+   Social com o Nome Fantasia ao lado e, ao escolher, o campo fica com a Razão Social em destaque; abaixo, um campo "Nome Fantasia"
+   (só leitura) preenchido pela Razão Social ou pelo CNPJ/CPF. Vale para a CAP (lançamento), Obrigações, Consumíveis (item e
+   Ordem de Compra) e Almoxarifado (OC). */
+const FORN_DL = /^(fornList|oFornList|ocFornList|csFornL|ocFornL\d)$/;
+function fornFantDe(nome) { const f = nome && typeof fornByName === "function" ? fornByName(nome) : null; return f ? { f, fant: String(f.NomeFantasia || "").trim() } : null; }
+function fornFantPinta(inp) {
+  const campo = $(inp.id + "Fant"), r = fornFantDe(inp.value);
+  let f = r && r.f; if (!f && inp.id === "fForn" && $("fCNPJ") && typeof fornByDoc === "function") f = fornByDoc($("fCNPJ").value);
+  inp.classList.toggle("forn-ok", !!(r && r.f));
+  if (campo) campo.value = f ? (String(f.NomeFantasia || "").trim() || "—") : "";
+}
+function fornFantDecorar(root) {
+  if (!root || !root.querySelectorAll) return;
+  const its = FORN_STATE.items || [];
+  root.querySelectorAll("datalist").forEach(dl => {
+    if (!FORN_DL.test(dl.id) || dl.dataset.fant) return; dl.dataset.fant = "1";
+    const byT = new Map(its.map(f => [normName(f.Title), f]));
+    dl.querySelectorAll("option").forEach(o => { const f = byT.get(normName(o.value)); if (f && f.NomeFantasia && !o.label) o.label = String(f.NomeFantasia).trim(); });
+  });
+  root.querySelectorAll("input").forEach(inp => {
+    const id = inp.getAttribute("list") || inp.dataset.erpList || ""; if (!FORN_DL.test(id) || inp.dataset.fant || inp.readOnly) return; inp.dataset.fant = "1";
+    const campo = inp.closest(".field");
+    if (campo && inp.id && !$(inp.id + "Fant")) campo.insertAdjacentHTML("afterend", `<div class="field ${campo.classList.contains("full") ? "full" : ""} forn-fant"><label>Nome Fantasia</label><input id="${esc(inp.id)}Fant" readonly tabindex="-1" placeholder="Preenchido pela Razão Social ou pelo CNPJ/CPF"></div>`);
+    const troca = () => {   /* digitou o Nome Fantasia: vira a Razão Social */
+      const v = String(inp.value || "").trim(); if (!v || fornByName(v)) { fornFantPinta(inp); return; }
+      const f = its.find(x => x.NomeFantasia && normName(x.NomeFantasia) === normName(v)) || its.filter(x => x.NomeFantasia && normName(x.NomeFantasia).includes(normName(v)))[0];
+      if (f && (normName(f.NomeFantasia) === normName(v) || its.filter(x => x.NomeFantasia && normName(x.NomeFantasia).includes(normName(v))).length === 1)) { inp.value = f.Title; inp.dispatchEvent(new Event("input", { bubbles: true })); inp.dispatchEvent(new Event("change", { bubbles: true })); }
+      fornFantPinta(inp);
+    };
+    inp.addEventListener("change", troca); inp.addEventListener("input", () => fornFantPinta(inp)); inp.addEventListener("blur", troca);
+    fornFantPinta(inp);
+  });
+}
+{ const obs = new MutationObserver(ms => { ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) fornFantDecorar(n); })); });
+  [$("modal"), $("main")].forEach(el => { if (el) { obs.observe(el, { childList: true, subtree: true }); fornFantDecorar(el); } });
+  document.addEventListener("input", ev => { const t = ev.target; if (t && t.id === "fCNPJ" && $("fForn")) setTimeout(() => fornFantPinta($("fForn")), 60); }, true);
+  const st = document.createElement("style"); st.textContent = `input.forn-ok{font-weight:800;color:var(--navy);border-color:#2F7D4F !important;background:#F3FBF6}.forn-fant input[readonly]{background:#F6F7FB;color:#3B4352}`; document.head.appendChild(st); }
+/* v0.14.15 (pedido 23/10 16:49): a Razão Social em Terceiros fica em MAIÚSCULAS, sem acentos, pontos ou caracteres especiais
+   (ex.: "Sea Uniformes Profissionais Ltda." → "SEA UNIFORMES PROFISSIONAIS LTDA"). A conversão acontece ao sair do campo e ao
+   salvar; a busca por nome (fornByName) ignora essas diferenças, então lançamentos e obrigações antigos continuam ligados. */
+function tercRazaoNorm(s) { return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 255); }
+window.tercRazaoNorm = tercRazaoNorm;
+{ const fb = fornByName; fornByName = function (name) { const r = fb.apply(this, arguments); if (r) return r; const q = tercRazaoNorm(name); return q ? (FORN_STATE.items || []).find(f => tercRazaoNorm(f.Title) === q) || null : null; }; window.fornByName = fornByName; }
+{ const fs = fornSave; fornSave = async function (existing) { const n = $("gNome"); if (n && n.value.trim() && (!existing || n.value.trim() !== String(existing.Title || "").trim())) n.value = tercRazaoNorm(n.value); return fs.apply(this, arguments); }; window.fornSave = fornSave; }   /* revisão D1: cadastro antigo só muda se a Razão Social for editada */
+document.addEventListener("change", ev => { const t = ev.target; if (t && t.id === "gNome" && t.value.trim()) { const v = tercRazaoNorm(t.value); if (v !== t.value) t.value = v; } }, true);
+CONFIG.version = "v0.14.15";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

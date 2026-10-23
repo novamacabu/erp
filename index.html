@@ -3657,7 +3657,8 @@ body.hig-arrastando,body.hig-arrastando *{cursor:grabbing!important}.hig-fantasm
 .tf-g-bar.mov{cursor:grab}.tf-g-bar.arr{cursor:grabbing;box-shadow:0 4px 14px rgba(15,30,58,.25);z-index:2}
 .tf-g-h{position:absolute;right:0;top:0;bottom:0;width:8px;cursor:ew-resize;background:rgba(15,30,58,.15)}
 .tf-g-body{position:relative}.tf-g-hoje{position:absolute;top:0;bottom:0;width:2px;background:var(--orange,#F0541B);pointer-events:none;z-index:1}
-.tf-sub{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--line)}.tf-sub span{flex:1;min-width:0}.tf-sub.f span{text-decoration:line-through;color:var(--ink-2)}
+.tf-sub{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--line);min-width:0;overflow:hidden}.tf-sub span{flex:1;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.field .tf-sub input[type=checkbox]{width:18px;height:18px;flex:none;padding:0;margin:0;border:0;background:none;border-radius:0}.field .tf-sub .btn.mini{flex:none}   /* v0.14.12.12: a caixa herdava width:100% de .field input e espremia o texto da subtarefa */.tf-sub.f span{text-decoration:line-through;color:var(--ink-2)}
 .tf-sub-add{display:flex;gap:6px;margin-top:6px}.tf-sub-add input{flex:1;min-width:0}
 @media (max-width:1100px){.tf-th,.tf-row{grid-template-columns:30px minmax(0,1fr) 96px 132px}.tf-c-resp,.tf-c-pr{display:none}}
 @media (max-width:640px){#tfRoot{--tf-gn:150px}.tf-th{display:none}.tf-row{grid-template-columns:28px minmax(0,1fr) auto;gap:8px;padding:8px 10px}.tf-c-pz{display:none}.tf-cell-t b{white-space:normal}.tf-rapido select{display:none}.tf-dica{display:none}.tf-cal-d{min-height:70px}.tf-ev{font-size:10.5px;padding:1px 3px}.tf-cal-h b{min-width:0}}
@@ -7400,7 +7401,7 @@ async function capSave(existing) {
   } catch (e) { showErr("Erro ao salvar: " + e.message); btn.disabled = false; btn.textContent = existing ? "Salvar" : "Cadastrar"; }
 }
 window.capDelete = async (id) => {
-  if (!podeExcluir("cap")) { toast("Só o proprietário do módulo pode excluir faturas."); return; }
+  if (!podeExcluir("cap")) { toast("Você não tem permissão para excluir faturas."); return; }
   /* v0.13.0 (item 22): os anexos da fatura (boleto, NF, comprovante) saem da biblioteca junto; os que vêm dos reparos do Rio Card ficam (pertencem ao reparo) */
   const it = CAP_STATE.items.find(x => String(x._id) === String(id)), anexos = it ? anexosDe(it) : [];
   const ehRep = typeof capEhReparo === "function" && capEhReparo(it);   /* revisão M5: fatura dos reparos do Rio Card — todos os arquivos pertencem aos reparos */
@@ -38847,7 +38848,7 @@ function obrExcAnexos(it) {
 window.obrExcluir = async id => {
   const o = OBR_STATE.items.find(x => String(x._id) === String(id)); if (!o) return;
   if (vcAtivo()) { toast(vcErro().message); return; }
-  if (!podeExcluir("obr")) { toast("Só o proprietário do módulo pode excluir uma obrigação."); return; }
+  if (!podeExcluir("obr")) { toast("Você não tem permissão para excluir obrigações."); return; }
   /* revisão M2/B2: a tela de Obrigações abre mesmo quando a leitura da CAP falha — sem ela não se sabe quais parcelas
      existem, e excluir a obrigação deixaria todas apontando para um registro que não existe mais. Em vez de confiar no
      que está na memória, relê a CAP agora (e de novo depois da confirmação, revisão B1: alguém pode ter lançado parcela
@@ -38867,7 +38868,7 @@ window.obrExcluir = async id => {
   };
   if (!(await lerCap())) return;
   const nome = o.Title || "(sem nome)", { ligadas, inferido, auto } = semCap ? { ligadas: [], inferido: new Set(), auto: [] } : obrExcLigadas(o);
-  if (ligadas.length && !podeExcluir("cap")) { toast(`Esta obrigação tem ${ligadas.length} parcela(s) na ${DIV.on ? "lista de parcelas" : "CAP"}. Só o proprietário da CAP pode excluir as parcelas junto.`, 7000); return; }
+  if (ligadas.length && !podeExcluir("cap")) { toast(`Esta obrigação tem ${ligadas.length} parcela(s) na ${DIV.on ? "lista de parcelas" : "CAP"}. Você não tem permissão para excluir as parcelas junto.`, 7000); return; }
   const pagas = ligadas.filter(x => x.Status === "Pago"), anexos = ligadas.reduce((n, x) => n + obrExcAnexos(x).length, 0);
   const total = ligadas.reduce((s, x) => s + (typeof capValorEfetivo === "function" ? capValorEfetivo(x) : Number(x.Valor || 0)), 0);
   const infs = ligadas.filter(x => inferido.has(String(x._id)));
@@ -39436,6 +39437,158 @@ function dochPbRepintar(x) { const w = $("pbDocsWrap"); if (w && x) w.innerHTML 
 .doch-tab td,.doch-tab th{font-size:13px;vertical-align:top}.doch-removido td{opacity:.55;text-decoration:line-through}.doch-removido td:nth-child(5){text-decoration:none}
 .doch-novo summary{list-style:none;display:inline-flex;cursor:pointer;width:max-content}.doch-novo summary::-webkit-details-marker{display:none}.doch-vazio{margin:0}
 .doch-aviso-form{margin-bottom:12px}.doch-card{margin-bottom:16px}`; document.head.appendChild(s); })();
+
+/* =====================================================================
+   v0.14.12.11 · Quem edita pode excluir faturas e obrigações (pedido de 23/10)
+   Antes: só o proprietário. Agora: quem edita Obrigações exclui obrigações,
+   quem edita a CAP exclui faturas (e as parcelas ligadas à obrigação).
+   A guarda global (guardaEscrita) já tem EXCLUI_QUEM_EDITA; basta adicionar.
+   ===================================================================== */
+EXCLUI_QUEM_EDITA.add("cap");
+EXCLUI_QUEM_EDITA.add("obr");
+{ const pe0 = podeExcluir;
+  podeExcluir = function (id) {
+    const base = String(id || "").split(".")[0];   /* revisão: "cap.lista" (página) conta como CAP */
+    if (base === "cap" || base === "obr") return pe0(id) || podeEditar(id);
+    return pe0(id);
+  };
+  window.podeExcluir = podeExcluir;
+}
+/* =====================================================================
+   v0.14.12.12 · Terceiros › produtos e serviços: o administrador edita (renomeia) e exclui as opções da lista.
+   A lista passa a viver em "ERP — Parâmetros" › terc_produtos_lista (a primeira edição copia a lista base + extras para lá);
+   renomear atualiza os Terceiros que têm o produto marcado; excluir tira a opção da lista (quem já tem continua com ele).
+   Só produto digitado no campo (Enter) vira opção nova ao salvar — um produto apagado da lista não volta sozinho.
+   ===================================================================== */
+TERC_X.prodLista = null;
+{ const c0 = tercProdCarregar;
+  tercProdCarregar = function () {
+    if (TERC_X.prodLista !== null) return Promise.resolve(TERC_X.prodLista);
+    if (TERC_X.prodListaP) return TERC_X.prodListaP;
+    TERC_X.prodListaP = c0.apply(this, arguments).then(() => erpParamLer("terc_produtos_lista")).then(r => { TERC_X.prodListaP = null; if (r === undefined) return null;   /* revisão: falha passageira não vira "não há lista" (senão um renomear gravaria a base por cima) */
+        TERC_X.prodLista = r && Array.isArray(r.valor) ? r.valor.map(x => String(x || "").trim()).filter(Boolean) : false; return TERC_X.prodLista; })
+      .catch(() => { TERC_X.prodListaP = null; return TERC_X.prodLista; });
+    return TERC_X.prodListaP;
+  };
+  /* antes de gravar: relê a lista no SharePoint (duas pessoas editando não gravam uma por cima da outra) */
+  TERC_X.prodReler = async () => { const r = await erpParamLer("terc_produtos_lista", true); if (r === undefined) throw new Error("não foi possível ler a lista de opções agora; tente de novo"); TERC_X.prodLista = r && Array.isArray(r.valor) ? r.valor.map(x => String(x || "").trim()).filter(Boolean) : false; if (TERC_X.prodLista === false && !TERC_X.prodExtra) await c0(); return TERC_X.prodLista; };
+}
+/* false = não há lista gravada (vale a base do código + extras); array = lista gerida pelo administrador */
+const tercProdBase = () => Array.isArray(TERC_X.prodLista) ? TERC_X.prodLista : [...TERC_PRODUTOS, ...(TERC_X.prodExtra || [])];
+tercProdOpcoes = function (extra) {
+  const vistos = new Set(), out = [];
+  [...tercProdBase(), ...(extra || [])].forEach(x => { const k = normName(x); if (!k || vistos.has(k)) return; vistos.add(k); out.push(x); });
+  return out.sort((a, b) => a.localeCompare(b, "pt-BR"));
+};
+const tercProdPodeGerir = () => ehAdmNivel() && !(typeof vcAtivo === "function" && vcAtivo());
+{ const tc0 = tercProdCampo;
+  tercProdCampo = function (v) {
+    const h = tc0.apply(this, arguments);
+    if (TERC_X.prodLista === null) tercProdCarregar().then(() => {   /* revisão: a janela abriu antes de a lista chegar — redesenha os chips mantendo o que está marcado */
+      const box = $("gProdutos"); if (!box || box.classList.contains("gerindo") || !Array.isArray(TERC_X.prodLista)) return;
+      const marc = new Set(tercProdLer().map(normName)), sel = tercProdLer(), novos = [...box.querySelectorAll(".terc-prod[data-novo] input")].map(i => i.value);
+      box.innerHTML = tercProdOpcoes(sel).map(p => tercProdChip(p, marc.has(normName(p)))).join("");
+      novos.forEach(n => { const l = [...box.querySelectorAll(".terc-prod")].find(x => x.dataset.n === normName(n)); if (l) l.dataset.novo = "1"; });
+      tercProdFiltrar(); tercProdContar();
+    });
+    if (!tercProdPodeGerir()) return h;
+    return h.replace('<input id="gProdBusca"', `<div class="terc-prod-bar"><button type="button" class="btn sm ghost" id="gProdGerir" onclick="tercProdGerir()">Editar opções</button><span class="sup" id="gProdGerirDica"></span></div><input id="gProdBusca"`);
+  };
+}
+window.tercProdGerir = () => {
+  const box = $("gProdutos"); if (!box) return;
+  const on = box.classList.toggle("gerindo"); const b = $("gProdGerir"), d = $("gProdGerirDica");
+  if (b) b.textContent = on ? "Concluir" : "Editar opções"; if (d) d.textContent = on ? "✎ renomeia (atualiza os Terceiros que têm o produto) · × tira da lista" : "";
+  box.querySelectorAll(".terc-prod").forEach(l => { const ex = l.querySelector(".tp-acoes"); if (ex) ex.remove(); if (on) l.insertAdjacentHTML("beforeend", `<span class="tp-acoes"><button type="button" title="Renomear" aria-label="Renomear" onclick="tercProdEditar(this)">✎</button><button type="button" title="Tirar da lista" aria-label="Tirar da lista" onclick="tercProdTirar(this)">×</button></span>`); });
+};
+const tercProdChipDe = el => el.closest(".terc-prod");
+window.tercProdEditar = btn => {
+  const chip = tercProdChipDe(btn), inp = chip.querySelector("input[name=gProd]"), atual = inp.value;
+  if (chip.querySelector(".tp-form")) return;
+  chip.insertAdjacentHTML("beforeend", `<span class="tp-form"><input type="text" maxlength="60" value="${esc(atual)}" aria-label="Novo nome" onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();tercProdRenomear(this);} if(event.key==='Escape'){event.preventDefault();event.stopPropagation();this.closest('.tp-form').remove();}"><button type="button" class="btn mini" onclick="tercProdRenomear(this)">Salvar</button><button type="button" class="btn mini ghost" onclick="this.closest('.tp-form').remove()">Cancelar</button></span>`);
+  const i = chip.querySelector(".tp-form input"); i.focus(); i.select();
+};
+window.tercProdTirar = btn => {
+  const chip = tercProdChipDe(btn); if (chip.querySelector(".tp-form")) return;
+  chip.insertAdjacentHTML("beforeend", `<span class="tp-form">Tirar da lista? <button type="button" class="btn mini danger" onclick="tercProdExcluir(this)">Sim</button><button type="button" class="btn mini ghost" onclick="this.closest('.tp-form').remove()">Não</button></span>`);
+};
+async function tercProdGravarLista(lista) {
+  const v = [...new Map(lista.map(x => String(x || "").trim()).filter(Boolean).map(x => [normName(x), x])).values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  await erpParamGravar("terc_produtos_lista", v); TERC_X.prodLista = v; return v;
+}
+window.tercProdRenomear = async el => {
+  const chip = tercProdChipDe(el), form = chip.querySelector(".tp-form"), inp = chip.querySelector("input[name=gProd]"), antigo = inp.value, novo = subcatCapitaliza(form.querySelector("input").value);
+  if (!novo) return; if (normName(novo) === normName(antigo) && novo === antigo) { form.remove(); return; }
+  if (!tercProdPodeGerir()) { toast("Só um administrador edita as opções."); return; }
+  const outra = [...$("gProdutos").querySelectorAll(".terc-prod")].find(l => l !== chip && l.dataset.n === normName(novo));
+  if (outra) { toast(`Já existe a opção "${outra.querySelector("input").value}".`, 5000); return; }
+  const bs = form.querySelectorAll("button"); bs.forEach(b => { b.disabled = true; });
+  try {
+    await TERC_X.prodReler();
+    await tercProdGravarLista(tercProdBase().map(x => normName(x) === normName(antigo) ? novo : x));
+    /* os Terceiros que têm o produto marcado passam a ter o nome novo */
+    const afetados = (FORN_STATE.items || []).filter(x => tercProdutosDe(x).some(p => normName(p) === normName(antigo)));
+    let n = 0, falhas = 0;
+    for (const x of afetados) { try { const pr = tercProdutosDe(x).map(p => normName(p) === normName(antigo) ? novo : p); await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, x._id || x.id, { Produtos: JSON.stringify(pr) }); x.Produtos = JSON.stringify(pr); n++; } catch (e) { falhas++; } }
+    inp.value = novo; chip.dataset.n = normName(novo); const txt = [...chip.childNodes].find(c => c.nodeType === 3 && c.textContent.trim()); if (txt) txt.textContent = " " + novo;
+    form.remove();
+    toast(`"${antigo}" agora é "${novo}"${n ? ` · ${n} Terceiro(s) atualizado(s)` : ""}${falhas ? ` · ${falhas} não atualizado(s)` : ""}.`, 6000);
+  } catch (e) { bs.forEach(b => { b.disabled = false; }); toast("Não foi possível renomear: " + e.message, 8000); }
+};
+window.tercProdExcluir = async el => {
+  const chip = tercProdChipDe(el), inp = chip.querySelector("input[name=gProd]"), nome = inp.value;
+  if (!tercProdPodeGerir()) { toast("Só um administrador edita as opções."); return; }
+  const bs = chip.querySelectorAll(".tp-form button"); bs.forEach(b => { b.disabled = true; });
+  try {
+    await TERC_X.prodReler();
+    await tercProdGravarLista(tercProdBase().filter(x => normName(x) !== normName(nome)));
+    const tinham = (FORN_STATE.items || []).filter(x => tercProdutosDe(x).some(p => normName(p) === normName(nome))).length;
+    const f = chip.querySelector(".tp-form"); if (f) f.remove();
+    if (inp.checked) { const a = chip.querySelector(".tp-acoes"); if (a) a.remove(); chip.classList.add("fora"); chip.title = "Fora da lista de opções; continua marcado neste cadastro"; }   /* revisão: marcado neste Terceiro, o chip fica (senão ele perderia o produto ao salvar) */
+    else chip.remove();
+    tercProdContar();
+    toast(`"${nome}" saiu da lista de opções.${tinham ? ` ${tinham} Terceiro(s) continuam com ele marcado.` : ""}`, 6000);
+  } catch (e) { bs.forEach(b => { b.disabled = false; }); toast("Não foi possível tirar da lista: " + e.message, 8000); }
+};
+/* só o que foi digitado no campo vira opção nova (um produto que um Terceiro já tinha e foi tirado da lista não volta ao salvar) */
+window.addEventListener("keydown", e => {   /* na janela: roda antes do tratador original (que já insere o chip) */
+  if (!e.target || e.target.id !== "gProdBusca" || e.key !== "Enter") return;
+  const t = subcatCapitaliza(e.target.value); if (!t) return;
+  const box = $("gProdutos"); if (!box || [...box.querySelectorAll(".terc-prod")].some(l => l.dataset.n === normName(t))) return;
+  setTimeout(() => { const l = [...box.querySelectorAll(".terc-prod")].find(x => x.dataset.n === normName(t)); if (l) l.dataset.novo = "1"; }, 0);
+}, true);
+{ const fs = fornSave; fornSave = async function () {
+    const box = $("gProdutos"), pr = box ? [...box.querySelectorAll(".terc-prod[data-novo] input[name=gProd]:checked")].map(i => i.value) : [];
+    TERC_X.digitados = pr;   /* o tratador antigo chama tercProdAprender com "tudo que não está na base"; a versão nova só usa o que foi digitado */
+    const n0 = TERC_X.escritas; let r;
+    try { r = await fs.apply(this, arguments); } finally { if (TERC_X.digitados && TERC_X.digitados.length && TERC_X.escritas > n0) tercProdAprender(); TERC_X.digitados = null; }
+    return r;
+  }; window.fornSave = fornSave; }
+tercProdAprender = async function () {
+  const novos = TERC_X.digitados || []; TERC_X.digitados = null;
+  if (!ehAdmNivel() || !novos.length) return;
+  try {
+    await tercProdCarregar();
+    const rl = await erpParamLer("terc_produtos_lista", true); if (rl === undefined) return;
+    const base = rl && Array.isArray(rl.valor) ? rl.valor : null;
+    if (base) { const tem = new Set(base.map(normName)), add = [...new Map(novos.filter(x => !tem.has(normName(x))).map(x => [normName(x), x])).values()]; if (!add.length) return; await tercProdGravarLista(base.concat(add)); toast(`${add.map(x => `"${x}"`).join(", ")} ${add.length > 1 ? "passam" : "passa"} a ser opção na lista de produtos.`, 6000); return; }
+    const r = await erpParamLer("terc_produtos_extra", true); if (r === undefined) return;
+    const atual = r && Array.isArray(r.valor) ? r.valor.slice() : [], tem = new Set([...TERC_PRODUTOS, ...atual].map(normName));
+    const add = [...new Map(novos.filter(x => !tem.has(normName(x))).map(x => [normName(x), x])).values()]; if (!add.length) return;
+    const v = atual.concat(add); await erpParamGravar("terc_produtos_extra", v); TERC_X.prodExtra = v;
+    toast(`${add.map(x => `"${x}"`).join(", ")} ${add.length > 1 ? "passam" : "passa"} a ser opção na lista de produtos.`, 6000);
+  } catch (e) { toast("Não foi possível incluir o produto novo na lista: " + e.message, 8000); }
+};
+/* v0.14.12.12 · Terceiros › Banco de Dados: os avisos do salvar (obrigatórios, CNPJ já cadastrado, nome repetido, erro ao gravar…) saem do rodapé
+   do formulário e aparecem numa janela por cima com botão Ok (a mesma das Máquinas Pagbank); o formulário fica como estava por trás. */
+{ const fs = fornSave; fornSave = async function () {
+    const r = await fs.apply(this, arguments);
+    const e = $("gErr"); const txt = e && e.style.display !== "none" ? String(e.textContent || "").trim() : "";
+    if (txt && $("modalBack") && $("modalBack").classList.contains("on") && $("modal").contains(e)) { e.style.display = "none"; e.textContent = ""; try { await erpAviso({ titulo: "Não foi possível salvar", texto: txt }); } catch (x) {} }
+    return r;
+  }; window.fornSave = fornSave; }
+{ const st = document.createElement("style"); st.textContent = `.terc-prod-bar{display:flex;align-items:center;gap:10px;margin-bottom:6px}.terc-prods.gerindo .terc-prod{position:relative;padding-right:8px}.tp-acoes{display:inline-flex;gap:2px;margin-left:4px}.tp-acoes button{border:0;background:none;cursor:pointer;font-size:13px;line-height:1;padding:0 3px;color:var(--ink-2)}.tp-acoes button:hover{color:var(--navy)}.tp-form{display:inline-flex;align-items:center;gap:4px;margin-left:6px;font-size:12px}.terc-prods .terc-prod.fora{border-style:dashed;opacity:.85}.tp-form input{width:170px;padding:2px 6px;font-size:12.5px;border:1px solid var(--line);border-radius:4px}.terc-prods.gerindo .terc-prod .tp-form button{white-space:nowrap}`; document.head.appendChild(st); }
+CONFIG.version = "v0.14.12.12";
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

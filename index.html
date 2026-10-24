@@ -41398,7 +41398,7 @@ CONFIG.version = "v0.14.16";   /* Tabela de Horários: atualizar pelo quadro ofi
    Agora a folha tem uma caixa de altura fixa em milímetros (cabe em qualquer navegador, A4 deitada) e o conteúdo
    é reduzido por escala (transform), alargado antes para continuar ocupando a largura toda. Só esta impressão muda.
    ===================================================================== */
-const HOR_FOLHA_ALT_MM = 160;   /* altura útil segura: 210 mm − margens (28) − folga para o cabeçalho/rodapé que o navegador acrescenta */
+const HOR_FOLHA_ALT_MM = 140;   /* v0.14.16.2: 160 mm deixava uma 2ª folha em branco no iPhone (o Safari reserva ~37 mm embaixo para o rodapé dele) */
 { const c0 = printCaber; printCaber = function (doc, paisagem) {
     const grid = doc && doc.querySelector(".hf-grid"), pg = grid && grid.closest(".pg");
     if (!pg) return c0.apply(this, arguments);
@@ -41420,9 +41420,16 @@ const HOR_FOLHA_ALT_MM = 160;   /* altura útil segura: 210 mm − margens (28) 
     pg.style.transformOrigin = "0 0"; pg.style.transform = z < 1 ? `scale(${z})` : "";
     if (!coube) toast(`Horários demais para uma folha: o fim saiu cortado. Use "Imprimir (PDF)" na Tabela de Horários (um tipo de dia por folha).`, 10000);
     else if (z < 0.5) toast(`Muitos horários: a folha saiu em ${Math.round(z * 100)}% e pode ficar difícil de ler. "Imprimir (PDF)" na Tabela de Horários imprime um tipo de dia por folha.`, 9000);
+    /* v0.14.16.2: a moldura media com 20000 px de altura; o Safari usa essa altura e solta uma folha em branco. Volta a uma folha antes de imprimir. */
+    Object.assign(doc.documentElement.style, { height: "auto", overflow: "hidden" }); Object.assign(doc.body.style, { height: "auto", overflow: "hidden", margin: "0" });
+    const fe = doc.defaultView && doc.defaultView.frameElement;
+    if (fe && fe.style.height === "20000px") {   /* revisão M1: a altura da própria caixa (≈ 530 px), bem abaixo da folha; M2: só desfaz se ainda for a altura que pusemos */
+      const alt = Math.ceil(box.getBoundingClientRect().height) + "px"; fe.style.height = alt;
+      doc.defaultView.addEventListener("afterprint", () => setTimeout(() => { if (fe.style.height === alt) fe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0"; }, 300), { once: true }); }
     return z;
   }; }   /* substitui, para a folha única (.hf-grid, uma .pg só), o ajuste por zoom da v0.14.9 */
 CONFIG.version = "v0.14.16.1";   /* Tudo numa folha: cabe numa folha deitada em qualquer navegador */
+CONFIG.version = "v0.14.16.2";   /* Painel de horários: sem a 2ª folha em branco no iPhone */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

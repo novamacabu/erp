@@ -6866,14 +6866,14 @@ function paintObr() {
   const soma = (arr, f) => arr.reduce((s, o) => s + (f(o) || 0), 0);
   const mensal = soma(ativas.filter(o => o.Tipo !== "Anual"), o => Number(o.ValorParcela || 0));
   const vencido = soma(ativas, o => R(o).vVencido), naoLanc = soma(ativas.filter(o => R(o).sit.k === "atencao"), o => R(o).naoLanc);
-  const comSaldoMes = ativas.filter(o => R(o).saldoMes > 0), saldo = soma(comSaldoMes, o => R(o).saldoMes);   /* v0.14.15: só o mês corrente */
+  const SM = capSaldoMes(), saldo = SM.v;   /* v0.14.15.1: o mesmo número da aba Lançamentos */
   const K = (lbl, val, sub, cls, sit) => `<button class="kpi ${cls || ""} ${U.view === "todas" && sit && U.sit === sit ? "on" : ""}" onclick="obrFiltrar('${sit || ""}')"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div><div class="sub">${esc(sub)}</div></button>`;
   const kpis = `<div class="cap-kpis">
     ${K("Obrigações ativas", ativas.length, `${capMoneyShort(mensal)} por mês`, "", "")}
     ${K("Em atraso", n("atraso"), vencido ? `${fmtBRL(vencido)} vencido` : "nenhuma parcela vencida", n("atraso") ? "venc" : "", "atraso")}
     ${K("Atenção", n("atencao"), naoLanc ? `${naoLanc} parcela(s) vencida(s) sem lançamento na CAP` : "1 vencida há até 5 dias ou vence sem lançamento", "", "atencao")}
     ${K("Em dia", n("emdia"), n("sem") ? `${n("sem")} obrigação(ões) sem lançamentos na CAP` : "parcelas pagas ou já na CAP", "pago", "emdia")}
-    ${K("Saldo a pagar", capMoneyShort(saldo), `${compLabel(todayISO().slice(0, 7))} · ${comSaldoMes.length} obrigação(ões) com parcela em aberto no mês`, "", "")}
+    ${K("Saldo a pagar", capMoneyShort(saldo), capSaldoMesSub(SM), "", "")}
   </div>`;
   const aviso = OBR_STATE.capErro ? `<div class="import-help" style="margin-bottom:14px">Não foi possível ler a Contas a Pagar (${esc(OBR_STATE.capErro)}). Sem as contas, a situação de pagamento fica como "Sem lançamentos".</div>` : "";
   const views = `<div class="cap-views"><button class="${U.view === "carteiras" ? "on" : ""}" onclick="obrSetView('carteiras')">Carteiras</button><button class="${U.view === "todas" ? "on" : ""}" onclick="obrSetView('todas')">Todas as obrigações (${D.obrs.length})</button></div>`;
@@ -8216,14 +8216,14 @@ function paintObr() {
   const soma = (arr, f) => arr.reduce((s, o) => s + (f(o) || 0), 0);
   const mensal = soma(ativas.filter(o => o.Tipo !== "Anual"), o => Number(o.ValorParcela || 0));
   const vencido = soma(ativas, o => R(o).vVencido), naoLanc = soma(ativas.filter(o => R(o).sit.k === "atencao"), o => R(o).naoLanc);
-  const comSaldoMes = ativas.filter(o => R(o).saldoMes > 0), saldo = soma(comSaldoMes, o => R(o).saldoMes);   /* v0.14.15: só o mês corrente */
+  const SM = capSaldoMes(), saldo = SM.v;   /* v0.14.15.1: o mesmo número da aba Lançamentos */
   const K = (lbl, val, sub, cls, sit) => `<button class="kpi ${cls || ""} ${U.view === "todas" && sit && U.sit === sit ? "on" : ""}" onclick="obrFiltrar('${sit || ""}')"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div><div class="sub">${esc(sub)}</div></button>`;
   const kpis = `<div class="cap-kpis">
     ${K("Obrigações ativas", ativas.length, `${capMoneyShort(mensal)} por mês`, "", "")}
     ${K("Em atraso", n("atraso"), vencido ? `${fmtBRL(vencido)} vencido` : "nenhuma parcela vencida", n("atraso") ? "venc" : "", "atraso")}
     ${K("Atenção", n("atencao"), naoLanc ? `${naoLanc} parcela(s) vencida(s) sem lançamento na CAP` : "1 vencida há até 5 dias ou vence sem lançamento", "", "atencao")}
     ${K("Em dia", n("emdia"), n("sem") ? `${n("sem")} obrigação(ões) sem lançamentos na CAP` : "parcelas pagas ou já na CAP", "pago", "emdia")}
-    ${K("Saldo a pagar", capMoneyShort(saldo), `${compLabel(todayISO().slice(0, 7))} · ${comSaldoMes.length} obrigação(ões) com parcela em aberto no mês`, "", "")}
+    ${K("Saldo a pagar", capMoneyShort(saldo), capSaldoMesSub(SM), "", "")}
   </div>`;
   const aviso = OBR_STATE.capErro ? `<div class="import-help" style="margin-bottom:14px">Não foi possível ler a Contas a Pagar (${esc(OBR_STATE.capErro)}). Sem as contas, a situação de pagamento fica como "Sem lançamentos".</div>` : "";
   const views = `<div class="obr-topo"><div class="cap-views"><button class="${U.view === "carteiras" && !U.busca ? "on" : ""}" onclick="obrSetView('carteiras')">Carteiras</button><button class="${U.view === "todas" && !U.busca ? "on" : ""}" onclick="obrSetView('todas')">Todas as obrigações (${vis.length})</button></div>
@@ -16470,8 +16470,8 @@ function paintCAP() {
       ${kpi("hoje", "", "Próximos 3 dias", k.hoje)}
       ${kpi("sete", "", "De 4 a 7 dias", k.sete)}
       ${kpi("pagas", "pago", "Pagas no mês", k.pagas)}
-      ${(() => { const mes = todayISO().slice(0, 7); const its = CAP_STATE.items.filter(it => { const c = classifyItem(it); return !c.pago && !c.isenta && !capEhTransf(it) && it.Vencimento && ymd(it.Vencimento).slice(0, 7) === mes; }); const v = its.reduce((t, it) => t + Number(it.Valor || 0), 0);
-        return `<button class="kpi ${!f.kpi && f.venc === "mes" ? "on" : ""}" onclick="capKpiMes()" title="Lançamentos em aberto com vencimento no mês corrente"><div class="lbl">Saldo a pagar</div><div class="val money">${esc(capMoneyShort(v))}</div><div class="sub">${esc(compLabel(mes))} · ${its.length} lançamento(s) em aberto</div></button>`; })()}
+      ${(() => { const S = capSaldoMes(); capSaldoMesGarantirObr(() => { if (CAP_STATE.view === "lista" || !CAP_STATE.view) paintCAP(); });
+        return `<button class="kpi ${!f.kpi && f.venc === "mes" ? "on" : ""}" onclick="capKpiMes()" title="Vence no mês corrente: lançamentos em aberto + parcelas de obrigações ainda não lançadas (o mesmo número da aba Obrigações)"><div class="lbl">Saldo a pagar</div><div class="val money">${esc(capMoneyShort(S.v))}</div><div class="sub">${esc(capSaldoMesSub(S))}</div></button>`; })()}
     </div>
     <div class="cap-chipbar">
       <div class="row"><span class="lbl">Situação</span>${chipsHtml("capSitChips", sitOpts, capLista(f.sit), "capChipSit", "Todas")}</div>
@@ -41228,7 +41228,28 @@ window.tercRazaoNorm = tercRazaoNorm;
 { const fb = fornByName; fornByName = function (name) { const r = fb.apply(this, arguments); if (r) return r; const q = tercRazaoNorm(name); return q ? (FORN_STATE.items || []).find(f => tercRazaoNorm(f.Title) === q) || null : null; }; window.fornByName = fornByName; }
 { const fs = fornSave; fornSave = async function (existing) { const n = $("gNome"); if (n && n.value.trim() && (!existing || n.value.trim() !== String(existing.Title || "").trim())) n.value = tercRazaoNorm(n.value); return fs.apply(this, arguments); }; window.fornSave = fornSave; }   /* revisão D1: cadastro antigo só muda se a Razão Social for editada */
 document.addEventListener("change", ev => { const t = ev.target; if (t && t.id === "gNome" && t.value.trim()) { const v = tercRazaoNorm(t.value); if (v !== t.value) t.value = v; } }, true);
+/* v0.14.15.1 (pedido 24/10 10:17): "Saldo a pagar" igual nas abas Lançamentos e Obrigações — o que vence no mês corrente, lançado ou não:
+   lançamentos em aberto da CAP (sem isentas/canceladas e sem transferência entre contas) + parcelas das obrigações ativas previstas para
+   o mês que ainda não têm lançamento (valor da parcela). */
+function capSaldoMes() {
+  const mes = todayISO().slice(0, 7);
+  const lanc = (CAP_STATE.items || []).filter(it => { const c = classifyItem(it); return !c.pago && !c.isenta && !capEhTransf(it) && it.Vencimento && ymd(it.Vencimento).slice(0, 7) === mes; });
+  const prev = [];
+  try { if ((OBR_STATE.items || []).length && !CAP_STATE.espelhoCC) {   /* revisão 1: no espelho do Almoxarifado (CAP filtrada por centro de custo) não há previstas */
+    const D = obrCalcular();
+    (OBR_STATE.items || []).filter(o => o.Status !== "Encerrada" && (typeof obrVisivel !== "function" || obrVisivel(o))).forEach(o => {   /* revisão 3: só as obrigações que a pessoa vê */
+      const Ro = D.res.get(String(o._id)); if (!Ro) return; const vp = Number(o.ValorParcela || 0); if (!(vp > 0)) return;
+      const vazias = (Ro.lista || []).filter(r => !r.contas.length && (r.st === "naolanc" || r.st === "prevista") && r.venc && String(r.venc).slice(0, 7) === mes);
+      /* revisão 2: conta vinculada à obrigação com vencimento no mês (em outra linha do cronograma, qualquer situação) já cobre uma parcela do mês */
+      const doMes = (D.porObr.get(String(o._id)) || []).filter(c => c.it.Vencimento && ymd(c.it.Vencimento).slice(0, 7) === mes && !(Ro.lista || []).some(r => r.comp === mes && r.contas.includes(c))).length;   /* a linha do próprio mês (comp do cronograma) já não está vazia */
+      vazias.slice(0, Math.max(0, vazias.length - doMes)).forEach(r => prev.push({ o, r, v: vp })); }); } } catch (e) { console.warn("saldo do mês", e); }
+  const vL = lanc.reduce((t, it) => t + Number(it.Valor || 0), 0), vP = prev.reduce((t, x) => t + x.v, 0);
+  return { mes, v: Math.round((vL + vP) * 100) / 100, lanc, prev, nObr: new Set(prev.map(x => String(x.o._id))).size, obrOk: (OBR_STATE.items || []).length > 0 };
+}
+function capSaldoMesSub(S) { return `${compLabel(S.mes)} · ${S.lanc.length} lançado(s)${S.prev.length ? ` + ${S.prev.length} parcela(s) de obrigação ainda não lançada(s)` : ""}${!S.obrOk && !CAP_STATE.espelhoCC ? " · carregando obrigações…" : ""}`; }
+function capSaldoMesGarantirObr(repinta) { if (typeof OBR_STATE !== "undefined" && !OBR_STATE.items.length && !CAP_STATE._obrSaldoTried && !CAP_STATE._obrLista && !CAP_STATE.espelhoCC) {   /* revisão 4: a lista já carrega as obrigações */ CAP_STATE._obrSaldoTried = true; loadObr().then(() => { try { repinta(); } catch (e) {} }).catch(() => {}); } }
 CONFIG.version = "v0.14.15";
+CONFIG.version = "v0.14.15.1";   /* Saldo a pagar igual em Lançamentos e Obrigações */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

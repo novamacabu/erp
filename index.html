@@ -41250,6 +41250,147 @@ function capSaldoMesSub(S) { return `${compLabel(S.mes)} · ${S.lanc.length} lan
 function capSaldoMesGarantirObr(repinta) { if (typeof OBR_STATE !== "undefined" && !OBR_STATE.items.length && !CAP_STATE._obrSaldoTried && !CAP_STATE._obrLista && !CAP_STATE.espelhoCC) {   /* revisão 4: a lista já carrega as obrigações */ CAP_STATE._obrSaldoTried = true; loadObr().then(() => { try { repinta(); } catch (e) {} }).catch(() => {}); } }
 CONFIG.version = "v0.14.15";
 CONFIG.version = "v0.14.15.1";   /* Saldo a pagar igual em Lançamentos e Obrigações */
+/* =====================================================================
+   v0.14.16 · Tabela de Horários — "Atualizar pelo quadro oficial" (pedido de 24/10, 15:49)
+   Lê a planilha do QUADRO DE HORÁRIOS no formato que a operação usa (abas "Segunda a Sexta" e "Sábado e Domingo";
+   blocos com "SAÍDA DE MACABU | SAÍDA DE MACAÉ", "HORÁRIO DE MADALENA", "Firmas"; data "Atualizado em" no alto),
+   compara com a lista "Operacional — Horários" e mostra a prévia: horários novos, alterados e que saem. Ao aplicar:
+   cria os novos, atualiza os alterados, desativa os que saíram (não apaga) e põe a data do quadro como vigência.
+   A coluna Linha (1000/1001/2000) não está no quadro e é mantida.
+   ===================================================================== */
+const HORQ_ORIG = { MACABU: "Macabu", "MACAE": "Macaé", MADALENA: "Madalena" };
+function horqOrigem(t) { const n = normName(String(t || "")).toUpperCase().replace(/^SAIDA DE\s+/, "").trim(); return HORQ_ORIG[n] || ""; }
+function horqDias(s) {   /* "(2ª a Sáb)", "(segunda a quinta)", "(firmas)" → texto da observação */
+  let t = String(s || "").trim().replace(/^\(|\)$/g, "").trim(); if (!t) return "";
+  t = t.replace(/2ª|2a\b/gi, "Segunda").replace(/3ª/gi, "Terça").replace(/4ª/gi, "Quarta").replace(/5ª/gi, "Quinta").replace(/6ª/gi, "Sexta").replace(/\bS[áa]b\b\.?/gi, "Sábado");
+  return t.split(/\s+/).map((w, i) => i > 0 && /^(a|e|de|da|do)$/i.test(w) ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+}
+/* célula do serviço: "Parador", "Preço Único", "Parador Preço Único", "Parador Vem de Madalena (2ª a Sáb)", "Preço Único (firmas)"… */
+function horqServico(txt, origem) {
+  let t = String(txt || "").replace(/\s+/g, " ").trim(), serv = "", obs = [], mad = "";
+  if (/^parador/i.test(t)) { serv = "Parador"; t = t.replace(/^parador\s*/i, ""); }
+  else if (/^pre[çc]o [úu]nico/i.test(t)) { serv = "Direto"; t = t.replace(/^pre[çc]o [úu]nico\s*/i, ""); }
+  if (/^pre[çc]o [úu]nico/i.test(t)) { obs.push("Preço Único"); t = t.replace(/^pre[çc]o [úu]nico\s*/i, ""); }   /* "Parador Preço Único": para em todos os pontos, tarifa única */
+  const mm = t.match(/^(vem de|vai p(?:ara|\/)?\.?)\s*madalena\s*/i);
+  if (mm) { mad = /^vem/i.test(mm[1]) ? "Saída de Madalena" : "Ponto Final Madalena"; t = t.slice(mm[0].length); }
+  if (t) obs.push(horqDias(t));
+  return { serv, obs: obs.filter(Boolean).join(" · "), mad };
+}
+/* célula do horário: hora (número/Date) ou texto "08:45 Madalena" */
+function horqHora(v, origem) {
+  const h = celHora(v); if (!h) return null;
+  const resto = typeof v === "string" ? v.trim().replace(/^\d{1,2}[:h]\d{2}\s*/, "") : "";
+  return { h, mad: /madalena/i.test(resto) ? (origem === "Macaé" ? "Ponto Final Madalena" : "Saída de Madalena") : "" };
+}
+function horqData(v) { if (typeof v === "number" && v > 30000) { const d = new Date(Math.round((v - 25569) * 864e5)); return d.toISOString().slice(0, 10); } if (v instanceof Date && !isNaN(v)) return ymd(v); const m = String(v || "").match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? `${m[3]}-${m[2]}-${m[1]}` : ""; }
+/* lê o quadro oficial → [{Quadro, Bloco, Origem, Horario, Servico, Observacao, Madalena}] + data */
+function horqLer(wb, XLSX) {
+  const out = [], avisos = []; let data = "";
+  wb.SheetNames.forEach(nome => {
+    const M = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, defval: "", raw: true });
+    const fimDeSemana = /s[áa]bado|domingo/i.test(nome);
+    let quadro = fimDeSemana ? "" : "Segunda a sexta", bloco = "Linha", cols = null;
+    for (let r = 0; r < M.length; r++) {
+      const row = M[r] || [], a = row[0], b = row[1], c = row[2], d = row[3], ta = String(a || "").trim();
+      if (!data && /atuali/i.test(String(a || "")) && M[r + 1]) data = horqData((M[r + 1] || [])[0]);
+      if (/^hor[áa]rio de madalena/i.test(ta)) { bloco = "Madalena"; cols = null; continue; }
+      if (/^firmas$/i.test(ta) || /^fretamento$/i.test(ta)) { bloco = "Fretamento"; cols = null; continue; }
+      if (fimDeSemana && /^s[áa]bados?$/i.test(ta)) { quadro = "Sábados"; if (bloco !== "Madalena") bloco = "Linha"; cols = null; continue; }
+      if (fimDeSemana && /^domingos?/i.test(ta)) { quadro = "Domingos e feriados"; if (bloco !== "Madalena") bloco = "Linha"; cols = null; continue; }
+      if (/^conce[iç][çc][ãa]o de macabu/i.test(ta)) { bloco = "Linha"; cols = null; continue; }
+      if (/^sa[íi]da de/i.test(ta)) { cols = [horqOrigem(a), horqOrigem(c)]; continue; }
+      if (!cols || !quadro) continue;
+      [[a, b, cols[0]], [c, d, cols[1]]].forEach(([hv, sv, origem]) => {
+        if (!origem || hv === "" || hv == null) return; const H = horqHora(typeof hv === "number" && hv >= 1 ? hv % 1 : hv, origem); if (!H) { if (/\d{1,2}[:h]\d{2}/.test(String(hv))) avisos.push(`Ignorado (horário não reconhecido): ${nome} · ${origem} "${String(hv)}"`); return; }
+        const S = horqServico(typeof sv === "string" ? sv : "", origem);
+        if (/^\d+$/.test(String(hv).trim()) || (typeof sv === "string" && sv.trim() && !S.serv)) avisos.push(`Conferir: ${nome} · ${origem} "${String(hv)}" "${String(sv || "")}" (serviço não reconhecido, gravado como Parador)`);
+        out.push({ Quadro: quadro, Bloco: bloco, Origem: origem, Horario: H.h, Servico: S.serv || "Parador", Observacao: S.obs || "", Madalena: bloco === "Madalena" ? "" : (S.mad || H.mad || "") });
+      });
+    }
+  });
+  /* o bloco "Horário de Madalena" do fim de semana vem depois dos dois quadros: o subtítulo diz qual é */
+  const vistos = new Set(), lim = [];
+  out.forEach(x => { const k = [x.Quadro, x.Bloco, x.Origem, x.Horario].join("|"); if (vistos.has(k)) { avisos.push(`Horário repetido no quadro: ${x.Quadro} · ${x.Bloco} · ${x.Origem} ${x.Horario}`); return; } vistos.add(k); lim.push(x); });
+  return { linhas: lim, data, avisos };
+}
+/* compara com a lista: novos, alterados (serviço, observação, Madalena) e os que saem */
+function horqComparar(novos) {
+  const atuais = HOR_STATE.itens.filter(x => x.Ativo !== false && novos.some(n => n.Quadro === x.Quadro));
+  const chave = x => [x.Quadro, x.Bloco, x.Origem, celHora(x.Horario) || String(x.Horario || "")].join("|");
+  const porK = new Map(), dup = [];
+  atuais.forEach(x => { const k = chave(x); if (porK.has(k)) dup.push(x); else porK.set(k, x); });   /* revisão: duplicado ativo sai */
+  const inativos = new Map(HOR_STATE.itens.filter(x => x.Ativo === false).map(x => [chave(x), x]));
+  const nObs = s => normName(String(s || "").replace(/^via madalena\s*[·,;:-]?\s*/i, ""));
+  const criar = [], mudar = [], sair = [];
+  novos.forEach(n => {
+    const x = porK.get(chave(n));
+    if (!x) { const ina = inativos.get(chave(n)); criar.push(Object.assign({ reativar: ina || null }, n)); return; }
+    porK.delete(chave(n));
+    const servAtual = horServRot(x.Servico) || "Parador", madAtual = x.Madalena || (horViaMad(x) ? (x.Origem === "Macaé" ? "Ponto Final Madalena" : "Saída de Madalena") : "");
+    const dif = [];
+    if (servAtual !== n.Servico) dif.push(`serviço ${servAtual} → ${n.Servico}`);
+    if (nObs(x.Observacao) !== nObs(n.Observacao)) dif.push(`observação "${horObsResto(x) || "—"}" → "${n.Observacao || "—"}"`);
+    if (n.Bloco !== "Madalena" && (madAtual || "") !== (n.Madalena || "")) dif.push(`Madalena ${madAtual || "—"} → ${n.Madalena || "—"}`);
+    if (n.Bloco !== "Madalena" && n.Madalena && n.Madalena !== x.Madalena && !dif.length) dif.push("\"via Madalena\" passa para o campo Madalena");
+    if (dif.length) mudar.push({ x, n, dif });
+  });
+  porK.forEach(x => sair.push(x)); dup.forEach(x => sair.push(x));
+  return { criar, mudar, sair };
+}
+window.horQuadroAbrir = () => {
+  if (!podeEditar("horarios") || !HOR_STATE.ready) { toast(HOR_STATE.ready ? "Seu acesso à Tabela de Horários é só de leitura." : "A lista de horários não está disponível."); return; }
+  $("modal").className = "modal wide";
+  modal(`<div class="modal-head"><h2>Atualizar pelo quadro oficial</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body"><p class="lead" style="margin:0 0 12px">Escolha a planilha do <b>QUADRO DE HORÁRIOS</b> (abas "Segunda a Sexta" e "Sábado e Domingo"). O ERP compara com a tabela atual e mostra o que entra, o que muda e o que sai antes de gravar. Horários que saem são <b>desativados</b> (não apagados); a data "Atualizado em" do quadro vira a vigência.</p>
+      <label class="imp-zona"><input type="file" id="horqArq" accept=".xlsx,.xls"><b>Escolha ou solte aqui</b> o quadro (.xlsx)<br><span class="sup">nada é gravado antes da prévia</span></label>
+      <div id="horqPrev"></div></div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal()">Fechar</button></div>`);
+  $("horqArq").addEventListener("change", async ev => { if (HOR_STATE.quadroGravando) return; const f = ev.target.files && ev.target.files[0]; if (!f) return; try { await horqPrevia(f); } catch (e) { $("horqPrev").innerHTML = `<p class="err">Não foi possível ler o quadro: ${esc(e.message)}</p>`; } });
+};
+async function horqPrevia(file) {
+  const XLSX = await erpLib("xlsx"); const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+  await loadHor(true);
+  const L = horqLer(wb, XLSX); if (!L.linhas.length) throw new Error("nenhum horário encontrado — confira se é a planilha do QUADRO DE HORÁRIOS");
+  const C = horqComparar(L.linhas), quadros = [...new Set(L.linhas.map(x => x.Quadro))];
+  HOR_STATE.quadroImp = { L, C };
+  const desc = x => `${esc(x.Quadro)} · ${esc(x.Bloco)} · saída de ${esc(x.Origem)} <b>${esc(x.Horario)}</b>`;
+  const nov = n => `${desc(n)} — ${esc(n.Servico)}${n.Observacao ? " · " + esc(n.Observacao) : ""}${n.Madalena ? " · " + esc(n.Madalena) : ""}${n.reativar ? ` <span class="sup">(reativa o que estava desativado)</span>` : ""}`;
+  const lst = (tit, arr, fn, cls) => `<h4 style="margin:14px 0 4px">${tit} <span class="sup">${arr.length}</span></h4>${arr.length ? `<ul class="horq-l ${cls}">${arr.map(fn).join("")}</ul>` : `<p class="sup">Nenhum.</p>`}`;
+  const total = C.criar.length + C.mudar.length + C.sair.length;
+  $("horqPrev").innerHTML = `<div class="import-summary" style="margin-top:12px">Quadro de <b>${L.data ? esc(fmtDate(L.data)) : "data não encontrada"}</b> · ${L.linhas.length} horário(s) em ${quadros.map(esc).join(", ")} · vigência atual ${horVigencia() ? esc(fmtDate(horVigencia())) : "—"}</div>
+    ${L.avisos.length ? `<div class="import-help">${L.avisos.map(esc).join("<br>")}</div>` : ""}
+    ${lst("Entram", C.criar, n => `<li>${nov(n)}</li>`, "ok")}
+    ${lst("Mudam", C.mudar, m => `<li>${desc(m.n)} — ${esc(m.dif.join(" · "))}</li>`, "at")}
+    ${lst("Saem (desativados)", C.sair, x => `<li>${desc(x)} — ${esc(horServRot(x.Servico) || "")}${x.Observacao ? " · " + esc(x.Observacao) : ""}</li>`, "cr")}
+    <div class="actions" style="margin-top:12px"><button class="btn primary" id="horqGo" onclick="horqAplicar()">${total ? `Aplicar ${total} alteração(ões)` : "Só atualizar a vigência"}${L.data ? ` e vigência ${esc(fmtDate(L.data))}` : ""}</button></div>`;
+}
+window.horqAplicar = async () => {
+  const I = HOR_STATE.quadroImp; if (!I || !podeEditar("horarios") || HOR_STATE.quadroGravando) return; const { L, C } = I, b = $("horqGo"), arq = $("horqArq");
+  HOR_STATE.quadroGravando = true; if (b) { b.disabled = true; b.textContent = "Gravando…"; } if (arq) arq.disabled = true;
+  const S = HOR_STATE.site.id, Li = HOR_STATE.list.id, vig = L.data || horVigencia() || todayISO(), quadros = [...new Set(L.linhas.map(x => x.Quadro))]; let ok = 0, falha = 0, pulouSair = false;
+  try {
+    let temMad = true;   /* revisão: lista antiga sem a coluna Madalena não pode receber o campo */
+    try { const cols = await graph(`/sites/${S}/lists/${Li}/columns?$select=name`); temMad = (cols.value || []).some(c => c.name === "Madalena"); } catch (e) {}
+    const campos = n => { const f = { Title: `${n.Quadro} · ${n.Bloco} · ${n.Origem} ${n.Horario}`, Quadro: n.Quadro, Bloco: n.Bloco, Origem: n.Origem, Horario: n.Horario, Servico: n.Servico || null, Observacao: n.Observacao || null, Ativo: true, VigenciaInicio: vig }; if (temMad && n.Bloco !== "Madalena") f.Madalena = n.Madalena || null; return f; };
+    const tenta = async fn => { try { await fn(); ok++; return true; } catch (e) { falha++; console.warn("quadro", e); return false; } };
+    let ordem = Math.max(0, ...HOR_STATE.itens.map(x => Number(x.Ordem || 0)));
+    for (const n of C.criar) await tenta(() => n.reativar ? SP.update(S, Li, n.reativar._id, campos(n)) : SP.create(S, Li, Object.assign(campos(n), { Ordem: ++ordem })));
+    for (const m of C.mudar) await tenta(() => SP.update(S, Li, m.x._id, Object.assign(campos(m.n), { Title: undefined })));
+    if (falha) pulouSair = C.sair.length > 0;   /* revisão: se algum novo não gravou, não desativa nada (evita buraco no quadro) */
+    else for (const x of C.sair) await tenta(() => SP.update(S, Li, x._id, { Ativo: false }));
+    await loadHor(true);
+    const alvo = HOR_STATE.itens.filter(x => x.Ativo !== false && quadros.includes(x.Quadro) && (!x.VigenciaInicio || ymd(x.VigenciaInicio) !== vig));
+    if (alvo.length) { const r = await graphBatch(alvo.map(x => ({ method: "PATCH", url: `/sites/${S}/lists/${Li}/items/${x._id}/fields`, body: { VigenciaInicio: vig } }))); falha += r.filter(x => !x.ok).length; }
+    HOR_STATE.quadroImp = null; closeModal(); await loadHor(true); paintHor();
+    toast(falha ? `${ok} alteração(ões) gravada(s) · ${falha} falharam${pulouSair ? " · os que saem não foram desativados" : ""} — abra de novo e aplique (só o que falta aparece)` : `Quadro atualizado: ${ok} alteração(ões) · vigência ${fmtDate(vig)}`, falha ? 9000 : 6000);
+  } catch (e) {
+    toast("Não foi possível concluir: " + (e.message || e) + " — abra de novo e aplique (só o que falta aparece)", 9000);
+    if (b) { b.disabled = false; b.textContent = "Tentar de novo"; } if (arq) arq.disabled = false;
+  } finally { HOR_STATE.quadroGravando = false; }
+};
+{ const p0 = paintHor; paintHor = function () { const r = p0.apply(this, arguments); const a = $("horActions"); if (a && HOR_STATE.ready && podeEditar("horarios") && !a.querySelector(".horq-btn")) { const imp = [...a.querySelectorAll("button")].find(b => /Importar Excel/.test(b.textContent)); const h = `<button class="btn horq-btn" onclick="horQuadroAbrir()" title="Lê a planilha do QUADRO DE HORÁRIOS e atualiza a tabela (novos, alterados, que saem) com prévia">Atualizar pelo quadro</button>`; if (imp) imp.insertAdjacentHTML("beforebegin", h); else a.insertAdjacentHTML("afterbegin", h); } return r; }; window.paintHor = paintHor; }
+{ const st = document.createElement("style"); st.textContent = `.horq-l{margin:0;padding:0 0 0 18px;font-size:13px;max-height:220px;overflow:auto}.horq-l li{margin:2px 0}.horq-l.ok li::marker{color:#2F7D4F}.horq-l.at li::marker{color:#E8A013}.horq-l.cr li::marker{color:#B23A2F}`; document.head.appendChild(st); }
+CONFIG.version = "v0.14.16";   /* Tabela de Horários: atualizar pelo quadro oficial */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

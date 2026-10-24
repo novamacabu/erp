@@ -41392,6 +41392,38 @@ window.horqAplicar = async () => {
 { const st = document.createElement("style"); st.textContent = `.horq-l{margin:0;padding:0 0 0 18px;font-size:13px;max-height:220px;overflow:auto}.horq-l li{margin:2px 0}.horq-l.ok li::marker{color:#2F7D4F}.horq-l.at li::marker{color:#E8A013}.horq-l.cr li::marker{color:#B23A2F}`; document.head.appendChild(st); }
 CONFIG.version = "v0.14.16";   /* Tabela de Horários: atualizar pelo quadro oficial */
 
+/* =====================================================================
+   v0.14.16.1 · Pedido de 24/10 (18:56): "Tudo numa folha" / "Horários numa folha" saía em 2 folhas
+   (no Safari/iPhone as margens e o cabeçalho/rodapé do navegador tiram altura e o zoom não bastava).
+   Agora a folha tem uma caixa de altura fixa em milímetros (cabe em qualquer navegador, A4 deitada) e o conteúdo
+   é reduzido por escala (transform), alargado antes para continuar ocupando a largura toda. Só esta impressão muda.
+   ===================================================================== */
+const HOR_FOLHA_ALT_MM = 160;   /* altura útil segura: 210 mm − margens (28) − folga para o cabeçalho/rodapé que o navegador acrescenta */
+{ const c0 = printCaber; printCaber = function (doc, paisagem) {
+    const grid = doc && doc.querySelector(".hf-grid"), pg = grid && grid.closest(".pg");
+    if (!pg) return c0.apply(this, arguments);
+    let box = pg.parentElement && pg.parentElement.classList.contains("hf-fit") ? pg.parentElement : null;
+    if (!box) { box = doc.createElement("div"); box.className = "hf-fit"; pg.parentNode.insertBefore(box, pg); box.appendChild(pg); }
+    box.style.cssText = `width:100%;height:${HOR_FOLHA_ALT_MM}mm;overflow:hidden;break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid`;
+    pg.style.zoom = ""; pg.style.transform = ""; pg.style.breakAfter = "auto"; pg.style.pageBreakAfter = "auto";
+    const maxH = (box.getBoundingClientRect().height || HOR_FOLHA_ALT_MM * 96 / 25.4) * 0.97;
+    const cabe = z => { pg.style.width = (100 / z) + "%"; return pg.scrollHeight * z <= maxH; };
+    const escala = larg => {   /* revisão B3: busca binária entre 25% e 100% (alargar só diminui a altura) */
+      box.style.width = larg; if (cabe(1)) return 1;
+      let lo = 0.25, hi = 1; if (!cabe(lo)) return lo;
+      for (let i = 0; i < 9; i++) { const m = (lo + hi) / 2; if (cabe(m)) lo = m; else hi = m; }
+      return Math.floor(lo * 1000) / 1000; };
+    /* revisão M1: mede também na largura útil de retrato (703 px) — se o navegador ignorar a folha deitada, nada é cortado */
+    const z = Math.min(escala("100%"), escala("703px"));
+    box.style.width = "100%";
+    const coube = cabe(z);   /* revisão M2: confere de novo na escala final */
+    pg.style.transformOrigin = "0 0"; pg.style.transform = z < 1 ? `scale(${z})` : "";
+    if (!coube) toast(`Horários demais para uma folha: o fim saiu cortado. Use "Imprimir (PDF)" na Tabela de Horários (um tipo de dia por folha).`, 10000);
+    else if (z < 0.5) toast(`Muitos horários: a folha saiu em ${Math.round(z * 100)}% e pode ficar difícil de ler. "Imprimir (PDF)" na Tabela de Horários imprime um tipo de dia por folha.`, 9000);
+    return z;
+  }; }   /* substitui, para a folha única (.hf-grid, uma .pg só), o ajuste por zoom da v0.14.9 */
+CONFIG.version = "v0.14.16.1";   /* Tudo numa folha: cabe numa folha deitada em qualquer navegador */
+
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL
    - Todo o código do módulo fica entre ADQ:INICIO e ADQ:FIM (prefixo adq/ADQ_). Lê outros módulos; nunca grava neles.

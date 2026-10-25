@@ -5773,6 +5773,14 @@ function paintCAP() {
 }
 /* v0.12.6 · limpeza da importação duplicada: para cada grupo (competência + valor + vencimento) com itens sem vínculo no cadastro
    E itens vinculados, os sem vínculo são cópias cruas da planilha → excluir, levando o status Pago para o gêmeo quando só a cópia crua o tinha. */
+function capDedupMesmoForn(r, l) {   /* v0.14.17.1 (D4) */
+  const dr = docClean(r.CNPJ), f = fornByName(l.Fornecedor) || {}, dl = docClean(l.CNPJ) || docClean(f.CNPJ);
+  if (dr && dl) return dr === dl;
+  const nr = normName(r.Fornecedor), nomes = [normName(l.Fornecedor), normName(f.Title), normName(f.NomeFantasia)].filter(x => x && x.length >= 4);
+  if (!nr || nr.length < 4) return false;
+  const pal = x => x.replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(w => w.length >= 3 && !["ltda", "eireli", "epp", "cia", "me"].includes(w)), contem = (a, b) => { const A = pal(a), B = new Set(pal(b)); return A.length >= 2 && A.every(w => B.has(w)); };
+  return nomes.some(n => n === nr || contem(n, nr) || contem(nr, n));   /* revisão: palavras inteiras (pelo menos duas), não pedaços */
+}
 function capDedupPlan() {
   const k = it => [itemComp(it), Number(it.Valor || 0).toFixed(2), it.Vencimento ? ymd(it.Vencimento) : ""].join("|");
   const byKey = {}; CAP_STATE.items.forEach(it => { (byKey[k(it)] = byKey[k(it)] || []).push(it); });
@@ -5781,20 +5789,24 @@ function capDedupPlan() {
     const linked = g.filter(it => fornByName(it.Fornecedor)), raw = g.filter(it => !fornByName(it.Fornecedor));
     if (!linked.length || !raw.length) return;
     if (raw.length > linked.length) { review.push(g); return; }
-    raw.forEach((r, i) => plan.push({ del: r, keep: linked[i] }));
+    /* v0.14.17.1 (D4): a cópia crua só pareia com a vinculada do mesmo fornecedor (CNPJ igual ou nome compatível); sem par, vai para revisão */
+    const usados = new Set(), semPar = [];
+    const pares = [];
+    raw.forEach(r => { const k2 = linked.find(l => !usados.has(l) && capDedupMesmoForn(r, l)); if (k2) { usados.add(k2); pares.push({ del: r, keep: k2 }); } else semPar.push(r); });
+    if (semPar.length) review.push(g); else plan.push(...pares);   /* revisão M4: tudo ou nada por grupo */
   });
   return { plan, review };
 }
 window.capDedup = () => {
   if (!FORN_STATE.items.length) { toast("Cadastro de fornecedores vazio — não dá para distinguir as cópias.", 5000); return; }
   const { plan, review } = capDedupPlan();
-  if (!plan.length) { toast("Nenhum lançamento duplicado encontrado."); return; }
+  if (!plan.length) { toast(review.length ? `Nenhuma cópia com par seguro; ${review.length} grupo(s) com valores iguais de fornecedores diferentes ficam para conferência manual.` : "Nenhum lançamento duplicado encontrado.", 7000); return; }
   const tot = plan.reduce((s, p) => s + Number(p.del.Valor || 0), 0);
   const prop = plan.filter(p => p.del.Status === "Pago" && p.keep.Status !== "Pago");
   $("modal").className = "modal wide";
   modal(`<div class="modal-head"><h2>Lançamentos importados em duplicidade</h2><button class="x" onclick="closeModal()">×</button></div>
     <div class="modal-body">
-      <p class="lead" style="margin:0 0 12px">Encontrei <b>${plan.length}</b> lançamento(s) com o nome cru da planilha (sem vínculo no cadastro) que têm uma cópia igual — mesma competência, valor e vencimento — já vinculada a um fornecedor do cadastro. Total em duplicidade: <b>${esc(fmtBRL(tot))}</b>.</p>
+      <p class="lead" style="margin:0 0 12px">Encontrei <b>${plan.length}</b> lançamento(s) com o nome cru da planilha (sem vínculo no cadastro) que têm uma cópia igual — mesmo fornecedor, competência, valor e vencimento — já vinculada a um fornecedor do cadastro. Total em duplicidade: <b>${esc(fmtBRL(tot))}</b>.</p>
       <p class="hint">Serão <b>excluídas as cópias sem vínculo</b>; as vinculadas ficam. ${prop.length ? `Em <b>${prop.length}</b> caso(s) só a cópia crua estava como Pago — o status e a data de pagamento passam para a que fica.` : ""} ${review.length ? `<br><b>${review.length}</b> grupo(s) têm mais cópias cruas do que vinculadas e ficam para revisão manual (não serão tocados).` : ""}</p>
       <div class="import-preview" style="max-height:340px;overflow:auto"><table><thead><tr><th>Exclui (cru)</th><th>Fica (cadastro)</th><th>Compet.</th><th>Vencto</th><th style="text-align:right">Valor</th><th>Status</th></tr></thead><tbody>${plan.map(p => `<tr><td>${esc(p.del.Title || "—")}<div class="sup">${esc(p.del.Fornecedor || "")}</div></td><td>${esc(p.keep.Title || "—")}<div class="sup">${esc(p.keep.Fornecedor || "")}</div></td><td class="nw">${esc(compLabel(itemComp(p.del)))}</td><td class="nw">${fmtDate(p.del.Vencimento)}</td><td class="right">${esc(fmtBRL(p.del.Valor))}</td><td>${esc(p.del.Status || "")} → ${esc(p.del.Status === "Pago" ? "Pago" : p.keep.Status)}</td></tr>`).join("")}</tbody></table></div>
       <div class="err-msg" id="ddErr" style="display:none;color:var(--err);margin-top:12px;font-size:13px;"></div>
@@ -5806,12 +5818,16 @@ window.capDedup = () => {
     const siteId = CAP_STATE.site.id, listId = CAP_STATE.list.id;
     for (const p of plan) {
       try {
-        if (p.del.Status === "Pago" && p.keep.Status !== "Pago") { const f = { Status: "Pago", DataPagamento: p.del.DataPagamento ? ymd(p.del.DataPagamento) : todayISO() }; if (!p.keep.Banco && p.del.Banco) f.Banco = p.del.Banco; if (!p.keep.FormaPagamento && p.del.FormaPagamento) f.FormaPagamento = p.del.FormaPagamento; await SP.update(siteId, listId, p.keep._id, f); Object.assign(p.keep, f); }
+        const f = {};
+        if (p.del.Status === "Pago" && p.keep.Status !== "Pago") { Object.assign(f, { Status: "Pago", DataPagamento: p.del.DataPagamento ? ymd(p.del.DataPagamento) : todayISO() }); if (!p.keep.Banco && p.del.Banco) f.Banco = p.del.Banco; if (!p.keep.FormaPagamento && p.del.FormaPagamento) f.FormaPagamento = p.del.FormaPagamento; }
+        { const ak = anexosDe(p.keep), ids = new Set(ak.map(a => String(a.id))), novos = anexosDe(p.del).filter(a => !ids.has(String(a.id)));   /* v0.14.17.1 (D4): os anexos da cópia passam para o que fica */
+          if (novos.length && (!CAP_STATE.cols || CAP_STATE.cols.has("Anexos"))) f.Anexos = JSON.stringify(ak.concat(novos)); }
+        if (Object.keys(f).length) { await SP.update(siteId, listId, p.keep._id, f); Object.assign(p.keep, f); }
         await graph(`/sites/${siteId}/lists/${listId}/items/${p.del._id}`, { method: "DELETE" }); n++;
       } catch (e) { err++; console.warn("dedup", p.del._id, e); }
       b.textContent = `Excluindo… ${n + err}/${plan.length}`;
     }
-    closeModal(); toast(`${n} cópia(s) excluída(s)${err ? ` · ${err} falha(s)` : ""}`, 6000); await loadCAP(); paintCAP();
+    closeModal(); toast(`${n} cópia(s) excluída(s)${err ? ` · ${err} falha(s)` : ""}`, 6000); try { await loadCAP(); } catch (e) { toast("Cópias excluídas, mas não foi possível reler a CAP: " + e.message, 7000); } paintCAP();
   };
 };
 /* v0.12.6 · baixa rápida: marca como Pago sem abrir o formulário inteiro */
@@ -6478,7 +6494,8 @@ const OBR_LINHA = {
   vencida:  { lbl: "Vencida",          cls: "st-vencido" },
   naolanc:  { lbl: "Sem lançamento na CAP", cls: "st-vencido" },
   prevista: { lbl: "Prevista",         cls: "st-aguardando" },
-  anterior: { lbl: "Antes do ERP",     cls: "st-aguardando" }
+  anterior: { lbl: "Antes do ERP",     cls: "st-aguardando" },
+  na:       { lbl: "Não aplicável",    cls: "st-aguardando" }   /* v0.14.17.1 (D3): parcela com lançamento marcado N/A */
 };
 const OBR_HOW = {
   gravado: "Vínculo gravado no lançamento (coluna Obrigação)",
@@ -6685,15 +6702,17 @@ function obrResumo(o, contas, hj, erpBase) {
       r.valor = r.contas.reduce((s, c) => s + Number(c.it.Valor || 0), 0);
       r.venc = r.contas.map(c => c.it.Vencimento ? ymd(c.it.Vencimento) : null).filter(Boolean).sort()[0] || r.venc;
       const cl = r.contas.map(c => classifyItem(c.it));
-      if (r.contas.every(c => c.it.Status === "Pago")) {
-        r.st = "paga"; R.pagas++; R.vPago += r.valor; if (r.k) R.ultimaPaga = Math.max(R.ultimaPaga, r.k);
+      if (r.contas.every(c => isIsenta(c.it))) {   /* v0.14.17.1 (D3): só N/A — não aplicável; conta como liquidada para a quitação */
+        r.st = "na"; R.naoAplic = (R.naoAplic || 0) + 1; if (r.k) R.ultimaPaga = Math.max(R.ultimaPaga, r.k);
+      } else if (r.contas.every(c => c.it.Status === "Pago" || isIsenta(c.it))) {
+        r.st = "paga"; R.pagas++; R.vPago += r.contas.filter(c => c.it.Status === "Pago").reduce((s2, c) => s2 + Number(c.it.Valor || 0), 0);   /* v0.14.17.1: sem o valor N/A */ if (r.k) R.ultimaPaga = Math.max(R.ultimaPaga, r.k);
         r.pagoEm = r.contas.map(c => c.it.DataPagamento ? ymd(c.it.DataPagamento) : "").filter(Boolean).sort().pop() || "";
       } else if (cl.some(x => !x.pago && x.dias !== null && x.dias < 0)) {
         r.st = "vencida"; R.vencidas++;
-        r.contas.forEach((c, i) => { if (!cl[i].pago) R.vVencido += Number(c.it.Valor || 0); if (!cl[i].pago && cl[i].dias !== null && cl[i].dias < 0) R.atrasoMax = Math.max(R.atrasoMax, -cl[i].dias); });
+        r.contas.forEach((c, i) => { if (!cl[i].pago && !cl[i].isenta) R.vVencido += Number(c.it.Valor || 0); if (!cl[i].pago && cl[i].dias !== null && cl[i].dias < 0) R.atrasoMax = Math.max(R.atrasoMax, -cl[i].dias); });
         if (!R.primeiraVencida) R.primeiraVencida = r;
       } else {
-        r.st = "aberta"; R.abertas++; r.contas.forEach((c, i) => { if (!cl[i].pago) R.vAberto += Number(c.it.Valor || 0); });
+        r.st = "aberta"; R.abertas++; r.contas.forEach((c, i) => { if (!cl[i].pago && !cl[i].isenta) R.vAberto += Number(c.it.Valor || 0); });
       }
     } else {
       r.valor = vp || null;
@@ -6705,6 +6724,7 @@ function obrResumo(o, contas, hj, erpBase) {
   }
   /* contas vinculadas fora do cronograma também contam (e impedem "quitada" enquanto estiverem em aberto) */
   extras.forEach(c => { const cl = classifyItem(c.it), v = Number(c.it.Valor || 0);
+    if (isIsenta(c.it)) return;   /* v0.14.17.1 (D3): N/A fora do cronograma não fica em aberto */
     if (c.it.Status === "Pago") R.vPago += v;
     else if (cl.dias !== null && cl.dias < 0) { R.vencidas++; R.vVencido += v; R.atrasoMax = Math.max(R.atrasoMax, -cl.dias); const vv = c.it.Vencimento ? ymd(c.it.Vencimento) : null; if (!R.primeiraVencida && vv && (!R.vencExtra || vv < R.vencExtra)) R.vencExtra = vv; }
     else { R.abertas++; R.vAberto += v; } });
@@ -6769,7 +6789,7 @@ async function obrEncerrarQuitadas() {
     if (o.Status === "Encerrada" || !(Number(o.NumParcelas) > 0) || !obrVisivel(o)) return false;
     const R = D.res.get(String(o._id)); if (!R || !R.sit || R.sit.k !== "quitada") return false;
     const vinc = [...(R.lista || []).flatMap(r => r.contas || []), ...(R.extras || [])];   /* revisão M2: só vínculos gravados (nada reconhecido por heurística, inclusive fora do cronograma) e todas as N parcelas contadas */
-    return vinc.length > 0 && vinc.every(c => ["gravado", "gerada", "parcelamento"].includes(c.how)) && (R.pagas + (R.anteriores || 0)) >= R.N;
+    return vinc.length > 0 && vinc.every(c => ["gravado", "gerada", "parcelamento"].includes(c.how)) && (R.pagas + (R.anteriores || 0) + (R.naoAplic || 0)) >= R.N;   /* v0.14.17.1 (D3): N/A conta como liquidada */
   });
   if (!alvo.length) return 0;
   let ok = 0;
@@ -18088,7 +18108,7 @@ function cxHoje() { const d = new Date(); return `${d.getFullYear()}-${String(d.
 function cxAgora() { const d = new Date(), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function cxQuem() { return (session.me && (session.me.displayName || session.me.userPrincipalName)) || "—"; }
 MOD_RESET.caixa = () => { CX.resCap = ""; CX.tab = "boletim"; CX.dia = cxHoje(); CX.comp = cxHoje().slice(0, 7); CX.imp = null; CX.filtroTipo = ""; };
-MOD_RESET.cap = () => { CAP_STATE.painelFoco = ""; CAP_STATE.pageN = 45; };   /* v0.12.20 + v0.12.22 */
+MOD_RESET.cap = (function (antes) { return () => { if (antes) antes(); CAP_STATE.painelFoco = ""; CAP_STATE.pageN = 45; }; })(MOD_RESET.cap);   /* v0.12.20 + v0.12.22 · v0.14.17.1 (D1): encadeia o reset completo (aba Lançamentos, filtros, agrupamento, seleção) em vez de substituí-lo */
 MOD_RESET.ag_mov = () => { if (typeof AG_MOV_STATE !== "undefined") { AG_MOV_STATE.filtroStatus = ""; AG_MOV_STATE.draft = null; } };   /* v0.12.24 */
 MOD_RESET.rc = () => { if (typeof RC_STATE !== "undefined") { RC_STATE.q = ""; RC_STATE.filtroStatus = ""; } };   /* v0.12.25 */
 MOD_RESET.rol = () => { if (typeof ROL_STATE !== "undefined") { ROL_STATE.filtroStatus = ""; } };   /* v0.12.27 */
@@ -18096,7 +18116,7 @@ MOD_RESET.rec = () => { if (typeof REC_STATE !== "undefined") { REC_STATE.filtro
 MOD_RESET.rh_clt = () => { if (typeof RH_CLT_STATE !== "undefined") { RH_CLT_STATE.tab = "leis"; RH_CLT_STATE.filtroCat = ""; } };   /* v0.12.27 fix: tirado do top-level de v0.12.26 (TDZ) */
 MOD_RESET.alm_oc = () => { if (typeof ALM_OC_STATE !== "undefined") { ALM_OC_STATE.filtroStatus = ""; } };   /* v0.12.27 #11 */
 MOD_RESET.rh_ponto = () => { if (typeof RH_PONTO_STATE !== "undefined") { RH_PONTO_STATE.tab = "painel"; RH_PONTO_STATE.filtroFunc = ""; RH_PONTO_STATE.mes = ""; RH_PONTO_STATE.dep = ""; RH_PONTO_STATE.func = ""; RH_PONTO_STATE.sit = ""; RH_PONTO_STATE.busca = ""; RH_PONTO_STATE.imp = null; RH_PONTO_STATE.ord = ""; RH_PONTO_STATE.ordDesc = false; RH_PONTO_STATE.cols = null; RH_PONTO_STATE.funcs = null; RH_PONTO_STATE.funcsMap = null; } };   /* v0.12.27 #26 · v0.12.45: ordem e caches zerados */
-MOD_RESET.forn = () => { FORN_STATE.pageN = 45; };   /* v0.12.22b: Fornecedores paginação */
+MOD_RESET.forn = (function (antes) { return () => { if (antes) antes(); FORN_STATE.pageN = 45; }; })(MOD_RESET.forn);   /* v0.12.22b · v0.14.17.1 (D1): filtros limpos ao entrar pelo menu */
 window.capMore = () => { CAP_STATE.pageN = (CAP_STATE.pageN || 45) + 45; paintCAP(); };
 window.capMoreAll = () => { CAP_STATE.pageN = 999999; paintCAP(); };
 CX.dia = cxHoje(); CX.comp = CX.dia.slice(0, 7);
@@ -34936,7 +34956,7 @@ window.tercReceita = async cnpj => {   /* consulta pública (BrasilAPI) — só 
 async function fornSave(existing, inline) {
   const g = id => ($(id) ? $(id).value.trim() : "");
   const showErr = (msg) => { const e = $("gErr"); e.style.display = "block"; e.textContent = msg; };
-  const nome = g("gNome"), tipo = g("gTipo"), doc = docFmt(g("gCNPJ")), papeis = tercPapeisLer(), dc = docClean(doc);
+  let nome = g("gNome"); const tipo = g("gTipo"), doc = docFmt(g("gCNPJ")), papeis = tercPapeisLer(), dc = docClean(doc);   /* v0.14.17.1: let — a filial ganha sufixo */
   if (!nome) { showErr("Preencha a Razão Social."); return; }
   if (!papeis.length) { showErr("Marque ao menos um papel (Fornecedor, Órgão público, Banco…)."); return; }
   if (!doc) { showErr("CNPJ/CPF é obrigatório — é a chave do cadastro (um por documento)."); return; }
@@ -34950,7 +34970,14 @@ async function fornSave(existing, inline) {
   const dupDoc = FORN_STATE.items.find(f => docClean(f.CNPJ) === dc && (!existing || f._id !== existing._id));
   if (dupDoc) { showErr(`Este CNPJ/CPF já está cadastrado como "${dupDoc.Title}". Edite o existente — se é outra unidade do mesmo documento, cadastre uma conta nele.`); return; }
   const dup = FORN_STATE.items.find(f => (f.Title || "").trim().toLowerCase() === nome.toLowerCase() && (!existing || f._id !== existing._id));
-  if (dup) { showErr(`Já existe um cadastro chamado "${dup.Title}". Edite o existente ou use um nome diferente.`); return; }
+  if (dup) {   /* v0.14.17.1 (D5): filial (mesma Razão Social, CNPJ diferente) é permitida, com confirmação; sem documento ou com o mesmo, continua barrado */
+    const dd = docClean(dup.CNPJ);
+    if (!dc || !dd || dd === dc) { showErr(`Já existe um cadastro chamado "${dup.Title}". Edite o existente ou use um nome diferente.`); return; }
+    const suf = dc.length === 14 ? ` FILIAL ${dc.slice(8, 12)}` : ` ${dc.slice(-4)}`, nome2 = `${nome}${suf}`;   /* revisão B2: o nome continua único (a CAP liga o fornecedor pelo nome) */
+    if (FORN_STATE.items.some(f => (f.Title || "").trim().toLowerCase() === nome2.toLowerCase() && (!existing || f._id !== existing._id))) { showErr(`Já existe um cadastro chamado "${nome2}".`); return; }
+    if (!confirm(`Já existe "${dup.Title}" com outro CNPJ.\n\nSe for filial da mesma empresa, o recomendado é acrescentar este CNPJ em "Outros CNPJs" do cadastro existente (os lançamentos ficam juntos).\n\nCriar um cadastro separado com o nome "${nome2}"?`)) return;   /* revisão B1: confirm nativo — o erpConfirmar fecharia o formulário */
+    nome = nome2; if ($("gNome")) $("gNome").value = nome2;
+  }
   if (dc.length === 11 && !papeis.includes("Funcionário")) { try { const m = await tercRhCpfMapa(); const f = m.get(dc); if (f && !confirm(`Este CPF é do funcionário ${f.nome || "(RH)"}. Funcionários são mantidos no RH › Banco de Dados; aqui só se marca o papel Funcionário apontando para lá. Salvar mesmo assim?`)) return; } catch (e) {} }
   const dia = g("gDia") ? Number(g("gDia")) : null;
   if (dia !== null && (dia < 1 || dia > 31)) { showErr("Dia de vencimento precisa estar entre 1 e 31."); return; }
@@ -41466,6 +41493,7 @@ CONFIG.version = "v0.14.16.3";   /* ícone do app no celular com fundo branco */
   document.head.appendChild(st); }
 { const e = document.getElementById("lgAnos"); if (e) e.textContent = String(new Date().getFullYear() - 1998); }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
+CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

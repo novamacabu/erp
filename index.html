@@ -5571,7 +5571,7 @@ async function loadCAP(opts) {
   /* --- v0.7: Vencido automático --- */
   const hj = new Date(); hj.setHours(0,0,0,0);
   const toMark = CAP_STATE.items.filter(it => {
-    if (it.Status === "Pago" || it.Status === "Vencido" || isIsenta(it)) return false;   /* v0.12.81: conta isenta (N/A) não vira Vencida */
+    if (it.Status === "Pago" || it.Status === "Vencido" || it.Status === "Aguardando NF" || isIsenta(it)) return false;   /* v0.12.81: conta isenta (N/A) não vira Vencida · v0.14.17.2 (D2): "Aguardando NF" fica (o atraso aparece pela data) */
     const v = it.Vencimento ? dLocal(it.Vencimento) : null;
     return v && (v.setHours(0,0,0,0), v < hj);
   });
@@ -6204,7 +6204,7 @@ function capWireForm(isNew) {
   venc.addEventListener("change", () => { if (!$("fComp").value && venc.value) $("fComp").value = venc.value.slice(0, 7); });
   $("fSt").addEventListener("change", () => { if ($("fSt").value === "Pago" && !$("fPag").value) $("fPag").value = todayISO(); });
   $("fNF").addEventListener("input", () => { if ($("fSt").value === "Aguardando NF" && $("fNF").value.trim()) $("fSt").value = "Em aberto"; });
-  venc.addEventListener("change", () => { const st = $("fSt").value; if (st === "Pago" || !venc.value) return; $("fSt").value = venc.value < todayISO() ? "Vencido" : (st === "Vencido" ? "Em aberto" : st); });
+  venc.addEventListener("change", () => { const st = $("fSt").value; if (st === "Pago" || st === "Aguardando NF" || !venc.value) return; $("fSt").value = venc.value < todayISO() ? "Vencido" : (st === "Vencido" ? "Em aberto" : st); });
   capFornHint();
 }
 function capFornHint() {
@@ -6275,7 +6275,7 @@ async function capSave(existing) {
   /* v0.12.6 · fluxo automático de status */
   if (fields.Status === "Aguardando NF" && fields.NumeroNF) fields.Status = "Em aberto";
   if (fields.Status === "Vencido" && fields.Vencimento && fields.Vencimento >= todayISO()) fields.Status = "Em aberto";
-  if (fields.Status !== "Pago" && !isIsenta(fields) && fields.Vencimento && fields.Vencimento < todayISO()) fields.Status = "Vencido";
+  if (fields.Status !== "Pago" && fields.Status !== "Aguardando NF" && !isIsenta(fields) && fields.Vencimento && fields.Vencimento < todayISO()) fields.Status = "Vencido";   /* v0.14.17.2 (D2) */
   const forn = fornByName(fields.Fornecedor);
   if (forn) fields.Fornecedor = forn.Title;
   if (hasCol("FornecedorRefId")) fields.FornecedorRefLookupId = forn ? Number(forn._id) : null;
@@ -7315,7 +7315,7 @@ function capWireForm(isNew) {
   venc.addEventListener("change", () => { if (!$("fComp").value && venc.value) $("fComp").value = venc.value.slice(0, 7); });
   $("fSt").addEventListener("change", () => { if ($("fSt").value === "Pago" && !$("fPag").value) $("fPag").value = todayISO(); });
   $("fNF").addEventListener("input", () => { if ($("fSt").value === "Aguardando NF" && $("fNF").value.trim()) $("fSt").value = "Em aberto"; });
-  venc.addEventListener("change", () => { const st = $("fSt").value; if (st === "Pago" || !venc.value) return; $("fSt").value = venc.value < todayISO() ? "Vencido" : (st === "Vencido" ? "Em aberto" : st); });
+  venc.addEventListener("change", () => { const st = $("fSt").value; if (st === "Pago" || st === "Aguardando NF" || !venc.value) return; $("fSt").value = venc.value < todayISO() ? "Vencido" : (st === "Vencido" ? "Em aberto" : st); });
   capFornHint();
   CAP_STATE.docFila = isNew ? [] : null;
   if ($("capDocs")) docWire("cap", {
@@ -7420,7 +7420,7 @@ async function capSave(existing) {
   if (fields.Status === "Pago" && !fields.DataPagamento) fields.DataPagamento = todayISO();
   if (fields.Status === "Aguardando NF" && fields.NumeroNF) fields.Status = "Em aberto";
   if (fields.Status === "Vencido" && fields.Vencimento && fields.Vencimento >= todayISO()) fields.Status = "Em aberto";
-  if (fields.Status !== "Pago" && !isIsenta(fields) && fields.Vencimento && fields.Vencimento < todayISO()) fields.Status = "Vencido";
+  if (fields.Status !== "Pago" && fields.Status !== "Aguardando NF" && !isIsenta(fields) && fields.Vencimento && fields.Vencimento < todayISO()) fields.Status = "Vencido";   /* v0.14.17.2 (D2) */
   const forn = fornByName(fields.Fornecedor);
   if (forn) fields.Fornecedor = forn.Title;
   if (hasCol("FornecedorRefId")) fields.FornecedorRefLookupId = forn ? Number(forn._id) : null;
@@ -15518,9 +15518,12 @@ function talPreAnalise(txt) {
   const em = t.match(/[\w.+-]+@[\w-]+\.[\w.-]+/); if (em) out.Email = em[0];
   const tel = t.match(/\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/); if (tel) out.Telefone = tel[0].trim();
   const nome = t.match(/(?:^|\n)\s*(?:Nome[:\s]+)?([A-ZÀ-Ú][a-zà-ú]+(?:\s+(?:de|da|do|dos|das|e)?\s*[A-ZÀ-Ú][a-zà-ú]+){1,5})\s*(?:\n|$)/); if (nome) out.Title = nome[1].trim();
-  const cnh = t.match(/CNH.{0,30}?(?<![A-Za-zÀ-ú])(AB|AE|AD|AC|A|B|C|D|E)(?![A-Za-zÀ-ú])/i); if (cnh) out.CNH = cnh[1].toUpperCase();
+  const cnh = t.match(/CNH[^\n]{0,30}?(?:categoria|cat\.?)\s*:?\s*(AB|AE|AD|AC|A|B|C|D|E)(?![A-Za-zÀ-ú])/i) || t.match(/[Cc][Nn][Hh]\s*[:\-–(]?\s*(AB|AC|AD|AE|A|B|C|D|E)(?![A-Za-zÀ-ú])/);   /* v0.14.17.2 (D7): "categoria D" em qualquer caixa; sem "categoria", só letra maiúscula ("CNH e experiência" não vira E) */
+  if (cnh) out.CNH = cnh[1].toUpperCase();
   const cid = t.match(/(?<![A-Za-zÀ-ú])(Conceição de Macabu|Macaé|Campos dos Goytacazes|Campos|Rio das Ostras|Carapebus|Quissamã|Trajano de Moraes|Santa Maria Madalena|Casimiro de Abreu)(?![A-Za-zÀ-ú])/i); if (cid) out.Cidade = cid[1];
-  const cargo = TAL_CARGOS.find(c => new RegExp(c.split(" ")[0], "i").test(t)); if (cargo) out.CargoPretendido = cargo;
+  const semAc = x => String(x).normalize("NFD").replace(/[\u0300-\u036f]/g, ""), tn = semAc(t);
+  const cargo = TAL_CARGOS.filter(c => c !== "Outro").find(c => c.split(" / ").some(parte => { const w = semAc(parte).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"); return new RegExp(`(?<![A-Za-z])${w}(?![A-Za-z])`, parte.length <= 2 ? "" : "i").test(tn); }));   /* v0.14.17.2 (D7): palavra inteira; "TI"/"RH" só em maiúsculas; "Outro" não é deduzido */
+  if (cargo) out.CargoPretendido = cargo;
   const kw = ["transporte coletivo", "ônibus", "onibus", "rodoviário", "carga", "mecânica", "elétrica", "MOPP", "curso", "EAR", "Excel", "atendimento", "caixa", "bilhetagem"].filter(k => new RegExp(k, "i").test(t));
   out.PreAnalise = [out.Title ? `Nome: ${out.Title}` : "Nome não identificado", out.CPF ? `CPF: ${out.CPF}${cpfValido(out.CPF) ? "" : " (dígitos inválidos)"}` : "CPF não encontrado", out.CNH ? `CNH ${out.CNH}` : "CNH não informada", out.Cidade ? `Cidade: ${out.Cidade}` : "", kw.length ? `Palavras-chave: ${kw.join(", ")}` : "Sem palavras-chave do setor"].filter(Boolean).join(" · ");
   return out;
@@ -16334,7 +16337,7 @@ const CAP_SIT = [
   { v: "vencida", l: "Vencidas", cls: "venc", t: (it, c) => !c.pago && c.dias !== null && c.dias < 0 },
   { v: "hoje", l: "Vencem hoje", cls: "pend", t: (it, c) => !c.pago && c.dias === 0 },
   { v: "pendente", l: "A vencer", cls: "", t: (it, c) => !c.pago && !c.isenta && it.Status !== "Aguardando NF" && (c.dias === null || c.dias > 0) },   /* v0.12.21: isentas (N/A) não entram em "A vencer" */
-  { v: "aguardando", l: "Aguardando NF", cls: "", t: (it, c) => !c.pago && it.Status === "Aguardando NF" && (c.dias === null || c.dias >= 0) },
+  { v: "aguardando", l: "Aguardando NF", cls: "", t: (it, c) => !c.pago && it.Status === "Aguardando NF" },   /* v0.14.17.2 (D2): inclui os atrasados, como o cartão do Painel */
   { v: "paga", l: "Pagas", cls: "pago", t: (it, c) => c.pago }
 ];
 const CC_SEM = "(sem centro de custo)";   /* valor de filtro para contas sem centro de custo (nem gravado nem sugerido) */
@@ -22713,16 +22716,22 @@ paintRhPontoRels = function () {
   body.innerHTML = `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Competência</th><th>Origem</th><th>Importado por</th><th class="right">Funcionários</th><th class="right">Horas trab.</th><th class="right">Extras</th><th class="right">Faltas</th><th>Leitura</th>${pontoPodeExcluirMes() ? "<th></th>" : ""}</tr></thead><tbody>${rows}</tbody></table></div><p class="cap-dica">Para atualizar um mês, importe o PDF de novo: as marcações do mês são substituídas.</p>`;
 };
 window.rhPontoExcluirRel = async (relId, comp) => {
-  if (!rhPontoEhEditor()) return;
-  if (!(await erpConfirmar({ titulo: "Excluir relatório", texto: `Excluir o relatório de ${pontoMesLabel(comp)} e todas as marcações desse mês? A exclusão não pode ser desfeita.`, sim: "Excluir", perigo: true }))) return;
-  try { await pontoApagarMes(comp, relId); toast(`Relatório de ${pontoMesLabel(comp)} excluído.`); await renderRhPonto(); } catch (e) { toast("Erro: " + e.message, 6000); }
+  if (typeof pontoPodeGravar === "function" && !pontoPodeGravar()) return;
+  if (!(typeof pontoPodeExcluirMes === "function" ? pontoPodeExcluirMes() : rhPontoEhEditor())) { toast("Excluir um mês do Ponto é do proprietário do módulo ou do administrador."); return; }   /* v0.14.17.2: mesma regra do botão */
+  const S = RH_PONTO_STATE, outros = S.rels.filter(r => r.Competencia === comp && String(r._id) !== String(relId)).length;
+  const texto = outros
+    ? `${pontoMesLabel(comp)} tem ${outros + 1} relatórios. Excluir só este relatório? As marcações do mês ficam (são do mês, não de um relatório só). A exclusão não pode ser desfeita.`
+    : `Excluir o relatório de ${pontoMesLabel(comp)} e todas as marcações desse mês? A exclusão não pode ser desfeita.`;
+  if (!(await erpConfirmar({ titulo: "Excluir relatório", texto, sim: "Excluir", perigo: true }))) return;
+  try { await pontoApagarMes(comp, relId, !!outros); toast(outros ? `Relatório excluído; as marcações de ${pontoMesLabel(comp)} continuam.` : `Relatório de ${pontoMesLabel(comp)} excluído.`); await renderRhPonto(); } catch (e) { toast("Erro: " + e.message, 6000); try { await renderRhPonto(); } catch (e2) {} }
 };
-async function pontoApagarMes(comp, relId) {
+async function pontoApagarMes(comp, relId, soRelatorio) {   /* v0.14.17.2 (D6): soRelatorio mantém as marcações; exclusão em lote ($batch) */
   const S = RH_PONTO_STATE;
   const rels = S.rels.filter(r => r.Competencia === comp && (!relId || String(r._id) === String(relId)));
-  for (const r of rels) await graph(`/sites/${S.siteRh.id}/lists/${S.listRel.id}/items/${r._id}`, { method: "DELETE" });
-  const alvo = S.marcs.filter(m => m.Competencia === comp);
-  for (const m of alvo) await graph(`/sites/${S.siteRh.id}/lists/${S.listMarc.id}/items/${m._id}`, { method: "DELETE" });
+  const alvo = soRelatorio ? [] : S.marcs.filter(m => m.Competencia === comp);
+  const reqs = alvo.map(m => ({ method: "DELETE", url: `/sites/${S.siteRh.id}/lists/${S.listMarc.id}/items/${m._id}` }));
+  if (reqs.length) { let r; try { r = await graphBatch(reqs); } catch (e) { throw new Error(`a exclusão das marcações parou no meio (${e.message || e}) — o relatório foi mantido; tente de novo.`); } const falha = (r || []).filter(x => !x || !(x.ok || x.status === 404)).length; if (falha) throw new Error(`${falha} marcação(ões) não foram apagadas — o relatório foi mantido; tente de novo.`); }
+  for (const r of rels) await graph(`/sites/${S.siteRh.id}/lists/${S.listRel.id}/items/${r._id}`, { method: "DELETE" });   /* o relatório sai por último: falha nas marcações não deixa marcações sem relatório */
 }
 
 /* ---------- Importação por PDF ---------- */
@@ -41494,6 +41503,7 @@ CONFIG.version = "v0.14.16.3";   /* ícone do app no celular com fundo branco */
 { const e = document.getElementById("lgAnos"); if (e) e.textContent = String(new Date().getFullYear() - 1998); }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
+CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

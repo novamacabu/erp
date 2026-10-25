@@ -5513,7 +5513,7 @@ function dLocal(v) { const m = String(v).match(/^(\d{4}-\d{2}-\d{2})(?:T00:00:00
 function fmtDate(iso) { if (!iso) return "—"; const d = dLocal(iso); if (isNaN(d)) return String(iso); return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }); }
 function todayISO() { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
 function ymd(d) { const m0 = String(d).match(/^(\d{4}-\d{2}-\d{2})(?:T00:00:00(?:\.0+)?Z)?$/); if (m0) return m0[1]; /* v0.12.14: data só-dia (com ou sem T00:00:00Z) não passa pelo fuso */ const x = new Date(d); const p = n => String(n).padStart(2,"0"); return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}`; }
-function slugStatus(s) { return { "Aguardando NF":"aguardando", "Pendente":"pendente", "Em aberto":"pendente", "Pago":"pago", "Vencido":"vencido", "Cancelada":"cancelada" }[s] || "aguardando"; }
+function slugStatus(s) { return { "Aguardando NF":"aguardando", "Pendente":"pendente", "Em aberto":"pendente", "Pago":"pago", "Vencido":"vencido", "Vencido · aguarda NF":"vencido", "Cancelada":"cancelada" }[s] || "aguardando"; }
 function statusPill(s) { return `<span class="pill st-${slugStatus(s)}"><i></i>${esc(s || "—")}</span>`; }
 /* v0.12.19: pill de dias até o vencimento, com gradiente verde (longe) → vermelho (atrasado). Verde escuro = pago. */
 function diasPendCel(it) {
@@ -5719,7 +5719,7 @@ function paintCAP() {
   const _lstTodos = filteredItems();
   const rows = _lstTodos.slice(0, CAP_STATE.pageN).map(it => {
     const c = classifyItem(it);
-    const marc = !c.pago && c.dias !== null && c.dias < 0 ? "Vencido" : it.Status;
+    const marc = !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status;
     const sup = [it.Fornecedor, it.Parcela ? `parcela ${it.Parcela}` : "", it.NumeroNF ? `NF ${it.NumeroNF}` : ""].filter(Boolean).join(" · ");
     return `<tr onclick="capEdit('${esc(it._id)}')">
       <td><div class="desc">${esc(it.Title || "—")}</div><div class="sup">${esc(sup)}</div></td>
@@ -7035,7 +7035,7 @@ function fornDetalhe(key, tab) {
     : `<div class="obr-sec">Obrigações</div><p class="obr-note" style="margin-top:0">Nenhuma obrigação cadastrada para este fornecedor — as contas dele aparecem só na CAP.</p>`;
   const outras = r.outras.length ? `<div class="obr-sec">Obrigações de outro fornecedor com lançamento registrado aqui <span class="sup">confira o fornecedor desses lançamentos na CAP</span></div><div class="table-wrap"><table class="cap-table">${obrThead(true)}<tbody>${r.outras.slice().sort(obrOrdem(D)).map(o => obrLinha(o, D, true, voltar)).join("")}</tbody></table></div>` : "";
   const tabs = `<div class="seg-tabs">${[["vencidas", "Vencidas"], ["abertas", "Em aberto"], ["pagas", "Pagas"], ["previstas", "Previstas"], ["todas", "Todas"]].map(([k, l]) => `<button class="${T === k ? "on" : ""}" onclick="fornAbrir('${kA}','${k}')">${l} (${listas[k].length})</button>`).join("")}</div>`;
-  const linhaConta = it => { const c = classifyItem(it), marc = !c.pago && c.dias !== null && c.dias < 0 ? "Vencido" : it.Status, l = D.link.get(String(it._id));
+  const linhaConta = it => { const c = classifyItem(it), marc = !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status, l = D.link.get(String(it._id));
     return `<tr onclick="capContaVoltar('${esc(it._id)}', ${voltar})" title="Abrir o lançamento"><td><div class="desc">${esc(it.Title || "—")}${anexosDe(it).length ? ` <span class="doc-tag">📎 ${anexosDe(it).length}</span>` : ""}</div><div class="sup">${[it.Parcela ? "parcela " + esc(it.Parcela) : "", l && obrVisivel(l.o) ? "obrigação: " + esc(l.o.Title) : ""].filter(Boolean).join(" · ")}</div></td><td class="nw">${esc(compLabel(itemComp(it)))}</td><td class="nw">${fmtDate(it.Vencimento)}</td><td class="right">${esc(fmtBRL(it.Valor))}</td><td>${statusPill(marc)}${c.pago && it.DataPagamento ? `<div class="sup">pago ${fmtDate(it.DataPagamento)}</div>` : ""}</td></tr>`; };
   const linhaPrev = x => `<tr onclick="obrAbrir('${esc(x.o._id)}', ${voltar})" title="Abrir a obrigação"><td><div class="desc">${esc(x.o.Title)}</div><div class="sup">${x.l.k ? "parcela " + x.l.k + "/" + (Number(x.o.NumParcelas) || "") : "mensal"}</div></td><td class="nw">${esc(compLabel(x.l.comp))}</td><td class="nw">${obrDia(x.l.venc)}</td><td class="right">${x.l.valor != null ? esc(fmtBRL(x.l.valor)) : "—"}</td><td>${obrLinhaPill(x.l.st)}</td></tr>`;
   const corpo = T === "previstas" ? listas.previstas.map(linhaPrev).join("") : listas[T].map(linhaConta).join("");
@@ -7200,7 +7200,7 @@ function paintCAP() {
   const lst = filteredItems();
   const rows = lst.map(it => {
     const c = classifyItem(it);
-    const marc = !c.pago && c.dias !== null && c.dias < 0 ? "Vencido" : it.Status;
+    const marc = !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status;
     const sup = [it.Fornecedor, it.Parcela ? `parcela ${it.Parcela}` : "", it.NumeroNF ? `NF ${it.NumeroNF}` : ""].filter(Boolean).join(" · ");
     const nA = anexosDe(it).length;
     return `<tr onclick="capEdit(${jsArg(it._id)})">
@@ -8099,7 +8099,7 @@ function obrBuscaHtml(D, q) {
     qq.split(" ").filter(Boolean).every(t => normName([o.Title, o.FornecedorTexto, o.Orgao, o.RefContrato, o.NumParcelamento, o.Codigo, o.SubCarteira, o.Categoria, o.Subcategoria, o.CentroCusto, o.Observacoes, obrCarteira(o)].join(" ")).includes(t)));
   const contas = CAP_STATE.items.filter(it => contaBate(it, q));
   const cardC = carts.map(c => `<button class="busca-cart" style="--c:${c.cor}" onclick="obrBuscaLimpar(); obrCart(${jsArg(c.s)})">${cartBadge(c.s)} ${esc(c.nome)}</button>`).join("");
-  const linC = contas.slice(0, 60).map(it => { const oi = contaObrInfo(it), cl = classifyItem(it), marc = !cl.pago && cl.dias !== null && cl.dias < 0 ? "Vencido" : it.Status;
+  const linC = contas.slice(0, 60).map(it => { const oi = contaObrInfo(it), cl = classifyItem(it), marc = !cl.pago && cl.dias !== null && cl.dias < 0 ? capVencRot(it) : it.Status;
     return `<tr onclick="obrConta(${jsArg(it._id)})" title="Abrir o lançamento"><td><div class="desc">${esc(it.Title || "—")}</div><div class="sup">${esc([it.Fornecedor, it.Parcela ? "parcela " + it.Parcela : "", it.NumeroNF ? "NF " + it.NumeroNF : ""].filter(Boolean).join(" · "))}${anexosDe(it).length ? " · 📎" : ""}</div></td><td>${oi && !oi.restrita ? esc(oi.titulo) : oi && oi.restrita ? `<span class="sup">obrigação restrita</span>` : `<span class="sup">—</span>`}</td><td class="nw">${fmtDate(it.Vencimento)}</td><td class="right">${esc(fmtBRL(it.Valor))}</td><td>${statusPill(marc)}${cl.pago && it.DataPagamento ? `<div class="sup">pago ${fmtDate(it.DataPagamento)}${it.Banco ? " · " + esc(it.Banco) : ""}</div>` : ""}</td></tr>`; }).join("");
   return `<div class="busca-res">
     <div class="busca-h"><b>Resultado da busca por “${esc(q)}”</b><span class="grow"></span><button class="btn sm" onclick="obrBuscaLimpar()">Limpar busca</button></div>
@@ -10335,7 +10335,7 @@ window.CAP_AGRUP = window.CAP_AGRUP || {
   cc:     { lbl: "por centro de custo", key: it => ccDe(it) || "Sem centro de custo" },
   cat:    { lbl: "por categoria",       key: it => it.Categoria || "Sem categoria" },
   comp:   { lbl: "por competência",     key: it => itemComp(it) || "—", rot: k => compLabel(k), ord: (a, b) => String(b.k).localeCompare(String(a.k)) },
-  status: { lbl: "por status",          key: it => { const c = classifyItem(it); return !c.pago && c.dias !== null && c.dias < 0 ? "Vencido" : (it.Status || "—"); }, ord: (a, b) => ["Vencido", "Em aberto", "Aguardando NF", "Pago"].indexOf(a.k) - ["Vencido", "Em aberto", "Aguardando NF", "Pago"].indexOf(b.k) }
+  status: { lbl: "por status",          key: it => { const c = classifyItem(it); return !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : (it.Status || "—"); }, ord: (a, b) => ["Vencido", "Em aberto", "Aguardando NF", "Pago"].indexOf(a.k) - ["Vencido", "Em aberto", "Aguardando NF", "Pago"].indexOf(b.k) }
 };
 function capTotais(arr) {
   const t = { n: arr.length, total: 0, pagar: 0, pago: 0, venc: 0 };
@@ -10434,7 +10434,7 @@ function capCsvTexto(lst) {
   const cab = ["Descrição", "Fornecedor", "CNPJ", "Categoria", "Subcategoria", "Centro de custo", "Competência", "Parcela", "Vencimento", "Valor", "Status", "Banco", "Forma de pagamento", "Data do pagamento", "Nº NF", "Ref. documento", "Nº do parcelamento", "Obrigação", "Documentos", "Observações"];
   const linhas = lst.map(it => { const c = classifyItem(it), oi = (typeof OBR_STATE !== "undefined" && OBR_STATE.items.length) ? contaObrInfo(it) : null;
     return [it.Title, it.Fornecedor, it.CNPJ, it.Categoria, it.Subcategoria, ccDe(it), compLabel(itemComp(it)), it.Parcela, csvData(it.Vencimento), csvNum(it.Valor),
-      !c.pago && c.dias !== null && c.dias < 0 ? "Vencido" : it.Status, it.Banco, it.FormaPagamento, csvData(it.DataPagamento), it.NumeroNF, it.RefDocumento, it.NumParcelamento,
+      !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status, it.Banco, it.FormaPagamento, csvData(it.DataPagamento), it.NumeroNF, it.RefDocumento, it.NumParcelamento,
       oi ? (oi.restrita ? "restrita" : oi.titulo) : "", anexosDe(it).length, it.Observacoes]; });
   return csvTexto(cab, linhas);
 }
@@ -10649,7 +10649,7 @@ function paintCAP() {
   const nCol = 12 + (edita ? 1 : 0);   /* v0.12.70: +1 pela Classificação */   /* v0.12.19: +1 pela coluna Dias · v0.12.58: +1 pela coluna Obrigação */
   const linha = it => {
     const c = classifyItem(it);
-    const marc = !c.pago && c.dias !== null && c.dias < 0 ? "Vencido" : it.Status;
+    const marc = !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status;
     const sup = [it.Fornecedor, it.Parcela ? `parcela ${it.Parcela}` : "", it.NumeroNF ? `NF ${it.NumeroNF}` : ""].filter(Boolean).join(" · ");
     const nA = anexosDe(it).length, id = String(it._id), sel = CAP_STATE.sel.has(id);
     return `<tr data-id="${esc(id)}" class="${sel ? "sel" : ""}" onclick="capEdit(${jsArg(it._id)})">
@@ -16418,7 +16418,7 @@ function capViewsBar() {
 function capFaturaLinha(it, edita, o) {
   o = o || {}; const pre = o.via ? `session.pagAtual='cap.${o.via}'; ` : "";   /* aba Favoritos: abre e paga com a permissão da página de origem (Faturas) */
   const c = classifyItem(it);
-  const marc = !c.pago && c.dias !== null && c.dias < 0 ? "Vencido" : it.Status;
+  const marc = !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status;
   const sup = [it.Fornecedor, it.Parcela ? `parcela ${it.Parcela}` : "", it.NumeroNF ? `NF ${it.NumeroNF}` : ""].filter(Boolean).join(" · ");
   const nA = anexosDe(it).length, id = String(it._id), sel = CAP_STATE.sel.has(id);
   return `<tr data-id="${esc(id)}" class="${sel ? "sel" : ""}" onclick="${pre}capEdit(${jsArg(it._id)})">
@@ -16579,7 +16579,7 @@ function capDetHtml() {
   const det = CAP_STATE.painelDet; if (!det) return "";
   const its = capDetItens(det).sort((a, b) => String(a.Vencimento || "").localeCompare(String(b.Vencimento || "")));
   const edita = podeEditar("cap"), t = capTotais(its);
-  const rows = its.map(it => { const c = classifyItem(it); const marc = !c.pago && c.dias !== null && c.dias < 0 ? "Vencido" : it.Status;
+  const rows = its.map(it => { const c = classifyItem(it); const marc = !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status;
     return `<tr onclick="capEdit(${jsArg(it._id)})"><td><div class="desc">${esc(it.Title || "—")}</div><div class="sup">${esc([it.Fornecedor, it.Parcela ? "parcela " + it.Parcela : "", it.Categoria].filter(Boolean).join(" · "))}</div></td><td class="nw">${esc(compLabel(itemComp(it)))}</td><td class="nw">${fmtDate(it.Vencimento)}${!c.pago && c.dias !== null && c.dias < 0 ? `<div class="sup venc-txt">${-c.dias} dia(s) de atraso</div>` : ""}</td><td class="right">${esc(fmtBRL(it.Valor))}</td><td>${statusPill(marc)}</td><td class="nw act">${c.pago ? `<span class="sup">pago ${fmtDate(it.DataPagamento)}</span>` : edita && capPodePagar() ? `<button class="btn mini" onclick="event.stopPropagation(); capPagar(${jsArg(it._id)})">Pagar</button>` : ""}</td></tr>`; }).join("");
   return `<div class="cap-det" id="capDet"><div class="cap-det-h"><b>${esc(det.titulo)}</b><span>${its.length} lançamento(s) · total ${esc(fmtBRL(t.total))}${t.venc ? ` · <span class="venc-txt">vencido ${esc(fmtBRL(t.venc))}</span>` : ""}</span><span class="grow"></span><button class="btn sm primary" onclick="${capHref(capDetPatch(det))}">Abrir na Lista</button><button class="btn sm ghost" onclick="capDetLimpar()">Fechar</button></div>
     ${its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Conta</th><th>Compet.</th><th>Vencimento</th><th style="text-align:right">Valor</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="cap-muted">Nenhum lançamento.</p>`}</div>`;
@@ -19639,7 +19639,7 @@ function paintCapPend(body) {
     ${K("Sem comprovante", cnt("Comprovante"), "contas pagas, inclusive transferências", "", "Comprovante")}
   </div>`;
   const edita = podeEditar("cap");
-  const linha = x => { const it = x.it, c = classifyItem(it), marc = !c.pago && c.dias !== null && c.dias < 0 ? "Vencido" : it.Status;
+  const linha = x => { const it = x.it, c = classifyItem(it), marc = !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status;
     return `<tr onclick="capEdit(${jsArg(it._id)})" title="${edita ? "Abrir o lançamento para anexar" : "Abrir o lançamento"}">
       <td><div class="desc">${esc(it.Title || "—")}</div><div class="sup">${esc([capEhTransf(it) ? "transferência entre contas" : capTipoDoc(it) !== "desp" ? tipoLancRot(it.TipoLancamento).toLowerCase() : "", it.Fornecedor, it.NumeroNF ? "NF " + it.NumeroNF : "", it.Parcela ? "parcela " + it.Parcela : ""].filter(Boolean).join(" · "))}</div></td>
       <td class="nw">${esc(compLabel(itemComp(it)))}</td><td class="nw">${fmtDate(it.Vencimento)}</td><td class="right nw">${esc(fmtBRL(it.Valor))}</td>
@@ -19747,7 +19747,7 @@ function capCtbVizinhoComDocs(U) {
   for (const d of [1, -1]) { const c = capCompAdd(U.comp, d), n = capCtbDocsMes(c, U.base); if (n) return { comp: c, n }; }
   return null;
 }
-function capCtbSit(it) { const c = classifyItem(it); return c.isenta ? "N/A" : c.pago ? "Pago" : (c.dias !== null && c.dias < 0 ? "Vencido" : (it.Status || "Em aberto")); }
+function capCtbSit(it) { const c = classifyItem(it); return c.isenta ? "N/A" : c.pago ? "Pago" : (c.dias !== null && c.dias < 0 ? capVencRot(it) : (it.Status || "Em aberto")); }
 
 /* ---- nomes das pastas e arquivos: "AAAAMM - Fornecedor - Obrigação - Mês" ---- */
 function ctbNomeArq(s) { return String(s || "").normalize("NFC").replace(/\s*[←-⇿⟵-⟿➔-➿•]\s*/g, " - ").replace(/[\/\\]/g, "-").replace(/[<>:"|?*\u0000-\u001F]/g, " ").replace(/\s+/g, " ").trim().replace(/^[.\s]+|[.\s]+$/g, ""); }
@@ -19942,7 +19942,7 @@ function paintCapContab(body) {
     return `<tr onclick="capEdit(${jsArg(it._id)})" title="Abrir o lançamento"><td class="nw">${fmtDate(it.Vencimento)}</td><td class="nw">${it.DataPagamento ? fmtDate(it.DataPagamento) : "—"}</td>
       <td><div class="desc">${esc(it.Fornecedor || "—")}</div><div class="sup">${esc(it.CNPJ || "")}</div></td><td><div class="desc">${esc(it.Title || "—")}</div><div class="sup">${esc(o ? (o.Codigo ? o.Codigo + " · " : "") + o.Title : "")}</div>${pastaDe(it)}</td>
       <td>${esc(it.Categoria || "—")}<div class="sup">${esc(ccDe(it) || "")}</div></td><td class="nw">${esc(it.NumeroNF || "—")}</td><td class="right nw">${esc(fmtBRL(capValorEfetivo(it)))}</td>
-      <td>${c.pago ? `<span class="pill st-pago"><i></i>Pago</span>` : statusPill(c.dias !== null && c.dias < 0 ? "Vencido" : it.Status)}</td>
+      <td>${c.pago ? `<span class="pill st-pago"><i></i>Pago</span>` : statusPill(c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status)}</td>
       <td class="ctb-anx-td">${ctbAnxDot(it)}</td></tr>`; };
   const linhaOutra = (it, isenta) => `<tr onclick="capEdit(${jsArg(it._id)})" title="Abrir o lançamento"><td class="nw">${fmtDate(it.Vencimento)}</td><td class="nw">${it.DataPagamento ? fmtDate(it.DataPagamento) : "—"}</td>
       <td><div class="desc">${esc(it.Fornecedor || "—")}</div></td><td><div class="desc">${esc(it.Title || "—")}</div>${pastaDe(it)}</td><td>${esc(isenta ? (it.Categoria || "—") : (it.Banco || "—"))}</td>
@@ -20013,7 +20013,7 @@ async function capCtbPlanilha(D, C, R) {
   r.getRow(4).values = ["Indicador", "Valor (R$)", "Qtde", "Observação"]; head(r.getRow(4));
   [["Saídas (despesas) lançadas", ctbSoma(g.desp), g.desp.length, ""], ["Saídas pagas", ctbSoma(pagas), pagas.length, ""], ["Saídas em aberto", ctbSoma(g.desp) - ctbSoma(pagas), g.desp.length - pagas.length, ""],
     ["Transferências entre contas", ctbSoma(g.transf), g.transf.length, "não são despesa: fora das saídas"], ["Isentas no mês (N/A)", ctbSoma(g.isenta), g.isenta.length, "valor de referência: fora das saídas"],
-    ["Entradas (Fluxo de Caixa)", E ? E.total : null, E ? E.n : null, E ? "livro-caixa da matriz" : "Fluxo de Caixa não liberado ou não carregado"]]
+    ["Entradas (Fluxo de Caixa)", E ? E.total : null, E ? E.n : null, E ? "livro-caixa da matriz" : "Fluxo de Caixa não liberado ou não carregado"], ["Despesas pagas no caixa (dinheiro)", E ? (E.despTotal || 0) : null, E ? (E.despN || 0) : null, E ? "lançadas só no Fluxo de Caixa (desde 25/10) — fora das saídas da CAP" : "Fluxo de Caixa não liberado ou não carregado"]]
     .forEach((l, i) => { const row = r.getRow(5 + i); row.values = l; row.getCell(2).numFmt = fmtMoney; row.getCell(4).font = { color: { argb: CINZA }, italic: true }; });
   [36, 18, 10, 40, 14, 14, 14, 14].forEach((w, i) => { r.getColumn(i + 1).width = w; });
   let y = 13;
@@ -20021,6 +20021,7 @@ async function capCtbPlanilha(D, C, R) {
   bloco("Saídas por categoria", ctbAgrupa(g.desp, it => it.Categoria || "Sem categoria"));
   bloco("Saídas por centro de custo", ctbAgrupa(g.desp, it => ccDe(it) || "Sem centro de custo"));
   if (E) { bloco("Entradas por origem", E.porOrigem); bloco("Entradas por meio", E.porMeio); }
+  if (E && E.despN) bloco("Despesas pagas no caixa por categoria", E.despPorCat);   /* v0.14.19 */
   const pastaDe = it => { const i = D.pac.daConta.get(String(it._id)); return i ? i.pasta : "—"; };
   /* Saídas (despesas) */
   const s = wb.addWorksheet("Saídas", { views: [{ state: "frozen", ySplit: 1 }] });
@@ -20058,6 +20059,13 @@ async function capCtbPlanilha(D, C, R) {
     head(e.getRow(1));
     E.mov.slice().sort((a, b) => String(a._d).localeCompare(String(b._d))).forEach(x => { const row = e.addRow({ d: dLocal(x._d), t: x.Title || "", o: x.Origem || "", m: x.Meio || "", c: x.Conta || "", v: Number(x.Valor || 0) }); row.getCell("d").numFmt = "dd/mm/yyyy"; row.getCell("v").numFmt = fmtMoney; });
     const te = e.addRow({ t: "TOTAL", v: E.total }); te.font = { bold: true }; te.getCell("v").numFmt = fmtMoney;
+    if (E.despN) {   /* v0.14.19: despesas pagas em dinheiro no caixa (só no Fluxo de Caixa) */
+      const dc = wb.addWorksheet("Despesas do caixa", { views: [{ state: "frozen", ySplit: 1 }] });
+      dc.columns = [{ header: "Data", key: "d", width: 12 }, { header: "Descrição", key: "t", width: 34 }, { header: "Categoria", key: "g", width: 24 }, { header: "Subcategoria", key: "s", width: 24 }, { header: "Conta", key: "c", width: 18 }, { header: "Valor (R$)", key: "v", width: 14 }];
+      head(dc.getRow(1));
+      E.desp.slice().sort((a, b) => String(a._d).localeCompare(String(b._d))).forEach(x => { const row = dc.addRow({ d: dLocal(x._d), t: x.Title || "", g: x.Grupo || "", s: x.Categoria || "", c: x.Conta || "", v: Number(x.Valor || 0) }); row.getCell("d").numFmt = "dd/mm/yyyy"; row.getCell("v").numFmt = fmtMoney; });
+      const td = dc.addRow({ t: "TOTAL", v: E.despTotal }); td.font = { bold: true }; td.getCell("v").numFmt = fmtMoney;
+    }
   }
   /* Conferência do pacote */
   const hr = 6 + Math.max(0, D.avisos.length - 1);   /* linha do cabeçalho: depois dos avisos */
@@ -20131,12 +20139,12 @@ async function capCtbPdf(D, C, R) {
   /* faixa de indicadores */
   const pagas = g.desp.filter(it => classifyItem(it).pago), nDocs = D.contas.reduce((s, it) => s + anexosDe(it).length, 0), nFalta = C.filter(c => c.falta.length).length;
   const kpis = [["SAÍDAS (DESPESAS)", fmtBRL(ctbSoma(g.desp)), `${g.desp.length} lançamento(s)`], ["PAGAS", fmtBRL(ctbSoma(pagas)), `${pagas.length} lançamento(s)`], ["EM ABERTO", fmtBRL(ctbSoma(g.desp) - ctbSoma(pagas)), `${g.desp.length - pagas.length} lançamento(s)`],
-    ["ENTRADAS (CAIXA)", E ? fmtBRL(E.total) : "-", E ? `${E.n} lançamento(s)` : "Fluxo de Caixa não incluído"], ["DOCUMENTOS", String(R ? C.reduce((a, c) => a + (c.ok || 0), 0) : nDocs), nFalta ? `${nFalta} lançamento(s) com documento faltando` : "todos os lançamentos completos"]];
+    ["ENTRADAS (CAIXA)", E ? fmtBRL(E.total) : "-", E ? `${E.n} lançamento(s)` : "Fluxo de Caixa não incluído"], ["DESPESAS NO CAIXA", E ? fmtBRL(E.despTotal || 0) : "-", E ? `${E.despN || 0} lançamento(s) em dinheiro` : "Fluxo de Caixa não incluído"], ["DOCUMENTOS", String(R ? C.reduce((a, c) => a + (c.ok || 0), 0) : nDocs), nFalta ? `${nFalta} lançamento(s) com documento faltando` : "todos os lançamentos completos"]];
   const kw = (W - 2 * M) / kpis.length;
   doc.setDrawColor(...LINE); doc.setLineWidth(0.25); doc.roundedRect(M, y, W - 2 * M, 16, 1.2, 1.2, "S");
   kpis.forEach(([l, v, s], i) => { const x = M + i * kw; if (i) doc.line(x, y, x, y + 16);
     doc.setFont("helvetica", "bold"); doc.setFontSize(5.8); doc.setTextColor(...MUT); doc.text(T(l), x + 3.2, y + 4.4, { charSpace: 0.3 });
-    doc.setFontSize(12); doc.setTextColor(...(i === 4 && nFalta ? RED : INK)); doc.text(T(v), x + 3.2, y + 10.2);
+    doc.setFontSize(12); doc.setTextColor(...(l === "DOCUMENTOS" && nFalta ? RED : INK)); doc.text(T(v), x + 3.2, y + 10.2);
     doc.setFont("helvetica", "normal"); doc.setFontSize(6.8); doc.setTextColor(...MUT); doc.text(T(s), x + 3.2, y + 13.8); });
   y += 22;
   /* seções e tabelas */
@@ -20170,6 +20178,7 @@ async function capCtbPdf(D, C, R) {
   const totD = ctbSoma(g.desp);
   par("Saídas por categoria", "Categoria", ctbAgrupa(g.desp, it => it.Categoria || "Sem categoria"), totD, "Saídas por centro de custo", "Centro de custo", ctbAgrupa(g.desp, it => ccDe(it) || "Sem centro de custo"), totD, "despesas", "despesas");
   if (E) par("Entradas por origem", "Origem", E.porOrigem, E.total, "Entradas por meio", "Meio", E.porMeio, E.total, "Fluxo de Caixa", "Fluxo de Caixa");
+  if (E && E.despN) par("Despesas pagas no caixa por categoria", "Categoria", E.despPorCat, E.despTotal, "Despesas pagas no caixa por conta", "Conta", E.despPorConta, E.despTotal, "Fluxo de Caixa · dinheiro", "Fluxo de Caixa · dinheiro");   /* v0.14.19 */
   const docCor = d => { const v = d.cell.raw; if (d.section === "body" && (v === "falta" || v === "ok")) { d.cell.styles.textColor = v === "falta" ? RED : GREEN; d.cell.styles.fontStyle = v === "falta" ? "bold" : "normal"; } };
   const obrTxt = it => { const o = capCtbObr(it); return o ? `\nObr. ${o.Codigo ? o.Codigo + " · " : ""}${o.Title || ""}` : ""; };
   sec("Saídas - lançamento a lançamento", `${g.desp.length} despesa(s) · ${U.base === "pag" ? "pagas em" : "competência"} ${ctbMesAno(U.comp)}`);
@@ -20289,6 +20298,7 @@ window.capCtbImprimir = () => {
     <div class="grid2"><div class="duas">${S("Saídas por categoria", "despesas")}${tabAgg("Categoria", ctbAgrupa(g.desp, it => it.Categoria || "Sem categoria"), totD)}</div>
     <div class="duas">${S("Saídas por centro de custo", "despesas")}${tabAgg("Centro de custo", ctbAgrupa(g.desp, it => ccDe(it) || "Sem centro de custo"), totD)}</div></div>
     ${E ? `<div class="grid2"><div class="duas">${S("Entradas por origem", "Fluxo de Caixa")}${tabAgg("Origem", E.porOrigem, E.total)}</div><div class="duas">${S("Entradas por meio", "Fluxo de Caixa")}${tabAgg("Meio", E.porMeio, E.total)}</div></div>` : ""}
+    ${E && E.despN ? `<div class="grid2"><div class="duas">${S("Despesas pagas no caixa por categoria", "Fluxo de Caixa · dinheiro")}${tabAgg("Categoria", E.despPorCat, E.despTotal)}</div><div class="duas">${S("Despesas pagas no caixa por conta", "Fluxo de Caixa · dinheiro")}${tabAgg("Conta", E.despPorConta, E.despTotal)}</div></div>` : ""}
     ${S("Saídas — lançamento a lançamento", `${g.desp.length} despesa(s)`)}
     <table class="t"><thead><tr><th>Venc.</th><th>Pagto.</th><th>Fornecedor</th><th>Descrição</th><th>Categoria</th><th>NF</th><th class="r">Valor</th><th>Situação</th><th class="c">Docs</th></tr></thead><tbody>
     ${g.desp.map(it => `<tr><td class="nw">${fmtDate(it.Vencimento)}</td><td class="nw">${it.DataPagamento ? fmtDate(it.DataPagamento) : "—"}</td><td>${esc(it.Fornecedor || "")}</td><td>${esc(it.Title || "")}</td><td>${esc(it.Categoria || "")}</td><td>${esc(it.NumeroNF || "")}</td><td class="r">${esc(fmtBRL(capValorEfetivo(it)))}</td><td>${esc(capCtbSit(it))}</td><td class="c nw">${docTxt(it)}</td></tr>`).join("")}
@@ -34482,7 +34492,7 @@ window.capEstornar = async (id) => {
   const fields = { Status: it.Vencimento && ymd(it.Vencimento) < todayISO() ? "Vencido" : "Em aberto", DataPagamento: null, ValorPago: null, Juros: null, Desconto: null, MotivoStatus: String(motivo).trim().slice(0, 255) };
   if (devolve != null) fields.Valor = devolve;
   if (hasCol("Historico")) fields.Historico = capHistAdd(it, "estorno", `${fmtBRL(capValorEfetivo(it))} pago em ${fmtDate(it.DataPagamento)} · motivo: ${String(motivo).trim()}${devolve != null ? ` · valor volta a ${fmtBRL(devolve)} (saldo cancelado)` : ""}`);
-  await capMudarStatus(id, fields, "Pagamento desfeito — o lançamento voltou a ficar em aberto");
+  await capMudarStatus(id, fields, "Pagamento desfeito — o lançamento voltou para os pendentes");
 };
 /* 5 · cancelar com motivo (não exclui: fica o rastro, fora de todos os totais) */
 window.capCancelar = async (id) => {
@@ -34497,7 +34507,7 @@ window.capCancelar = async (id) => {
 window.capReativar = async (id) => {
   const it = CAP_STATE.items.find(x => String(x._id) === String(id)); if (!it || it.Status !== "Cancelada") return;
   if (!podeEditar("cap")) return;
-  if (!confirm(`Reativar o lançamento "${it.Title || ""}"? Ele volta a ficar em aberto.`)) return;
+  if (!confirm(`Reativar o lançamento "${it.Title || ""}"? Ele volta para os pendentes.`)) return;
   const fields = { Status: it.Vencimento && ymd(it.Vencimento) < todayISO() ? "Vencido" : "Em aberto", MotivoStatus: null };
   if (hasCol("Historico")) fields.Historico = capHistAdd(it, "reativada", it.MotivoStatus ? `cancelada antes por: ${it.MotivoStatus}` : "");
   await capMudarStatus(id, fields, "Lançamento reativado");
@@ -38450,7 +38460,7 @@ window.tercDecidir = async (id, aprova) => {
   fornSave = async function (existing) {
     if (!existing && !session.n1 && FORN_STATE.cols && !FORN_STATE.cols.has("Aprovacao")) { const e = $("gErr"); if (e) { e.style.display = "block"; e.textContent = "Os cadastros novos agora passam pela aprovação do administrador, e a coluna para isso ainda não existe: peça ao administrador para rodar Sistema › Configuração (Executar tudo)."; } return; }
     const n0 = TERC_APROV_N, r = await s0.apply(this, arguments);
-    if (!session.n1 && TERC_APROV_N > n0) toast(existing ? "CNPJ/CPF alterado: o cadastro voltou para a aprovação do administrador." : "Pedido de inclusão enviado ao administrador: o cadastro recebe lançamentos depois de aprovado.", 7000);
+    if (!session.n1 && TERC_APROV_N > n0) toast(existing ? "CNPJ/CPF ou Outros CNPJs alterados: o cadastro voltou para a aprovação do administrador." : "Pedido de inclusão enviado ao administrador: o cadastro recebe lançamentos depois de aprovado.", 7000);
     return r;
   }; window.fornSave = fornSave; }
 
@@ -39245,7 +39255,7 @@ async function tercDocLivre(doc, x) {
     (FORN_STATE.items || []).filter(x => tercAprov(x) && tercAprov(x).tipo === "inclusao" && !tercNasceuPend(x)).forEach(x => {
       const alvo = `tercCadastroCard('id:${esc(String(x._id))}')`, i = h.indexOf(alvo); if (i < 0) return;
       const ini = h.lastIndexOf("<tr>", i), fim = h.indexOf("</tr>", i); if (ini < 0 || fim < 0) return;
-      const tr = h.slice(ini, fim).replace("<i></i>Inclusão<", "<i></i>Troca de CNPJ/CPF<").replace(">Aprovar<", ">Aprovar a troca<").replace(">Recusar<", ">Recusar a troca<");
+      const tr = h.slice(ini, fim).replace("<i></i>Inclusão<", "<i></i>" + tercTrocaRot(x) + "<").replace(">Aprovar<", ">Aprovar a troca<").replace(">Recusar<", ">Recusar a troca<");
       h = h.slice(0, ini) + tr + h.slice(fim);
     });
     return h;
@@ -39253,7 +39263,7 @@ async function tercDocLivre(doc, x) {
 { const p0 = tercSitPills;
   tercSitPills = function (x) {
     const h = p0.apply(this, arguments), a = tercAprov(x);
-    return a && a.tipo === "inclusao" && !tercNasceuPend(x) ? h.replace("<i></i>Aguardando aprovação<", "<i></i>Troca de CNPJ/CPF a aprovar<") : h;
+    return a && a.tipo === "inclusao" && !tercNasceuPend(x) ? h.replace("<i></i>Aguardando aprovação<", "<i></i>" + tercTrocaRot(x) + " a aprovar<") : h;
   }; window.tercSitPills = tercSitPills; }
 /* botão de cancelar na faixa do cadastro (cartão e formulário), para quem pediu */
 { const s0 = tercSitCaixa;
@@ -39261,7 +39271,7 @@ async function tercDocLivre(doc, x) {
     let h = s0.apply(this, arguments); const a = tercAprov(x);
     if (a && a.tipo === "inclusao" && !tercNasceuPend(x) && h) {   /* revisão M-1: a troca de documento tem outro texto e outros botões */
       const volta = tercDocAnterior(a);
-      h = h.replace("<b>⏳ Inclusão aguardando aprovação</b>", "<b>⏳ Troca de CNPJ/CPF aguardando aprovação</b>")
+      h = h.replace("<b>⏳ Inclusão aguardando aprovação</b>", "<b>⏳ " + tercTrocaRot(x) + " aguardando aprovação</b>")
         .replace(" Até a aprovação, não recebe lançamentos nem pagamentos.", ` Até a decisão, não recebe lançamentos nem pagamentos.${volta ? ` Documento anterior: ${esc(volta)}.` : ""} O cadastro já era aprovado e não é excluído se a troca for recusada.`)
         .replace(">Aprovar inclusão<", ">Aprovar a troca<").replace(">Recusar<", ">Recusar a troca<");
     }
@@ -39276,10 +39286,10 @@ function tercMeusPedidosHtml() {
   const meus = (FORN_STATE.items || []).filter(x => tercAprov(x) && tercMeuPedido(x)).sort((p, q) => String(tercAprov(p).em || "").localeCompare(String(tercAprov(q).em || "")));
   if (!meus.length) return "";
   const linha = x => { const a = tercAprov(x), tr = a.tipo === "inclusao" && !tercNasceuPend(x);
-    return `<tr><td><span class="pill st-aguardando"><i></i>${tr ? "Troca de CNPJ/CPF" : a.tipo === "inclusao" ? "Inclusão" : "Exclusão"}</span></td>
+    return `<tr><td><span class="pill st-aguardando"><i></i>${tr ? tercTrocaRot(x) : a.tipo === "inclusao" ? "Inclusão" : "Exclusão"}</span></td>
       <td><a href="#" onclick="event.preventDefault();tercCadastroCard('id:${esc(String(x._id))}')">${esc(x.Title || "—")}</a><div class="sup">${esc(x.CNPJ || "sem CNPJ/CPF")}</div></td>
       <td class="nw">${esc(tercDataTxt(a.em) || "—")}</td><td>${esc(a.motivo || "—")}</td>
-      <td>${tr ? "Aguardando o administrador aprovar a troca do documento. Até lá o cadastro não recebe lançamentos, obrigações nem pagamentos; cancelar devolve o documento anterior." : a.tipo === "inclusao" ? "Aguardando o administrador aprovar. Até lá o cadastro não recebe lançamentos, obrigações nem pagamentos; cancelar exclui o cadastro." : "Aguardando o administrador decidir. O cadastro continua valendo até lá."}</td>
+      <td>${tr ? (tercTrocaRot(x) === "Outros CNPJs" ? "Aguardando o administrador aprovar os Outros CNPJs. Até lá o cadastro não recebe lançamentos, obrigações nem pagamentos; cancelar devolve a lista anterior." : "Aguardando o administrador aprovar a troca do documento. Até lá o cadastro não recebe lançamentos, obrigações nem pagamentos; cancelar devolve o documento anterior.") : a.tipo === "inclusao" ? "Aguardando o administrador aprovar. Até lá o cadastro não recebe lançamentos, obrigações nem pagamentos; cancelar exclui o cadastro." : "Aguardando o administrador decidir. O cadastro continua valendo até lá."}</td>
       <td style="white-space:nowrap">${podeEditar("forn") ? `<button class="btn sm" onclick="tercCancelarPedido(${jsArg(x._id)})">Cancelar</button>` : ""}</td></tr>`; };
   return `<section class="terc-aprov terc-meus" id="tercMeus"><h3>Meus pedidos <span class="cap-views-n">${meus.length}</span> <span class="sup">aguardando o administrador</span></h3>
     <div class="table-wrap"><table class="cap-table"><thead><tr><th>Pedido</th><th>Cadastro</th><th>Pedido em</th><th>Motivo</th><th>Andamento</th><th></th></tr></thead><tbody>${meus.map(linha).join("")}</tbody></table></div></section>`;
@@ -41745,10 +41755,285 @@ function cpxCxDespesas() {
     const dup = (r.mov || []).filter(x => x.Tipo === "Saída" && CX.mov.some(m => m.OrigemRegistro === "CAP" && m._d === ymd(x.Data) && Math.abs(Number(m.Valor) - Number(x.Valor)) < 0.005));
     if (dup.length) r.avisos.push(`${dup.length} despesa(s) da planilha têm o mesmo dia e valor de uma saída que já veio de um pagamento em dinheiro da CAP (${dup.slice(0, 4).map(x => `${fmtDate(ymd(x.Data))} ${fmtBRL(x.Valor)}`).join(", ")}${dup.length > 4 ? "…" : ""}) — confira para não contar duas vezes.`);
   } catch (e) {} return r; }; }
+/* =====================================================================
+   v0.14.19 · CAP — decisões de 25/10 (18:30): fechamento mensal da Contabilidade com trava · pacote do contador com as despesas
+   pagas no caixa · "Vencido · aguarda NF" · Desfazer pagamento/Reativar voltam a "Aguardando NF" · credor "Própria empresa (NMB)"
+   · acrescentar ou tirar "Outros CNPJs" de um cadastro aprovado volta para a aprovação.
+   ===================================================================== */
+/* ---------- 1 · rótulo: atrasado que ainda aguarda a NF ---------- */
+function capVencRot(it) { return it && it.Status === "Aguardando NF" ? "Vencido · aguarda NF" : "Vencido"; }
+
+/* ---------- 2 · Desfazer pagamento / Reativar: volta a "Aguardando NF" se era assim e a NF ainda não chegou ---------- */
+function capTemNF(it) { return !!(it && (String(it.NumeroNF || "").trim() || (typeof anexosDe === "function" && anexosDe(it).some(a => a && a.t === "NF")))); }
+{ const u0 = SP.update;
+  SP.update = async function (siteId, listId, itemId, fields) {
+    try {
+      if (typeof CAP_STATE !== "undefined" && CAP_STATE.list && listId === CAP_STATE.list.id && fields && typeof fields === "object") {
+        const antes = (CAP_STATE.items || []).find(x => String(x._id) === String(itemId)) || null;
+        if (antes && fields.Status === "Pago" && antes.Status === "Aguardando NF" && typeof fields.Historico === "string") {   /* marca no histórico: estava aguardando a NF */
+          try { const h = JSON.parse(fields.Historico); const u = h[h.length - 1]; if (u && /^pag/.test(String(u.a || ""))) { u.s = "Aguardando NF"; fields.Historico = JSON.stringify(h); } } catch (e) {}
+        }
+        if (antes && ["Em aberto", "Vencido"].includes(fields.Status) && !capTemNF(Object.assign({}, antes, fields))) {
+          const h = typeof capHist === "function" ? capHist(antes) : [];
+          let era = false;
+          if (antes.Status === "Pago" && "DataPagamento" in fields && !fields.DataPagamento) { const p = h.slice().reverse().find(e => /^pag/.test(String(e.a || ""))); era = !!(p && p.s === "Aguardando NF"); }
+          else if (antes.Status === "Cancelada") { const p = h.slice().reverse().find(e => e.a === "cancelada"); era = !!(p && /^de Aguardando NF\b/.test(String(p.d || ""))); }
+          if (era) {
+            fields.Status = "Aguardando NF";   /* o objeto de quem chamou recebe a troca (a tela mostra o status certo) */
+            if (typeof fields.Historico === "string") { try { const hh = JSON.parse(fields.Historico), u = hh[hh.length - 1]; if (u) { u.d = `${u.d ? u.d + " · " : ""}volta a Aguardando NF (a NF ainda não chegou)`.slice(0, 300); fields.Historico = JSON.stringify(hh); } } catch (e) {} }
+          }
+        }
+      }
+    } catch (e) {}
+    return u0.apply(this, arguments);
+  };
+}
+
+/* ---------- 3 · credor "Própria empresa (NMB)" (contas da própria empresa; CNPJ da central) ---------- */
+const CRED_PROPRIA = "Própria empresa (NMB)";
+const credPropria = n => typeof normName === "function" ? normName(n) === normName(CRED_PROPRIA) : String(n || "").trim() === CRED_PROPRIA;
+{ const c0 = consCredorOk; consCredorOk = function (nome, doc) {
+    if (!credPropria(nome)) return c0.apply(this, arguments);
+    const d = docClean(doc || ""), nossos = (typeof nmbEstabs === "function" ? nmbEstabs() : []).map(docClean).filter(Boolean);
+    if (d && nossos.length && !nossos.includes(d)) return { ok: false, msg: `"${CRED_PROPRIA}": use um CNPJ da empresa (Diretoria › Cadastros Mestres › CNPJs).` };
+    return { ok: true, f: null, propria: true };
+  }; window.consCredorOk = consCredorOk; }
+{ const h0 = capFornHint; capFornHint = function () {
+    const inp = $("fForn"), hint = $("fFornHint");
+    if (inp && hint && credPropria(inp.value)) {
+      const cn = $("fCNPJ"); if (cn && !cn.value.trim() && typeof nmbEstabPadrao === "function" && nmbEstabPadrao()) { cn.value = nmbEstabPadrao(); try { cn.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {} }
+      hint.textContent = "Contas da própria empresa: credor sem cadastro em Terceiros; o CNPJ é um dos CNPJs da empresa (a matriz vem preenchida)."; hint.className = "hint ok";
+      return null;
+    }
+    return h0.apply(this, arguments);
+  }; window.capFornHint = capFornHint; }
+{ const d0 = fornFantDecorar; fornFantDecorar = function (root) {
+    const r = d0.apply(this, arguments);
+    try { if (root && root.querySelectorAll) root.querySelectorAll("datalist#fornList, datalist#oFornList").forEach(dl => { if (![...dl.options].some(o => credPropria(o.value))) dl.insertAdjacentHTML("afterbegin", `<option value="${esc(CRED_PROPRIA)}" label="CNPJs da própria empresa">`); }); } catch (e) {}
+    return r;
+  }; }
+
+/* ---------- 4 · Terceiros: acrescentar ou tirar "Outros CNPJs" de um cadastro aprovado volta para a aprovação ---------- */
+function tercTrocaRot(x) { const a = x && tercAprov(x); return a && a.sub === "extras" ? "Outros CNPJs" : "Troca de CNPJ/CPF"; }
+function tercExtraChave(v) {
+  let a = []; try { a = typeof v === "string" ? JSON.parse(v || "[]") : (v || []); } catch (e) { a = []; }
+  return (Array.isArray(a) ? a : []).map(e => docClean(e && typeof e === "object" ? (e.doc || e.cnpj || "") : e)).filter(Boolean).sort().join(",");
+}
+{ const t0 = tercGuarda; tercGuarda = function (method, path, body) {
+    try {   /* revisão M5: com um pedido de documento na fila, nada de outra troca por fora; CNPJ e Outros CNPJs, uma mudança por vez */
+      const M = String(method || "GET").toUpperCase(), p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0];
+      const m = p0.match(/\/lists\/([^/]+)\/items\/([^/]+)(?:\/fields)?$/), fornL = FORN_STATE.list && FORN_STATE.list.id;
+      if (M === "PATCH" && m && m[1] === fornL && !session.n1 && body && typeof body === "object" && !("Aprovacao" in body)) {
+        const ant = (FORN_STATE.items || []).find(i => String(i._id) === String(decodeURIComponent(m[2])));
+        if (ant) {
+          const mudaDoc = "CNPJ" in body && docClean(body.CNPJ) !== docClean(ant.CNPJ), mudaExtra = "CNPJsExtra" in body && tercExtraChave(body.CNPJsExtra) !== tercExtraChave(ant.CNPJsExtra);
+          const a = tercAprov(ant);
+          if ((mudaDoc || mudaExtra) && a && a.tipo === "inclusao" && !tercNasceuPend(ant)) throw tercErro("Este cadastro já tem um pedido de documento na fila do administrador (CNPJ/CPF ou Outros CNPJs). Espere a decisão ou cancele o pedido antes de mudar os documentos de novo.");
+          if (mudaDoc && mudaExtra && !a && [11, 14].includes(docClean(ant.CNPJ).length)) throw tercErro("Troque o CNPJ/CPF principal e os Outros CNPJs em duas gravações: cada mudança vai separada para a aprovação do administrador.");
+        }
+      }
+    } catch (e) { if (e && e.tercTrava) throw e; }
+    const r = t0.apply(this, arguments);
+    try {
+      const M = String(method || "GET").toUpperCase(), p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0];
+      const m = p0.match(/\/lists\/([^/]+)\/items\/([^/]+)(?:\/fields)?$/), fornL = FORN_STATE.list && FORN_STATE.list.id;
+      if (M === "PATCH" && m && m[1] === fornL && !session.n1 && body && typeof body === "object" && "CNPJsExtra" in body && !("Aprovacao" in body)) {
+        const ant = (FORN_STATE.items || []).find(i => String(i._id) === String(decodeURIComponent(m[2])));
+        if (ant && !tercAprov(ant) && tercExtraChave(ant.CNPJsExtra) !== tercExtraChave(body.CNPJsExtra)) {
+          const a0 = tercExtraChave(ant.CNPJsExtra).split(",").filter(Boolean), a1 = tercExtraChave(body.CNPJsExtra).split(",").filter(Boolean);
+          const mais = a1.filter(x => !a0.includes(x)), menos = a0.filter(x => !a1.includes(x));
+          TERC_APROV_N++;
+          body.Aprovacao = JSON.stringify({ tipo: "inclusao", sub: "extras", por: tercQuem(), email: tercQuemEmail(), em: new Date().toISOString(), motivo: `Outros CNPJs alterados${mais.length ? ` · acrescentado(s): ${mais.join(", ")}` : ""}${menos.length ? ` · retirado(s): ${menos.join(", ")}` : ""}`, extraAntes: ant.CNPJsExtra || "" });
+        }
+      }
+    } catch (e) {}
+    return r;
+  }; }
+/* o requerente (ou o administrador) cancela o pedido: volta a lista anterior de Outros CNPJs */
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path, body) {
+    try {
+      if (TERC_CANCEL && TERC_CANCEL.extras && /^PATCH$/i.test(method || "") && body && JSON.stringify(body) === JSON.stringify(TERC_CANCEL.body || null) && FORN_STATE.list && String(path || "").includes(FORN_STATE.list.id) && String(path).includes(`/items/${TERC_CANCEL.id}`) && !vcAtivo() && podeEditar("forn")) return;
+    } catch (e) {}
+    return g0.apply(this, arguments);
+  }; window.guardaEscrita = guardaEscrita; }
+{ const c0 = window.tercCancelarPedido; window.tercCancelarPedido = async function (id) {
+    let x = (FORN_STATE.items || []).find(i => String(i._id) === String(id)), a = x && tercAprov(x);
+    if (!x || !a || a.sub !== "extras") return c0.apply(this, arguments);
+    if (vcAtivo()) { toast(vcErro().message); return; }
+    if (!session.n1 && !tercMeuPedido(x)) { toast(`Só ${a.por || "quem fez o pedido"} (ou o administrador) pode cancelar este pedido.`, 6000); return; }
+    if (!podeEditar("forn")) { toast("Seu acesso a Fornecedores é só de leitura."); return; }
+    if (!(await erpConfirmar({ titulo: "Cancelar o pedido", sim: "Voltar os Outros CNPJs e cancelar", nao: "Voltar", html: `<p>O cadastro <b>${esc(x.Title || "")}</b> voltou para a fila porque os Outros CNPJs mudaram${a.motivo ? ` — <i>${esc(a.motivo)}</i>` : ""}.</p><p>Cancelar devolve a lista anterior de Outros CNPJs e tira o cadastro da fila.</p>` }))) return;
+    x = await tercRecarregarPedido(x, a); if (!x) return;
+    const campos = { Aprovacao: null, CNPJsExtra: a.extraAntes || null, ...tercNotaCampos(x, `Alteração dos Outros CNPJs cancelada por ${tercQuem()} em ${tercDataTxt(new Date().toISOString())}`) };
+    TERC_CANCEL = { id: String(x._id), body: campos, extras: true };
+    try { return await tercGravar(x, campos, "Pedido cancelado: os Outros CNPJs voltaram ao que eram"); } finally { TERC_CANCEL = null; }
+  }; }
+{ const d0 = window.tercDecidir; window.tercDecidir = async function (id, aprova) {
+    const x = (FORN_STATE.items || []).find(i => String(i._id) === String(id)), a = x && tercAprov(x);
+    if (!x || !a || a.sub !== "extras" || !session.n1) return d0.apply(this, arguments);
+    if (vcAtivo()) { toast(vcErro().message); return; }
+    const hoje = tercDataTxt(new Date().toISOString()), cab = `<p>O cadastro <b>${esc(x.Title || "")}</b> <b>já era aprovado</b>: voltou para a fila porque ${esc(a.por || "alguém")} alterou os Outros CNPJs${a.motivo ? ` — <i>${esc(a.motivo)}</i>` : ""}.</p>`;
+    if (!(await erpConfirmar({ titulo: aprova ? "Aprovar os Outros CNPJs" : "Recusar os Outros CNPJs", sim: aprova ? "Aprovar" : "Recusar e voltar ao anterior", nao: "Voltar", html: `${cab}<p>${aprova ? "Aprovar deixa valer a lista nova." : "Recusar devolve a lista anterior. O cadastro não é excluído."}</p>` }))) return;
+    const y = await tercRecarregarPedido(x, a); if (!y) return;
+    return aprova
+      ? tercGravar(y, { Aprovacao: null, ...tercNotaCampos(y, `Outros CNPJs (${a.motivo || "—"}) pedidos por ${a.por || "—"} em ${tercDataTxt(a.em)}, aprovados por ${tercQuem()} em ${hoje}`) }, "Outros CNPJs aprovados")
+      : tercGravar(y, { Aprovacao: null, CNPJsExtra: a.extraAntes || null, ...tercNotaCampos(y, `Outros CNPJs (${a.motivo || "—"}) pedidos por ${a.por || "—"} em ${tercDataTxt(a.em)}, recusados por ${tercQuem()} em ${hoje}: voltou a lista anterior`) }, "Alteração recusada: os Outros CNPJs voltaram ao que eram");
+  }; }
+
+/* ---------- 5 · pacote do contador: despesas pagas em dinheiro no caixa (lançadas só no Fluxo, desde 25/10) ---------- */
+{ const e0 = capCtbEntradas; capCtbEntradas = function (U) {
+    const E = e0.apply(this, arguments); if (!E) return E;
+    const desp = CX.mov.filter(x => x._d && x._d.slice(0, 7) === U.comp && !x._demo && typeof cpxCxEhDespesa === "function" && cpxCxEhDespesa(x));
+    const ag = f => { const m = new Map(); desp.forEach(x => { const k = f(x); m.set(k, cxN((m.get(k) || 0) + Number(x.Valor || 0))); }); return [...m.entries()].sort((a, b) => b[1] - a[1]); };
+    return Object.assign(E, { desp, despTotal: cxSoma(desp), despN: desp.length, despPorCat: ag(x => x.Grupo || "Sem categoria"), despPorConta: ag(x => x.Conta || "—") });
+  }; }
+
+/* ---------- 6 · fechamento mensal da Contabilidade, com trava ----------
+   "CAP — Parâmetros" › ctb_fechamentos = { meses: { AAAA-MM: { st, por, em, tot, hist[] } } }. Mês fechado trava os lançamentos com
+   competência OU pagamento nele (incluir, alterar, pagar, desfazer, excluir); continuam livres anexos, histórico, observações, Nº da NF
+   e natureza. Fecha e reabre (com motivo): administrador ou proprietário da CAP. */
+const CTB_FECH = { val: null, id: null, em: 0, ok: false };
+const CTB_FECH_LIVRES = new Set(["Anexos", "Historico", "Observacoes", "NumeroNF", "Natureza"]);
+async function ctbFechLer(force) {
+  if (!force && CTB_FECH.ok && Date.now() - CTB_FECH.em < 60000) return CTB_FECH.val;
+  try {
+    await capParamLista(); if (!CAP_PARAM.list) { Object.assign(CTB_FECH, { ok: true, erro: "", val: CTB_FECH.val || { meses: {} }, em: Date.now(), semLista: true }); return CTB_FECH.val; }
+    const it = (await SP.items(CAP_PARAM.site.id, CAP_PARAM.list.id)).find(x => (x.fields || {}).Title === "ctb_fechamentos");
+    let v = { meses: {} }; if (it) { try { v = JSON.parse(it.fields.Valor || "null") || { meses: {} }; } catch (e) { throw new Error("o registro dos fechamentos em \"CAP — Parâmetros\" está ilegível"); } }
+    Object.assign(CTB_FECH, { val: v, id: it ? String(it.id) : null, em: Date.now(), ok: true, erro: "", semLista: false }); return v;
+  } catch (e) { CTB_FECH.ok = false; CTB_FECH.erro = String((e && e.message) || e); throw e; }   /* sem leitura, a trava fica fechada (revisão M1) */
+}
+function ctbFechMes(c) { const m = c && CTB_FECH.val && CTB_FECH.val.meses ? CTB_FECH.val.meses[c] : null; return m && m.st === "Fechado" ? m : null; }
+function ctbFechTravaIt(it) { if (!it) return ""; const c1 = capCtbComp(it), c2 = it.DataPagamento ? ymd(it.DataPagamento).slice(0, 7) : ""; return ctbFechMes(c1) ? c1 : c2 && ctbFechMes(c2) ? c2 : ""; }
+const ctbFechPode = () => !!(session.n1 || (permModulo("cap") === "proprietario" && podeEditar("cap")));
+function ctbFech403(msg) { const e = new Error(msg); e.status = 403; e.semAcesso = true; e.ctbFech = true; return e; }
+function ctbFechErro(c) { const m = ctbFechMes(c) || {}; return ctbFech403(`${compLabel(c)} está fechado na Contabilidade${m.por ? ` (por ${m.por}${m.em ? " em " + new Date(m.em).toLocaleString("pt-BR") : ""})` : ""}: lançamentos desse mês não podem ser incluídos, alterados, pagos ou excluídos. ${ctbFechPode() ? "Reabra o mês na aba Contabilidade da CAP antes." : "Peça a reabertura ao administrador ou ao proprietário da CAP."}`); }
+/* o que conta como alteração: só campos cujo valor muda (o formulário manda todos); vazio = nulo; datas pelo dia; números com centavos */
+function ctbNorm(v) { if (v == null || v === "" || v === false) return ""; if (typeof v === "number") return String(Math.round(v * 100) / 100); const s = String(v).trim(); if (/^\d{4}-\d{2}-\d{2}/.test(s)) return ymd(s); if (/^-?\d+(\.\d+)?$/.test(s)) return String(Math.round(Number(s) * 100) / 100); return s; }
+const CTB_ABERTOS = new Set(["Aguardando NF", "Em aberto", "Vencido", "Pendente"]);   /* trocar entre eles não mexe em total (ex.: a NF chegou) */
+const CTB_PREENCHE = new Set(["CentroCusto", "Estabelecimento", "TipoFavorecido", "FornecedorRefId", "FornecedorRefLookupId", "CategoriaCod", "SubcategoriaCod", "CNPJ"]);   /* o formulário completa campos vazios ao salvar: não mexe em total */
+const CTB_PAG = new Set(["Status", "DataPagamento", "ValorPago", "Banco", "FormaPagamento", "Juros", "Desconto", "Estimado", "MotivoStatus"]);
+function ctbFechChecar(M, p0, body) {
+  const m = p0.match(/\/lists\/([^/]+)\/items(?:\/([^/]+)(?:\/fields)?)?$/); if (!m) return;
+  const iid = m[2] ? decodeURIComponent(m[2]) : null;
+  if (CAP_PARAM.list && m[1] === CAP_PARAM.list.id) {   /* o registro dos fechamentos: só quem fecha (revisão M3) */
+    const alvo = (iid && CTB_FECH.id && iid === CTB_FECH.id) || (M === "POST" && body && body.fields && body.fields.Title === "ctb_fechamentos");
+    if (alvo && !ctbFechPode()) throw ctbFech403("Só o administrador ou o proprietário da CAP fecham e reabrem o mês da Contabilidade.");
+    return;
+  }
+  if (m[1] !== CAP_STATE.list.id) return;
+  const antes = iid ? (CAP_STATE.items || []).find(x => String(x._id) === String(iid)) || null : null;
+  if (M === "PATCH") {
+    const f = body && typeof body === "object" ? body : {};
+    let mudou = Object.keys(f).filter(k => !CTB_FECH_LIVRES.has(k) && !/@odata/.test(k) && (!antes || ctbNorm(antes[k]) !== ctbNorm(f[k])) && !(antes && ctbNorm(antes[k]) === "" && (CTB_PREENCHE.has(k) || (k === "TipoLancamento" && f[k] === "Despesa"))));
+    if (antes && mudou.includes("Status") && CTB_ABERTOS.has(antes.Status) && CTB_ABERTOS.has(f.Status)) mudou = mudou.filter(k => k !== "Status");
+    if (!mudou.length) return;
+    if (!CTB_FECH.ok) throw ctbFech403(`Não foi possível conferir o fechamento do mês na Contabilidade${CTB_FECH.erro ? ` (${CTB_FECH.erro})` : ""}. Recarregue a CAP e tente de novo.`);
+    const depois = Object.assign({}, antes || {}, f), pA = antes && antes.DataPagamento ? ymd(antes.DataPagamento).slice(0, 7) : "", pD = depois.DataPagamento ? ymd(depois.DataPagamento).slice(0, 7) : "";
+    if (antes && mudou.every(k => CTB_PAG.has(k))) { const c = [pA, pD].find(x => x && ctbFechMes(x)); if (c) throw ctbFechErro(c); return; }   /* pagar/desfazer num mês aberto, mesmo com a competência fechada (revisão M7) */
+    const c = ctbFechTravaIt(antes) || ctbFechTravaIt(depois); if (c) throw ctbFechErro(c);
+    return;
+  }
+  if (M === "POST") { const f = (body && body.fields) || null; if (!f) return; if (!CTB_FECH.ok) throw ctbFech403("Não foi possível conferir o fechamento do mês na Contabilidade. Recarregue a CAP e tente de novo."); const c = ctbFechTravaIt(f); if (c) throw ctbFechErro(c); return; }
+  if (M === "DELETE" && antes) { if (!CTB_FECH.ok) throw ctbFech403("Não foi possível conferir o fechamento do mês na Contabilidade. Recarregue a CAP e tente de novo."); const c = ctbFechTravaIt(antes); if (c) throw ctbFechErro(c); }
+}
+/* trava na gravação (vale para todo caminho: formulário, Pagar, lote, desfazer, excluir, importar, recorrentes; $batch pedido a pedido, com o corpo) */
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path, body) {
+    const r = g0.apply(this, arguments);
+    const M = String(method || "GET").toUpperCase(), p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0];
+    if (typeof CAP_STATE === "undefined" || !CAP_STATE.list || (typeof DIV !== "undefined" && DIV.on) || (typeof vcAtivo === "function" && vcAtivo())) return r;
+    if (/\/\$batch$/.test(p0)) { ((body && body.requests) || []).forEach(q => { const qm = String(q.method || "").toUpperCase(); if (/^(POST|PATCH|DELETE)$/.test(qm)) ctbFechChecar(qm, "/" + String(q.url || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").replace(/^\/+/, "").split("?")[0], q.body); }); return r; }
+    if (/^(POST|PATCH|DELETE)$/.test(M)) ctbFechChecar(M, p0, body);
+    return r;
+  }; window.guardaEscrita = guardaEscrita; }
+/* a trava usa o registro atualizado: relê antes de gravar na CAP (inclusive excluir e $batch) e ao carregar a CAP */
+{ const u0 = SP.update, c0 = SP.create;
+  const naCap = l => typeof CAP_STATE !== "undefined" && CAP_STATE.list && l === CAP_STATE.list.id && !(typeof DIV !== "undefined" && DIV.on);
+  SP.update = async function (s, l) { if (naCap(l)) { try { await ctbFechLer(); } catch (e) {} } return u0.apply(this, arguments); };
+  SP.create = async function (s, l) { if (naCap(l)) { try { await ctbFechLer(); } catch (e) {} } return c0.apply(this, arguments); };
+  const gr0 = graph; graph = async function (path, opts, attempt) {
+    try {
+      const o = opts || {};
+      if (!attempt && /^(DELETE|POST)$/i.test(o.method || "") && typeof CAP_STATE !== "undefined" && CAP_STATE.list && !(typeof DIV !== "undefined" && DIV.on)) {
+        const alvoCap = /^DELETE$/i.test(o.method) ? String(path).includes(`/lists/${CAP_STATE.list.id}/items/`) : (/\/\$batch$/.test(String(path).split("?")[0]) && o.body && Array.isArray(o.body.requests) && o.body.requests.some(q => String(q.url || "").includes(`/lists/${CAP_STATE.list.id}/items`)));
+        if (alvoCap) { try { await ctbFechLer(/^DELETE$/i.test(o.method)); } catch (e) {} }   /* excluir relê sempre (outro navegador pode ter fechado o mês) */
+      }
+    } catch (e) {}
+    return gr0.apply(this, arguments);
+  };
+  const l0 = loadCAP; loadCAP = async function () { const r = await l0.apply(this, arguments); if (!(typeof DIV !== "undefined" && DIV.on)) ctbFechLer().catch(() => {}); return r; }; window.loadCAP = loadCAP; }
+async function ctbFechGravar(mudar) {
+  const v = JSON.parse(JSON.stringify(await ctbFechLer(true))); v.meses = v.meses || {};
+  mudar(v);
+  if (!CAP_PARAM.list) throw new Error(`a lista "${LISTS.cap_param.displayName}" ainda não existe — rode Sistema › Configuração › Executar tudo`);
+  const f = { Valor: JSON.stringify(v), AlteradoPor: ((session.me && session.me.displayName) || "").slice(0, 100) };
+  if (CTB_FECH.id) await SP.update(CAP_PARAM.site.id, CAP_PARAM.list.id, CTB_FECH.id, f);
+  else { const it = await SP.create(CAP_PARAM.site.id, CAP_PARAM.list.id, Object.assign({ Title: "ctb_fechamentos" }, f)); CTB_FECH.id = String(it.id); }
+  Object.assign(CTB_FECH, { val: v, em: Date.now(), ok: true });
+}
+function ctbFechTotais(c) {
+  const U = Object.assign({}, capCtbUI(), { comp: c });
+  const dc = capCtbDados(Object.assign({}, U, { base: "comp" })), dp = capCtbDados(Object.assign({}, U, { base: "pag" }));
+  const pagas = dc.g.desp.filter(it => classifyItem(it).pago);
+  return { comp: { n: dc.g.desp.length, desp: cxN(ctbSoma(dc.g.desp)), pagas: cxN(ctbSoma(pagas)) }, pag: { n: dp.g.desp.length, desp: cxN(ctbSoma(dp.g.desp)) },
+    ent: dc.E ? cxN(dc.E.total) : null, cxDesp: dc.E ? cxN(dc.E.despTotal || 0) : null };
+}
+const ctbFechQuem = () => (typeof capHistQuem === "function" ? capHistQuem() : ((session.me && session.me.displayName) || ""));
+window.ctbFecharMes = async c => {
+  if (typeof DIV !== "undefined" && DIV.on) { toast("O fechamento do mês é da CAP, não da Gestão de Dívidas."); return; }
+  if (!ctbFechPode()) { toast("Fechar o mês na Contabilidade é do administrador ou do proprietário da CAP."); return; }
+  if (vcAtivo()) { toast(vcErro().message); return; }
+  try { await loadCAP({ soLeitura: true }); } catch (e) { toast("Não foi possível reler a CAP: " + e.message, 7000); return; }
+  const U = Object.assign({}, capCtbUI(), { comp: c, base: "comp" }), D = capCtbDados(U), C = capCtbConferencia(D, null);
+  const abertas = D.g.desp.filter(it => !classifyItem(it).pago), falta = C.filter(x => x.falta.length);
+  const pend = [abertas.length && `${abertas.length} lançamento(s) da competência ainda em aberto`, falta.length && `${falta.length} lançamento(s) com documento faltando`, ...(D.avisos || [])].filter(Boolean);
+  if (!(await erpConfirmar({ titulo: `Fechar ${compLabel(c)} na Contabilidade`, sim: "Fechar o mês", nao: "Voltar",
+    html: `<p>Depois de fechado, os lançamentos com <b>competência ou pagamento em ${esc(compLabel(c))}</b> ficam travados: não dá para incluir, alterar, pagar, desfazer o pagamento nem excluir. Anexos, observações e o Nº da NF continuam livres.</p>${pend.length ? `<p><b>Pendências:</b></p><ul>${pend.map(p => `<li>${esc(p)}</li>`).join("")}</ul>` : `<p>Sem pendências no checklist.</p>`}<p class="sup">Reabrir exige motivo e fica registrado.</p>` }))) return;
+  try {
+    const tot = ctbFechTotais(c), quem = ctbFechQuem(), em = new Date().toISOString();
+    await ctbFechGravar(v => { const o = v.meses[c] || {}; v.meses[c] = Object.assign({}, o, { st: "Fechado", por: quem, em, tot, hist: (o.hist || []).concat([{ a: "fechado", por: quem, em }]).slice(-30) }); });
+    toast(`${compLabel(c)} fechado na Contabilidade.`); paintCAP();
+  } catch (e) { toast("Erro: " + e.message, 7000); }
+};
+window.ctbReabrirMes = async c => {
+  if (typeof DIV !== "undefined" && DIV.on) { toast("O fechamento do mês é da CAP, não da Gestão de Dívidas."); return; }
+  if (!ctbFechPode()) { toast("Reabrir o mês é do administrador ou do proprietário da CAP."); return; }
+  if (vcAtivo()) { toast(vcErro().message); return; }
+  const m = prompt(`Motivo para reabrir ${compLabel(c)} na Contabilidade (obrigatório):`); if (m == null) return; if (!m.trim()) { toast("Informe o motivo."); return; }
+  try {
+    const quem = ctbFechQuem(), em = new Date().toISOString();
+    await ctbFechGravar(v => { const o = v.meses[c] || {}; v.meses[c] = Object.assign({}, o, { st: "Aberto", hist: (o.hist || []).concat([{ a: "reaberto", por: quem, em, d: m.trim().slice(0, 300) }]).slice(-30) }); });
+    toast(`${compLabel(c)} reaberto.`); paintCAP();
+  } catch (e) { toast("Erro: " + e.message, 7000); }
+};
+window.ctbFechDeNovo = () => { CTB_FECH.erro = ""; ctbFechLer(true).catch(() => {}).finally(() => { if (CAP_STATE.view === "contab" && $("capBody")) paintCAP(); }); };
+function ctbFechBarHtml(c) {
+  if (typeof DIV !== "undefined" && DIV.on) return "";   /* Gestão de Dívidas: sem fechamento (revisão M4) */
+  if (!CTB_FECH.ok && CTB_FECH.erro) return `<div class="ctb-alerta ctb-fech">Não foi possível ler o fechamento do mês (${esc(CTB_FECH.erro)}). Enquanto isso, a CAP não grava alterações. <a href="#" onclick="ctbFechDeNovo(); return false;">Tentar de novo</a></div>`;
+  if (!CTB_FECH.ok) { ctbFechLer().catch(() => {}).finally(() => { if (CAP_STATE.view === "contab" && $("capBody")) paintCAP(); }); return `<div class="ctb-alerta ctb-fech">Lendo o fechamento do mês…</div>`; }
+  const m = (CTB_FECH.val && CTB_FECH.val.meses && CTB_FECH.val.meses[c]) || null, fechado = !!(m && m.st === "Fechado"), pode = ctbFechPode();
+  const ult = m && m.hist && m.hist.length ? m.hist[m.hist.length - 1] : null;
+  let dif = "";
+  if (fechado && m.tot) { try { const t = ctbFechTotais(c); if (Math.abs((t.comp.desp || 0) - (m.tot.comp.desp || 0)) >= 0.01 || Math.abs((t.pag.desp || 0) - (m.tot.pag.desp || 0)) >= 0.01 || t.comp.n !== m.tot.comp.n) dif = ` <b class="venc-txt">Os números mudaram depois do fechamento</b> (saídas pela competência: gravado ${esc(fmtBRL(m.tot.comp.desp))} × agora ${esc(fmtBRL(t.comp.desp))}).`; } catch (e) {} }
+  return `<div class="ctb-alerta ctb-fech" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span><b>Fechamento de ${esc(compLabel(c))}:</b> ${fechado ? `<span class="pill st-pago"><i></i>Fechado</span> por ${esc(m.por || "—")} em ${esc(m.em ? new Date(m.em).toLocaleString("pt-BR") : "—")} — lançamentos com competência ou pagamento no mês estão travados.${dif}` : `<span class="pill st-pendente"><i></i>Aberto</span>${ult && ult.a === "reaberto" ? ` · reaberto por ${esc(ult.por || "—")}${ult.d ? ` (motivo: ${esc(ult.d)})` : ""}` : ""}`}</span><span style="flex:1"></span>${pode ? (fechado ? `<button class="btn sm" onclick="ctbReabrirMes(${jsArg(c)})">Reabrir o mês (com motivo)</button>` : `<button class="btn sm primary" onclick="ctbFecharMes(${jsArg(c)})">Fechar o mês</button>`) : `<span class="sup">Fecha e reabre: administrador ou proprietário da CAP.</span>`}</div>`;
+}
+/* tela da Contabilidade: barra do fechamento e cartão das despesas pagas no caixa */
+{ const p0 = paintCapContab; paintCapContab = function (body) {
+    const r = p0.apply(this, arguments);
+    try {
+      const U = capCtbUI(), bar = body.querySelector(".ctb-bar"); if (bar && !body.querySelector(".ctb-fech")) bar.insertAdjacentHTML("afterend", ctbFechBarHtml(U.comp));
+      const E = capCtbEntradas(U), h = [...body.querySelectorAll(".cap-card h3")].find(x => x.textContent.trim() === "Entradas do mês");
+      if (E && h && E.despN) h.closest(".cap-card").insertAdjacentHTML("afterend", `<div class="cap-card"><div class="cap-card-h"><h3>Despesas pagas no caixa</h3><span class="cap-card-s">em dinheiro, lançadas só no Fluxo de Caixa (desde ${esc(fmtDate(CX_DINHEIRO_DESDE))}) · ${E.despN} lançamento(s) · ${esc(fmtBRL(E.despTotal))}</span></div>
+        <div class="ctb-2"><table class="ctb-mini"><thead><tr><th>Categoria</th><th class="r">Valor</th></tr></thead><tbody>${E.despPorCat.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="r">${esc(fmtBRL(v))}</td></tr>`).join("")}<tr class="tot"><td>Total</td><td class="r">${esc(fmtBRL(E.despTotal))}</td></tr></tbody></table>
+        <table class="ctb-mini"><thead><tr><th>Data</th><th>Descrição</th><th class="r">Valor</th></tr></thead><tbody>${E.desp.slice(0, 40).map(x => `<tr><td>${esc(fmtDate(x._d))}</td><td>${esc(x.Title || "")}</td><td class="r">${esc(fmtBRL(x.Valor))}</td></tr>`).join("")}${E.despN > 40 ? `<tr><td colspan="3" class="sup">… e mais ${E.despN - 40} (todas no Excel)</td></tr>` : ""}</tbody></table></div></div>`);
+    } catch (e) {}
+    return r;
+  }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
 CONFIG.version = "v0.14.18";   /* Fluxo de Caixa R2: tesouraria; despesa em dinheiro no caixa; CAP paga em dinheiro → saída no caixa; âncora/mês fechado; DRE/CAPEX com o caixa */
+CONFIG.version = "v0.14.19";   /* CAP: fechamento mensal com trava; pacote com as despesas do caixa; "Vencido · aguarda NF"; credor "Própria empresa (NMB)"; Outros CNPJs para aprovação */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

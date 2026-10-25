@@ -18147,8 +18147,13 @@ function cxFechDe(d) { return CX.fech.find(x => x._d === d) || null; }
 function cxMovDia(d) { return CX.mov.filter(x => x._d === d); }
 function cxTipoConta(nome) { const c = CX.contas.find(k => k.Title === nome); return c ? c.Tipo : ""; }
 /* saída do caixa: despesa, ou transferência para conta do tipo Banco (caixa → cofre/agência não sai da tesouraria) */
-const cxEhSaida = x => x.Tipo === "Saída" || (x.Tipo === "Transferência" && (!x.ContaDestino || cxTipoConta(x.ContaDestino) === "Banco" || cxTipoConta(x.ContaDestino) === ""));
-function cxTotais(lista) { return { ent: cxSoma(lista.filter(x => x.Tipo === "Entrada")), sai: cxSoma(lista.filter(cxEhSaida)) }; }
+/* v0.14.18 (decisão de 25/10: o Fluxo é a tesouraria da matriz; bancos são da Diretoria): transferência banco → caixa/cofre/agência
+   (suprimento, saque) ENTRA na tesouraria; banco → banco não mexe nela */
+const cxEhBanco = nome => !!nome && cxTipoConta(nome) === "Banco";
+const cxEhEntrada = x => x.Tipo === "Entrada" || (x.Tipo === "Transferência" && cxEhBanco(x.Conta) && !!x.ContaDestino && !["Banco", ""].includes(cxTipoConta(x.ContaDestino)));
+const cxEhSaida = x => x.Tipo === "Saída" || (x.Tipo === "Transferência" && !cxEhBanco(x.Conta) && (!x.ContaDestino || cxTipoConta(x.ContaDestino) === "Banco" || cxTipoConta(x.ContaDestino) === ""));
+const cxOrigemEnt = x => x.Tipo === "Transferência" ? "Suprimento do banco" : (x.Origem || "Outras receitas");
+function cxTotais(lista) { return { ent: cxSoma(lista.filter(cxEhEntrada)), sai: cxSoma(lista.filter(cxEhSaida)) }; }
 /* Modelo de saldo (revisão 30/09): uma âncora só — o saldo anterior informado no 1º boletim (o mais antigo) — e daí tudo é
    movimento somado, para frente e para trás. Os valores gravados nos boletins são retrato do momento (o papel); a tela avisa
    quando o retrato ficou diferente do movimento. Sem âncora: soma do movimento desde o início. */
@@ -18172,7 +18177,7 @@ function cxMotivoTrava(d) { return cxBloqueado(d) ? "Mês fechado: reabra o mês
 function pageCx() {
   return `<div class="page">
     <div class="page-head"><div><h1>Fluxo de Caixa</h1>
-    <p class="lead">Livro-caixa da matriz: movimento do dia, boletim com conferência e aprovação, fluxo do mês e fechamento mensal. Piloto sem ligação com a CAP e o LevBom — as conexões entram na próxima rodada.</p></div>
+    <p class="lead">Tesouraria da matriz: movimento do dia, boletim com conferência e aprovação, fluxo do mês e fechamento mensal. Despesas pagas em dinheiro ficam aqui (inclusive os lançamentos da CAP pagos em dinheiro); os bancos são da Diretoria.</p></div>
     <div class="page-actions" id="cxActions"></div></div>
     <div id="cxBody"><div class="cap-empty"><h3>Carregando…</h3><p>Buscando o caixa no SharePoint.</p></div></div>
   </div>`;
@@ -18261,8 +18266,8 @@ function cxBoletimHtml() {
   const d = CX.dia, lista = cxMovDia(d), t = cxTotais(lista), f = cxFechDe(d), st = (f && f.Status) || "Aberto", edita = cxPodeEditar() && !cxBloqueado(d) && st === "Aberto";
   const saldoAnt = cxSaldoAnterior(d), saldoAtual = cxN(saldoAnt + t.ent - t.sai), ancora = cxEhAncora(d);
   const comp = CX_COMP.reduce((s, [k]) => s + Number((f || {})[k] || 0), 0), dif = f ? cxN(saldoAtual - comp) : null;
-  const ent = lista.filter(x => x.Tipo === "Entrada"), sai = lista.filter(cxEhSaida);
-  const porOrigem = new Map(); ent.forEach(x => { const k = x.Origem || "Outras receitas"; if (!porOrigem.has(k)) porOrigem.set(k, new Map()); const m = porOrigem.get(k); m.set(x.Meio || "—", cxN((m.get(x.Meio || "—") || 0) + x.Valor)); });
+  const ent = lista.filter(cxEhEntrada), sai = lista.filter(cxEhSaida);
+  const porOrigem = new Map(); ent.forEach(x => { const k = cxOrigemEnt(x); if (!porOrigem.has(k)) porOrigem.set(k, new Map()); const m = porOrigem.get(k); m.set(x.Meio || "—", cxN((m.get(x.Meio || "—") || 0) + x.Valor)); });
   const linha = x => `<tr ${edita ? `class="p" onclick="cxMovForm(${jsArg(x._id)})" title="Editar"` : ""}><td>${esc(x.Title || x.Categoria || x.Origem || "")}${x.Grupo ? `<span class="sup"> · ${esc(x.Grupo)}</span>` : ""}</td><td>${esc(x.Tipo === "Transferência" ? `${x.Conta || "—"} → ${x.ContaDestino || "—"}` : x.Conta || "—")}</td><td>${esc(x.Meio || "—")}</td><td class="v">${esc(fmtBRL(x.Valor))}</td></tr>`;
   const kpis = `<div class="cap-kpis cap-kpis-4">
     <div class="kpi static"><div class="lbl">Saldo anterior</div><div class="val money">${esc(fmtBRL(saldoAnt))}</div><div class="sub">${ancora && f && f.SaldoAnterior != null ? "informado no 1º boletim (âncora)" : "movimento desde o 1º boletim"}</div></div>
@@ -18278,7 +18283,7 @@ function cxBoletimHtml() {
       ${podeEd && st === "Conferido" && cxPodeAprovar() ? `<button class="btn sm primary" id="cxBtnAprovar" onclick="cxAprovar()" title="Aprova e imprime o boletim para o registro em papel">Aprovar e imprimir (Diretor)</button>` : ""}
       ${podeEd && st === "Aprovado" && !(f && f.ImpressoEm) && cxPodeAprovar() ? `<button class="btn sm primary" onclick="cxRegistrarImpressao()">Registrar a impressão</button>` : ""}
       ${podeEd && st !== "Aberto" && cxPodeAprovar() ? `<button class="btn sm ghost" onclick="cxReabrirDia()">Reabrir o dia</button>` : ""}
-    </div>${cxBloqueado(d) ? `<p class="hint">Mês fechado: o boletim só pode ser alterado depois de reabrir o mês (Fechamento do mês).</p>` : st !== "Aberto" ? `<p class="hint">Boletim ${esc(st.toLowerCase())}: lançamentos e composição travados — "Reabrir o dia" para alterar (fica registrado).</p>` : ""}${f && cxDesatualizado(f) ? `<p class="hint cx-dif">O retrato gravado neste boletim (${esc(fmtBRL(f.Entradas))} / ${esc(fmtBRL(f.Saidas))} / saldo anterior ${esc(fmtBRL(f.SaldoAnterior))}) está diferente do movimento atual — salve o boletim de novo${st !== "Aberto" ? " depois de reabrir o dia" : ""}.</p>` : ""}`;
+    </div>${cxBloqueado(d) ? `<p class="hint">Mês fechado: o boletim só pode ser alterado depois de reabrir o mês (Fechamento do mês).</p>` : st !== "Aberto" ? `<p class="hint">Boletim ${esc(st.toLowerCase())}: lançamentos e composição travados — "Reabrir o dia" para alterar (fica registrado).</p>` : ""}${f && cxDesatualizado(f) ? `<p class="hint cx-dif">O retrato gravado neste boletim (${esc(fmtBRL(f.Entradas))} / ${esc(fmtBRL(f.Saidas))} / ${f.SaldoAnterior != null && f.SaldoAnterior !== "" ? `saldo anterior ${esc(fmtBRL(f.SaldoAnterior))}` : `saldo atual ${esc(fmtBRL(f.SaldoAtual))}`}) está diferente do movimento atual — salve o boletim de novo${st !== "Aberto" ? " depois de reabrir o dia" : ""}.</p>` : ""}`;
   const compForm = `<div class="cap-card"><div class="cap-card-h"><h3>Composição da tesouraria</h3><span class="cap-card-s">o que compõe o saldo em ${fmtDate(d)}</span></div>
     <div class="form-grid cx-comp">${CX_COMP.map(([k, l]) => `<div class="field"><label>${esc(l)}</label><input type="number" step="0.01" id="cx_${k}" value="${f && f[k] != null ? cxN(f[k]) : ""}" ${edita ? "" : "disabled"}></div>`).join("")}
       <div class="field"><label>Saldo anterior${ancora ? " (âncora: informe no 1º boletim)" : " (calculado)"}</label><input type="number" step="0.01" id="cx_SaldoAnterior" value="${ancora && f && f.SaldoAnterior != null ? cxN(f.SaldoAnterior) : ancora ? "" : cxN(saldoAnt)}" placeholder="${cxN(saldoAnt)}" ${edita && ancora ? "" : "disabled"}></div>
@@ -18335,7 +18340,7 @@ window.cxReabrirDia = async () => { if (!cxPodeAprovar()) { toast("Reabrir bolet
 window.cxImprimirBoletim = () => {
   const d = CX.dia, lista = cxMovDia(d), t = cxTotais(lista), f = cxFechDe(d) || {};
   const saldoAnt = cxSaldoAnterior(d), saldoAtual = cxN(saldoAnt + t.ent - t.sai);
-  const ent = lista.filter(x => x.Tipo === "Entrada"), sai = lista.filter(cxEhSaida);
+  const ent = lista.filter(cxEhEntrada), sai = lista.filter(cxEhSaida);
   const rows = arr => arr.map(x => `<tr><td>${esc(x.Title || x.Categoria || x.Origem || "")}</td><td class="c">${esc(x.Origem || "")}</td><td class="c">${esc(x.Meio || "")}</td><td class="c">${esc(x.Tipo === "Transferência" ? `${x.Conta || ""} → ${x.ContaDestino || ""}` : x.Conta || "")}</td><td class="r">${esc(fmtBRL(x.Valor))}</td></tr>`).join("");
   const html = `<div class="pg">${printCab("Boletim Diário de Caixa — <b>Matriz</b>", fmtDate(d) + (f.Status ? " · " + f.Status : ""))}
     <table><tr><th>Saldo anterior</th><th>Entradas</th><th>Saídas (despesas + depósitos)</th><th>Saldo atual</th></tr>
@@ -18403,10 +18408,11 @@ function cxMatriz(comp) {
   const add = (grupo, nome, filtro) => { const vals = dias.map(d => cxSoma(lista.filter(x => x._d === d && filtro(x)))); const tot = cxN(vals.reduce((s, v) => s + v, 0)); if (tot) linhas.push({ grupo, nome, vals, tot }); };
   CX_ORIGENS_ENT.forEach(o => add("Entradas", o, x => x.Tipo === "Entrada" && (x.Origem || "Outras receitas") === o));
   add("Entradas", "Outras (sem origem)", x => x.Tipo === "Entrada" && !CX_ORIGENS_ENT.includes(x.Origem || "Outras receitas"));
+  add("Entradas", "Suprimento do banco", x => x.Tipo === "Transferência" && cxEhEntrada(x));   /* v0.14.18 */
   const grupos = [...new Set(lista.filter(x => x.Tipo === "Saída").map(x => x.Grupo || "Sem grupo"))].sort();
   grupos.forEach(g => add("Saídas", g, x => x.Tipo === "Saída" && (x.Grupo || "Sem grupo") === g));
   add("Saídas", "Depósitos e transferências", x => x.Tipo === "Transferência" && cxEhSaida(x));   /* v0.12.81: só o que sai do caixa (cofre e agências não), como o Total de saídas */
-  const entD = dias.map(d => cxSoma(lista.filter(x => x._d === d && x.Tipo === "Entrada"))), saiD = dias.map(d => cxSoma(lista.filter(x => x._d === d && cxEhSaida(x))));
+  const entD = dias.map(d => cxSoma(lista.filter(x => x._d === d && cxEhEntrada(x)))), saiD = dias.map(d => cxSoma(lista.filter(x => x._d === d && cxEhSaida(x))));
   let acc = cxSaldoAnterior(comp + "-01"); const saldoD = dias.map((d, i) => (acc = cxN(acc + entD[i] - saiD[i])));
   return { dias, linhas, entD, saiD, saldoD, saldoIni: cxSaldoAnterior(comp + "-01"), ent: cxN(entD.reduce((s, v) => s + v, 0)), sai: cxN(saiD.reduce((s, v) => s + v, 0)) };
 }
@@ -18456,7 +18462,7 @@ function cxFechMesHtml() {
       ${item(!comDif.length, comDif.length ? `${comDif.length} dia(s) com diferença no caixa: ${comDif.map(f => `${fmtDate(f._d)} (${fmtBRL(f.Diferenca)})`).join(", ")}` : "Sem diferença de caixa no mês")}
       ${item(!semPapel.length, semPapel.length ? `${semPapel.length} boletim(ns) aprovado(s) sem a impressão registrada: ${semPapel.map(f => fmtDate(f._d)).join(", ")}` : "Todos os boletins aprovados têm a impressão registrada")}
       ${item(!desatual.length, desatual.length ? `${desatual.length} boletim(ns) com retrato diferente do movimento (salvar de novo): ${desatual.map(f => fmtDate(f._d)).join(", ")}` : "Boletins batem com o movimento")}
-      ${item(true, "Ligação com a CAP e o LevBom: próxima rodada (por enquanto o fechamento usa só o movimento lançado aqui)")}</ul>`;
+      ${cxChkCapDinheiro(c)}${cxChkMesFechado(c)}</ul>`;   /* v0.14.18 */
   const pode = cxPodeFecharMes();
   const botao = fechado ? (pode ? `<button class="btn" onclick="cxReabrirMes()">Reabrir o mês (com motivo)</button>` : `<span class="sup">Só administradores ou o proprietário do módulo reabrem o mês.</span>`)
     : (pode ? `<button class="btn primary" onclick="cxFecharMes()">Fechar o mês de ${esc(cxMesLabel(c))}</button>` : `<span class="sup">Só administradores ou o proprietário do módulo fecham o mês.</span>`);
@@ -18467,7 +18473,7 @@ function cxFechMesHtml() {
       <div class="kpi static venc"><div class="lbl">Saídas</div><div class="val money">${esc(fmtBRL(M.sai))}</div><div class="sub">despesas + depósitos</div></div>
       <div class="kpi static ${fechado ? "pago" : ""}"><div class="lbl">Situação</div><div class="val">${fechado ? "Fechado" : "Aberto"}</div><div class="sub">saldo final ${esc(fmtBRL(M.saldoD[M.saldoD.length - 1]))}</div></div></div>
     <div class="cap-card"><div class="cap-card-h"><h3>Checklist de fechamento</h3><span class="cap-card-s">o que conferir antes de fechar ${esc(cxMesLabel(c))}</span></div>${check}<div class="cx-acoes"><span class="grow"></span>${botao}</div>${hist}</div>
-    <div class="cap-card"><div class="cap-card-h"><h3>Boletins do mês</h3></div>${CX.fech.filter(f => f._d.slice(0, 7) === c).length ? `<table class="cx-t"><thead><tr><th>Dia</th><th>Saldo anterior</th><th>Entradas</th><th>Saídas</th><th>Saldo atual</th><th>Diferença</th><th>Situação</th></tr></thead><tbody>${CX.fech.filter(f => f._d.slice(0, 7) === c).map(f => `<tr class="p" onclick="cxTab('boletim');cxDia(${jsArg(f._d)})"><td>${esc(fmtDate(f._d))}</td><td class="v">${esc(fmtBRL(f.SaldoAnterior))}</td><td class="v">${esc(fmtBRL(f.Entradas))}</td><td class="v">${esc(fmtBRL(f.Saidas))}</td><td class="v">${esc(fmtBRL(f.SaldoAtual))}</td><td class="v ${Math.abs(Number(f.Diferenca || 0)) >= 0.01 ? "cx-dif" : ""}">${esc(fmtBRL(f.Diferenca || 0))}</td><td><span class="cx-st ${cxStCls(f.Status || "Aberto")}">${esc(f.Status || "Aberto")}</span>${cxDesatualizado(f) ? ` <span class="cx-dif" title="retrato diferente do movimento">≠</span>` : ""}${f.Status === "Aprovado" && !f.ImpressoEm ? ` <span class="sup" title="impressão não registrada">sem papel</span>` : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="cap-muted">Nenhum boletim salvo em ${esc(cxMesLabel(c))}.</p>`}</div>`;
+    <div class="cap-card"><div class="cap-card-h"><h3>Boletins do mês</h3></div>${CX.fech.filter(f => f._d.slice(0, 7) === c).length ? `<table class="cx-t"><thead><tr><th>Dia</th><th>Saldo anterior</th><th>Entradas</th><th>Saídas</th><th>Saldo atual</th><th>Diferença</th><th>Situação</th></tr></thead><tbody>${CX.fech.filter(f => f._d.slice(0, 7) === c).map(f => `<tr class="p" onclick="cxTab('boletim');cxDia(${jsArg(f._d)})"><td>${esc(fmtDate(f._d))}</td><td class="v">${esc(fmtBRL(f.SaldoAnterior != null && f.SaldoAnterior !== "" ? f.SaldoAnterior : cxSaldoAnterior(f._d)))}</td><td class="v">${esc(fmtBRL(f.Entradas))}</td><td class="v">${esc(fmtBRL(f.Saidas))}</td><td class="v">${esc(fmtBRL(f.SaldoAtual))}</td><td class="v ${Math.abs(Number(f.Diferenca || 0)) >= 0.01 ? "cx-dif" : ""}">${esc(fmtBRL(f.Diferenca || 0))}</td><td><span class="cx-st ${cxStCls(f.Status || "Aberto")}">${esc(f.Status || "Aberto")}</span>${cxDesatualizado(f) ? ` <span class="cx-dif" title="retrato diferente do movimento">≠</span>` : ""}${f.Status === "Aprovado" && !f.ImpressoEm ? ` <span class="sup" title="impressão não registrada">sem papel</span>` : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="cap-muted">Nenhum boletim salvo em ${esc(cxMesLabel(c))}.</p>`}</div>`;
 }
 async function cxGravarMes(campos) {
   const c = CX.comp, M = cxMatriz(c), reg = cxMesReg(c);
@@ -18537,7 +18543,7 @@ function cxImpMontar(wb, nome) {
     const ip = t.lastIndexOf("."), iv = t.lastIndexOf(","); if (ip >= 0 && iv >= 0) t = iv > ip ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, ""); else if (iv >= 0) t = t.replace(/\./g, "").replace(",", "."); else if ((t.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(t)) t = t.replace(/\./g, "");
     const n = Number(t); return isFinite(n) ? n : 0; };
   /* dias que já têm qualquer lançamento (manual ou importado) ficam de fora — evita somar em cima */
-  const jaTem = new Set(CX.mov.map(x => x._d)), manuais = new Set(CX.mov.filter(x => x.OrigemRegistro !== "Importação").map(x => x._d));
+  const jaTem = new Set(CX.mov.filter(x => x.OrigemRegistro !== "CAP").map(x => x._d)), manuais = new Set(CX.mov.filter(x => !["Importação", "CAP"].includes(x.OrigemRegistro)).map(x => x._d));   /* v0.14.18: saídas geradas pela CAP não travam a importação do dia */
   const pulados = new Set(); let mesRef = ""; const mesesRec = new Map();
   /* RECEITA */
   const rec = wb.nomes.find(n => /receita/i.test(n));
@@ -20394,13 +20400,13 @@ function cxDeposito(x) { return cxEhSaida(x) && !cxDespesa(x); }
 window.cxImprimirBoletim = () => {
   const d = CX.dia, lista = cxMovDia(d), t = cxTotais(lista), f = cxFechDe(d) || {};
   const saldoAnt = cxSaldoAnterior(d), saldoAtual = cxN(saldoAnt + t.ent - t.sai);
-  const ent = lista.filter(x => x.Tipo === "Entrada"), sai = lista.filter(cxEhSaida), desp = sai.filter(cxDespesa), dep = sai.filter(cxDeposito);
+  const ent = lista.filter(cxEhEntrada), sai = lista.filter(cxEhSaida), desp = sai.filter(cxDespesa), dep = sai.filter(cxDeposito);
   const comp = CX_COMP.reduce((s, [k]) => s + Number(f[k] || 0), 0), temComp = CX_COMP.some(([k]) => f[k] != null), dif = cxN(saldoAtual - comp);
   const st = f.Status || "Aberto", stCls = st === "Aprovado" ? "ok" : st === "Conferido" ? "warn" : "neutro";
   const dt = dLocal(d), dia = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"][dt.getDay()];
   const doc = `BOL-${d.replace(/-/g, "")}`;
   /* entradas: origem › meio com quantidade e participação */
-  const porOrigem = new Map(); ent.forEach(x => { const k = x.Origem || "Outras receitas"; if (!porOrigem.has(k)) porOrigem.set(k, new Map()); const m = porOrigem.get(k), mk = x.Meio || "—"; const a = m.get(mk) || { n: 0, v: 0 }; a.n++; a.v = cxN(a.v + Number(x.Valor || 0)); m.set(mk, a); });
+  const porOrigem = new Map(); ent.forEach(x => { const k = cxOrigemEnt(x); if (!porOrigem.has(k)) porOrigem.set(k, new Map()); const m = porOrigem.get(k), mk = x.Meio || "—"; const a = m.get(mk) || { n: 0, v: 0 }; a.n++; a.v = cxN(a.v + Number(x.Valor || 0)); m.set(mk, a); });
   const pct = v => t.ent ? (100 * v / t.ent).toFixed(1).replace(".", ",") + "%" : "—";
   const entRows = [...porOrigem.entries()].sort((a, b) => [...b[1].values()].reduce((s, x) => s + x.v, 0) - [...a[1].values()].reduce((s, x) => s + x.v, 0)).map(([o, m]) => {
     const tot = [...m.values()].reduce((s, x) => s + x.v, 0), n = [...m.values()].reduce((s, x) => s + x.n, 0);
@@ -23747,7 +23753,7 @@ function cxResumoCapCarregar() {
   if (!cxResumoCapAcesso() || ["carregando", "ok", "erro"].includes(CX.resCap)) return;   /* erro não tenta de novo sozinho: "Tentar de novo" ou reentrar no módulo */
   if (typeof CAP_STATE !== "undefined" && CAP_STATE.items && CAP_STATE.items.length) { CX.resCap = "ok"; return; }
   CX.resCap = "carregando";
-  loadCAP({ soLeitura: true }).then(() => { CX.resCap = "ok"; }).catch(e => { if (e && e.divTrocou) { CX.resCap = ""; return; } CX.resCap = "erro"; CX.resCapErro = e.message; }).finally(() => { if (CX.tab === "resumo" && $("cxBody")) paintCx(); });
+  loadCAP({ soLeitura: true }).then(() => { CX.resCap = "ok"; }).catch(e => { if (e && e.divTrocou) { CX.resCap = ""; return; } CX.resCap = "erro"; CX.resCapErro = e.message; }).finally(() => { if (["resumo", "fechamento"].includes(CX.tab) && $("cxBody")) paintCx(); });   /* v0.14.18: o checklist também usa a CAP */
 }
 function cxResumoHtml() {
   const c = CX.comp || cxHoje().slice(0, 7), M = cxMes(c);
@@ -23757,7 +23763,8 @@ function cxResumoHtml() {
   const capPagas = capOk ? CAP_STATE.items.filter(it => naoTransf(it) && it.Status === "Pago" && String(it.DataPagamento ? ymd(it.DataPagamento) : "").slice(0, 7) === c) : [];
   const totCapPago = cxN(capPagas.reduce((s, it) => s + capValorEfetivo(it), 0));   /* v0.13.2 */
   const capVale = capOk && (!CONFIG.capInicio || c >= CONFIG.capInicio);   /* revisão: antes do início da CAP as despesas estão só no caixa */
-  const resultado = cxN(capVale ? M.ent - totCapPago : M.ent - M.des);   /* v0.13.4.1 (decisão de 15/10): toda despesa paga pelo caixa passa pela CAP — com a CAP lida, as saídas do caixa não entram de novo */
+  const resultado = cxN(M.ent - M.des);   /* v0.14.18 (decisão de 25/10): tesouraria — entradas − despesas pagas no caixa (as da CAP em dinheiro geram a saída aqui); a CAP paga pelos bancos é só informação */
+  const capBanco = capPagas.filter(it => !capCxDinheiro(it)), totCapBanco = cxN(capBanco.reduce((s, it) => s + capValorEfetivo(it), 0)), capDin = capPagas.length - capBanco.length;
   /* previsto: em aberto (não pagas) */
   const hoje = cxHoje(), abertas = capOk ? CAP_STATE.items.filter(it => naoTransf(it) && it.Status !== "Pago" && it.Vencimento) : [];
   const venc = abertas.filter(it => ymd(it.Vencimento) < hoje), totVenc = cxN(venc.reduce((s, it) => s + Number(it.Valor || 0), 0));
@@ -23770,18 +23777,19 @@ function cxResumoHtml() {
   const totSem = cxN(semanas.reduce((s, w) => s + w.tot, 0));
   const linha = (rot, val, sub, cls) => `<tr class="${cls || ""}"><td>${rot}${sub ? `<div class="sup">${sub}</div>` : ""}</td><td class="right money">${esc(fmtBRL(val))}</td></tr>`;
   const capMsg = !cxResumoCapAcesso() ? "Sem acesso à CAP: as contas a pagar não entram neste resumo." : CX.resCap === "erro" ? `Não foi possível ler a CAP (${esc(CX.resCapErro || "")}). <a href="#" onclick="CX.resCap=''; paintCx(); return false">Tentar de novo</a>` : CX.resCap !== "ok" ? "Carregando a CAP…" : "";
-  const fontes = [["Caixa — Movimento (este módulo)", "ligado", "entradas (as saídas só para conferência: passam pela CAP)"], ["Contas a Pagar", capOk ? "ligado" : "sem leitura", "todas as despesas: pagas no mês (realizado, inclusive as pagas pelo caixa) e em aberto (previsto)"],
+  const fontes = [["Caixa — Movimento (este módulo)", "ligado", "entradas, despesas pagas em dinheiro e depósitos (tesouraria da matriz)"], ["Contas a Pagar", capOk ? "ligado" : "sem leitura", "paga em dinheiro: a saída é gerada no caixa ao pagar · paga pelos bancos: só informação · em aberto: previsto"],
     ["LevBom (bilhetagem)", "a ligar", "fechamento → entradas"], ["Arrecadação (malotes)", "a ligar", "aprovado → entrada"], ["Vendas da Agência", "a ligar", "aprovado → entrada"], ["Obrigações", "a ligar", "parcelas futuras ainda não lançadas na CAP"]];
   return `<div class="cx-resumo">
-    <div class="import-help" style="margin-bottom:14px"><b>Em avaliação.</b> Prévia do resumo de entradas e saídas do Financeiro, só para leitura. Será revista na rodada do Fluxo de Caixa (depois da CAP), quando decidirmos de onde vem cada entrada e saída. <b>Despesas:</b> toda saída paga pelo caixa também é lançada na CAP (decisão de 15/10) — o resultado usa só a CAP paga; as saídas do caixa aparecem para conferência.</div>
+    <div class="import-help" style="margin-bottom:14px"><b>Tesouraria da matriz.</b> Resumo do caixa, só para leitura. <b>Despesas:</b> as pagas em dinheiro ficam no caixa (decisão de 25/10), inclusive os lançamentos da CAP pagos em dinheiro, que geram a saída aqui ao pagar. Os bancos são da Diretoria: a CAP paga pelos bancos aparece só como informação.</div>
     ${capMsg ? `<p class="sup">${capMsg}</p>` : ""}
     <div class="cx-pgrid">
       <div class="cap-card"><div class="cap-card-h"><h3>Realizado · ${esc(cxMesLabel(c))}</h3><span class="cap-card-s">o que entrou e saiu no mês</span></div>
         <div class="table-wrap"><table class="cap-table cx-res-tab"><tbody>
           ${linha("Entradas do caixa", M.ent, `${M.entL.length} lançamento(s)`)}
-          ${capVale ? linha("(−) Contas pagas pela CAP", -totCapPago, `${capPagas.length} conta(s) com pagamento no mês · inclui as despesas pagas pelo caixa`) : linha("(−) Saídas pagas no caixa", -M.des, capOk ? "mês anterior ao início da CAP" : "sem depósitos e transferências ao banco · sem a CAP")}
-          ${linha("Resultado do mês", resultado, capVale ? "entradas − CAP paga" : "entradas − saídas do caixa", "tot " + (resultado < 0 ? "venc-txt" : ""))}
-          ${capVale && M.des ? linha("Conferência: saídas lançadas no caixa", M.des, "já contadas na CAP paga — não subtraídas de novo", "sup") : ""}
+          ${linha("(−) Despesas pagas no caixa", -M.des, `${M.desL.length} lançamento(s)${capDin ? ` · ${capDin} da CAP pago(s) em dinheiro` : ""}`)}
+          ${linha("Resultado do mês", resultado, "entradas − despesas do caixa (tesouraria)", "tot " + (resultado < 0 ? "venc-txt" : ""))}
+          ${M.dep ? linha("Depositado em banco", M.dep, "da tesouraria para os bancos (Diretoria) — não é despesa", "sup") : ""}
+          ${capOk ? linha("Informativo: CAP paga pelos bancos", totCapBanco, `${capBanco.length} lançamento(s) · bancos da Diretoria — fora do resultado da tesouraria`, "sup") : ""}
         </tbody></table></div></div>
       <div class="cap-card"><div class="cap-card-h"><h3>Previsto · contas a pagar em aberto</h3><span class="cap-card-s">da CAP, pelo vencimento</span></div>
         ${capOk ? `<div class="table-wrap"><table class="cap-table cx-res-tab"><thead><tr><th>Período</th><th class="right">Contas</th><th class="right">Valor</th></tr></thead><tbody>
@@ -27918,7 +27926,7 @@ async function cpxCarregar(force) {
     await Promise.all([
       t("cap", async () => { await loadCAP({ soLeitura: true }); return { st: CAP_STATE.items.length ? "ok" : "vazio", n: CAP_STATE.items.length }; }),
       t("obr", async () => { await loadObr(); return { st: OBR_STATE.items.length ? "ok" : "vazio", n: OBR_STATE.items.length }; }),   /* v0.12.73 (revisão): sempre (só leitura) — a regra e a dívida não podem depender de quem olha */
-      t("cx", async () => { const r = await cpxLista("financeiro", LISTS.cx_mov.displayName, "Data,Tipo,Origem,Valor"); CPX.cx = r.itens; return { st: !r.list ? "semlista" : r.itens.length ? "ok" : "vazio", n: r.itens.length }; }),
+      t("cx", async () => { const r = await cpxLista(LISTS.cx_mov.siteKey, LISTS.cx_mov.displayName, "Data,Tipo,Origem,Valor,Grupo,Categoria,OrigemRegistro,Title,ContaDestino");   /* v0.14.18: despesas do caixa (site pela definição da lista) */ CPX.cx = r.itens; return { st: !r.list ? "semlista" : r.itens.length ? "ok" : "vazio", n: r.itens.length }; }),
       t("pax", async () => { const r = await cpxLista(LISTS.pax.siteKey, LISTS.pax.displayName, "Data,Pagantes,Gratuidade"); CPX.pax = r.itens; return { st: !r.list ? "semlista" : r.itens.length ? "ok" : "vazio", n: r.itens.length }; }),
       t("veic", async () => { const r = await cpxLista("operacional", LISTS.frota_veic.displayName, "Title,Ano,Tipo,Situacao,Placa"); CPX.veic = r.itens; return { st: !r.list ? "semlista" : r.itens.length ? "ok" : "vazio", n: r.itens.length }; }),
       t("imob", async () => { await imobCarregar(force); return { st: !IMOB.list ? "semlista" : IMOB.itens.length ? "ok" : "vazio", n: IMOB.itens.length }; }),
@@ -27985,20 +27993,20 @@ function cpxBase() {
   const ctx = cpxCtx(), regime = CPX.regime, A = new Map(), N = new Map();
   const ac = m => { if (!A.has(m)) A.set(m, cpxAcc()); return A.get(m); };
   const add = (o, k, v) => { o[k] = (o[k] || 0) + v; };
-  (CAP_STATE.items || []).forEach(it => {
-    const n = cpxNat(it, ctx); N.set(String(it._id), n);
+  (CAP_STATE.items || []).concat(cpxCxDespesas()).forEach(it => {   /* v0.14.18: + despesas pagas em dinheiro no caixa */
+    const n = cpxNat(it, ctx); if (!it._cx) N.set(String(it._id), n);
     if (isIsenta(it)) return;
     const m = cpxMesConta(it, regime); if (!/^\d{4}-\d{2}$/.test(m)) return;
     const v = capValorEfetivo(it); if (!v) return;   /* v0.13.2: paga usa o valor pago (juros/desconto) */
     const a = ac(m);
-    if (n.auto && n.revisar) a.nRev++;
+    if (n.auto && n.revisar && !it._cx) a.nRev++;
     if (ctx.linkados.has(String(it._id))) return;   /* v0.12.73 (revisão): conta que compõe um bem do Imobilizado entra pelo bem, não aqui */
     if (n.nat === "OPEX") { const g = opexGrupo(it.Categoria, it.Subcategoria), cl = String(it.Categoria || "").trim() || "(sem categoria)"; a.opex += v; add(a.grp, g, v); add(a.cat, cl, v); add(a.gc, g + "\u0001" + cl, v); add(a.cc, ccDe(it) || "(sem centro de custo)", v); add(a.forn, it.Fornecedor || "—", v); }
     else if (n.nat === "CAPEX") a.capexCap += v;
     else if (n.nat === "Financeiro") a.fin += v;
     else a.fora += v;
   });
-  (CPX.cx || []).forEach(x => { if (x.Tipo !== "Entrada" || !x.Data) return; const m = ymd(x.Data).slice(0, 7), v = Number(x.Valor || 0); if (!v) return; const a = ac(m); a.rec += v; add(a.recOrig, x.Origem || "Outras receitas", v); });
+  (CPX.cx || []).forEach(x => { if (!x.Data || !cpxCxReceita(x)) return; const m = ymd(x.Data).slice(0, 7), v = cpxCxReceita(x); if (!v) return; const a = ac(m); a.rec += v; add(a.recOrig, x.Tipo === "Entrada" ? (x.Origem || "Outras receitas") : "Ajustes da receita", v); });   /* v0.14.18: ajuste negativo importado da RECEITA reduz a receita */
   (CPX.pax || []).forEach(x => { if (!x.Data) return; ac(ymd(x.Data).slice(0, 7)).pax += Number(x.Pagantes || 0) + Number(x.Gratuidade || 0); });
   const bens = (IMOB.itens || []).map(b => ({ b, c: imobCalc(b) }));
   const capPorId = new Map((CAP_STATE.items || []).map(it => [String(it._id), it]));
@@ -28205,7 +28213,7 @@ function cpxAvisos(D) {
   const fo = F.obr; if (fo && ["semacesso", "erro", "semlista"].includes(fo.st)) a.push(`Obrigações: ${fo.st === "semlista" ? "a lista não existe" : fo.st === "semacesso" ? "sem acesso no SharePoint" : "não foi possível ler"} — a regra das parcelas de financiamentos e parcelamentos e o saldo da dívida ficam de fora.`);
   return a.length ? `<div class="cpx-avisos">${a.map(x => `<div>${esc(x)}</div>`).join("")}</div>` : "";
 }
-const CPX_FONTE_NOME = { cap: "Contas a Pagar", cx: "Fluxo de Caixa (entradas)", pax: "Estatística de Passageiros", veic: "Frota › Geral", imob: "Diretoria › Ativos da Empresa", inv: "Plano de investimentos", obr: "Obrigações", prem: "Premissas" };
+const CPX_FONTE_NOME = { cap: "Contas a Pagar", cx: "Fluxo de Caixa", pax: "Estatística de Passageiros", veic: "Frota › Geral", imob: "Diretoria › Ativos da Empresa", inv: "Plano de investimentos", obr: "Obrigações", prem: "Premissas" };
 function cpxKpi(lbl, val, sub, cls, extra) { return `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(lbl)}</div><div class="val money">${esc(val)}</div><div class="sub">${sub}</div>${extra || ""}</div>`; }
 function cpxPainel(D) {
   const T = D.T, P = D.P, C = D.Tc, H = D.H, pv = D.comparavel;
@@ -28257,7 +28265,7 @@ function cpxDreHtml(D) {
       ${T.capexImobFin || P.capexImobFin ? lin("sub", "dos quais bens financiados (o caixa sai nas parcelas)", X => X.capexImobFin, false, "bens com financiamento, leasing ou consórcio e sem lançamentos da CAP ligados") : ""}
       ${lin("tot", "= Geração de caixa após investimentos e dívidas", X => X.livre, false, "EBITDA − CAPEX pago com recursos próprios − juros e dívidas")}
     </tbody></table></div>
-    <p class="cpx-nota">Lançamentos isentos (N/A) e de natureza "Fora do resultado" (${esc(fmtBRL(T.fora))} no período) não entram. A receita é o que entrou no caixa da matriz (Fluxo de Caixa); impostos sobre a receita aparecem no OPEX, em Tributos e taxas. Despesas vêm só da CAP (as pagas pelo caixa também são lançadas lá). Padrão: regime de caixa (receita e despesas pelo que de fato entrou e saiu); competência fica como opção.</p></div>`;
+    <p class="cpx-nota">Lançamentos isentos (N/A) e de natureza "Fora do resultado" (${esc(fmtBRL(T.fora))} no período) não entram. A receita é o que entrou no caixa da matriz (Fluxo de Caixa); impostos sobre a receita aparecem no OPEX, em Tributos e taxas. Despesas: as da CAP e, desde 25/10, as pagas em dinheiro no caixa da matriz (o lançamento da CAP pago em dinheiro conta uma vez só, pela CAP). Padrão: regime de caixa (receita e despesas pelo que de fato entrou e saiu); competência fica como opção.</p></div>`;
 }
 
 /* ---- ir à origem ---- */
@@ -28582,7 +28590,7 @@ function cpxMetodo(D) {
     <div class="cap-card"><div class="cap-card-h"><h3>Fontes de dados</h3><span class="cap-card-s">o que o painel conseguiu ler agora</span></div>
       <div class="table-wrap"><table class="cap-table"><thead><tr><th>Fonte</th><th class="l">Situação</th><th class="l">Uso</th></tr></thead><tbody>
         ${fonte("cap", "OPEX, CAPEX a incorporar e juros/dívidas (coluna Natureza do gasto ou regra automática)")}
-        ${fonte("cx", "receita operacional: entradas do livro-caixa da matriz")}
+        ${fonte("cx", "receita operacional: entradas do livro-caixa da matriz; despesas pagas em dinheiro no caixa (desde 25/10)")}
         ${fonte("pax", "OPEX e receita por passageiro")}
         ${fonte("veic", "idade da frota e substituições")}
         ${fonte("imob", "CAPEX dos bens, depreciação e valor contábil")}
@@ -32065,7 +32073,7 @@ function dreBase(regime, mapa) {
   const ctx = cpxCtx(), A = new Map(), I = new Map();
   const ac = m => { if (!A.has(m)) A.set(m, dreAcc()); return A.get(m); };
   const add = (o, k, v) => { o[k] = (o[k] || 0) + v; };
-  (CAP_STATE.items || []).forEach(it => {
+  (CAP_STATE.items || []).concat(cpxCxDespesas()).forEach(it => {   /* v0.14.18: + despesas pagas em dinheiro no caixa */
     if (isIsenta(it)) return;
     const m = cpxMesConta(it, regime); if (!/^\d{4}-\d{2}$/.test(m)) return;
     const v = capValorEfetivo(it); if (!v) return;   /* v0.13.2: paga usa o valor pago (juros/desconto) */
@@ -32073,13 +32081,13 @@ function dreBase(regime, mapa) {
     const n = cpxNat(it, ctx), a = ac(m);
     if (n.nat === "CAPEX") { a.capexCap += v; return; }
     const r = dreLinha(it, n.nat, mapa), rev = (n.auto && n.revisar) || r.rev || "";
-    I.set(id, { m, v, nat: n.nat, k: r.k, motivo: r.motivo, ajuste: !!r.ajuste, rev, ch: dreChave(it.Categoria, it.Subcategoria) });
-    add(a.L, r.k, v); a.nCap++;
+    if (!it._cx) { I.set(id, { m, v, nat: n.nat, k: r.k, motivo: r.motivo, ajuste: !!r.ajuste, rev, ch: dreChave(it.Categoria, it.Subcategoria) }); a.nCap++; }   /* v0.14.18: despesa do caixa não abre na CAP */
+    add(a.L, r.k, v);
     const lab = `${String(it.Categoria || "").trim() || "(sem categoria)"} › ${String(it.Subcategoria || "").trim() || "(sem subcategoria)"}`;
     add(a.det[r.k] || (a.det[r.k] = {}), lab, v);
-    if (rev) a.nRev++;
+    if (rev && !it._cx) a.nRev++;
   });
-  (CPX.cx || []).forEach(x => { if (x.Tipo !== "Entrada" || !x.Data) return; const m = ymd(x.Data).slice(0, 7), v = Number(x.Valor || 0); if (!v) return; const a = ac(m); a.rec += v; add(a.recOrig, x.Origem || "Outras receitas", v); });
+  (CPX.cx || []).forEach(x => { if (!x.Data || !cpxCxReceita(x)) return; const m = ymd(x.Data).slice(0, 7), v = cpxCxReceita(x); if (!v) return; const a = ac(m); a.rec += v; add(a.recOrig, x.Tipo === "Entrada" ? (x.Origem || "Outras receitas") : "Ajustes da receita", v); });   /* v0.14.18: ajuste negativo importado da RECEITA reduz a receita */
   (CPX.pax || []).forEach(x => { if (!x.Data) return; ac(ymd(x.Data).slice(0, 7)).pax += Number(x.Pagantes || 0) + Number(x.Gratuidade || 0); });
   const bens = (IMOB.itens || []).map(b => ({ b, c: imobCalc(b) }));
   const capPorId = new Map((CAP_STATE.items || []).map(it => [String(it._id), it]));
@@ -32285,7 +32293,7 @@ function dreDemo(D) {
     <div class="table-wrap"><table class="cap-table cpx-dre dre-t"><thead><tr><th>Linha</th><th class="r">Período</th><th class="r">% da rec. líquida</th><th class="r">Média mensal</th><th class="r">Período anterior</th><th class="r">Variação</th></tr></thead><tbody>${cx}</tbody></table></div>
     <p class="cpx-nota">${T.capexImobFin ? `Bens financiados no período: ${esc(fmtBRL(T.capexImobFin))} (entram no imobilizado; o caixa sai nas parcelas). ` : ""}Lançamentos isentos (N/A) e de natureza ou linha "Fora do resultado" (${esc(fmtBRL(T.fora))} no período) não entram. ${nCx ? "" : ""}</p></div>`;
   return dreAvisos(D) + kp + `<div class="cap-card"><div class="cap-card-h"><h3>Demonstração do resultado</h3><span class="cap-card-s">${esc(per)} · ${esc(dreRegTxt())} · ${esc(DRE.visao === "mensal" ? "valores de cada mês" : comp)}</span></div>${tabela}
-    <p class="cpx-nota">A receita é o que entrou no caixa da matriz (Fluxo de Caixa), nos dois regimes; as despesas vêm só da CAP (as pagas pelo caixa também são lançadas lá). Padrão: regime de caixa, coerente com a receita; competência fica como opção. As linhas seguem a natureza do gasto (CAPEX / OPEX) e o plano de contas da DRE. Documento gerencial — confira os critérios fiscais com a contabilidade.</p></div>` + caixa;
+    <p class="cpx-nota">A receita é o que entrou no caixa da matriz (Fluxo de Caixa), nos dois regimes; as despesas vêm da CAP e, desde 25/10, das pagas em dinheiro no caixa da matriz (o lançamento da CAP pago em dinheiro conta uma vez só, pela CAP). Padrão: regime de caixa, coerente com a receita; competência fica como opção. As linhas seguem a natureza do gasto (CAPEX / OPEX) e o plano de contas da DRE. Documento gerencial — confira os critérios fiscais com a contabilidade.</p></div>` + caixa;
 }
 /* ---- indicadores (aba própria) ---- */
 const DRE_REF = {
@@ -32492,7 +32500,7 @@ function dreMetodo() {
     <div class="cap-card"><div class="cap-card-h"><h3>Fontes de dados</h3><span class="cap-card-s">o que a DRE conseguiu ler agora</span></div>
       <div class="table-wrap"><table class="cap-table"><thead><tr><th>Fonte</th><th class="l">Situação</th><th class="l">Uso</th></tr></thead><tbody>
         ${fonte("cap", "custos, despesas, tributos, despesas financeiras e IRPJ/CSLL (natureza do gasto + plano de contas da DRE)")}
-        ${fonte("cx", "receita operacional bruta: entradas do livro-caixa da matriz")}
+        ${fonte("cx", "receita operacional bruta: entradas do livro-caixa da matriz; despesas pagas em dinheiro no caixa (desde 25/10)")}
         ${fonte("imob", "depreciação e CAPEX dos bens")}
         ${fonte("pax", "receita e custo por passageiro")}
         ${fonte("obr", "parcelas de financiamentos e parcelamentos (saem da DRE e vão para dívidas)")}
@@ -34359,7 +34367,7 @@ function divLinhaFluxo(comp) {
   const r = divResumoLer();
   if (!r) return `<div class="cap-card div-agreg"><b>Parcelas de dívidas</b> <span class="sup">(Gestão de Dívidas, só totais)</span><div class="sup">${DIV.resumoLendo ? "Carregando…" : "Ainda sem resumo gravado: um administrador precisa abrir a Gestão de Dívidas uma vez."}</div></div>`;
   const m = (r.meses || {})[comp] || { pago: 0, aberto: 0, n: 0 };
-  return `<div class="cap-card div-agreg"><b>Parcelas de dívidas</b> <span class="sup">(Gestão de Dívidas, só totais)</span> — pagas no mês: <b class="money">${esc(fmtBRL(m.pago))}</b> · em aberto no mês: <b class="money">${esc(fmtBRL(m.aberto))}</b> · ${m.n} parcela(s)<div class="sup">Não entra nos totais acima (só informa). Saldo total das dívidas: ${session.n1 ? esc(fmtBRL(r.saldo || 0)) : "só administradores"} · atualizado em ${r.atualizado ? new Date(r.atualizado).toLocaleString("pt-BR") : "—"}</div></div>`;
+  return `<div class="cap-card div-agreg"><b>Parcelas de dívidas</b> <span class="sup">(Gestão de Dívidas, só totais)</span> — pagas no mês: <b class="money">${esc(fmtBRL(m.pago))}</b> · em aberto no mês: <b class="money">${esc(fmtBRL(m.aberto))}</b> · ${m.n} parcela(s)<div class="sup">Não entra nos totais acima (só informa); as parcelas pagas em dinheiro desde ${fmtDate(CX_DINHEIRO_DESDE)} já estão nas saídas do caixa. Saldo total das dívidas: ${session.n1 ? esc(fmtBRL(r.saldo || 0)) : "só administradores"} · atualizado em ${r.atualizado ? new Date(r.atualizado).toLocaleString("pt-BR") : "—"}</div></div>`;
 }
 { const c0 = cxResumoHtml; cxResumoHtml = function () { const h = c0.apply(this, arguments); try { return h + divLinhaFluxo(CX.comp || cxHoje().slice(0, 7)); } catch (e) { return h; } }; window.cxResumoHtml = cxResumoHtml; }
 { const c0 = cxPainelHtml; cxPainelHtml = function () { const h = c0.apply(this, arguments); try { return h + divLinhaFluxo(CX.comp || cxHoje().slice(0, 7)); } catch (e) { return h; } }; window.cxPainelHtml = cxPainelHtml; }
@@ -41501,9 +41509,246 @@ CONFIG.version = "v0.14.16.3";   /* ícone do app no celular com fundo branco */
   @media print { .table-wrap, #capBody .cap-lista-wrap { max-height: none !important; overflow: visible !important; } }`;
   document.head.appendChild(st); }
 { const e = document.getElementById("lgAnos"); if (e) e.textContent = String(new Date().getFullYear() - 1998); }
+/* =====================================================================
+   v0.14.18 · Fluxo de Caixa R2 — respostas de 25/10 (15:58) ao mapeamento do Financeiro
+   - O Fluxo é a TESOURARIA da matriz; bancos são da Diretoria (só destino de depósito ou origem de suprimento).
+   - Despesa paga em dinheiro fica no caixa (substitui a decisão 1 de 15/10) a partir de CX_DINHEIRO_DESDE: antes, pela regra
+     de 15/10, ela também estava na CAP — a DRE e o CAPEX/OPEX só somam as despesas do caixa desde essa data (sem contar duas vezes).
+   - Lançamento da CAP pago com Dinheiro (banco ou forma), com pagamento desde CX_DINHEIRO_DESDE, gera a saída no caixa
+     (OrigemRegistro "CAP", RefCAP "cap:<id>" ou "div:<id>" na Gestão de Dívidas); desfazer, excluir (por qualquer caminho, inclusive
+     em lote) ou mudar o pagamento acompanha. Dia conferido/aprovado, boletim travado depois dele no mesmo mês ou mês fechado no caixa
+     bloqueiam (reabrir antes). Sem acesso ao caixa, a CAP grava e a saída fica pendente no checklist do Fechamento ("Acertar agora").
+   - Saldo: mês fechado ancora o seguinte (SaldoFinal gravado); o retrato do boletim compara o saldo anterior só onde ele foi
+     informado (âncora/importação), nos demais o saldo atual; exclusão em mês fechado bloqueada também para administradores.
+   ===================================================================== */
+const CX_DINHEIRO_DESDE = "2026-10-25";   /* data da decisão (despesa em dinheiro só no caixa) */
+{ const d = LISTS.cx_mov; if (!d.columns.some(c => c.name === "RefCAP")) d.columns.push({ name: "RefCAP", displayName: "Lançamento da CAP (ref.)", text: { allowMultipleLines: false, maxLength: 40 } }); }
+/* pago em dinheiro (N/A também: o dinheiro saiu da tesouraria; a DRE já tira o N/A por conta própria) */
+function capCxDinheiro(it) { return !!it && it.Status === "Pago" && (it.Banco === "Dinheiro" || it.FormaPagamento === "Dinheiro") && ymd(it.DataPagamento || "") >= CX_DINHEIRO_DESDE; }
+function capCxRef(id, div) { return (div ? "div:" : "cap:") + String(id); }
+function cxContaDinheiro() { const cs = (CX.contas || []).filter(k => k.Ativa !== false && k.Tipo === "Dinheiro"); const c = cs.find(k => /caixa matriz/i.test(k.Title || "")) || cs[0]; return c ? c.Title : "Caixa matriz"; }
+function capCxCampos(it, div) {
+  const d = ymd(it.DataPagamento || "");
+  return { Title: (div ? "Pagamento em dinheiro · Gestão de Dívidas" : `CAP · ${it.Title || it.Fornecedor || "lançamento"}`).slice(0, 255), Data: d + "T00:00:00Z", Tipo: "Saída", Origem: "Despesa", Meio: "Dinheiro",
+    Conta: cxContaDinheiro(), ContaDestino: null, Valor: cxN(capValorEfetivo(it)), Grupo: div ? null : (it.Categoria || null), Categoria: div ? null : (it.Subcategoria || null), OrigemRegistro: "CAP", RefCAP: capCxRef(it._id, div),
+    Observacoes: div ? null : (it.Fornecedor ? `Fornecedor: ${it.Fornecedor}` : null) };
+}
+const capCxDifere = (row, w) => !row || row._d !== ymd(w.Data) || Math.abs(Number(row.Valor || 0) - Number(w.Valor || 0)) >= 0.005;
+const capCxCosmetico = (row, w) => row && ((row.Title || "") !== (w.Title || "") || (row.Grupo || "") !== (w.Grupo || "") || (row.Categoria || "") !== (w.Categoria || ""));
+const CAP_CX_CAMPOS = new Set(["Status", "DataPagamento", "ValorPago", "Valor", "Banco", "FormaPagamento", "Title", "Categoria", "Subcategoria", "Fornecedor"]);
+/* aviso depois do toast de sucesso de quem chamou */
+function capCxAviso(msg) { setTimeout(() => toast(msg, 9000), 1800); }
+/* caixa pronto para a ponte (lista e coluna RefCAP); recarrega quando pedido */
+async function cxGarantir(recarregar) {
+  if (typeof CX === "undefined" || CX.demo) return false;
+  try { if (recarregar || !CX.ready || !CX.lists.cx_mov) await loadCx(); } catch (e) { CX.ponteErro = e.message; return false; }
+  if (!CX.ready || !CX.lists.cx_mov) return false;
+  if (!CX.colRef) { try { const r = await graph(`/sites/${CX.site.id}/lists/${CX.lists.cx_mov.id}/columns?$select=name`); CX.colRef = (r.value || []).some(c => c.name === "RefCAP"); } catch (e) { return false; } }
+  return !!CX.colRef;
+}
+function cxTravaTxt(d) { return cxBloqueado(d) ? "o mês está fechado" : `o boletim está ${String((cxFechDe(d) || {}).Status || "").toLowerCase()}`; }
+/* dia travado ou boletim travado depois dele no mesmo mês (o saldo daquele boletim mudaria) */
+function cxTravaPonte(d) {
+  if (cxDiaTravado(d)) return `no Fluxo de Caixa, ${cxTravaTxt(d)} em ${fmtDate(d)}`;
+  const f = (CX.fech || []).find(x => x._d > d && x._d.slice(0, 7) === d.slice(0, 7) && x.Status && x.Status !== "Aberto");
+  return f ? `no Fluxo de Caixa, o boletim de ${fmtDate(f._d)} (depois de ${fmtDate(d)}) está ${String(f.Status).toLowerCase()} e o saldo dele mudaria` : "";
+}
+/* antes de gravar na CAP: pagamento em dinheiro não pode cair em dia/mês travado do caixa */
+async function capCxPreChecar(antes, depois, div) {
+  const quer = capCxDinheiro(depois), tinha = capCxDinheiro(antes); if (!quer && !tinha) return;
+  if (antes && antes.Status === "Pago" && depois.Status === "Pago" && !session.n1 && !capPodePagar() && ["Banco", "FormaPagamento", "DataPagamento", "ValorPago"].some(k => String(antes[k] ?? "") !== String(depois[k] ?? "")))
+    throw new Error("Mudar banco, forma, data ou valor pago de um lançamento pago em dinheiro exige a permissão \"Pagar lançamentos\" (mexe no Fluxo de Caixa).");
+  if (!(await cxGarantir(true))) return;   /* caixa indisponível (acesso, lista ou coluna): grava; a saída fica pendente no checklist */
+  const ref = capCxRef(depois._id, div), row = CX.mov.find(m => m.RefCAP === ref) || null, w = quer ? capCxCampos(depois, div) : null;
+  if (w && capCxDifere(row, w)) { const t = cxTravaPonte(ymd(w.Data)); if (t) throw new Error(`Pagamento em dinheiro: ${t}. Reabra o dia (ou o mês) no Fluxo de Caixa antes, ou use outra data.`); }
+  if (row && (!w || capCxDifere(row, w))) { const t = cxTravaPonte(row._d); if (t) throw new Error(`A saída deste pagamento em dinheiro está no caixa de ${fmtDate(row._d)}: ${t}. Reabra o dia (ou o mês) no Fluxo de Caixa antes.`); }
+}
+/* depois de gravar: a saída no caixa acompanha o lançamento (cria, ajusta ou remove). Nunca desfaz a gravação da CAP. */
+async function capCxSincronizar(it, div, opts) {
+  opts = opts || {};
+  const ref = capCxRef(it._id, div), quer = capCxDinheiro(it), dica = div ? "" : " — acerte no Fechamento do mês do Fluxo de Caixa";
+  if (!(await cxGarantir(opts.recarregar))) { if (quer && !opts.silencio) capCxAviso(`Gravado na CAP. A saída no Fluxo de Caixa ficou pendente (sem acesso ao caixa ou falta rodar a Configuração)${dica}.`); return false; }
+  const rows = CX.mov.filter(m => m.RefCAP === ref), w = quer ? capCxCampos(it, div) : null, pend = [];
+  const del = async r => { if (cxDiaTravado(r._d)) { pend.push(r._d); return; } await graph(`/sites/${CX.site.id}/lists/${CX.lists.cx_mov.id}/items/${r._id}`, { method: "DELETE" }); };
+  window.__cxDaCap = (window.__cxDaCap || 0) + 1;
+  try {
+    if (!w) { for (const r of rows) await del(r); }
+    else if (!rows.length) { if (cxDiaTravado(ymd(w.Data))) pend.push(ymd(w.Data)); else await SP.create(CX.site.id, CX.lists.cx_mov.id, w); }
+    else {
+      const [r0, ...extras] = rows;
+      if (capCxDifere(r0, w)) { if (cxDiaTravado(r0._d) || cxDiaTravado(ymd(w.Data))) pend.push(r0._d); else await SP.update(CX.site.id, CX.lists.cx_mov.id, r0._id, w); }
+      else if (capCxCosmetico(r0, w) && !cxDiaTravado(r0._d)) await SP.update(CX.site.id, CX.lists.cx_mov.id, r0._id, w);
+      for (const r of extras) await del(r);
+    }
+  } catch (e) { if (!opts.silencio) capCxAviso(`A CAP foi gravada, mas a saída no Fluxo de Caixa não: ${e.message}${dica}.`); try { await loadCx(); } catch (e2) {} return false; }
+  finally { window.__cxDaCap = Math.max(0, (window.__cxDaCap || 1) - 1); }
+  try { await loadCx(); } catch (e) {}
+  if (pend.length && !opts.silencio) capCxAviso(`A saída no Fluxo de Caixa ficou pendente: ${[...new Set(pend)].map(fmtDate).join(", ")} está travado no caixa. Reabra o dia${div ? "" : " e use \"Acertar agora\" no Fechamento do mês"}.`);
+  return !pend.length;
+}
+const capCxNaLista = listId => !window.__cxPonteOff && typeof CAP_STATE !== "undefined" && CAP_STATE.list && listId === CAP_STATE.list.id;
+const capCxDiv = () => !!(typeof DIV !== "undefined" && DIV.on);
+/* gravações na lista da CAP (Pagar, Pagar em lote, Desfazer pagamento, editar, criar, importar) passam pela ponte */
+{ const u0 = SP.update, c0 = SP.create;
+  SP.update = async function (siteId, listId, itemId, fields) {
+    if (!capCxNaLista(listId) || !Object.keys(fields || {}).some(k => CAP_CX_CAMPOS.has(k))) return u0.apply(this, arguments);   /* anexo, natureza, histórico: custo zero */
+    const div = capCxDiv(), antes = (CAP_STATE.items || []).find(x => String(x._id) === String(itemId)) || null;
+    const previsto = Object.assign({}, antes || {}, fields || {}, { _id: String(itemId) });
+    await capCxPreChecar(antes, previsto, div);
+    const r = await u0.apply(this, arguments);
+    const depois = Object.assign({}, previsto, r && typeof r === "object" && !Array.isArray(r) ? r : {}, { _id: String(itemId) });   /* o que o SharePoint gravou vale (CAP desatualizada na tela) */
+    if (capCxDinheiro(antes) || capCxDinheiro(depois)) await capCxSincronizar(depois, div);
+    return r;
+  };
+  SP.create = async function (siteId, listId, fields) {
+    if (!capCxNaLista(listId) || !capCxDinheiro(fields)) return c0.apply(this, arguments);
+    const div = capCxDiv();
+    if (await cxGarantir(true)) { const t = cxTravaPonte(ymd(fields.DataPagamento || "")); if (t) throw new Error(`Pagamento em dinheiro: ${t}. Reabra o dia (ou o mês) antes, ou use outra data.`); }
+    const r = await c0.apply(this, arguments);
+    if (r && r.id) await capCxSincronizar(Object.assign({}, fields, { _id: String(r.id) }), div);
+    return r;
+  };
+}
+/* exclusão de lançamento da CAP por qualquer caminho (Excluir, Limpar duplicadas, excluir obrigação, desfazer importação, lote) */
+{ const gr0 = graph;
+  const capItemDel = (method, url) => { if (!/^DELETE$/i.test(method || "") || typeof CAP_STATE === "undefined" || !CAP_STATE.list || window.__cxPonteOff) return null; const m = String(url || "").match(new RegExp(`/lists/${CAP_STATE.list.id}/items/([^/?]+)$`)); return m ? m[1] : null; };
+  graph = async function (path, opts, attempt) {
+    opts = opts || {};
+    if (attempt) return gr0.apply(this, arguments);
+    const div = capCxDiv(), alvos = [];
+    const um = capItemDel(opts.method, path);
+    if (um) alvos.push(um);
+    if (/\/\$batch$/.test(String(path).split("?")[0]) && opts.body && Array.isArray(opts.body.requests)) opts.body.requests.forEach(q => { const id = capItemDel(q.method, "/" + String(q.url || "").replace(/^\/+/, "")); if (id) alvos.push(id); });
+    const its = alvos.map(id => (CAP_STATE.items || []).find(x => String(x._id) === String(id))).filter(capCxDinheiro);
+    if (!its.length) return gr0.apply(this, arguments);
+    if (um && its.length === 1) await capCxPreChecar(its[0], Object.assign({}, its[0], { Status: "Excluído" }), div);   /* exclusão avulsa: confere o caixa antes */
+    const r = await gr0.apply(this, arguments);
+    const okIds = um ? [String(um)] : (() => { const ids = []; ((r && r.responses) || []).forEach(x => { if (x.status >= 200 && x.status < 300) { const q = opts.body.requests.find(q2 => String(q2.id) === String(x.id)); const id = q && capItemDel(q.method, "/" + String(q.url || "").replace(/^\/+/, "")); if (id) ids.push(String(id)); } }); return ids; })();
+    for (const it of its) if (okIds.includes(String(it._id))) await capCxSincronizar({ _id: String(it._id) }, div);
+    return r;
+  };
+}
+/* Trazer dívidas da CAP: sem ponte (o lançamento muda de lista); as saídas antigas aparecem para conferência no checklist */
+{ const m0 = window.divMigrar; if (m0) window.divMigrar = async function () { window.__cxPonteOff = true; try { return await m0.apply(this, arguments); } finally { window.__cxPonteOff = false; } }; }
+/* guarda: a ponte grava no Caixa — Movimento em nome de quem paga na CAP, só linhas "CAP" */
+{ const g0 = guardaEscrita;
+  guardaEscrita = function (method, path, body) {
+    try {
+      if (window.__cxDaCap > 0 && /^(POST|PATCH|DELETE)$/i.test(method || "") && typeof CX !== "undefined" && CX.lists && CX.lists.cx_mov && String(path || "").includes(CX.lists.cx_mov.id) && (session.n1 || podeEditar("cap"))) {
+        const m = String(path).match(/\/items\/([^/?]+)/), b = body && typeof body === "object" ? (body.fields || body) : {};
+        const linhaCap = m && (CX.mov || []).some(x => x._id === m[1] && x.OrigemRegistro === "CAP");
+        const ok = /^DELETE$/i.test(method) ? !!linhaCap : /^PATCH$/i.test(method) ? !!linhaCap && b.OrigemRegistro === "CAP" : !m && b.OrigemRegistro === "CAP";
+        if (ok) { if (vcAtivo()) throw vcErro(); if (CX.demo) { const e = new Error("Modo demo do Fluxo de Caixa ligado — nada é gravado."); e.status = 403; e.semAcesso = true; throw e; } return; }
+      }
+    } catch (e) { if (e && (e.status || e.semAcesso)) throw e; }
+    return g0.apply(this, arguments);
+  };
+}
+/* no Fluxo: linha gerada pela CAP só se altera pela CAP */
+{ const f0 = window.cxMovForm; window.cxMovForm = function (id) {
+    const x = id ? (CX.mov || []).find(i => i._id === String(id)) : null;
+    if (x && x.OrigemRegistro === "CAP") { toast("Saída gerada por um pagamento em dinheiro na CAP: altere ou desfaça o pagamento na Contas a Pagar.", 7000); return; }
+    return f0.apply(this, arguments);
+  }; }
+{ const e0 = window.cxMovExcluir; window.cxMovExcluir = async function (id) {
+    const x = (CX.mov || []).find(i => i._id === String(id));
+    if (x && cxBloqueado(x._d)) { toast("Mês fechado: reabra o mês (Fechamento do mês) antes de excluir.", 6000); return; }   /* inclusive administradores: o saldo do mês fechado não muda por baixo */
+    if (x && x.OrigemRegistro === "CAP") { toast("Saída gerada por um pagamento em dinheiro na CAP: desfaça o pagamento na Contas a Pagar.", 7000); return; }
+    return e0.apply(this, arguments);
+  }; }
+/* janelas de pagamento (uma e em lote): avisa que Dinheiro gera a saída no caixa */
+function capCxDicaPagar(idB, idF, idD, ondeId) {
+  const b = $(idB), f = $(idF), dt = $(idD); if (!b || !f || $(ondeId)) return;
+  f.closest(".field").insertAdjacentHTML("afterend", `<div class="field full"><div class="hint" id="${ondeId}" style="display:none"></div></div>`);
+  const at = () => { const on = b.value === "Dinheiro" || f.value === "Dinheiro", h = $(ondeId); if (!h) return; h.style.display = on ? "" : "none"; if (on) h.textContent = (dt && dt.value && dt.value < CX_DINHEIRO_DESDE) ? `Pagamento anterior a ${fmtDate(CX_DINHEIRO_DESDE)}: pela regra antiga, a despesa em dinheiro é lançada à mão no caixa.` : `Pago em dinheiro: a saída entra sozinha no Fluxo de Caixa (tesouraria) em ${dt && dt.value ? fmtDate(dt.value) : "—"}, no ${cxContaDinheiro()}.`; };
+  [b, f, dt].forEach(e => e && e.addEventListener("change", at)); at();
+}
+{ const p0 = window.capPagar; window.capPagar = function () { const r = p0.apply(this, arguments); try { capCxDicaPagar("pgBanco", "pgForma", "pgData", "pgCxHint"); } catch (e) {} return r; }; }
+{ const l0 = window.capPagarLote; window.capPagarLote = function () { const r = l0.apply(this, arguments); try { capCxDicaPagar("plBanco", "plForma", "plData", "plCxHint"); } catch (e) {} return r; }; }
+/* saldo: o último mês fechado (com saldo final gravado) é o ponto de partida dos meses seguintes */
+function cxBaseFechada(d) {
+  const cm = String(d).slice(0, 7), a = cxAncora();
+  const r = (CX.meses || []).filter(x => x.Status === "Fechado" && x.SaldoFinal != null && x.SaldoFinal !== "" && x._c < cm).pop();
+  if (!r) return null;
+  const ini = cxCompAdd(r._c, 1) + "-01";
+  if (a && a._d >= ini) return null;   /* âncora informada depois do mês fechado vale */
+  return { d: ini, v: cxN(r.SaldoFinal), c: r._c };
+}
+{ const s0 = cxSaldoAnterior; cxSaldoAnterior = function (d) { const b = cxBaseFechada(d); if (!b) return s0.apply(this, arguments); const t = cxTotais(CX.mov.filter(x => x._d >= b.d && x._d < d)); return cxN(b.v + t.ent - t.sai); }; }
+/* retrato do boletim: compara o saldo anterior só onde foi informado (âncora ou importação); nos demais, o saldo atual gravado */
+cxDesatualizado = function (f) {
+  if (!f) return false; const t = cxTotais(cxMovDia(f._d));
+  if (Math.abs(Number(f.Entradas || 0) - t.ent) >= 0.01 || Math.abs(Number(f.Saidas || 0) - t.sai) >= 0.01) return true;
+  const sa = cxSaldoAnterior(f._d);
+  if (f.SaldoAnterior != null && f.SaldoAnterior !== "") return Math.abs(Number(f.SaldoAnterior) - sa) >= 0.01;
+  if (f.SaldoAtual != null && f.SaldoAtual !== "") return Math.abs(Number(f.SaldoAtual) - cxN(sa + t.ent - t.sai)) >= 0.01;
+  return false;
+};
+/* mês fechado cujo movimento mudou depois (recalculado ≠ gravado): avisa; os meses seguintes continuam partindo do gravado */
+function cxMesDivergente(c) {
+  const reg = cxMesReg(c); if (!reg || reg.Status !== "Fechado" || reg.SaldoFinal == null || reg.SaldoFinal === "") return null;
+  const M = cxMatriz(c), fim = M.saldoD.length ? M.saldoD[M.saldoD.length - 1] : M.saldoIni;
+  const dif = Math.abs(Number(reg.SaldoFinal) - fim) >= 0.01 || Math.abs(Number(reg.Entradas || 0) - M.ent) >= 0.01 || Math.abs(Number(reg.Saidas || 0) - M.sai) >= 0.01;
+  return dif ? { gravado: cxN(reg.SaldoFinal), atual: cxN(fim) } : null;
+}
+function cxChkMesFechado(c) {
+  const v = cxMesDivergente(c); if (!v) return "";
+  return `<li class="falta">• O movimento de ${esc(cxMesLabel(c))} mudou depois do fechamento: saldo final gravado ${esc(fmtBRL(v.gravado))} × recalculado ${esc(fmtBRL(v.atual))}. Os meses seguintes partem do gravado — reabra e feche de novo para atualizar.</li>`;
+}
+/* pagamentos da CAP em dinheiro no mês × saídas no caixa */
+function cxCapDinheiroPend(c) {
+  if (typeof CAP_STATE === "undefined" || CX.resCap !== "ok" || capCxDiv()) return null;
+  const porRef = new Map((CAP_STATE.items || []).map(it => [capCxRef(it._id, false), it]));
+  const its = (CAP_STATE.items || []).filter(it => capCxDinheiro(it) && ymd(it.DataPagamento || "").slice(0, 7) === c);
+  const faltam = its.filter(it => { const w = capCxCampos(it, false), r = CX.mov.find(m => m.RefCAP === w.RefCAP); return capCxDifere(r, w); });
+  const linhas = CX.mov.filter(m => m.OrigemRegistro === "CAP" && /^cap:/.test(m.RefCAP || "") && m._d.slice(0, 7) === c);
+  const pagoDin = it => !!it && it.Status === "Pago" && (it.Banco === "Dinheiro" || it.FormaPagamento === "Dinheiro");
+  const sobram = linhas.filter(m => porRef.has(m.RefCAP) && !pagoDin(porRef.get(m.RefCAP)));   /* lançamento existe, mas não está pago em dinheiro (qualquer data: nunca apaga saída de pagamento em dinheiro) */
+  const orfas = linhas.filter(m => !porRef.has(m.RefCAP));   /* lançamento não está na CAP (excluído ou levado à Gestão de Dívidas): conferir */
+  return { n: its.length, faltam, sobram, orfas };
+}
+function cxChkCapDinheiro(c) {
+  if (!cxResumoCapAcesso()) return `<li>– Pagamentos da CAP em dinheiro: sem acesso à CAP para conferir</li>`;
+  cxResumoCapCarregar();
+  if (CX.resCap === "erro") return `<li class="falta">• Pagamentos da CAP em dinheiro: não foi possível ler a CAP (${esc(CX.resCapErro || "")}) <a href="#" onclick="CX.resCap=''; paintCx(); return false">Tentar de novo</a></li>`;
+  const p = cxCapDinheiroPend(c); if (!p) return `<li>… Conferindo os pagamentos da CAP em dinheiro…</li>`;
+  const n = p.faltam.length + p.sobram.length + p.orfas.length;
+  if (!n) return `<li class="ok">✓ Pagamentos da CAP em dinheiro: ${p.n ? `${p.n} com a saída no caixa` : "nenhum no mês"}</li>`;
+  const pode = cxPodeEditar() || podeEditar("cap"), partes = [];
+  if (p.faltam.length) partes.push(`${p.faltam.length} sem a saída certa no caixa (${p.faltam.map(it => esc(it.Title || "—")).slice(0, 4).join(", ")}${p.faltam.length > 4 ? "…" : ""})`);
+  if (p.sobram.length) partes.push(`${p.sobram.length} saída(s) do caixa de lançamento que não está pago em dinheiro`);
+  if (p.orfas.length) partes.push(`${p.orfas.length} saída(s) do caixa cujo lançamento não está mais na CAP (excluído ou levado à Gestão de Dívidas) — confira antes de excluir`);
+  return `<li class="falta">• Pagamentos da CAP em dinheiro: ${partes.join(" · ")}${pode ? ` <button class="btn sm" onclick="cxCapAcertar(${jsArg(c)})">Acertar agora</button>` : ""}</li>`;
+}
+window.cxCapAcertar = async c => {
+  try { await loadCAP({ soLeitura: true }); CX.resCap = "ok"; await loadCx(); } catch (e) { toast("Não foi possível reler a CAP e o caixa: " + e.message, 7000); return; }   /* nada com dados velhos */
+  const p = cxCapDinheiroPend(c); if (!p) return;
+  let ok = 0, falha = 0;
+  for (const it of p.faltam) (await capCxSincronizar(it, false, { silencio: true })) ? ok++ : falha++;
+  for (const m of p.sobram) (await capCxSincronizar({ _id: String(m.RefCAP).slice(4) }, false, { silencio: true })) ? ok++ : falha++;
+  if (p.orfas.length && confirm(`${p.orfas.length} saída(s) do caixa vieram de lançamentos que não estão mais na CAP (excluídos, ou levados à Gestão de Dívidas — nesse caso o dinheiro saiu de fato):\n\n${p.orfas.map(m => `${fmtDate(m._d)} · ${fmtBRL(m.Valor)} · ${m.Title || ""}`).join("\n")}\n\nExcluir essas saídas do caixa?`))
+    for (const m of p.orfas) (await capCxSincronizar({ _id: String(m.RefCAP).slice(4) }, false, { silencio: true })) ? ok++ : falha++;
+  toast(falha ? `${ok} acertado(s); ${falha} ficou(aram) pendente(s) — dia travado ou sem acesso ao caixa.` : `${ok} acertado(s).`, 6000); paintCx();
+};
+/* DRE e CAPEX/OPEX: despesa paga em dinheiro no caixa (mesmo critério do Painel/Resumo, desde CX_DINHEIRO_DESDE) vira um "lançamento" pago no dia; a gerada pela CAP já conta pela CAP */
+function cpxCxEhDespesa(x) { return !!x && cxDespesa(x) && x.OrigemRegistro !== "CAP" && !(x.Origem === "Ajuste" && x.OrigemRegistro === "Importação") && ymd(x.Data || "") >= CX_DINHEIRO_DESDE; }
+function cpxCxReceita(x) { if (!x) return 0; const v = Number(x.Valor || 0); if (x.Tipo === "Entrada") return v; if (x.Tipo === "Saída" && x.Origem === "Ajuste" && x.OrigemRegistro === "Importação") return -v; return 0; }
+function cpxCxDespesas() {
+  if (CPX._cxD && CPX._cxD.t === CPX.t && CPX._cxD.n === (CPX.cx || []).length) return CPX._cxD.v;
+  const v = (CPX.cx || []).filter(cpxCxEhDespesa).map(x => { const d = ymd(x.Data || ""); return { _id: "cx:" + String(x._id || x.id || ""), _cx: true, Title: x.Title || "Despesa paga no caixa", Fornecedor: "Caixa da matriz (dinheiro)", Categoria: x.Grupo || "", Subcategoria: x.Categoria || "", Valor: Number(x.Valor || 0), ValorPago: Number(x.Valor || 0), Status: "Pago", DataPagamento: d, Vencimento: d, Competencia: d.slice(0, 7), TipoLancamento: "Despesa" }; }).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x.DataPagamento));
+  CPX._cxD = { t: CPX.t, n: (CPX.cx || []).length, v }; return v;
+}
+/* importação: avisa (1) CX-GERAL anterior ao 1º boletim (muda a âncora) e (2) despesa da planilha igual a uma saída da CAP em dinheiro no mesmo dia */
+{ const m0 = cxImpMontar; cxImpMontar = function () { const r = m0.apply(this, arguments); try {
+    const a = cxAncora(); r.avisos = r.avisos || [];
+    if (a) (r.fech || []).forEach(f => { if (f.SaldoAnterior != null && f.Data < a._d) r.avisos.push(`O boletim de ${fmtDate(f.Data)} (CX-GERAL) é anterior ao 1º boletim do ERP (${fmtDate(a._d)}): o saldo anterior dele passa a ser o ponto de partida (âncora) de todo o caixa.`); });
+    const dup = (r.mov || []).filter(x => x.Tipo === "Saída" && CX.mov.some(m => m.OrigemRegistro === "CAP" && m._d === ymd(x.Data) && Math.abs(Number(m.Valor) - Number(x.Valor)) < 0.005));
+    if (dup.length) r.avisos.push(`${dup.length} despesa(s) da planilha têm o mesmo dia e valor de uma saída que já veio de um pagamento em dinheiro da CAP (${dup.slice(0, 4).map(x => `${fmtDate(ymd(x.Data))} ${fmtBRL(x.Valor)}`).join(", ")}${dup.length > 4 ? "…" : ""}) — confira para não contar duas vezes.`);
+  } catch (e) {} return r; }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
+CONFIG.version = "v0.14.18";   /* Fluxo de Caixa R2: tesouraria; despesa em dinheiro no caixa; CAP paga em dinheiro → saída no caixa; âncora/mês fechado; DRE/CAPEX com o caixa */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

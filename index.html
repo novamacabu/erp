@@ -40268,7 +40268,6 @@ window.consForm = id => {
       <div class="field"><label>Estoque mínimo</label><input type="number" id="csMin" min="0" step="0.01" value="${esc(v.EstoqueMin ?? "")}"><div class="hint">Abaixo disso o item aparece em "Repor"</div></div>
       <div class="field"><label>Custo unitário (R$)</label><input type="number" id="csCusto" min="0" step="0.01" value="${esc(v.CustoUnit ?? "")}"><div class="hint">Atualizado pela última entrada com custo</div></div>
       <div class="field"><label>Local de guarda</label><input id="csLocal" maxlength="80" value="${esc(v.Local || CONS_LOCAL_PADRAO)}" placeholder="${esc(CONS_LOCAL_PADRAO)}"></div>
-      <div class="field full"><label>Fornecedor habitual</label><input id="csForn" list="csFornL" maxlength="120" autocomplete="off" value="${esc(v.FornecedorTexto || "")}" placeholder="${forns.length ? "Digite para buscar em Terceiros › Banco de Dados" : "Sem leitura de Terceiros › Banco de Dados — digite o nome"}"><datalist id="csFornL">${forns.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
       ${x ? "" : `<div class="field"><label>Estoque inicial</label><input type="number" id="csIni" min="0" step="0.01" placeholder="0"><div class="hint">Grava uma entrada "Estoque inicial"</div></div>`}
       <div class="field"><label class="check"><input type="checkbox" id="csAtivo" ${v.Ativo !== false ? "checked" : ""}> Ativo</label></div>
       <div class="field full"><label>Observações</label><div class="tnota-nova"><textarea id="csObsNova" rows="2" placeholder="Escreva uma observação e clique em Adicionar (fica registrada com a data e quem escreveu)"></textarea><button type="button" class="btn sm" onclick="consObsAdd()">Adicionar</button></div><ul class="tnotas" id="csObsLista"></ul></div>
@@ -40283,7 +40282,7 @@ window.consForm = id => {
     if (!x) { await consCarregar(true); if (auto) cod = consProxCodigo(); }   /* relê a lista: dois cadastros ao mesmo tempo não repetem o número; o administrador pode digitar outro (ex.: CON-99) */
     else if (!consAdm()) cod = x.Codigo || "";
     if (cod && CONS.itens.some(i => i._id !== (x && x._id) && String(i.Codigo || "").trim().toUpperCase() === cod.toUpperCase())) return err(`O código ${cod} já é de outro consumível.`);
-    const f = { Title: nome.slice(0, 120), Codigo: cod || null, Categoria: g("csCat") || null, Unidade: g("csUn") || "un", EstoqueMin: num("csMin"), CustoUnit: num("csCusto"), Local: g("csLocal") || CONS_LOCAL_PADRAO, FornecedorTexto: g("csForn") || null, Ativo: $("csAtivo").checked, Observacoes: consObsCampo() };
+    const f = { Title: nome.slice(0, 120), Codigo: cod || null, Categoria: g("csCat") || null, Unidade: g("csUn") || "un", EstoqueMin: num("csMin"), CustoUnit: num("csCusto"), Local: g("csLocal") || CONS_LOCAL_PADRAO, Ativo: $("csAtivo").checked, Observacoes: consObsCampo() };   /* v0.14.20: sem fornecedor habitual */
     try {
       if (x) await SP.update(CONS.site.id, CONS.list.id, x._id, f);
       else {
@@ -40507,10 +40506,10 @@ window.consExcel = async () => {
     const wsE = folha("Estoque", "Estoque de consumíveis", `Posição em ${new Date().toLocaleDateString("pt-BR")} · ${L.filter(x => x.Ativo !== false).length} item(ns) ativo(s)`, [
       { h: "Código", w: 10 }, { h: "Item", w: 34, bold: true }, { h: "Categoria", w: 22 }, { h: "Unid.", w: 7 }, { h: "Estoque", w: 11, num: true, fmt: QTD, cor: r => r[4] < 0 ? "FFB3271E" : null }, { h: "Mínimo", w: 10, num: true, fmt: QTD },
       { h: "Situação", w: 16, cor: r => r[6] === "Zerado" ? "FFB3271E" : r[6] === "Abaixo do mínimo" ? "FF9A6A00" : r[6] === "Em dia" ? "FF197A46" : CINZA }, { h: "Dura (dias)", w: 11, num: true }, { h: "Sugestão de compra", w: 13, num: true, fmt: QTD },
-      { h: "Custo unit.", w: 13, num: true, fmt: MOEDA }, { h: "Valor em estoque", w: 15, num: true, fmt: MOEDA }, { h: "Local", w: 18 }, { h: "Fornecedor habitual", w: 28 }, { h: "Última mov.", w: 12, fmt: "dd/mm/yyyy" }]);
+      { h: "Custo unit.", w: 13, num: true, fmt: MOEDA }, { h: "Valor em estoque", w: 15, num: true, fmt: MOEDA }, { h: "Local", w: 18 }, { h: "Última compra (ordens de compra)", w: 34 }, { h: "Última mov.", w: 12, fmt: "dd/mm/yyyy" }]);
     const dura = new Map(D.ativos.map(x => [x._id, x])), sitN = { ok: "Em dia", baixo: "Abaixo do mínimo", zerado: "Zerado", inativo: "Inativo" };
     const LE = L.slice().sort((a, b) => String(a.Codigo || "~").localeCompare(String(b.Codigo || "~"), "pt-BR", { numeric: true }));
-    linhas(wsE, LE.map(x => { const a = dura.get(x._id) || {}, sug = x.sit === "baixo" || x.sit === "zerado" ? Math.max(0, Math.round((consNum(x.EstoqueMin) * 2 - x.saldo) * 100) / 100) : null; return [x.Codigo || "", x.Title || "", x.Categoria || "", x.Unidade || "", x.saldo, consNum(x.EstoqueMin) || null, sitN[x.sit] || x.sit, a.cobertura ?? null, sug, consNum(x.CustoUnit) || null, x.valor || null, x.Local || "", x.FornecedorTexto || "", dt(x.UltimaMov)]; }),
+    linhas(wsE, LE.map(x => { const a = dura.get(x._id) || {}, sug = x.sit === "baixo" || x.sit === "zerado" ? Math.max(0, Math.round((consNum(x.EstoqueMin) * 2 - x.saldo) * 100) / 100) : null; return [x.Codigo || "", x.Title || "", x.Categoria || "", x.Unidade || "", x.saldo, consNum(x.EstoqueMin) || null, sitN[x.sit] || x.sit, a.cobertura ?? null, sug, consNum(x.CustoUnit) || null, x.valor || null, x.Local || "", consUltCompraTxt(x), dt(x.UltimaMov)]; }),
       ["", "Total", "", "", null, null, "", null, null, null, LE.reduce((t, x) => t + (x.valor || 0), 0), "", "", null]);
     /* Movimentações (os filtros da aba Movimentações) */
     const MV = consMovsFiltradas(), byId = new Map(CONS.itens.map(x => [x._id, x]));
@@ -40834,7 +40833,7 @@ window.consCredorOk = consCredorOk;
   }; window.obrSalvar = obrSalvar; }
 /* =====================================================================
    6 · Consumíveis › Ordem de Compra — pedido de itens em baixo estoque ou novos, orçado em até 3 fornecedores, aprovado por
-   um administrador ou pela gerência do RH (cargo em RH › Funcionários), pago pela CAP e recebido item a item.
+   a Diretoria (administradores e proprietários; v0.14.20), pago pela CAP e recebido item a item.
    Lista "RH — Consumíveis Ordens de Compra" (site RH) pela Configuração. Cotações gravadas no Terceiro (coluna "Cotações (JSON)").
    Fases do fluxo: padrão no código; podem ser ajustadas em ERP — Parâmetros (chave cons_oc_fases), espelhando o quadro do Miro.
    ===================================================================== */
@@ -40843,7 +40842,7 @@ const CONS_OC_ST = ["Em elaboração", "Aguardando aprovação", "Aguardando pag
 const CONS_OC_FASES = [
   { k: "solic", n: "Solicitação", d: "itens em baixo estoque ou novos, com quantidade" },
   { k: "orc", n: "Orçamentos", d: "até 3 fornecedores de Terceiros, preço por item" },
-  { k: "aprov", n: "Aprovação", d: "administrador ou gerência do RH escolhe o fornecedor" },
+  { k: "aprov", n: "Aprovação", d: "Diretoria (administrador ou proprietário) escolhe o fornecedor" },
   { k: "pag", n: "Pagamento", d: "lançamento na CAP com vencimento em até 3 dias" },
   { k: "receb", n: "Recebimento", d: "conferência item a item; entradas no estoque" },
   { k: "fim", n: "Concluída", d: "estoque atualizado" }
@@ -40895,7 +40894,7 @@ function consOcFase(o) {
   return { atual: its ? 1 : 0, feitas: its ? [0] : [], parado: false, parcial: sec };
 }
 const consOcPill = st => `<span class="pill ${({ "Em elaboração": "st-aguardando", "Aguardando aprovação": "st-pendente", "Aguardando pagamento": "st-aprovado", "Aguardando recebimento": "st-aprovado", "Concluída": "st-pago", "Reprovada": "st-vencido", "Cancelada": "st-cancelada" })[st] || ""}"><i></i>${esc(st || "—")}</span>`;
-/* quem aprova: administrador do sistema, proprietário do módulo ou gerência do RH (cargo em RH › Funcionários, pelo e-mail) */
+/* quem aprova: administrador do sistema ou proprietário do módulo (v0.14.20: a gerência do RH não aprova) */
 async function consOcAprovador() {
   if (!consPode()) return false;   /* revisão D3: aprovar grava na ordem — exige edição em Consumíveis */
   if (session.n1 || consAdm()) return true;
@@ -40935,8 +40934,8 @@ function consOcLista() {
   const its = CONS.oc.filter(o => (!st || o.Status === st) && (!q || normName([o.Title, o.Solicitante, o.Justificativa, consOcItens(o).map(x => x.nome).join(" "), consOcCot(o).map(c => c.forn).join(" ")].join(" ")).includes(q)));
   const n = s => CONS.oc.filter(o => o.Status === s).length;
   const K = (l, v, s, cls, f) => `<button class="kpi ${cls || ""} ${CONS.fo.st === f ? "on" : ""}" onclick="consOcF('st', ${jsArg(CONS.fo.st === f ? "" : f)})"><div class="lbl">${esc(l)}</div><div class="val">${v}</div><div class="sub">${esc(s)}</div></button>`;
-  const kpis = `<div class="cap-kpis">${K("Em elaboração", n("Em elaboração"), "orçando", "", "Em elaboração")}${K("Aguardando aprovação", n("Aguardando aprovação"), "administrador ou gerência do RH", n("Aguardando aprovação") ? "hoje" : "", "Aguardando aprovação")}${K("Aguardando pagamento", n("Aguardando pagamento"), "lançadas na CAP", "", "Aguardando pagamento")}${K("Aguardando recebimento", n("Aguardando recebimento"), "pagas; conferir a entrega", "", "Aguardando recebimento")}${K("Concluídas", n("Concluída"), "no estoque", "pago", "Concluída")}</div>`;
-  const miro = (CONS.ocFases && CONS.ocFases.miro) || CONS_OC_MIRO ? `<a class="btn sm" href="${esc((CONS.ocFases && CONS.ocFases.miro) || CONS_OC_MIRO)}" target="_blank" rel="noopener" title="Quadro do fluxo no Miro">Fluxo no Miro ↗</a>` : "";
+  const kpis = `<div class="cap-kpis">${K("Em elaboração", n("Em elaboração"), "orçando", "", "Em elaboração")}${K("Aguardando aprovação", n("Aguardando aprovação"), "Diretoria", n("Aguardando aprovação") ? "hoje" : "", "Aguardando aprovação")}${K("Aguardando pagamento", n("Aguardando pagamento"), "lançadas na CAP", "", "Aguardando pagamento")}${K("Aguardando recebimento", n("Aguardando recebimento"), "pagas; conferir a entrega", "", "Aguardando recebimento")}${K("Concluídas", n("Concluída"), "no estoque", "pago", "Concluída")}</div>`;
+  const miro = consAdm() && ((CONS.ocFases && CONS.ocFases.miro) || CONS_OC_MIRO) ? `<a class="btn sm" href="${esc((CONS.ocFases && CONS.ocFases.miro) || CONS_OC_MIRO)}" target="_blank" rel="noopener" title="Quadro do fluxo no Miro">Fluxo no Miro ↗</a>` : "";
   const topo = `<div class="cons-g cons-fluxo-card"><div class="cons-fluxo-cab"><h3>Fluxo da ordem de compra</h3><span class="sup">${CONS.ocFases && CONS.ocFases.atualizadoEm ? `fases atualizadas em ${esc(fmtDate(CONS.ocFases.atualizadoEm))}` : "fases padrão do ERP"}</span><span class="grow"></span>${miro}${session.n1 ? `<button class="btn sm" onclick="consOcFasesEditar()">Fases e Miro…</button>` : ""}</div>${consOcFluxoHtml(null)}</div>`;
   const linha = o => { const S = consOcSecoes(o), v = o.Vencedor != null && o.Vencedor !== "" ? S[Number(o.Vencedor)] : null, its = consOcItens(o); return `<tr class="cons-l" onclick="consOcAbrir(${esc(jsArg(o._id))})" tabindex="0"><td class="nw"><b>${esc(o.Title || "—")}</b><div class="sup">${esc(o.Data ? fmtDate(o.Data) : "")}</div></td><td>${its.length} item(ns)<div class="sup">${esc(its.slice(0, 3).map(x => x.nome).join(", "))}${its.length > 3 ? "…" : ""}</div></td><td>${S.filter(s => s.tem).map(s => `<div class="${v && v.i === s.i ? "cons-venc" : ""}">${esc(s.forn || "")}${s.completo ? ` <span class="sup">${esc(fmtBRL(s.total))}</span>` : ""}</div>`).join("") || `<span class="sup">sem orçamento</span>`}</td><td class="right nw">${v ? `<b>${esc(fmtBRL(o.TotalAprovado || v.total))}</b>` : "—"}</td><td>${consOcPill(o.Status)}</td><td class="sup">${esc(o.Solicitante || "")}</td></tr>`; };
   return topo + kpis + `<div class="cons-fbar" role="search"><input type="search" id="consQO" placeholder="Buscar ordem, item, fornecedor, solicitante…" value="${esc(CONS.fo.q)}"><span class="grow"></span>${ed ? `<button class="btn sm primary" onclick="consOcNova()">+ Ordem de compra</button>` : ""}</div>`
@@ -40995,7 +40994,7 @@ function consOcDetalhe() {
   const itLinha = (it, i) => `<tr><td><b>${esc(it.nome)}</b>${it.novo ? ` <span class="pill st-aguardando"><i></i>Novo</span>` : ""}<div class="sup">${esc([it.cod, it.cat].filter(Boolean).join(" · "))}</div></td><td class="right nw">${ed ? `<input type="number" class="oc-qtd" data-i="${i}" min="0.01" step="0.01" value="${esc(String(it.qtd || ""))}" style="width:84px" onchange="consOcItemQtd(${i}, this.value)">` : consQtd(it.qtd)} ${esc(it.un || "")}</td><td class="nw sup">${(() => { const x = L.find(y => y._id === it.id); return x ? `${consQtd(x.saldo, x.Unidade)} em estoque · mín. ${consQtd(x.EstoqueMin)}` : "item novo"; })()}</td>${ed ? `<td class="act nw"><button class="btn mini" onclick="consOcItemTirar(${i})">Tirar</button></td>` : ""}</tr>`;
   const itens = `<div class="cons-g"><h3>1 · Itens da solicitação</h3><div class="dica">${ed ? "Itens abaixo do mínimo entram com a sugestão de compra; acrescente outros do estoque ou um consumível novo." : `${its.length} item(ns)`}</div>
     ${its.length ? `<div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th>Item</th><th class="right">Quantidade</th><th>Estoque</th>${ed ? "<th></th>" : ""}</tr></thead><tbody>${its.map(itLinha).join("")}</tbody></table></div>` : `<p class="cap-muted">Nenhum item ainda.</p>`}
-    ${ed ? `<div class="oc-add"><input id="ocItemN" list="ocItemL" autocomplete="off" placeholder="Item do estoque ou do catálogo — ou escreva um novo"><datalist id="ocItemL">${L.filter(x => x.Ativo !== false).map(x => `<option value="${esc(x.Title)}">${esc([x.Codigo, consQtd(x.saldo, x.Unidade)].filter(Boolean).join(" · "))}</option>`).join("")}${cat.filter(c => !L.some(x => consCatNorm(x.Title) === consCatNorm(c.n))).map(c => `<option value="${esc(c.n)}">catálogo · ${esc(c.cat || "")}</option>`).join("")}</datalist><input type="number" id="ocItemQ" min="0.01" step="0.01" placeholder="Qtd." style="width:90px"><button class="btn sm" onclick="consOcItemAdd()">Adicionar</button></div>` : ""}
+    ${ed ? `<div class="oc-add"><input id="ocItemN" class="oc-in" list="ocItemL" autocomplete="off" placeholder="Item do estoque ou do catálogo — ou escreva um novo"><datalist id="ocItemL">${L.filter(x => x.Ativo !== false).map(x => `<option value="${esc(x.Title)}">${esc([x.Codigo, consQtd(x.saldo, x.Unidade)].filter(Boolean).join(" · "))}</option>`).join("")}${cat.filter(c => !L.some(x => consCatNorm(x.Title) === consCatNorm(c.n))).map(c => `<option value="${esc(c.n)}">catálogo · ${esc(c.cat || "")}</option>`).join("")}</datalist><input type="number" id="ocItemQ" class="oc-in" min="0.01" step="0.01" placeholder="Quantidade"><button class="btn primary sm" onclick="consOcItemAdd()">+ Adicionar item</button></div>` : ""}
     <div class="field full" style="margin-top:10px"><label>Justificativa</label>${ed ? `<textarea id="ocJust" rows="2" placeholder="Por que comprar agora (opcional)" onchange="consOcJust(this.value)">${esc(o.Justificativa || "")}</textarea>` : `<div class="static">${esc(o.Justificativa || "—")}</div>`}</div></div>`;
   const resumo = `<div class="cons-g oc-resumo"><h3>Resumo dos orçamentos</h3><div class="dica">total orçado em cada fornecedor · ${melhor ? `menor total: <b>${esc(melhor.forn)}</b> (${esc(fmtBRL(melhor.total))})` : "preencha os preços dos itens"}</div><div class="oc-res">${S.map(s => `<div class="oc-res-k ${venc === s.i ? "venc" : ""} ${melhor && melhor.i === s.i ? "melhor" : ""}"><div class="r">Fornecedor ${s.i + 1}</div><div class="f">${esc(s.forn || "—")}</div><div class="v">${s.tem ? esc(fmtBRL(s.total)) : "—"}</div><div class="s">${s.tem ? (s.completo ? `${s.n} de ${its.length} itens` : `${s.n} de ${its.length} itens com preço`) : "sem fornecedor"}${venc === s.i ? " · <b>aprovado</b>" : melhor && melhor.i === s.i ? " · menor preço" : ""}</div></div>`).join("")}</div></div>`;
   const secao = s => { const c = consOcCot(o)[s.i] || {}, p = c.precos || {};
@@ -41024,7 +41023,7 @@ function consOcDetalhe() {
   if (o.Status !== "Em elaboração") acoes.push(`<button class="btn" onclick="consOcPdf(${esc(jsArg(o._id))})">Relatório (PDF)</button>`);
   if (consExc() && (o.Status === "Em elaboração" || o.Status === "Cancelada" || o.Status === "Reprovada")) acoes.push(`<button class="btn" onclick="consOcExcluir()" style="color:var(--err)">Excluir</button>`);
   const topo = `<div class="oc-topo"><button class="btn" onclick="consOcAbrir('')">← Ordens</button><h2 style="margin:0">${esc(o.Title || "Ordem de compra")}</h2><span class="sup">${esc(o.Data ? fmtDate(o.Data) : "")} · ${esc(o.Solicitante || "")}</span><span class="grow"></span>${acoes.join("")}</div>`;
-  setTimeout(() => { if ($("ocBtnAprov")) consOcAprovador().then(ok => { if (!ok) { ["ocBtnAprov", "ocBtnRepr"].forEach(k => { const b = $(k); if (b) { b.disabled = true; b.title = consPode() ? "Só administradores ou a gerência do RH aprovam" : "Aprovar exige edição em Consumíveis"; } }); } }); }, 0);
+  setTimeout(() => { if ($("ocBtnAprov")) consOcAprovador().then(ok => { if (!ok) { ["ocBtnAprov", "ocBtnRepr"].forEach(k => { const b = $(k); if (b) { b.disabled = true; b.title = consPode() ? "Só a Diretoria (administradores e proprietários) aprova" : "Aprovar exige edição em Consumíveis"; } }); } }); }, 0);
   return topo + `<div class="oc-grid"><div class="oc-main">${itens}${resumo}${S.map(secao).join("")}</div><div class="oc-side">${statusCard}</div></div>`;
 }
 /* edição em memória + gravação a cada mudança (ordem em elaboração) */
@@ -41063,7 +41062,7 @@ window.consOcCancelar = async () => { const o = consOcDe(CONS.ocSel); if (!o || 
 window.consOcExcluir = async () => { const o = consOcDe(CONS.ocSel); if (!o || !consExc()) return; if (!(await erpConfirmar({ titulo: "Excluir ordem", texto: `Excluir a ordem ${o.Title}? Não pode ser desfeito.`, sim: "Excluir", perigo: true }))) return; try { await graph(`/sites/${CONS.site.id}/lists/${CONS.listOc.id}/items/${o._id}`, { method: "DELETE" }); CONS.ocSel = null; await consCarregar(true); paintCons(); toast("Ordem excluída."); } catch (e) { toast("Erro: " + e.message, 6000); } };
 /* ---- aprovação: escolhe o fornecedor; grava as cotações nos 3 Terceiros; lança na CAP com o relatório anexo ---- */
 window.consOcAprovar = async () => {
-  const o = consOcDe(CONS.ocSel); if (!o || o.Status !== "Aguardando aprovação") return; if (!(await consOcAprovador())) { toast("Só administradores ou a gerência do RH aprovam."); return; }
+  const o = consOcDe(CONS.ocSel); if (!o || o.Status !== "Aguardando aprovação") return; if (!(await consOcAprovador())) { toast("Só a Diretoria (administradores e proprietários) aprova."); return; }
   const S = consOcSecoes(o).filter(s => s.tem && s.completo), melhor = S.slice().sort((a, b) => a.total - b.total)[0];
   openModal(`Aprovar ${o.Title}`, `<p class="sup">Escolha o fornecedor. O menor total está marcado; ao aprovar, as cotações dos ${S.length} fornecedores ficam registradas em Terceiros e o lançamento entra na CAP com vencimento em até 3 dias.</p>
     <div class="oc-escolha">${S.map(s => `<label class="oc-opt ${melhor && melhor.i === s.i ? "melhor" : ""}"><input type="radio" name="ocVenc" value="${s.i}" ${melhor && melhor.i === s.i ? "checked" : ""}><div><b>${esc(s.forn)}</b> <span class="sup">${esc(s.cnpj || "")}</span><div>${esc(fmtBRL(s.total))}${s.prazo != null && s.prazo !== "" ? ` · ${esc(String(s.prazo))} dia(s)` : ""}${melhor && melhor.i === s.i ? ` · <b>menor preço</b>` : melhor ? ` · +${esc(fmtBRL(s.total - melhor.total))}` : ""}</div>${s.obs ? `<div class="sup">${esc(s.obs)}</div>` : ""}</div></label>`).join("")}</div>
@@ -41081,7 +41080,7 @@ window.consOcAprovar = async () => {
   });
 };
 window.consOcReprovar = async () => {
-  const o = consOcDe(CONS.ocSel); if (!o || o.Status !== "Aguardando aprovação") return; if (!(await consOcAprovador())) { toast("Só administradores ou a gerência do RH aprovam."); return; }
+  const o = consOcDe(CONS.ocSel); if (!o || o.Status !== "Aguardando aprovação") return; if (!(await consOcAprovador())) { toast("Só a Diretoria (administradores e proprietários) aprova."); return; }
   openModal(`Reprovar ${o.Title}`, `<div class="field full"><label>Motivo<span class="req">*</span></label><input id="ocMot" maxlength="255"></div><div class="err" id="ocErr" style="display:none"></div>`, async () => {
     const mot = ($("ocMot") ? $("ocMot").value : "").trim(); if (!mot) { const e = $("ocErr"); e.style.display = "block"; e.textContent = "Informe o motivo."; return false; }
     try { await consOcGravar(o, { Status: "Reprovada", Aprovador: consOcQuem(), DataDecisao: todayISO(), MotivoDecisao: mot }, "aprov", "reprovada: " + mot); await consOcRegistrarCotacoes(o).catch(() => {}); paintCons(); return true; } catch (e) { const el = $("ocErr"); el.style.display = "block"; el.textContent = e.message; return false; }
@@ -42029,11 +42028,416 @@ function ctbFechBarHtml(c) {
     } catch (e) {}
     return r;
   }; }
+/* =====================================================================
+   v0.14.20 · Consumíveis pronto para uso real + ajustes de 26/10 (10:07 e 10:10)
+   1. Catálogo: "Carregar os itens padrão" trava enquanto grava e relê antes (o duplo clique de 23/10 criou ~22 cópias de cada item);
+      "Remover repetidos" (administrador/proprietário) deixa uma linha por item.
+   2. Ordem de Compra: aprovação só da Diretoria (administradores e proprietários do módulo); número OCC conferido depois de gravar;
+      recebimento grava item a item (uma falha no meio não perde o que já entrou); botões do Miro só para administradores/proprietários;
+      campos de item, quantidade e preço no padrão visual do sistema.
+   3. Sem "Fornecedor habitual": o preço de cada fornecedor orçado nas ordens de compra vira o histórico do item (aba Preços, detalhe
+      do item e dica nas cotações) — média do mercado levantado em 12 meses, menor preço, última compra e se ela ficou de acordo,
+      acima ou abaixo da média (tolerância de 5%); desempenho de cada fornecedor contra a média.
+   4. Excluir uma movimentação refaz o "saldo após" das seguintes.
+   5. Terceiros: com CPF, Nome Fantasia fica "Não aplicável" (campo travado, gravado vazio).
+   6. Funcionários: dicas dos campos Função, CNPJ e Demissão numa linha (texto completo ao passar o mouse).
+   ===================================================================== */
+const CONS_PRC_TOL = 0.05;
+
+/* ---------- 1 · Catálogo ---------- */
+function consCatFaltam() { return CONS_CATALOGO_BASE.filter(b => !(CONS.cat || []).some(x => consCatNorm(x.Title) === consCatNorm(b.n)) && !(CONS.catTirados || []).includes(consCatNorm(b.n))); }
+function consCatRepetidos() {
+  const g = new Map(); (CONS.cat || []).concat(CONS.catRemovidos || []).forEach(x => { const k = consCatNorm(x.Title); if (k) g.set(k, (g.get(k) || 0) + 1); });
+  let n = 0; g.forEach(c => { if (c > 1) n += c - 1; }); return n;
+}
+window.consCatCarregarPadrao = async () => {
+  if (!CONS.listCat || !consPode() || CONS.catCarregando) return;
+  CONS.catCarregando = true; paintCons();
+  let n = 0, falhas = 0;
+  try {
+    await consCarregar(true);   /* relê: o que outra pessoa (ou outro clique) já gravou não entra de novo */
+    for (const b of consCatFaltam()) { try { await SP.create(CONS.site.id, CONS.listCat.id, { Title: b.n, Categoria: b.cat, Unidade: b.un, EstoqueMin: b.min, CustoUnit: b.custo, Local: b.local, Origem: "Padrão do ERP", AtualizadoEm: todayISO() }); n++; } catch (e) { falhas++; } }
+  } finally { CONS.catCarregando = false; }
+  await consCarregar(true); paintCons(); toast(`${n} item(ns) padrão carregado(s) no catálogo${falhas ? ` · ${falhas} falharam (clique de novo para tentar)` : ""}.`, 6000);
+};
+window.consCatTirarRepetidos = async () => {
+  if (!CONS.listCat || !consAdm() || CONS.catLimpando) return;
+  let todos;
+  try { todos = (await SP.items(CONS.site.id, CONS.listCat.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})); } catch (e) { toast("Não foi possível ler o catálogo: " + e.message, 7000); return; }
+  const g = new Map(); todos.forEach(x => { const k = consCatNorm(x.Title); if (!k) return; if (!g.has(k)) g.set(k, []); g.get(k).push(x); });
+  const peso = x => x.Origem === "Editado" || x.Origem === "Digitado no cadastro" ? 3 : x.Origem === "Removido" ? 2 : 1;   /* revisão R2: no empate, a marca "Removido" do administrador vale mais que a cópia padrão */
+  const tirar = [];
+  g.forEach(a => { if (a.length < 2) return; a.sort((x, y) => String(y.AtualizadoEm || "").slice(0, 10).localeCompare(String(x.AtualizadoEm || "").slice(0, 10)) || peso(y) - peso(x) || Number(x._id) - Number(y._id));   /* revisão L1: a mais recente vale (inclusive a marca "Removido") */ a.slice(1).forEach(x => tirar.push(x._id)); });
+  if (!tirar.length) { toast("O catálogo não tem itens repetidos."); await consCarregar(true); paintCons(); return; }
+  if (!(await erpConfirmar({ titulo: "Remover itens repetidos do catálogo", texto: `O catálogo tem ${todos.length} linha(s) para ${g.size} item(ns). Ficar com 1 linha por item (a editada ou a mais recente) e excluir ${tirar.length} cópia(s)? Os consumíveis cadastrados, as movimentações e as ordens de compra não mudam.`, sim: `Excluir ${tirar.length} cópia(s)`, perigo: true }))) return;
+  CONS.catLimpando = true; paintCons();
+  let ok = 0;
+  try {
+    const res = await graphBatch(tirar.map(id => ({ method: "DELETE", url: `/sites/${CONS.site.id}/lists/${CONS.listCat.id}/items/${id}` })), (f, t) => { const b = $("consCatRepBtn"); if (b) b.textContent = `Removendo… ${f}/${t}`; });
+    ok = res.filter(r => r && (r.ok || r.status === 404)).length;
+  } catch (e) { toast("Falha ao remover: " + e.message, 7000); }
+  finally { CONS.catLimpando = false; }
+  await consCarregar(true); paintCons();
+  toast(ok === tirar.length ? `${ok} cópia(s) removida(s); o catálogo ficou com ${g.size} item(ns).` : `${ok} de ${tirar.length} cópia(s) removida(s). Clique de novo para terminar.`, 8000);
+};
+{ const h0 = consCatHtml; consCatHtml = function () {
+    let h = h0.apply(this, arguments);
+    if (CONS.catCarregando) h = h.replace(/<button class="btn sm" onclick="consCatCarregarPadrao\(\)">[^<]*<\/button>/, `<button class="btn sm" disabled>Carregando os itens padrão…</button>`);
+    const rep = CONS.listCat && consAdm() ? consCatRepetidos() : 0;
+    if (rep || CONS.catLimpando) h = h.replace('<span class="grow"></span>', `<span class="grow"></span><button class="btn sm" id="consCatRepBtn" ${CONS.catLimpando ? "disabled" : ""} onclick="consCatTirarRepetidos()" style="color:var(--err)">${CONS.catLimpando ? "Removendo…" : `Remover ${rep} repetido(s)`}</button>`);
+    return h;
+  }; }
+
+/* ---------- 2 · Ordem de Compra ---------- */
+/* aprovação: só a Diretoria — administradores do sistema e proprietários do módulo (decisão de 26/10) */
+consOcAprovador = async function () { return consPode() && consAdm(); }; window.consOcAprovador = consOcAprovador;
+{ const f0 = consOcFases; consOcFases = function () { return f0.apply(this, arguments).map(f => f.k === "aprov" && /gerência do RH|gerencia do RH/i.test(f.d || "") ? Object.assign({}, f, { d: "Diretoria (administrador ou proprietário) escolhe o fornecedor" }) : f); }; }
+/* número OCC: relê as ordens antes e confere depois de gravar (duas pessoas ao mesmo tempo não repetem o número) */
+window.consOcNova = async () => {
+  if (!consPode() || !CONS.listOc || CONS.ocCriando) return;
+  CONS.ocCriando = true;
+  try {
+    if (!(FORN_STATE.items || []).length && typeof loadForn === "function") { try { await loadForn(true); } catch (e) {} }
+    await consCarregar(true);
+    const L = consLinhas().filter(x => x.Ativo !== false), baixo = L.filter(x => x.sit === "baixo" || x.sit === "zerado");
+    const sug = baixo.map(x => ({ id: x._id, nome: x.Title, cod: x.Codigo || "", un: x.Unidade || "un", cat: x.Categoria || "", qtd: Math.max(1, Math.round((consNum(x.EstoqueMin) * 2 - x.saldo) * 100) / 100) }));
+    const quem = consOcQuem(), f = { Title: consOcNumero(), Data: todayISO(), Status: "Em elaboração", Solicitante: quem, Itens: JSON.stringify(sug), Cotacoes: "[]", Historico: JSON.stringify([{ f: "solic", em: new Date().toISOString(), por: quem, t: sug.length ? `aberta com ${sug.length} item(ns) abaixo do mínimo` : "aberta" }]) };
+    const r = await SP.create(CONS.site.id, CONS.listOc.id, f), id = String((r && (r.id || r._id)) || "");
+    await consCarregar(true);
+    if (id) { const mesmos = CONS.oc.filter(o => consOcChave(o) === consOcChave(f)).sort((a, b) => Number(a._id) - Number(b._id)); if (mesmos.length > 1 && mesmos[0]._id !== id) { try { const novo = consOcNumero(); await SP.update(CONS.site.id, CONS.listOc.id, id, { Title: novo }); const o = consOcDe(id); if (o) o.Title = novo; } catch (e) {} } }
+    CONS.ocSel = id || null; paintCons();
+    if (sug.length) toast(`${sug.length} item(ns) abaixo do mínimo já entraram na ordem com a sugestão de compra.`, 6000);
+  } catch (e) { toast("Não foi possível criar a ordem: " + e.message, 7000); }
+  finally { CONS.ocCriando = false; }
+};
+/* recebimento item a item: cada item cadastrado e cada entrada ficam gravados na ordem na hora */
+/* revisão B2: cada entrada leva uma marca [r…] no motivo e fica "pendente" no Recebimento antes de ser criada; na volta, a marca
+   achada nas movimentações confirma o registro e a não achada é descartada — repetir nunca duplica a entrada */
+async function consOcRecConciliar(o) {
+  const R = consOcRec(o); if (!R.some(r => r && r.pend)) return R;
+  const S = R.filter(r => !r.pend || CONS.movs.some(m => String(m.Motivo || "").includes(`[${r.k}]`)) || (r.ts && Date.now() - r.ts < 120000 && !(CONS.recMeus || new Set()).has(r.k))).map(r => { if (r.pend && CONS.movs.some(m => String(m.Motivo || "").includes(`[${r.k}]`))) { const x = Object.assign({}, r); delete x.pend; delete x.ts; return x; } return r; });
+  if (JSON.stringify(S) !== JSON.stringify(R)) await consOcGravar(o, { Recebimento: JSON.stringify(S) }); return S;
+}
+window.consOcReceber = async () => {
+  let o = consOcDe(CONS.ocSel); if (!o || o.Status !== "Aguardando recebimento" || !consPode()) return;
+  try { await consCarregar(true); o = consOcDe(o._id); if (!o || o.Status !== "Aguardando recebimento") { paintCons(); return; } await consOcRecConciliar(o); } catch (e) { toast("Não foi possível conferir o recebimento: " + e.message, 7000); return; }
+  const its = consOcItens(o), R = consOcRec(o), s = consOcSecoes(o)[Number(o.Vencedor)] || {}, p = s.precos || {};
+  const falta = its.map((it, i) => ({ it, i, rec: R.filter(r => r.i === i).reduce((t, r) => t + consNum(r.qtd), 0) })).filter(x => x.rec < consNum(x.it.qtd) - 0.005);
+  if (!falta.length) { toast("Todos os itens já foram recebidos."); return; }
+  openModal(`Recebimento · ${o.Title}`, `<p class="sup">Confira o que chegou de <b>${esc(s.forn || "")}</b>. Cada item confirmado vira uma Entrada no estoque com o custo do orçamento${falta.some(x => x.it.novo) ? "; itens novos são cadastrados antes" : ""}.</p>
+    <div class="field full"><label>Nota fiscal</label><input id="ocNF" maxlength="60" placeholder="Nº da NF (opcional)"></div>
+    <div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th></th><th>Item</th><th class="right">Pedido</th><th class="right">Recebido</th></tr></thead><tbody>${falta.map(x => `<tr><td><input type="checkbox" class="ocRecOk" data-i="${x.i}" checked></td><td>${esc(x.it.nome)}${x.it.novo ? ` <span class="pill st-aguardando"><i></i>Novo</span>` : ""}<div class="sup">${esc(fmtBRL(consNum(p[x.i])))} / ${esc(x.it.un || "un")}</div></td><td class="right nw">${consQtd(consNum(x.it.qtd) - x.rec, x.it.un)}</td><td class="right"><input type="number" class="ocRecQ oc-in" data-i="${x.i}" min="0" max="${esc(String(Math.round((consNum(x.it.qtd) - x.rec) * 100) / 100))}" step="0.01" value="${esc(String(Math.round((consNum(x.it.qtd) - x.rec) * 100) / 100))}" style="width:100px"></td></tr>`).join("")}</tbody></table></div>
+    <div class="err" id="ocErr" style="display:none"></div>`, async () => {
+    const err = m => { const e = $("ocErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const nf = ($("ocNF") ? $("ocNF").value : "").trim(), marc = [...document.querySelectorAll(".ocRecOk:checked")].map(c => Number(c.dataset.i));
+    if (!marc.length) return err("Marque pelo menos um item recebido.");
+    const linhas = marc.map(i => { const el = document.querySelector(`.ocRecQ[data-i="${i}"]`); return { i, q: Math.min(consNum(el && el.value), consNum(el && el.max) || Infinity) }; }).filter(x => x.q > 0);
+    if (!linhas.length) return err("Informe as quantidades recebidas.");
+    let feitos = 0;
+    try {
+      await consCarregar(true); const o2 = consOcDe(o._id) || o;
+      if (o2.Status !== "Aguardando recebimento") return err(`A ordem está "${o2.Status}" — feche e abra de novo.`);
+      await consOcRecConciliar(o2);
+      const its2 = consOcItens(o2), R2 = consOcRec(o2), novosIts = its2.slice(), s2 = consOcSecoes(o2)[Number(o2.Vencedor)] || s, p2 = s2.precos || {};
+      for (const l of linhas) {
+        const it = novosIts[l.i]; if (!it) continue;
+        const ja = R2.filter(r => r.i === l.i).reduce((t, r) => t + consNum(r.qtd), 0), q = Math.round(Math.min(l.q, consNum(it.qtd) - ja) * 100) / 100;
+        if (!(q > 0.004)) continue;   /* relido: outra pessoa já recebeu este item */
+        let id = it.id;
+        if (!id) {
+          const existe = CONS.itens.find(y => normName(y.Title) === normName(it.nome));   /* tentativa anterior já cadastrou: reaproveita */
+          if (existe) id = existe._id;
+          else {
+            const c = consCatDe(it.nome); const f = { Title: it.nome, Codigo: consProxCodigo(), Categoria: consCatCase(it.cat || (c && c.cat) || ""), Unidade: it.un || (c && c.un) || "un", EstoqueMin: it.min ?? (c ? c.min : null), CustoUnit: consNum(p2[l.i]) || null, Local: (c && c.local) || CONS_LOCAL_PADRAO, Ativo: true, EstoqueAtual: 0 };
+            const r = await SP.create(CONS.site.id, CONS.list.id, f); id = String((r && (r.id || r._id)) || ""); if (!id) throw new Error(`não foi possível cadastrar "${it.nome}"`);
+            await consCarregar(true); try { await consCatGravar(f); } catch (e) {}
+          }
+          const x0 = CONS.itens.find(y => y._id === id) || {};
+          novosIts[l.i] = Object.assign({}, it, { id, novo: false, cod: x0.Codigo || "" });
+          await consOcGravar(o2, { Itens: JSON.stringify(novosIts) });   /* o vínculo fica gravado antes da entrada */
+        }
+        const x = CONS.itens.find(y => y._id === id) || {}, k = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), reg = { i: l.i, qtd: q, em: todayISO(), por: consOcQuem(), nf: nf || "", k, pend: true, ts: Date.now() };
+        (CONS.recMeus = CONS.recMeus || new Set()).add(k);   /* gravação deste navegador: depois que termina (bem ou mal), a pendência é resolvida na hora */
+        R2.push(reg); await consOcGravar(o2, { Recebimento: JSON.stringify(R2) });
+        await consGravarMov({ Tipo: "Entrada", ItemId: id, ItemNome: x.Title || it.nome, Categoria: x.Categoria || it.cat || null, Unidade: x.Unidade || it.un || null, Quantidade: q, CustoUnit: consNum(p2[l.i]) || null, Data: todayISO(), NF: nf || null, Motivo: `Ordem de compra ${o2.Title} · ${s2.forn || ""} [${k}]` }, true);
+        delete reg.pend; delete reg.ts; await consOcGravar(o2, { Recebimento: JSON.stringify(R2) }); feitos++;
+      }
+      const completo = novosIts.every((it, i) => R2.filter(r => r.i === i).reduce((t, r) => t + consNum(r.qtd), 0) >= consNum(it.qtd) - 0.005);
+      await consOcGravar(o2, completo ? { Status: "Concluída" } : {}, completo ? "fim" : "receb", completo ? `recebimento completo (${feitos} item(ns) agora)${nf ? " · NF " + nf : ""}` : `recebimento parcial: ${feitos} item(ns)${nf ? " · NF " + nf : ""}`);
+      await consCarregar(true); paintCons(); toast(completo ? "Recebimento completo: ordem concluída e estoque atualizado." : feitos ? "Recebimento parcial registrado; o restante continua aguardando." : "Nada novo para registrar (já recebido).", 6000); return true;
+    } catch (e) {
+      try { await consCarregar(true); const o3 = consOcDe(o._id); if (o3) await consOcRecConciliar(o3); paintCons(); } catch (e2) {}
+      return err(`${feitos ? `${feitos} item(ns) já ficaram registrados (entrada no estoque e na ordem). ` : ""}Não foi possível registrar: ${e.message}`);
+    }
+  });
+};
+/* Miro: só administradores e proprietários; os campos da ordem no padrão visual */
+{ const st = document.createElement("style"); st.textContent = `
+#consRoot .oc-add{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;padding:10px;border:1px dashed #D3D8DE;border-radius:var(--radius-sm,8px);background:#F8F9FB}
+#consRoot .oc-add #ocItemN{flex:1 1 280px;min-width:220px}#consRoot .oc-add #ocItemQ{width:110px !important}
+#consRoot .oc-add input,#consRoot input.oc-qtd,#consRoot .oc-sec td input,#consRoot input.oc-in,#modal input.oc-in{height:40px;padding:8px 12px;border:1px solid #D3D8DE;border-radius:var(--radius-sm,8px);font:inherit;font-size:14px;background:#fff;color:var(--ink);box-sizing:border-box}
+#consRoot input.oc-qtd,#consRoot .oc-sec td input,#consRoot .oc-add #ocItemQ,#modal input.oc-in{text-align:right}
+#consRoot .oc-add input:focus,#consRoot input.oc-qtd:focus,#consRoot .oc-sec td input:focus,#modal input.oc-in:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(11,22,40,.10);outline:none}
+#consRoot .oc-qtdw{display:inline-flex;align-items:center;gap:6px}
+#consRoot .oc-media{font-size:11.5px;color:#5C6670;margin-top:3px;white-space:nowrap}#consRoot .oc-media .acima{color:var(--err,#B42318);font-weight:700}#consRoot .oc-media .abaixo{color:#2F7D4F;font-weight:700}
+#consRoot .prc-pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap}
+#consRoot .prc-pill.ok,#modal .prc-pill.ok{background:#EEF6F1;color:#2F7D4F}#consRoot .prc-pill.acima,#modal .prc-pill.acima{background:#FDECEA;color:#B42318}#consRoot .prc-pill.abaixo,#modal .prc-pill.abaixo{background:#EAF2FB;color:#1E5AA8}
+#modal .prc-pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:700}
+.rhf-h{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+:where(#consRoot, body:has(#consRoot) #modal) input:where(:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]):not([type=range]):not([type=color])),
+:where(#consRoot, body:has(#consRoot) #modal) select,:where(#consRoot, body:has(#consRoot) #modal) textarea{min-height:40px;padding:8px 12px;border:1px solid #D3D8DE;border-radius:var(--radius-sm,8px);font:inherit;font-size:14px;background:#fff;color:var(--ink);box-sizing:border-box}
+:where(#consRoot, body:has(#consRoot) #modal) input:where([type=number]){text-align:right}
+:where(#consRoot, body:has(#consRoot) #modal) input:focus,:where(#consRoot, body:has(#consRoot) #modal) select:focus,:where(#consRoot, body:has(#consRoot) #modal) textarea:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(11,22,40,.10);outline:none}
+body:has(#consRoot) #modal .cons-tab{min-width:0}`;   /* v0.14.20: todos os campos de Consumíveis (páginas e janelas) no padrão do sistema */ document.head.appendChild(st); }
+
+/* ---------- 3 · histórico de preços das ordens de compra ---------- */
+const consPrcLim = () => { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return ymd(d); };
+const CONS_PRC_COMPRA = ["Aguardando pagamento", "Aguardando recebimento", "Concluída"];
+/* cada preço orçado (ordens enviadas para aprovação em diante): item → [{data, oc, ocId, forn, fornId, preco, comprado}] */
+function consPrecos(semOc) {
+  const out = new Map();
+  (CONS.oc || []).forEach(o => {
+    if (!o || o.Status === "Em elaboração" || (semOc && String(o._id) === String(semOc))) return;
+    const d = String(o.DataDecisao ? ymd(o.DataDecisao) : o.Data ? ymd(o.Data) : "").slice(0, 10), its = consOcItens(o), venc = o.Vencedor != null && o.Vencedor !== "" ? Number(o.Vencedor) : null, comprou = venc != null && CONS_PRC_COMPRA.includes(o.Status);
+    consOcSecoes(o).forEach(s => { if (!s.tem) return; its.forEach((it, i) => { const u = consNum((s.precos || {})[i]); if (!(u > 0)) return; const k = normName(it.nome); if (!out.has(k)) out.set(k, []); out.get(k).push({ data: d, oc: o.Title || "", ocId: o._id, forn: s.forn || "", fornId: s.fornId || "", preco: u, un: it.un || "", item: it.nome, comprado: comprou && venc === s.i, st: o.Status }); }); });
+  });
+  out.forEach(a => a.sort((x, y) => String(y.data).localeCompare(String(x.data)) || Number(y.ocId) - Number(x.ocId)));
+  return out;
+}
+const consPrcSit = v => v == null ? "" : v > CONS_PRC_TOL ? "acima" : v < -CONS_PRC_TOL ? "abaixo" : "ok";
+const consPrcPill = (sit, v) => !sit ? `<span class="sup">—</span>` : `<span class="prc-pill ${sit}">${sit === "acima" ? "Acima da média" : sit === "abaixo" ? "Abaixo da média" : "De acordo"}${v != null ? ` · ${v > 0 ? "+" : ""}${(100 * v).toFixed(1).replace(".", ",")}%` : ""}</span>`;
+function consPrcResumo(nome, P) {
+  const a = ((P || consPrecos()).get(normName(nome)) || []), lim = consPrcLim(), rec = a.filter(x => x.data >= lim);
+  const media = rec.length ? Math.round(100 * rec.reduce((t, x) => t + x.preco, 0) / rec.length) / 100 : null;
+  const menor = rec.length ? rec.slice().sort((x, y) => x.preco - y.preco)[0] : null, comp = a.find(x => x.comprado) || null;
+  const v = comp && comp.data >= lim && media && rec.length >= 2 ? (comp.preco - media) / media : null;   /* revisão L4: compra de mais de 12 meses não é comparada */
+  return { a, rec, media, menor, comp, v, sit: consPrcSit(v), nf: new Set(rec.map(x => x.fornId || x.forn)).size };
+}
+window.consUltCompraTxt = x => { try { const r = consPrcResumo(x.Title); return r.comp ? `${r.comp.forn} · ${fmtBRL(r.comp.preco)} · ${fmtDate(r.comp.data)}` : ""; } catch (e) { return ""; } };
+/* desempenho do fornecedor: preço de cada cotação contra a média do item (itens com 2 ou mais cotações em 12 meses) */
+function consPrcFornecedores(P) {
+  const lim = consPrcLim(), F = new Map();
+  P.forEach(a => { const rec = a.filter(x => x.data >= lim); if (rec.length < 2) return; const m = rec.reduce((t, x) => t + x.preco, 0) / rec.length;
+    rec.forEach(x => { const k = x.fornId || normName(x.forn); if (!F.has(k)) F.set(k, { forn: x.forn, n: 0, soma: 0, venc: 0, ocs: new Set() }); const f = F.get(k); f.n++; f.soma += (x.preco - m) / m; f.ocs.add(x.oc); if (x.comprado) f.venc++; }); });
+  return [...F.values()].map(f => Object.assign(f, { v: f.soma / f.n })).sort((a, b) => a.v - b.v);
+}
+function consPrcHtml() {
+  const P = consPrecos(), q = normName(CONS.fp || "");
+  if (!CONS.listOc) return `<div class="cap-empty"><h3>Sem a lista de ordens de compra</h3><p>Os preços vêm das ordens de compra.</p></div>`;
+  const linhas = [...P.keys()].map(k => { const r = consPrcResumo(P.get(k)[0].item, P); return Object.assign({ item: P.get(k)[0].item, un: P.get(k)[0].un }, r); }).filter(r => !q || normName([r.item, r.a.map(x => x.forn).join(" ")].join(" ")).includes(q)).sort((a, b) => a.item.localeCompare(b.item, "pt-BR"));
+  const nAcima = linhas.filter(r => r.sit === "acima").length, F = consPrcFornecedores(P);
+  const topo = `<div class="cons-g"><h3>Preços do mercado levantados nas ordens de compra</h3><div class="dica">Cada fornecedor orçado (vencedor ou não) registra o preço por item. A média é de todas as cotações dos últimos 12 meses; a última compra é comparada com ela (de acordo = até 5% de diferença).${nAcima ? ` <b style="color:var(--err)">${nAcima} item(ns) com a última compra acima da média.</b>` : ""}</div></div>
+    <div class="cons-fbar" role="search"><input type="search" id="consQP" placeholder="Buscar item ou fornecedor…" value="${esc(CONS.fp || "")}"></div>`;
+  if (!P.size) return topo + `<div class="cap-empty"><h3>Nenhum preço registrado ainda</h3><p>Os preços aparecem aqui quando uma ordem de compra é enviada para aprovação com os orçamentos.</p></div>`;
+  const tabI = `<div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th>Item</th><th class="right">Cotações (12 meses)</th><th class="right">Média do mercado</th><th>Menor preço</th><th>Última compra</th><th>Última compra × média</th></tr></thead><tbody>${linhas.map(r => `<tr><td><b>${esc(r.item)}</b><div class="sup">${esc(r.un || "")}</div></td><td class="right">${r.rec.length}<div class="sup">${r.nf} fornecedor(es)</div></td><td class="right nw">${r.media ? esc(fmtBRL(r.media)) : "—"}</td><td>${r.menor ? `${esc(fmtBRL(r.menor.preco))}<div class="sup">${esc(r.menor.forn)} · ${esc(fmtDate(r.menor.data))}</div>` : "—"}</td><td>${r.comp ? `${esc(fmtBRL(r.comp.preco))}<div class="sup">${esc(r.comp.forn)} · ${esc(r.comp.oc)} · ${esc(fmtDate(r.comp.data))}</div>` : `<span class="sup">sem compra</span>`}</td><td>${r.comp && r.rec.length < 2 ? `<span class="sup">1 cotação só</span>` : consPrcPill(r.sit, r.v)}</td></tr>`).join("")}</tbody></table></div>`;
+  const tabF = F.length ? `<div class="cons-g" style="margin-top:12px"><h3>Desempenho dos fornecedores</h3><div class="dica">Preço médio de cada fornecedor contra a média do mercado nos mesmos itens (negativo = mais barato). Só itens com 2 ou mais cotações em 12 meses.</div><div class="table-wrap"><table class="cap-table cons-tab"><thead><tr><th>Fornecedor</th><th class="right">Cotações</th><th class="right">Ordens</th><th class="right">Vencedor (compras)</th><th>Preço × média</th></tr></thead><tbody>${F.map(f => `<tr><td><b>${esc(f.forn)}</b></td><td class="right">${f.n}</td><td class="right">${f.ocs.size}</td><td class="right">${f.venc}</td><td>${consPrcPill(consPrcSit(f.v), f.v)}</td></tr>`).join("")}</tbody></table></div></div>` : "";
+  return topo + tabI + tabF;
+}
+{ const p0 = paintCons; paintCons = function () {
+    p0.apply(this, arguments);
+    const body = $("consBody"); if (!body || !CONS.list) return;
+    const views = body.querySelector(".cap-views");
+    if (views && !views.querySelector("[data-aba=prc]")) { const cat = views.querySelector("[data-aba=cat]"), h = `<button class="tab ${CONS.aba === "prc" ? "on" : ""}" data-aba="prc" onclick="consAba('prc')">Preços</button>`; if (cat) cat.insertAdjacentHTML("beforebegin", h); else views.insertAdjacentHTML("beforeend", h); }
+    if (views) {   /* ordem das abas (pedido de 26/10 10:48): Estoque › Movimentações › Ordem de Compra › Preços › Catálogo › Painel */
+      const ORD = ["est", "mov", "oc", "prc", "cat", "pan"], chave = el => el.dataset.aba || (String(el.getAttribute("onclick") || "").match(/consAba\('(\w+)'\)/) || [])[1] || "";
+      [...views.children].filter(el => ORD.includes(chave(el))).sort((x, y) => ORD.indexOf(chave(x)) - ORD.indexOf(chave(y))).forEach(el => views.appendChild(el));
+    }
+    if (CONS.aba === "prc") { [...body.children].forEach(c => { if (c !== views) c.remove(); }); body.insertAdjacentHTML("beforeend", consPrcHtml()); const q = $("consQP"); if (q) q.addEventListener("input", ev => { CONS.fp = ev.target.value; erpDeb("consQP", () => keepFocus(paintCons)); }); }
+    if (CONS.aba === "oc") consOcEnfeitar();
+  }; window.paintCons = paintCons; }
+/* ordem aberta: quantidade com a unidade ao lado, média do mercado (outras ordens) em cada preço; Miro só para administradores/proprietários */
+function consOcEnfeitar() {
+  const body = $("consBody"); if (!body) return;
+  if (!consAdm()) body.querySelectorAll('a[href*="miro.com"]').forEach(a => a.remove());
+  body.querySelectorAll("input.oc-qtd").forEach(i => { i.style.width = "110px"; });
+  consOcMediaPinta();
+}
+function consOcMediaPinta() {
+  const o = CONS.ocSel ? consOcDe(CONS.ocSel) : null, body = $("consBody"); if (!o || !body) return;
+  const its = consOcItens(o), C = consOcCot(o), P = consPrecos(o._id);
+  body.querySelectorAll(".oc-sec").forEach((sec, si) => {
+    const p = (C[si] && C[si].precos) || {};
+    [...sec.querySelectorAll("tbody tr")].filter(tr => !tr.classList.contains("tot")).forEach((tr, i) => {
+      const it = its[i], td = tr.children[1]; if (!it || !td) return;
+      let el = td.querySelector(".oc-media"); const r = consPrcResumo(it.nome, P);
+      if (!r.media) { if (el) el.remove(); return; }
+      const u = consNum(p[i]), v = u > 0 ? (u - r.media) / r.media : null, sit = consPrcSit(v);
+      const html = `média ${esc(fmtBRL(r.media))} (${r.rec.length})${v != null && sit !== "ok" ? ` · <span class="${sit}">${v > 0 ? "+" : ""}${(100 * v).toFixed(0)}%</span>` : ""}`;
+      if (!el) { td.insertAdjacentHTML("beforeend", `<div class="oc-media" title="Média das cotações deste item nas outras ordens dos últimos 12 meses">${html}</div>`); } else el.innerHTML = html;
+    });
+  });
+}
+{ const t0 = consOcTotaisPinta; consOcTotaisPinta = function () { const r = t0.apply(this, arguments); try { consOcMediaPinta(); } catch (e) {} return r; }; }
+/* detalhe do item: "Última compra" no lugar do fornecedor habitual e os preços orçados */
+{ const v0 = consVer; consVer = function (id) {
+    const r = v0.apply(this, arguments); const x = CONS.itens.find(i => i._id === String(id)); if (!x) return r;
+    try {
+      const R = consPrcResumo(x.Title), dt = [...document.querySelectorAll("#modal .fv-dados dt")].find(d => d.textContent.trim() === "Fornecedor");
+      if (dt) { dt.textContent = "Última compra"; if (dt.nextElementSibling) dt.nextElementSibling.innerHTML = R.comp ? `${esc(fmtBRL(R.comp.preco))} · ${esc(R.comp.forn)} <span class="sup">${esc(R.comp.oc)} · ${esc(fmtDate(R.comp.data))}</span>` : "—"; }
+      const dl = document.querySelector("#modal .fv-dados");
+      if (dl && R.a.length) dl.insertAdjacentHTML("afterend", `<h3 style="font-size:14px;margin:12px 0 6px">Preços orçados nas ordens de compra</h3><p class="sup" style="margin:0 0 6px">${R.media ? `Média do mercado (12 meses): <b>${esc(fmtBRL(R.media))}</b> em ${R.rec.length} cotação(ões) de ${R.nf} fornecedor(es)${R.menor ? ` · menor ${esc(fmtBRL(R.menor.preco))} (${esc(R.menor.forn)})` : ""}` : "Sem cotação nos últimos 12 meses"}${R.comp ? ` · última compra ${consPrcPill(R.sit, R.v)}` : ""}</p><div class="table-wrap"><table class="cap-table"><thead><tr><th>Data</th><th>Ordem</th><th>Fornecedor</th><th class="right">Preço</th><th></th></tr></thead><tbody>${R.a.slice(0, 12).map(c => `<tr><td class="nw">${esc(fmtDate(c.data))}</td><td class="nw">${esc(c.oc)}</td><td>${esc(c.forn)}</td><td class="right nw">${esc(fmtBRL(c.preco))}</td><td class="sup">${c.comprado ? "<b>comprado</b>" : c.st === "Reprovada" ? "reprovada" : "orçado"}</td></tr>`).join("")}</tbody></table></div>`);
+    } catch (e) {}
+    return r;
+  }; window.consVer = consVer; }
+
+/* ---------- 4 · excluir movimentação refaz o "saldo após" das seguintes ---------- */
+window.consMovExcluir = id => {
+  const m = CONS.movs.find(i => i._id === String(id)); if (!m || !consExc()) return;
+  (async () => { if (!(await erpConfirmar({ titulo: "Excluir movimentação", texto: `Excluir "${m.Tipo} · ${m.ItemNome || ""}" de ${m.Data ? fmtDate(m.Data) : "—"}? O estoque do item e o saldo das movimentações seguintes são recalculados${(m.Tipo === "Entrada" || m.Tipo === "Devolução") && consSaldo(m.ItemId) - Math.abs(consNum(m.Quantidade)) < 0 ? " e o estoque ficaria negativo — depois, acerte com um Ajuste de inventário" : ""}.`, sim: "Excluir", perigo: true }))) return;
+    try { await graph(`/sites/${CONS.site.id}/lists/${CONS.listMov.id}/items/${m._id}`, { method: "DELETE" }); closeModal();
+      const s = await consRecalcSaldos(m.ItemId); paintCons(); const it = CONS.itens.find(x => x._id === String(m.ItemId)); toast(`Movimentação excluída · ${it ? it.Title + ": " : ""}${consQtd(s, it && it.Unidade)} em estoque.`, 5000); } catch (e) { toast("Erro: " + e.message, 6000); }
+  })();
+};
+
+/* ---------- 5 · Terceiros: CPF não tem Nome Fantasia ---------- */
+const tercEhCpf = doc => docClean(doc).length === 11;
+function tercCpfFant() {
+  const d = $("gCNPJ"), f = $("gFantasia"); if (!d || !f) return;
+  const fd = f.closest(".field"), cpf = tercEhCpf(d.value);
+  if (cpf && !f.dataset.cpf) { f.dataset.antes = f.value; f.dataset.cpf = "1"; f.value = "Não aplicável"; f.disabled = true; f.title = "Pessoa física (CPF) não tem Nome Fantasia"; if (fd && !fd.querySelector(".hint.cpf")) fd.insertAdjacentHTML("beforeend", `<div class="hint cpf">CPF: não se aplica (fica em branco no cadastro)</div>`); }
+  else if (!cpf && f.dataset.cpf) { f.disabled = false; f.value = f.dataset.antes || ""; delete f.dataset.cpf; f.title = ""; const h = fd && fd.querySelector(".hint.cpf"); if (h) h.remove(); }
+}
+window.tercCpfFant = tercCpfFant;
+["input", "change"].forEach(ev => document.addEventListener(ev, e => { if (e.target && e.target.id === "gCNPJ") setTimeout(tercCpfFant, 0); }, true));
+{ const m = $("modal"); if (m) new MutationObserver(() => { const f = $("gFantasia"); if (f && !f.dataset.cpfVisto) { f.dataset.cpfVisto = "1"; tercCpfFant(); } }).observe(m, { childList: true, subtree: true }); }
+{ const fs = fornSave; fornSave = async function () {
+    const f = $("gFantasia"), d = $("gCNPJ"); if (f && d && tercEhCpf(d.value)) { f.dataset.cpf = "1"; f.value = ""; }
+    try { return await fs.apply(this, arguments); }
+    finally { const f2 = $("gFantasia"); if (f2 && f2.dataset.cpf) f2.value = "Não aplicável"; }
+  }; window.fornSave = fornSave; }
+{ const p0 = fornFantPinta; fornFantPinta = function (inp) { const r = p0.apply(this, arguments); try { const c = $(inp.id + "Fant"), x = fornFantDe(inp.value); if (c && x && x.f && tercEhCpf(x.f.CNPJ)) c.value = "Não aplicável (CPF)"; } catch (e) {} return r; }; }
+
+/* ---------- 6 · Funcionários: dicas numa linha ---------- */
+{ const f0 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function () {
+    const h = f0.apply(this, arguments);
+    try {
+      const t = document.createElement("template"); t.innerHTML = h;
+      const ajusta = (id, txt, tip) => { const el = t.content.getElementById(id), fd = el && el.closest(".field"); if (!fd) return; fd.querySelectorAll(".hint").forEach(x => x.remove()); const d = document.createElement("div"); d.className = "hint rhf-h"; d.title = tip; d.textContent = txt; fd.appendChild(d); };
+      if (t.content.querySelector("select#rdFuC")) ajusta("rdFuC", "Lista Funções (Cargos)", 'Da lista Banco de Dados › Funções (Cargos). Quem tem "Motorista" na função aparece primeiro nas listas de motoristas.');
+      if (t.content.querySelector("select#rdFuCNPJ")) ajusta("rdFuCNPJ", "Cadastros Mestres › CNPJs", "Da Diretoria › Cadastros Mestres › CNPJs");
+      ajusta("rdFuDem", "Com data, vira \"Desligado\"", 'Com data de demissão, a situação vira "Desligado"');
+      return t.innerHTML;
+    } catch (e) { return h; }
+  }; }
+
+/* ---------- 7 · número da ordem único (pedido de 26/10 10:22: duas ordens OCC-2026-001 em produção) ----------
+   A causa provável é o duplo clique em "+ Ordem de compra" (as duas leram a lista antes de gravar) — consOcNova agora trava e confere.
+   Ordens já repetidas: a mais nova ganha o próximo número livre (botão na lista e automático antes de enviar, aprovar, reprovar ou
+   lançar na CAP), porque o número liga a ordem ao lançamento da CAP (Ref. documento) e às cotações gravadas nos Terceiros. */
+const consOcChave = o => String((o && o.Title) || "").trim().toUpperCase();
+function consOcRepetidas() { const m = new Map(); (CONS.oc || []).forEach(o => { const k = consOcChave(o); if (!k) return; if (!m.has(k)) m.set(k, []); m.get(k).push(o); }); return [...m.values()].filter(a => a.length > 1).map(a => a.sort((x, y) => Number(x._id) - Number(y._id))); }
+/* revisão B1: a ordem com vínculos (lançamento na CAP, recebimento, cotações gravadas nos Terceiros) fica com o número;
+   só as sem vínculo são renumeradas. Duas ou mais com vínculo: nada é mudado e o administrador decide (fica o aviso). */
+const consOcLigada = o => !!(o.CapId || consOcRec(o).length || ["Aguardando pagamento", "Aguardando recebimento", "Concluída"].includes(o.Status) || consOcHist(o).some(h => /cotações registradas/.test(h.t || "")));
+function consOcPlanoRenum() {
+  const mudar = [], travadas = [];
+  consOcRepetidas().forEach(a => { const lig = a.filter(consOcLigada); if (lig.length > 1) { travadas.push(a); return; } const fica = lig[0] || a[0]; a.forEach(o => { if (o !== fica) mudar.push(o); }); });
+  return { mudar, travadas };
+}
+async function consOcRenumerar(silencioso) {
+  if (!consPode() || !CONS.listOc) return 0;
+  await consCarregar(true); let n = 0; const P = consOcPlanoRenum();
+  for (const o of P.mudar) {
+    const antigo = o.Title, novo = consOcNumero();
+    await consOcGravar(o, { Title: novo }, "solic", `número corrigido: ${antigo} era repetido → ${novo}`); n++;
+  }
+  if (n) { await consCarregar(true); paintCons(); if (!silencioso) toast(`${n} ordem(ns) com número repetido renumerada(s).`, 6000); }
+  else if (!silencioso) toast(P.travadas.length ? "As ordens repetidas já estão ligadas à CAP ou ao estoque — o administrador decide qual excluir ou reabrir." : "Nenhum número repetido.", 8000);
+  return n;
+}
+window.consOcRenumerar = consOcRenumerar;
+const consOcAntes = fn => async function () {
+  try { if (consOcRepetidas().length) { const n = await consOcRenumerar(true); if (n) toast(`Número repetido corrigido antes de continuar (${n}).`, 6000); } } catch (e) { toast("Não foi possível corrigir o número repetido: " + e.message, 7000); return; }
+  const o = CONS.ocSel ? consOcDe(CONS.ocSel) : null;
+  if (o && consOcRepetidas().some(a => a.some(x => x._id === o._id))) { toast(`O número ${o.Title} ainda é de outra ordem ligada à CAP ou ao estoque — o administrador precisa excluir ou reabrir uma delas antes.`, 9000); return; }
+  return fn.apply(this, arguments);
+};
+{ const l0 = window.consOcLancarCap; window.consOcLancarCap = async function () {
+    const o = CONS.ocSel ? consOcDe(CONS.ocSel) : null;
+    if (o && o.Status === "Aguardando pagamento" && !o.CapId) {
+      try { await loadCAP({ soLeitura: true }); const c = (CAP_STATE.items || []).find(it => String(it.RefDocumento || "") === String(o.Title) && !capCancelada(it));
+        if (c && (CONS.oc || []).some(x => x._id !== o._id && String(x.CapId || "") === String(c._id))) { toast(`O lançamento #${c._id} da CAP com o número ${o.Title} já é de outra ordem — nada foi lançado. Corrija a numeração.`, 9000); return; } } catch (e) {}
+    }
+    return l0.apply(this, arguments);
+  }; }
+["consOcEnviar", "consOcAprovar", "consOcReprovar", "consOcLancarCap"].forEach(k => { const f0 = window[k]; if (typeof f0 === "function") window[k] = consOcAntes(f0); });
+{ const l0 = consOcLista; consOcLista = function () {
+    let h = l0.apply(this, arguments); const rep = consOcRepetidas();
+    if (rep.length && CONS.listOc) h = h.replace('<div class="cap-kpis">', `<div class="cons-g" style="border-left:4px solid var(--err,#B42318);margin:0 0 12px"><b>Número de ordem repetido:</b> ${rep.map(a => `${esc(a[0].Title)} (${a.length} ordens)`).join(", ")}. ${consOcPlanoRenum().mudar.length ? "A ordem sem lançamento na CAP nem recebimento ganha o próximo número livre." : "As repetidas já estão ligadas à CAP ou ao estoque: exclua ou reabra uma delas (administrador)."}${consPode() && consOcPlanoRenum().mudar.length ? ` <button class="btn sm" onclick="consOcRenumerar()">Corrigir a numeração</button>` : ""}</div><div class="cap-kpis">`);
+    return h;
+  }; }
+
+/* ---------- 8 · administrador/proprietário: excluir em qualquer situação e reabrir para edição (pedido de 26/10 10:24) ---------- */
+async function consOcCapAtivo(o) {
+  if (!o) return null;
+  if (!o.CapId && ["Em elaboração", "Reprovada"].includes(o.Status)) return null;   /* revisão R1: rascunho/reprovada nunca foi à CAP */
+  if (!o.CapId && !canSee(MODULES.find(m => m.id === "cap"))) return null;
+  try { await loadCAP({ soLeitura: true }); } catch (e) { return o.CapId ? { erro: e.message } : null; }   /* sem CapId, a falha de leitura não bloqueia */
+  const c = (CAP_STATE.items || []).find(x => String(x._id) === String(o.CapId)) || (consOcRepetidas().some(a => a.some(x => x._id === o._id)) ? null : (CAP_STATE.items || []).find(x => String(x.RefDocumento || "") === String(o.Title) && !capCancelada(x)));   /* revisão M2: CapId não gravado */
+  return c && !capCancelada(c) ? c : null;
+}
+window.consOcExcluir = async () => {
+  let o = consOcDe(CONS.ocSel); if (!o) return;
+  if (consOcRepetidas().length && consPode()) { try { await consOcRenumerar(true); } catch (e) {} o = consOcDe(CONS.ocSel); if (!o) return; }   /* número repetido: corrige antes (as entradas e as cotações são achadas pelo número) */
+  const livre = ["Em elaboração", "Cancelada", "Reprovada"].includes(o.Status);
+  if (!(livre ? consExc() : consAdm())) { toast("Excluir uma ordem em andamento é só para administradores e proprietários do módulo."); return; }
+  const cap = await consOcCapAtivo(o);
+  if (cap && cap.erro) { toast("Não foi possível conferir o lançamento na CAP: " + cap.erro, 7000); return; }
+  if (cap) { toast(`O lançamento #${cap._id} desta ordem ainda está na CAP (${cap.Status || "em aberto"}). Exclua ou cancele o lançamento na CAP antes de excluir a ordem.`, 9000); return; }
+  const marcas = consOcRec(o).map(r => r && r.k).filter(Boolean), repetida = consOcRepetidas().some(a => a.some(x => x._id === o._id));
+  const ents = !consAdm() ? [] : CONS.movs.filter(m => m.Tipo === "Entrada" && (repetida ? marcas.some(k => String(m.Motivo || "").includes(`[${k}]`)) : String(m.Motivo || "").startsWith(`Ordem de compra ${o.Title} ·`)));   /* revisão R3: número repetido → só as entradas marcadas desta ordem */
+  const dupl = consOcRepetidas().some(a => a.some(x => x._id === o._id));
+  openModal(`Excluir ${o.Title}`, `<p>Excluir a ordem <b>${esc(o.Title)}</b> (${esc(o.Status || "")})? Não pode ser desfeito.</p>
+    ${ents.length ? `<label class="check" style="margin:8px 0"><input type="checkbox" id="ocExEnt"> Excluir também as ${ents.length} entrada(s) no estoque registradas no recebimento desta ordem (o estoque é recalculado)</label><p class="sup">Sem marcar, as entradas continuam em Movimentações.</p>` : ""}
+    ${dupl ? "" : `<p class="sup">As cotações desta ordem gravadas nos Terceiros também saem.</p>`}<div class="err" id="ocErr" style="display:none"></div>`, async () => {
+    const tirarEnt = !!($("ocExEnt") && $("ocExEnt").checked);
+    try {
+      await graph(`/sites/${CONS.site.id}/lists/${CONS.listOc.id}/items/${o._id}`, { method: "DELETE" });
+      let falhou = 0; if (tirarEnt && consAdm()) { const itens = new Set(); for (const m of ents) { try { await graph(`/sites/${CONS.site.id}/lists/${CONS.listMov.id}/items/${m._id}`, { method: "DELETE" }); itens.add(m.ItemId); } catch (e) { falhou++; } } for (const id of itens) { try { await consRecalcSaldos(id); } catch (e) {} } }
+      if (!dupl) { try { for (const f of (FORN_STATE.items || [])) { const a = consOcJson(f.Cotacoes, []); const b = a.filter(c => !(c && c.oc === o.Title)); if (b.length !== a.length) { const val = JSON.stringify(b); const m0 = session.modAtual; session.modAtual = "forn"; try { await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, f._id, { Cotacoes: val }); } finally { session.modAtual = m0; } f.Cotacoes = val; } } } catch (e) {} }
+      CONS.ocSel = null; await consCarregar(true); paintCons(); toast(`Ordem ${o.Title} excluída${tirarEnt ? (falhou ? ` · ${falhou} entrada(s) não puderam ser excluídas — confira em Movimentações` : " com as entradas do recebimento") : ""}.`, falhou ? 9000 : 6000); return true;
+    } catch (e) { const el = $("ocErr"); el.style.display = "block"; el.textContent = "Não foi possível excluir: " + e.message; return false; }
+  });
+  const sv = $("mSave"); if (sv) { sv.textContent = "Excluir"; sv.style.background = "var(--err,#B42318)"; }
+};
+window.consOcReabrir = async () => {
+  const o = consOcDe(CONS.ocSel); if (!o || !consAdm() || o.Status === "Em elaboração") return;
+  if (consOcRec(o).length) { toast("A ordem já tem recebimento registrado — para refazer, exclua a ordem (com as entradas) e abra outra.", 9000); return; }
+  const cap = await consOcCapAtivo(o);
+  if (cap && cap.erro) { toast("Não foi possível conferir o lançamento na CAP: " + cap.erro, 7000); return; }
+  if (cap) { toast(`O lançamento #${cap._id} desta ordem ainda está na CAP (${cap.Status || "em aberto"}). Exclua ou cancele na CAP antes de reabrir.`, 9000); return; }
+  if (!(await erpConfirmar({ titulo: "Reabrir para edição", texto: `A ordem ${o.Title} volta para "Em elaboração": a aprovação${o.CapId ? " e o vínculo com a CAP" : ""} são desfeitos e ela precisa ser enviada e aprovada de novo.`, sim: "Reabrir" }))) return;
+  try { await consOcGravar(o, { Status: "Em elaboração", Vencedor: null, TotalAprovado: null, Aprovador: null, DataDecisao: null, MotivoDecisao: null, CapId: null, PagoEm: null }, "solic", `reaberta para edição (era ${o.Status})`); paintCons(); toast("Ordem reaberta para edição."); } catch (e) { toast("Erro: " + e.message, 6000); }
+};
+{ const d0 = consOcDetalhe; consOcDetalhe = function () {
+    let h = d0.apply(this, arguments).replace(/<div class="sup oc-dica">[\s\S]*?<\/div>/g, ""); const o = CONS.ocSel ? consOcDe(CONS.ocSel) : null;   /* revisão L3: uma fonte só (média das ordens) */
+    if (o && consAdm()) {
+      const extra = (o.Status !== "Em elaboração" ? `<button class="btn" onclick="consOcReabrir()">Reabrir para edição</button>` : "") + (/onclick="consOcExcluir\(\)"/.test(h) ? "" : `<button class="btn" onclick="consOcExcluir()" style="color:var(--err)">Excluir</button>`);
+      if (extra) h = h.replace(/(<div class="oc-topo">[\s\S]*?<span class="grow"><\/span>)/, `$1${extra}`);
+    }
+    return h;
+  }; }
+/* número nunca reaproveitado: o maior já usado no ano entre as ordens, as entradas do recebimento ("Ordem de compra OCC-…"),
+   as cotações gravadas nos Terceiros e a Ref. documento da CAP (o que estiver carregado) — excluir a última ordem não devolve o número */
+consOcNumero = function () {
+  const y = todayISO().slice(0, 4), re = new RegExp(`OCC-${y}-(\\d+)`, "gi"); let n = 0;
+  const ver = s => { String(s || "").replace(re, (t, d) => { n = Math.max(n, Number(d)); return t; }); };
+  (CONS.oc || []).forEach(o => ver(o.Title)); (CONS.movs || []).forEach(m => ver(m.Motivo));
+  try { (FORN_STATE.items || []).forEach(f => ver(f.Cotacoes)); } catch (e) {}
+  try { (CAP_STATE.items || []).forEach(it => ver(it.RefDocumento)); } catch (e) {}
+  return `OCC-${y}-${String(n + 1).padStart(3, "0")}`;
+};
+
+/* revisão R5: a marca de controle [r…] do recebimento não aparece nas telas */
+function consMarcaEsconder(root) { if (!root) return; const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); const re = / ?\[r[0-9a-z]{6,}\]/g; let n; while ((n = w.nextNode())) { if (re.test(n.nodeValue)) n.nodeValue = n.nodeValue.replace(re, ""); re.lastIndex = 0; } }
+{ const p0 = paintCons; paintCons = function () { const r = p0.apply(this, arguments); try { consMarcaEsconder($("consBody")); } catch (e) {} return r; }; window.paintCons = paintCons; }
+{ const v0 = window.consMovVer; window.consMovVer = function () { const r = v0.apply(this, arguments); try { consMarcaEsconder(document.querySelector("#modal")); } catch (e) {} return r; }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
 CONFIG.version = "v0.14.18";   /* Fluxo de Caixa R2: tesouraria; despesa em dinheiro no caixa; CAP paga em dinheiro → saída no caixa; âncora/mês fechado; DRE/CAPEX com o caixa */
 CONFIG.version = "v0.14.19";   /* CAP: fechamento mensal com trava; pacote com as despesas do caixa; "Vencido · aguarda NF"; credor "Própria empresa (NMB)"; Outros CNPJs para aprovação */
+CONFIG.version = "v0.14.20";   /* Consumíveis pronto para uso: catálogo sem repetidos, aprovação da Diretoria, recebimento item a item, histórico de preços; Terceiros CPF sem fantasia; Funcionários */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

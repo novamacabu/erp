@@ -23236,6 +23236,7 @@ async function rhPesGravar(funcId, nome, pes, fresco) {   /* fresco: a lista aca
   SP.update = async (siteId, listId, itemId, fields) => {
     if (!ehFunc(listId) || !fields) return u1(siteId, listId, itemId, fields);
     const s = preparar(fields);
+    if (!session.n1 && session.modAtual === "rh_db" && typeof podeEditar === "function" && !podeEditar("rh_db") && !(typeof vcAtivo === "function" && vcAtivo())) throw new Error("Seu acesso ao Banco de Dados do RH é só de leitura — nada foi gravado.");   /* v0.14.21: antes, a mensagem dizia que os dados pessoais tinham sido gravados */
     if (s.temPes) {   /* primeiro a lista restrita; o valor antigo da principal só é limpo depois que ela confirmar */
       const x = (RHDB_STATE.itens || []).find(i => String(i._id) === String(itemId));
       try { await rhPesGravar(itemId, s.main.Title || (x && x.Title), s.pes); }
@@ -30922,6 +30923,7 @@ async function rhFotoGravar(funcId, nome, foto) {
   };
   SP.update = async (siteId, listId, itemId, fields) => {
     if (!ehF(listId)) return u2(siteId, listId, itemId, fields);
+    if (!session.n1 && session.modAtual === "rh_db" && typeof podeEditar === "function" && !podeEditar("rh_db") && !(typeof vcAtivo === "function" && vcAtivo())) throw new Error("Seu acesso ao Banco de Dados do RH é só de leitura — nada foi gravado.");   /* v0.14.21 (revisão): a foto sozinha também */
     const [g, foto] = tira(fields), x = (RHDB_STATE.itens || []).find(i => String(i._id) === String(itemId));
     const r = g && Object.keys(g).length ? await u2(siteId, listId, itemId, g) : null;
     if (foto !== undefined && foto !== ((RH_FOTO.map.get(String(itemId)) || {}).Foto || "")) { try { await rhFotoGravar(itemId, (g && g.Title) || (x && x.Title), foto); } catch (e) { avisa(e); } }
@@ -42432,12 +42434,42 @@ consOcNumero = function () {
 function consMarcaEsconder(root) { if (!root) return; const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); const re = / ?\[r[0-9a-z]{6,}\]/g; let n; while ((n = w.nextNode())) { if (re.test(n.nodeValue)) n.nodeValue = n.nodeValue.replace(re, ""); re.lastIndex = 0; } }
 { const p0 = paintCons; paintCons = function () { const r = p0.apply(this, arguments); try { consMarcaEsconder($("consBody")); } catch (e) {} return r; }; window.paintCons = paintCons; }
 { const v0 = window.consMovVer; window.consMovVer = function () { const r = v0.apply(this, arguments); try { consMarcaEsconder(document.querySelector("#modal")); } catch (e) {} return r; }; }
+/* =====================================================================
+   v0.14.21 · Quem só tem "Ver" abre os registros só para leitura (pedido de 26/10, 11:04 e 11:42)
+   No Banco de Dados do RH (Funcionários, Funções, Eventos de Folha, Feriados, CNPJs, Departamentos…), o formulário de um registro
+   existente abria editável com "Salvar" para quem tem só "Ver" — a guarda barrava a gravação, mas a tela enganava. Agora abre
+   travado, com "Fechar" e o aviso de acesso só de leitura. A varredura das janelas (t_ver_janelas.py) não achou o caso em outros módulos.
+   ===================================================================== */
+function erpModalSoLeitura(aviso) {
+  const m = $("modal"); if (!m) return;
+  const body = m.querySelector(".modal-body"), foot = m.querySelector(".modal-foot");
+  if (body) {
+    body.querySelectorAll("input, select, textarea").forEach(e => { if (e.type === "hidden") return; e.disabled = true; e.setAttribute("aria-readonly", "true"); });
+    body.querySelectorAll("button").forEach(b => { if (!b.closest(".tnotas")) b.disabled = true; });
+    body.querySelectorAll("label[for], .rhf-foto-acoes, [onclick*='Foto'], [onclick*='Escolher']").forEach(e => { e.style.pointerEvents = "none"; });
+    if (!body.querySelector(".so-leitura-aviso")) body.insertAdjacentHTML("afterbegin", `<div class="so-leitura-aviso" role="note" style="margin:0 0 12px;padding:8px 12px;border-radius:var(--radius-sm,8px);background:#F3F5F8;border:1px solid #DCE1E7;color:#3B4352;font-size:13px">👁 ${esc(aviso || "Seu acesso a este módulo é só de leitura: os campos ficam travados.")}</div>`);
+  }
+  if (foot) {
+    foot.querySelectorAll("button").forEach(b => { if (b.id === "mSave" || /excluir|remover|salvar|gravar/i.test(b.textContent || "")) b.remove(); });
+    const c = [...foot.querySelectorAll("button")].find(b => /cancelar/i.test(b.textContent || "")); if (c) c.textContent = "Fechar";
+    else if (!foot.querySelector("button")) foot.insertAdjacentHTML("beforeend", `<button class="btn primary" onclick="closeModal()">Fechar</button>`);
+  }
+}
+window.erpModalSoLeitura = erpModalSoLeitura;
+{ const f0 = window.rhDbForm; window.rhDbForm = function (sub, id) {
+    const soVe = !session.n1 && (!podeEditar("rh_db") || (typeof vcAtivo === "function" && vcAtivo()));   /* revisão: no "Visualizar como" também trava (nada é gravado ali) */
+    if (soVe && (id === undefined || id === null || id === "")) { toast(typeof vcAtivo === "function" && vcAtivo() ? "Visualizando como outra pessoa: nada é gravado." : "Seu acesso ao Banco de Dados do RH é só de leitura."); return; }   /* revisão: "Novo" com id nulo */
+    const r = f0.apply(this, arguments);
+    try { if (soVe) erpModalSoLeitura(typeof vcAtivo === "function" && vcAtivo() ? "Visualizando como outra pessoa: os campos ficam travados e nada é gravado." : "Seu acesso ao Banco de Dados do RH é só de leitura: os campos ficam travados e nada é gravado. Para alterar, peça a um administrador a edição em Sistema › Usuários e permissões."); } catch (e) {}
+    return r;
+  }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
 CONFIG.version = "v0.14.18";   /* Fluxo de Caixa R2: tesouraria; despesa em dinheiro no caixa; CAP paga em dinheiro → saída no caixa; âncora/mês fechado; DRE/CAPEX com o caixa */
 CONFIG.version = "v0.14.19";   /* CAP: fechamento mensal com trava; pacote com as despesas do caixa; "Vencido · aguarda NF"; credor "Própria empresa (NMB)"; Outros CNPJs para aprovação */
 CONFIG.version = "v0.14.20";   /* Consumíveis pronto para uso: catálogo sem repetidos, aprovação da Diretoria, recebimento item a item, histórico de preços; Terceiros CPF sem fantasia; Funcionários */
+CONFIG.version = "v0.14.21";   /* quem só tem "Ver" abre os registros do Banco de Dados do RH só para leitura */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

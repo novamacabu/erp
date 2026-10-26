@@ -42623,6 +42623,214 @@ function bilFechCarregar() {
 }
 window.bilFechCarregar = bilFechCarregar;
 window.bilFechDia = iso => { const d = $("fcData"); if (!d) return; d.value = iso; bilFechCarregar(); d.scrollIntoView({ behavior: "smooth", block: "center" }); };
+/* =====================================================================
+   v0.14.23 · Pedido de 26/10 (17:01): na impressão dos horários (Imprimir PDF e Painel de horários) voltam as etiquetas de
+   Madalena como na tela — "Saída de Madalena" e "Ponto final Madalena", verdes — no lugar das bolinhas verde/vermelha (v0.14.9.3).
+   Se faltar espaço na coluna, a etiqueta encolhe com reticências; o horário e o número da linha nunca são cortados.
+   ===================================================================== */
+const HOR_MAD_ROT = { sai: "Saída de Madalena", fim: "Ponto final Madalena" };
+horPrintLinha = function (z, comServ) {
+  if (!z) return `<div class="hr"></div>`;
+  const mk = horPaxMk(z);
+  const sv = comServ && z.Servico && z.Servico !== "Parador" && z.Servico !== "Madalena" ? `<span class="hp ${horServCls(z.Servico)}">${esc(horServRot(z.Servico))}</span>` : "";
+  const mad = mk ? `<span class="hp mad2 ${mk[0]}" title="${esc(HOR_MAD_ROT[mk[0]] || "")}">${esc(HOR_MAD_ROT[mk[0]] || "")}</span>` : "";
+  const lin = z.Linha ? `<span class="hlin">${esc(String(z.Linha).replace(/^Linha\s*/i, ""))}</span>` : "";
+  return `<div class="hr"><span class="h">${esc(z.Horario)}</span>${sv}${mad}${lin}</div>`;
+};
+window.horPrintLinha = horPrintLinha;
+horPaxLegenda = function (qs) {
+  const zs = qs.flatMap(q => HOR_BLOCOS.flatMap(bl => HOR_ORIGENS.flatMap(o => horDe(q, bl, o))));
+  const tem = f => zs.some(f), it = [];
+  it.push(`<span><b>Sem marca</b> = Parador, para em todos os pontos</span>`);
+  if (tem(z => /^(direto|preço único)$/i.test(z.Servico || ""))) it.push(`<span><span class="hp unico">Direto</span> preço único, sem paradas intermediárias</span>`);
+  if (tem(z => z.Servico === "Fretamento")) it.push(`<span><span class="hp fret">Fretamento</span> firmas</span>`);
+  if (tem(z => (horPaxMk(z) || [])[0] === "sai")) it.push(`<span><span class="hp mad2 sai">Saída de Madalena</span> a viagem começa em Santa Maria Madalena</span>`);
+  if (tem(z => (horPaxMk(z) || [])[0] === "fim")) it.push(`<span><span class="hp mad2 fim">Ponto final Madalena</span> a viagem termina em Santa Maria Madalena</span>`);
+  if (tem(z => z.Linha)) it.push(`<span><span class="hlin" style="margin:0">1000</span> número da linha no letreiro</span>`);
+  return `<div class="hleg2">${it.join("")}</div>`;
+};
+window.horPaxLegenda = horPaxLegenda;
+const HOR_MAD_CSS = `
+  .hp.mad2{display:inline-block;background:#E3F2E7;color:#1F7A3E;font-weight:800;text-transform:uppercase;letter-spacing:.03em;font-size:7.5px;line-height:1.25;padding:2px 5px;border-radius:4px;white-space:nowrap;flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .hleg2 .hp.mad2{flex-shrink:0}
+  .hf-col .hp.mad2{font-size:7px;padding:1px 4px;letter-spacing:.02em}`;
+HOR_FOLHA_CSS_EXTRA += HOR_MAD_CSS;
+{ const hp0 = window.horImprimir;
+  window.horImprimir = function () { const p0 = printDoc; printDoc = o => { printDoc = p0; return p0(Object.assign({}, o, { css: (o.css || "") + HOR_MAD_CSS })); }; try { return hp0.apply(this, arguments); } finally { printDoc = p0; } }; }
+
+/* =====================================================================
+   v0.14.23 · Pedidos de 26/10 (17:05–17:16): impressões dos horários para o passageiro e para o guichê.
+   1. Cartaz do passageiro: uma folha A4 por tipo de dia (Segunda a Sexta, Sábados, Domingos…), horário grande (~20 pt),
+      etiquetas de Madalena, centralizado — paisagem ou retrato.
+   2. Painel completo (todos os dias numa folha), centralizado: A4 deitada ou meia folha A4 (folha em pé, painel deitado
+      na metade de cima, com linha de corte). A letra do painel completo é pequena — é para o guichê/escritório.
+   Os blocos de cada tipo de dia viram cartões distribuídos em colunas equilibradas; a escala é a maior que cabe sem cortar
+   horários nem etiquetas. "Imprimir Painel" (Horários) e "Imprimir Painel de horários" (Tarifas) abrem a escolha.
+   ===================================================================== */
+/* altura da caixa em mm: "alt" preenche a área útil da folha (margens de 12/14 mm do ERP); "altSafari" deixa a folga que o Safari
+   (Mac, iPhone, iPad) tira para o cabeçalho/rodapé dele — sem ela sai uma 2ª folha em branco (v0.14.16.2). Meia folha: por cópia (2 por folha). */
+const HOR_FMT = {
+  painel:   { alt: 180, altSafari: 140, deitada: true,  cols: 3, opc: [1, 2, 3, 4], divide: true, rot: "Painel completo · A4 deitada" },
+  meia:     { alt: 128, altSafari: 112, deitada: false, cols: 3, opc: [3, 4], copias: 2, rot: "Painel completo · duas por folha A4" },
+  czPai:    { alt: 180, altSafari: 140, deitada: true,  cols: 2, opc: [1, 2, 3], rot: "Cartaz · A4 deitada" },
+  czRet:    { alt: 266, altSafari: 228, deitada: false, cols: 1, opc: [1, 2], rot: "Cartaz · A4 em pé" }
+};
+const HOR_FOLHA2_CSS = `
+  .hf-grid.hf-flow{display:block;column-gap:9px;column-fill:balance}
+  .hf-card{break-inside:avoid;page-break-inside:avoid;-webkit-column-break-inside:avoid;display:block;margin:0 0 8px;border:.6px solid #C9CFD8;border-radius:4px;overflow:hidden}
+  .hf-card .hq{margin:0;border-radius:0;padding:5px 10px;display:flex;align-items:baseline;gap:8px}.hf-card .hq b{font-size:12.5px;white-space:nowrap}
+  .hf-card .hq span{font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;margin-left:auto}
+  .hf-card table.ht{margin:0}.hf-card table.ht th{font-size:8px;padding:3px 6px}
+  .hf-card .hr{min-height:0;padding:2px 6px;gap:4px}.hf-card .hr .h{font-size:12px;min-width:34px}
+  .hf-card .hp{font-size:7px;padding:1px 3px}.hf-card .hp.mad2{font-size:7px;padding:1px 4px;flex-shrink:0}.hf-card .hlin{font-size:7.5px}
+  .hf-card .hf-vazio{padding:8px;font-size:9px;color:#6B7280}
+  .hf-pai .hf-card:first-child{break-after:column;-webkit-column-break-after:always}
+  /* painel completo compacto (v0.14.23, pedido de 17:34): o espaço vertical economizado vira letra maior */
+  .pnl .hf-card{margin:0 0 5px}.pnl .hf-card .hq{padding:3px 8px}.pnl .hf-card table.ht th{padding:2px 6px;font-size:7.5px}
+  .pnl .hf-card table.ht td{padding-top:0;padding-bottom:0}.pnl .hf-card .hr{padding:0 6px;gap:4px}.pnl .hf-card .hr .h{font-size:13px;line-height:1.18;font-weight:800}
+  .pnl .doc-cab{padding-bottom:4px;margin-bottom:5px}.pnl .doc-cab img{height:30px}.pnl .doc-cab h1{font-size:17px}
+  .pnl .hf-card .hp{font-size:6px;padding:1px 3px;letter-spacing:0}.pnl .hf-card .hp.mad2{font-size:6px;padding:1px 3px;letter-spacing:0}.pnl .hf-card .hlin{font-size:6.5px}.pnl .hf-card .hr{gap:3px}.pnl .hf-card .hr .h{min-width:0}
+  .pnl .hleg2{margin-top:4px;gap:3px 14px}.pnl .hnota{margin:2px 0 0;font-size:8px}.pnl .rod{margin-top:3px;padding-top:2px}
+  .hf-corte{border-top:1px dashed #9AA3B0;margin:2mm 0 2mm;padding-top:.5mm;font-size:7px;line-height:1;color:#9AA3B0;text-align:center;letter-spacing:.1em;break-inside:avoid;break-after:avoid;page-break-after:avoid}
+  /* cartaz do passageiro: letra grande */
+  .cz .doc-cab h1{font-size:26px}.cz .cz-dia{font-size:30px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#1E2153;margin:2px 0 8px}
+  .cz .hf-card{margin:0 0 12px;border-width:1px}.cz .hf-card .hq{padding:7px 14px}.cz .hf-card .hq b{font-size:17px}.cz .hf-card .hq span{font-size:12px}
+  .cz .hf-card table.ht th{font-size:12px;padding:5px 10px}
+  .cz .hf-card .hr{padding:4px 10px;gap:8px}.cz .hf-card .hr .h{font-size:27px;min-width:78px;font-weight:800}
+  .cz .hf-card .hp{font-size:11px;padding:2px 6px}.cz .hf-card .hp.mad2{font-size:11px;padding:2px 7px}.cz .hf-card .hlin{font-size:12px}
+  .cz .hleg2{font-size:12px;gap:6px 22px;margin-top:6px}.cz .hleg2 .hp{font-size:10px}.cz .hnota{font-size:11px;margin:4px 0 0}
+  .cz .hf-card .hr{padding:1px 10px}.cz .hf-card .hr .h{line-height:1.12}.cz .hf-card table.ht td{padding-top:0;padding-bottom:0}
+  .cz-grade{display:grid;gap:0;border-top:.6px solid #D5DAE1}.cz-grade>div{border-bottom:.6px solid #E3E7EC;border-right:.6px solid #E3E7EC;min-width:0}
+  .cz-sem-sai .hp.mad2.sai,.cz-sem-fim .hp.mad2.fim{display:none}.cz .cz-sub{font-size:16px;font-weight:800;color:#5C6670;letter-spacing:.04em;margin:-4px 0 8px;text-transform:uppercase}
+  .cz .doc-cab{padding-bottom:6px;margin-bottom:6px}.cz .doc-cab img{height:34px}.cz .doc-cab .doc-meta{display:none}.cz .cz-dia{margin:0 0 6px}`;
+HOR_FOLHA_CSS_EXTRA += HOR_FOLHA2_CSS;
+function horCards(q, grande) {
+  const par = (a, b) => { const n = Math.max(a.length, b.length); let h = ""; for (let i = 0; i < n; i++) h += `<tr><td>${horPrintLinha(a[i], true)}</td><td>${horPrintLinha(b[i], true)}</td></tr>`; return h; };
+  const card = (tit, sub, a, b, oa, ob) => (a.length || b.length) ? `<div class="hf-card"><div class="hq"><b>${esc(grande ? tit : q)}</b><span>${esc(grande ? sub : [tit, sub].filter(Boolean).join(" · "))}</span></div><table class="ht"><thead><tr><th>Saída de ${esc(oa)}</th><th>Saída de ${esc(ob)}</th></tr></thead><tbody>${par(a, b)}</tbody></table></div>` : "";
+  const h = card("Macabu × Macaé", "linha regular", horDe(q, "Linha", "Macabu"), horDe(q, "Linha", "Macaé"), "Macabu", "Macaé")
+    + card("Fretamento", "", horDe(q, "Fretamento", "Macabu"), horDe(q, "Fretamento", "Macaé"), "Macabu", "Macaé")
+    + card("Horário de Madalena", "Macaé × S. M. Madalena", horDe(q, "Madalena", "Madalena"), horDe(q, "Madalena", "Macaé"), "Madalena", "Macaé");
+  return h || `<div class="hf-card"><div class="hq"><b>${esc(q)}</b></div><div class="hf-vazio">Sem horários cadastrados.</div></div>`;
+}
+const horVigTxt = () => { const vig = horVigencia(); return vig ? fmtDate(vig).replace(/(\d{2})\/(\d{2})\/(\d{2})$/, "$1/$2/20$3") : "—"; };
+/* v0.14.23 (pedido de 17:50): painel em A4 deitada sai em duas folhas — segunda a sexta numa, sábados/domingos/especiais
+   na outra — quando o dia útil tem muitos horários (letra bem maior); com poucos horários, uma folha só */
+function horFolhaHtml2(fmt) {
+  const F = HOR_FMT[fmt] || HOR_FMT.painel, todos = horFolhaQuadros();
+  const cheio = q => Math.max(horDe(q, "Linha", "Macabu").length, horDe(q, "Linha", "Macaé").length) > HOR_CZ_DIVIDE;
+  if (F.divide && todos.length > 1 && cheio(todos[0])) return horFolhaPg(fmt, [todos[0]], "-1") + horFolhaPg(fmt, todos.slice(1), "-2");
+  return horFolhaPg(fmt, todos, "");
+}
+function horFolhaPg(fmt, qs, suf) {
+  const F = HOR_FMT[fmt] || HOR_FMT.painel, vig = horVigencia();
+  const doc = `HOR-TODOS-${(vig || todayISO()).replace(/-/g, "")}${fmt === "meia" ? "-M" : ""}${suf}`;
+  const html = `<div class="pg pnl">${printCab("Painel de horários", `Válida a partir de ${horVigTxt()} · Conceição de Macabu · Macaé · Santa Maria Madalena`, { doc, meta: [["Tipos de dia", String(qs.length)]], semQuem: true })}
+    <div class="hf-grid hf-flow hf-pai" data-fmt="${fmt}" style="column-count:${F.cols}">${qs.map(q => horCards(q, false)).join("")}</div>
+    <div class="hleg"></div>
+    <p class="hnota">Horários sujeitos a alteração sem aviso prévio. Em feriados vale o quadro de domingos.</p>
+    ${printRodape("Operacional · Tabela de Horários", true)}</div>`;
+  return horPaxAjustar(html, qs);
+}
+/* v0.14.23 (pedido de 17:46, opção 2): o tipo de dia com muitos horários (segunda a sexta) sai em duas folhas, uma por sentido,
+   com os horários em grade (letra maior); a Madalena e o Fretamento acompanham o sentido. Os demais dias, uma folha cada. */
+const HOR_CZ_DIVIDE = 12;   /* mais que isso numa das colunas da linha regular → duas folhas */
+function horCartazSentido(q, fmt, ida) {
+  const F = HOR_FMT[fmt] || HOR_FMT.czPai, vig = horVigencia(), nc = F.deitada ? 4 : 3;
+  const grade = (tit, sub, arr, semMk) => arr.length ? `<div class="hf-card${semMk ? " cz-sem-" + semMk : ""}"><div class="hq"><b>${esc(tit)}</b><span>${esc(sub)}</span></div><div class="cz-grade" style="grid-template-columns:repeat(${nc},minmax(0,1fr))">${arr.map(z => `<div>${horPrintLinha(z, true)}</div>`).join("")}</div></div>` : "";
+  const cards = ida
+    ? grade("Saída de Macabu", "→ Macaé · linha regular", horDe(q, "Linha", "Macabu")) + grade("Saída de Madalena", "→ Macaé", horDe(q, "Madalena", "Madalena"), "sai") + grade("Fretamento · saída de Macabu", "→ Macaé · firmas", horDe(q, "Fretamento", "Macabu"))
+    : grade("Saída de Macaé", "→ Macabu · linha regular", horDe(q, "Linha", "Macaé")) + grade("Saída de Macaé", "→ S. M. Madalena", horDe(q, "Madalena", "Macaé"), "fim") + grade("Fretamento · saída de Macaé", "→ Macabu · firmas", horDe(q, "Fretamento", "Macaé"));
+  const cod = `HOR-${q.normalize("NFD").replace(/[^A-Za-z]/g, "").slice(0, 6).toUpperCase()}-${ida ? "IDA" : "VOLTA"}-${(vig || todayISO()).replace(/-/g, "")}`;
+  return horPaxAjustar(`<div class="pg cz">${printCab("Horários de ônibus", `Válidos a partir de ${horVigTxt()} · Conceição de Macabu · Macaé · Santa Maria Madalena`, { doc: cod, semQuem: true })}
+    <div class="cz-dia">${esc(q)}</div><div class="cz-sub">${ida ? "Ida para Macaé" : "Saindo de Macaé"}</div>
+    <div class="hf-grid hf-flow" data-fmt="${fmt}" data-cols="1" style="column-count:1">${cards}</div>
+    <div class="hleg"></div>
+    <p class="hnota">Horários sujeitos a alteração sem aviso prévio. Em feriados vale o quadro de domingos.</p></div>`, [q]);
+}
+function horCartazHtml(fmt) {
+  const F = HOR_FMT[fmt] || HOR_FMT.czPai, qs = horFolhaQuadros().filter(q => HOR_BLOCOS.some(bl => HOR_ORIGENS.some(o => horDe(q, bl, o).length)));
+  const vig = horVigencia();
+  return qs.map(q => Math.max(horDe(q, "Linha", "Macabu").length, horDe(q, "Linha", "Macaé").length) > HOR_CZ_DIVIDE ? horCartazSentido(q, fmt, true) + horCartazSentido(q, fmt, false) : horPaxAjustar(`<div class="pg cz">${printCab("Horários de ônibus", `Válidos a partir de ${horVigTxt()} · Conceição de Macabu · Macaé · Santa Maria Madalena`, { doc: `HOR-${q.normalize("NFD").replace(/[^A-Za-z]/g, "").slice(0, 6).toUpperCase()}-${(vig || todayISO()).replace(/-/g, "")}`, semQuem: true })}
+    <div class="cz-dia">${esc(q)}</div>
+    <div class="hf-grid hf-flow ${F.cols > 1 ? "hf-pai" : ""}" data-fmt="${fmt}" style="column-count:${F.cols}">${horCards(q, true)}</div>
+    <div class="hleg"></div>
+    <p class="hnota">Horários sujeitos a alteração sem aviso prévio. Em feriados vale o quadro de domingos.</p></div>`, [q])).join("");
+}
+window.horFolhaHtml2 = horFolhaHtml2; window.horCartazHtml = horCartazHtml;
+window.horImprimirFolha = async (fmt) => {
+  fmt = HOR_FMT[fmt] ? fmt : "painel";
+  try { toast("Buscando os horários…", 2000); await loadHor(HOR_STATE.ready); }
+  catch (e) { HOR_STATE.erro = e.message; HOR_STATE.itens = HOR_SEED.map((r, i) => Object.assign({ _id: "seed" + i }, r)); HOR_STATE.ready = false; }
+  if (!HOR_STATE.ready) toast("A lista de horários não está disponível: a folha sai com o quadro embutido.", 6000);
+  const cz = fmt === "czPai" || fmt === "czRet";
+  printDoc({ titulo: cz ? "Horários de ônibus" : "Painel de horários", html: cz ? horCartazHtml(fmt) : horFolhaHtml2(fmt), fonte: 10, css: HOR_PRINT_CSS + HOR_FOLHA_CSS + HOR_FOLHA_CSS_EXTRA, umaPagina: true, paisagem: HOR_FMT[fmt].deitada });
+};
+window.horPainelEscolher = () => {
+  const b = (fmt, w, h, tit, sub) => `<button class="btn" style="height:auto;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;white-space:normal;text-align:center" onclick="closeModal(); horImprimirFolha('${fmt}')"><span style="display:block;width:${w}px;height:${h}px;border:2px solid currentColor;border-radius:3px;position:relative">${fmt === "meia" ? `<span style="position:absolute;left:0;right:0;top:50%;border-top:1.5px dashed currentColor"></span>` : ""}</span><b>${tit}</b><span class="sup">${sub}</span></button>`;
+  openModal("Imprimir horários", `<h4 style="margin:0 0 4px">Cartaz do passageiro</h4><p class="sup" style="margin:0 0 8px">Letra grande, para o ponto, a agência e o ônibus: uma folha por tipo de dia; o dia útil cheio sai em duas, uma por sentido.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${b("czPai", 60, 42, "Paisagem", "A4 deitada")}${b("czRet", 42, 60, "Retrato", "A4 em pé" + (horSafari() ? " · recomendado neste aparelho" : ""))}</div>${horSafari() ? `<p class="sup" style="margin:6px 0 0">No iPhone, iPad e Safari a folha deitada sai com letra menor (o navegador tira mais margem) — prefira o retrato.</p>` : ""}
+    <h4 style="margin:16px 0 4px">Painel completo</h4><p class="sup" style="margin:0 0 8px">Todos os tipos de dia, para o guichê e o escritório: em A4 deitada sai em uma ou duas folhas (dia útil numa, fim de semana na outra); duas por folha, letra pequena.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${b("painel", 60, 42, "A4 deitada", "3 colunas")}${b("meia", 42, 60, "Duas por folha", "folha em pé, dois painéis deitados para cortar ao meio")}</div>`, async () => true);
+  const sv = $("mSave"); if (sv) sv.remove();
+};
+/* encaixe: cada folha (.pg com .hf-flow) numa caixa de altura fixa; maior escala que cabe sem cortar horário nem etiqueta;
+   conteúdo centralizado na caixa; uma folha por .pg (cartaz: uma por tipo de dia) */
+const horSafari = () => { try { const u = navigator.userAgent || ""; return /iPad|iPhone|iPod/.test(u) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) || (/safari/i.test(u) && !/chrome|chromium|crios|fxios|edg|android/i.test(u)); } catch (e) { return false; } };
+function horEncaixar(doc, pg, F, ultima) {
+  const altMM = horSafari() ? F.altSafari : F.alt;
+  const grid = pg.querySelector(".hf-flow");
+  let box = pg.parentElement && pg.parentElement.classList.contains("hf-fit") ? pg.parentElement : null;
+  if (!box) { box = doc.createElement("div"); box.className = "hf-fit"; pg.parentNode.insertBefore(box, pg); box.appendChild(pg); }
+  box.style.cssText = `width:100%;height:${altMM}mm;overflow:hidden;position:relative;break-inside:avoid;page-break-inside:avoid;${ultima ? "break-after:avoid;page-break-after:avoid" : "break-after:page;page-break-after:always"}`;
+  pg.style.zoom = ""; pg.style.transform = ""; pg.style.breakAfter = "auto"; pg.style.pageBreakAfter = "auto"; pg.style.margin = "0";
+  const boxH = box.getBoundingClientRect().height || altMM * 96 / 25.4, maxH = boxH * (F.copias > 1 ? 0.94 : 0.97);
+  const corta = () => [...pg.querySelectorAll(".hr, .hr .hp.mad2, .hr .h")].some(c => c.scrollWidth > c.clientWidth + 1);
+  const cabe = z => { pg.style.width = (100 / z) + "%"; return pg.scrollHeight * z <= maxH && !corta(); };
+  const escala = larg => { box.style.width = `calc(${larg} * .96)`;   /* revisão: mede com 4% de folga na largura (margens laterais maiores que as do ERP) */   /* busca binária: reduz até caber ou amplia (até 2,5×) para preencher a folha */
+    let lo, hi; if (cabe(1)) { lo = 1; hi = 2.5; if (cabe(hi)) return hi; } else { lo = 0.2; hi = 1; if (!cabe(lo)) return lo; }
+    for (let i = 0; i < 11; i++) { const m = (lo + hi) / 2; if (cabe(m)) lo = m; else hi = m; } return Math.floor(lo * 1000) / 1000; };
+  const zDe = () => F.deitada && horSafari() ? Math.min(escala("100%"), escala("703px")) : escala("100%");   /* Safari: mede também em pé (pode ignorar a folha deitada); Chrome/Edge respeitam e a paisagem preenche a folha */
+  /* testa as colunas possíveis (com e sem a 1ª coluna só para o cartão maior) e fica com a que dá a letra maior */
+  let melhor = null;
+  const grades = [...pg.querySelectorAll(".cz-grade")], gOpc = grades.length ? [2, 3, 4, 5] : [0];
+  const poeGrade = n => grades.forEach(g => {   /* revisão: lê-se de cima para baixo, coluna por coluna (como uma tabela de horários) */
+    const k = g.children.length, rows = Math.max(1, Math.ceil(k / n));
+    g.style.gridTemplateColumns = `repeat(${n},minmax(0,1fr))`; g.style.gridTemplateRows = `repeat(${rows},auto)`; g.style.gridAutoFlow = "column";
+    [...g.children].forEach((c, i) => { c.style.background = (i % rows) % 2 ? "#F4F6F9" : "transparent"; });
+  });
+  if (grid) for (const gn of gOpc) for (const c of (grid.dataset.cols ? [Number(grid.dataset.cols)] : (F.opc || [F.cols]))) for (const pai of (c > 1 && grid.children.length > 1 ? [true, false] : [false])) {
+    if (gn) poeGrade(gn); grid.style.columnCount = String(c); grid.classList.toggle("hf-pai", pai); const zz = zDe();
+    if (!melhor || zz > melhor.z + 0.001) melhor = { z: zz, c, pai, gn };
+  }
+  if (melhor) { if (melhor.gn) poeGrade(melhor.gn); grid.style.columnCount = String(melhor.c); grid.classList.toggle("hf-pai", melhor.pai); }
+  const z = melhor ? melhor.z : zDe();
+  box.style.width = "100%";
+  const coube = cabe(z);
+  const dy = Math.max(0, (boxH - pg.scrollHeight * z) / 2);   /* centraliza na altura da caixa (a largura já é a da folha) */
+  pg.style.transformOrigin = "0 0"; pg.style.transform = `translateY(${dy.toFixed(1)}px)` + (Math.abs(z - 1) > 0.001 ? ` scale(${z})` : "");
+  return { z, coube };
+}
+{ const c0 = printCaber; printCaber = function (doc, paisagem) {
+    const pgs = doc ? [...doc.querySelectorAll(".pg")].filter(pg => pg.querySelector(".hf-flow")) : [];
+    if (!pgs.length) return c0.apply(this, arguments);
+    const fmt = (pgs[0].querySelector(".hf-flow").dataset.fmt) || "painel", F = HOR_FMT[fmt] || HOR_FMT.painel;
+    const rs = pgs.map((pg, i) => horEncaixar(doc, pg, F, i === pgs.length - 1));
+    if (F.copias > 1 && !doc.querySelector(".hf-copia")) {   /* duas cópias do painel deitado na mesma folha em pé, com a linha de corte no meio */
+      const box = pgs[0].parentElement; box.style.breakAfter = "avoid"; box.style.pageBreakAfter = "avoid";
+      box.insertAdjacentHTML("afterend", `<div class="hf-corte">✂ corte aqui</div>`);
+      const cp = box.cloneNode(true); cp.classList.add("hf-copia"); doc.querySelector(".hf-corte").insertAdjacentElement("afterend", cp);
+    }
+    const z = Math.min(...rs.map(r => r.z));
+    if (rs.some(r => !r.coube)) toast(`Horários demais para uma folha: o fim saiu cortado. Use o cartaz (uma folha por tipo de dia).`, 10000);
+    else if (z < 0.5 && (fmt === "czPai" || fmt === "czRet")) toast(`Muitos horários: o cartaz saiu em ${Math.round(z * 100)}% do tamanho.`, 8000);
+    Object.assign(doc.documentElement.style, { height: "auto", overflow: "hidden" }); Object.assign(doc.body.style, { height: "auto", overflow: "hidden", margin: "0" });
+    const fe = doc.defaultView && doc.defaultView.frameElement;
+    if (fe && fe.style.height === "20000px") { const alt = Math.ceil(doc.body.scrollHeight) + "px"; fe.style.height = alt;
+      doc.defaultView.addEventListener("afterprint", () => setTimeout(() => { if (fe.style.height === alt) fe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0"; }, 300), { once: true }); }
+    return z;
+  }; }
+{ const p0 = paintHor; paintHor = function () { const r = p0.apply(this, arguments); const f = $("horActions") && $("horActions").querySelector(".hor-folha"); if (f) { f.setAttribute("onclick", "horPainelEscolher()"); f.textContent = "Imprimir cartaz / painel"; f.title = "Cartaz do passageiro (uma folha por tipo de dia) ou painel completo"; } return r; }; window.paintHor = paintHor; }
+{ const p0 = paintTar; paintTar = function () { const r = p0.apply(this, arguments); const f = $("tarActions") && $("tarActions").querySelector(".hor-folha"); if (f) { f.setAttribute("onclick", "horPainelEscolher()"); f.textContent = "Imprimir horários"; f.title = "Cartaz do passageiro (uma folha por tipo de dia) ou painel completo"; } return r; }; window.paintTar = paintTar; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -42631,6 +42839,7 @@ CONFIG.version = "v0.14.19";   /* CAP: fechamento mensal com trava; pacote com a
 CONFIG.version = "v0.14.20";   /* Consumíveis pronto para uso: catálogo sem repetidos, aprovação da Diretoria, recebimento item a item, histórico de preços; Terceiros CPF sem fantasia; Funcionários */
 CONFIG.version = "v0.14.21";   /* quem só tem "Ver" abre os registros do Banco de Dados do RH só para leitura */
 CONFIG.version = "v0.14.22";   /* Financeiro F0: LevBom editar/excluir e fechamento que carrega o dia; competência normalizada; pago sem data; parcela de dívida; migração confere vínculos; Agência — Caixa na guarda */
+CONFIG.version = "v0.14.23";   /* cartaz do passageiro (uma folha por tipo de dia, letra grande) e painel completo (A4 deitada ou meia folha), centralizados; etiquetas "Saída de Madalena" / "Ponto final Madalena" como na tela */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

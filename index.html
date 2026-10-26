@@ -7877,6 +7877,7 @@ window.obrLancar = (obrId, key) => {
     Valor: o.ValorParcela ?? "", Parcela: r.k ? `${r.k}/${R.N}` : "", Categoria: o.Categoria || "", Subcategoria: o.Subcategoria || "", Banco: o.Banco || "", FormaPagamento: o.Forma || "",
     CentroCusto: o.CentroCusto || "", Estabelecimento: o.Estabelecimento || "", NumParcelamento: o.NumParcelamento || "", Status: r.venc < todayISO() ? "Vencido" : "Em aberto",
     Observacoes: `Lançada pela obrigação "${o.Title}"`, ObrigacaoLookupId: String(o._id) };
+  if (typeof obrEhDivida === "function" && obrEhDivida(o)) pre.TipoLancamento = "Parcela de dívida";   /* v0.14.22 (F0 · DV-3) */
   CAP_STATE.depois = () => obrAbrir(o._id, OBR_UI.lastBack, true);
   capNew(pre);
 };
@@ -8077,7 +8078,7 @@ window.obrPrepararMes = async () => {
           const fields = { Title: `${o.Title}${r.k ? ` ${r.k}/${R.N}` : ` ${compLabel(r.comp)}`}`, Fornecedor: f ? f.Title : (o.FornecedorTexto || ""), Vencimento: r.venc, Competencia: r.comp,
             Valor: Number(o.ValorParcela) || 0, Status: r.venc < todayISO() ? "Vencido" : "Em aberto", Parcela: r.k ? `${r.k}/${R.N}` : null, Categoria: o.Categoria || null, Subcategoria: o.Subcategoria || null,
             Banco: o.Banco || null, FormaPagamento: o.Forma || null, Estabelecimento: o.Estabelecimento || null, CentroCusto: o.CentroCusto || null, NumParcelamento: o.NumParcelamento || null,
-            Observacoes: `Gerada automaticamente da obrigação "${o.Title}"`, TipoLancamento: (f && TIPOS_LANC.includes(f.TipoLancPadrao) && f.TipoLancPadrao) || "Despesa", ObrigacaoLookupId: Number(o._id) };
+            Observacoes: `Gerada automaticamente da obrigação "${o.Title}"`, TipoLancamento: typeof obrEhDivida === "function" && obrEhDivida(o) ? "Parcela de dívida" : ((f && TIPOS_LANC.includes(f.TipoLancPadrao) && f.TipoLancPadrao) || "Despesa"), ObrigacaoLookupId: Number(o._id) };   /* v0.14.22 (F0 · DV-3) */
           if (f) { fields.FornecedorRefLookupId = Number(f._id); if (f.CNPJ) fields.CNPJ = f.CNPJ; }
           for (const k of Object.keys(fields)) { const col = k === "FornecedorRefLookupId" ? "FornecedorRefId" : k.endsWith("LookupId") ? k.slice(0, -8) : k; if (fields[k] === null || !hasCol(col)) delete fields[k]; }   /* v0.13.4: fornecedor em coluna numérica */
           await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, fields); criadas++;
@@ -20506,7 +20507,7 @@ function cxPainelHtml() {
   const rotBaseTxt = corte ? `${rotBase}, dias 1 a ${corte}` : rotBase;
   const margem = M.ent ? M.res / M.ent : null, margemB = B.ent ? B.res / B.ent : null;
   const diasEnt = new Set(M.entL.map(x => x._d)).size, mediaDia = diasEnt ? M.ent / diasEnt : 0;
-  const boletins = CX.fech.filter(f => f._d.slice(0, 7) === c), aprov = boletins.filter(f => f.Status === "Aprovado").length;
+  const boletins = CX.fech.filter(f => f._d.slice(0, 7) === c), aprov = boletins.filter(f => f.Status === "Aprovado" && (M.mv || []).some(x => x._d === f._d)).length;   /* v0.14.22 (F0 · B10): só os dias com movimento */
   const difAcum = cxN(boletins.reduce((s, f) => s + Number(f.Diferenca || 0), 0));
   const saldoFim = cxSaldoFimMes(c), saldoIni = cxSaldoAnterior(c + "-01");
   const pctDep = M.ent ? M.dep / M.ent : 0;
@@ -34408,6 +34409,11 @@ window.divMigrar = async () => {
     if (!obrs.length) { toast("Nenhuma obrigação marcada como «Dívidas» na CAP — nada a trazer."); return; }
     const ids = new Set(obrs.map(o => o._id));
     const fats = (await ler(capL)).filter(it => it.ObrigacaoLookupId != null && ids.has(String(it.ObrigacaoLookupId)));
+    let divLig; try { divLig = await divCapLigados(); } catch (e) { toast("Migração cancelada: não foi possível conferir os vínculos com o Imobilizado e os reparos do Rio Card (" + e.message + ").", 9000); return; }   /* v0.14.22 (F0 · DV-4) */
+    const divMantidos = fats.filter(it => divLig.has(String(it._id)) || (typeof capEhReparo === "function" && capEhReparo(it)));
+    const divPresas = new Set(divMantidos.map(it => String(it.ObrigacaoLookupId))), divObrsPresas = obrs.filter(o => divPresas.has(String(o._id)));   /* revisão: a obrigação inteira fica na CAP (com todas as parcelas e a carteira) */
+    if (divPresas.size) { for (let i = obrs.length - 1; i >= 0; i--) if (divPresas.has(String(obrs[i]._id))) obrs.splice(i, 1); divPresas.forEach(id => ids.delete(id)); for (let i = fats.length - 1; i >= 0; i--) if (divPresas.has(String(fats[i].ObrigacaoLookupId))) fats.splice(i, 1); }
+    if (!obrs.length) { toast(`Nada a trazer: ${divObrsPresas.length} obrigação(ões) ficam na CAP porque têm lançamento ligado a um bem do Imobilizado ou a um reparo do Rio Card (${divObrsPresas.map(o => o.Title).join(", ")}).`, 10000); return; }
     const carts = await ler(cartL), dcarts = await ler(dCartL); vivo();
     const siglas = [...new Set(obrs.map(o => String(o.Carteira || "").trim().toUpperCase()).filter(Boolean))];
     const cartsNovas = siglas.filter(s => !dcarts.some(c => String(c.Title || "").trim().toUpperCase() === s)).map(s => carts.find(c => String(c.Title || "").trim().toUpperCase() === s)).filter(Boolean);
@@ -34416,7 +34422,9 @@ window.divMigrar = async () => {
     const jaObrMap = new Map(jaObr.map(o => [divChaveObr(o), o])), jaFatSet = new Set(jaFat.map(divChaveFat));
     const obrsNovas = obrs.filter(o => !jaObrMap.has(divChaveObr(o))), fatsNovas = fats.filter(it => !jaFatSet.has(divChaveFat(it)));
     const msg = `Trazer da CAP para as listas restritas:\n• ${obrs.length} obrigação(ões) marcada(s) como «Dívidas»${obrsNovas.length !== obrs.length ? ` (${obrs.length - obrsNovas.length} já copiada(s) antes)` : ""}\n• ${fats.length} lançamento(s) com vínculo gravado a elas${fatsNovas.length !== fats.length ? ` (${fats.length - fatsNovas.length} já copiado(s) antes)` : ""}\n• ${cartsNovas.length} carteira(s) copiada(s)${cartsSoDiv.length ? ` (e ${cartsSoDiv.length} carteira(s) usada(s) só por dívidas sai(em) da CAP)` : ""}\n\nSó vêm os lançamentos com vínculo gravado à obrigação: lançamentos reconhecidos apenas pelo fornecedor ("auto") ficam na CAP — confirme os vínculos na CAP antes, se houver.\nDepois de copiar e conferir, os registros são apagados da CAP. Os documentos anexados continuam na mesma pasta. Continuar?`;
-    if (!confirm(msg)) return;
+    if (!confirm(msg + (divObrsPresas.length ? `
+
+Ficam na CAP, com todas as parcelas (têm lançamento ligado a um bem do Imobilizado ou a um reparo do Rio Card): ${divObrsPresas.map(o => o.Title).join(", ")}` : ""))) return;   /* v0.14.22 (F0 · DV-4) */
     vivo(); toast("Copiando…", 4000);
     const falhas = [];
     for (const c of cartsNovas) { vivo(); try { await SP.create(site.id, dCartL.id, divCampos(LISTS.div_cart, c)); } catch (e) { falhas.push("carteira " + (c.Title || "") + ": " + e.message); } }
@@ -42463,6 +42471,158 @@ window.erpModalSoLeitura = erpModalSoLeitura;
     try { if (soVe) erpModalSoLeitura(typeof vcAtivo === "function" && vcAtivo() ? "Visualizando como outra pessoa: os campos ficam travados e nada é gravado." : "Seu acesso ao Banco de Dados do RH é só de leitura: os campos ficam travados e nada é gravado. Para alterar, peça a um administrador a edição em Sistema › Usuários e permissões."); } catch (e) {}
     return r;
   }; }
+/* =====================================================================
+   v0.14.22 · Financeiro F0 — correções sem decisão (mapeamento de 25/10, §6; pedido de 26/10 14:11)
+   LB-1 LevBom: editar e excluir lançamento (com histórico nas Observações); dia com fechamento "Fechado" trava lançar, editar e excluir.
+   LB-2 LevBom: o formulário do Fechamento carrega o dia já gravado (gravar de novo só o Status não apaga os valores).
+   DR-3 DRE/CAPEX: competência digitada fora do formato (10/2026, out/26…) é normalizada como no pacote do contador.
+   DR-4 DRE/CAPEX: aviso de lançamentos "Pago" sem data de pagamento (somem no regime de caixa).
+   DV-3 Obrigações de dívida/parcelamento: a parcela gerada nasce "Parcela de dívida" (antes "Despesa", pedia NF).
+   DV-4 Gestão de Dívidas › Trazer dívidas da CAP: não apaga lançamento ligado a bem do Imobilizado ou a reparo do Rio Card.
+   AG  Agência — Caixa: a guarda reconhece a lista — só administrador grava (como a tela).
+   B10 Fluxo › Painel: "Boletins aprovados" conta só os dias com movimento (não passa de 100%).
+   ===================================================================== */
+
+/* ---------- DR-3: competência normalizada em todo o ERP (DRE, CAPEX, filtros, Painel) ---------- */
+itemComp = function (it) { return (typeof ctbNormComp === "function" ? ctbNormComp(it.Competencia) : it.Competencia) || compFromDate(it.Vencimento); };
+window.itemComp = itemComp;
+
+/* ---------- DR-4: "Pago" sem data de pagamento ---------- */
+function finPagoSemData() {
+  return (CAP_STATE.items || []).filter(it => it.Status === "Pago" && !it.DataPagamento && !isIsenta(it) && !capCancelada(it) && !(typeof capEhTransf === "function" && capEhTransf(it)));
+}
+function finAvisoPagoSemData(body, regime) {
+  if (!body || regime !== "caixa" || body.querySelector(".fin-sem-data")) return;
+  const L = finPagoSemData(); if (!L.length) return;
+  const tot = L.reduce((s, it) => s + (Number(capValorEfetivo(it)) || 0), 0);
+  body.insertAdjacentHTML("afterbegin", `<div class="fin-sem-data" role="note" style="margin:0 0 12px;padding:9px 12px;border-radius:var(--radius-sm,8px);background:#FFF7E6;border:1px solid #F2D49B;color:#5A4300;font-size:13px">⚠ <b>${L.length} lançamento(s) "Pago" sem data de pagamento</b> (${esc(fmtBRL(tot))}) não entram no regime de caixa. Informe a data na CAP: ${L.slice(0, 4).map(it => `<a href="#/financeiro/contas-a-pagar" onclick="setTimeout(() => { try { capEdit(${esc(jsArg(it._id))}); } catch (e) {} }, 900)">${esc(it.Title || "#" + it._id)}</a>`).join(" · ")}${L.length > 4 ? ` · e mais ${L.length - 4}` : ""}.</div>`);
+}
+{ const p0 = paintCpx; paintCpx = function () { const r = p0.apply(this, arguments); try { finAvisoPagoSemData($("cpxBody"), CPX.regime); } catch (e) {} return r; }; window.paintCpx = paintCpx; }
+{ const p0 = paintDre; paintDre = function () { const r = p0.apply(this, arguments); try { finAvisoPagoSemData($("dreBody"), DRE.regime); } catch (e) {} return r; }; window.paintDre = paintDre; }
+
+/* ---------- DV-3: obrigação de dívida/parcelamento → "Parcela de dívida" ---------- */
+function obrEhDivida(o) {   /* revisão: o mesmo critério do CAPEX (carteiras de dívida), mais Gestão de Dívidas e nº de parcelamento */
+  if (!o) return false;
+  if ((o.ModuloDestino || "CAP") === "Dívidas") return true;
+  if (o.Tipo !== "Parcelado") return false;
+  if (String(o.NumParcelamento || "").trim()) return true;
+  let cart = ""; try { cart = typeof obrCarteira === "function" ? obrCarteira(o) : String(o.Carteira || "").toUpperCase(); } catch (e) {}
+  if (typeof CPX_DIVIDA_CART !== "undefined" && CPX_DIVIDA_CART.includes(cart) && o.Categoria !== "Consórcio") return true;
+  return /parcelament|d[ií]vida|empr[eé]stimo|financiament|pgfn|refis|sispar/i.test([o.Title, o.Categoria, o.Subcategoria].join(" "));
+}
+window.obrEhDivida = obrEhDivida;
+
+/* ---------- DV-4: vínculos que a migração não pode apagar ---------- */
+async function divCapLigados() {
+  const ids = new Set();
+  const ler = async (def) => { const st = await SP.site(CONFIG.sites[def.siteKey]); const l = (await SP.lists(st.id)).find(x => x.displayName === def.displayName); return l ? (await SP.items(st.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : []; };
+  (await ler(LISTS.fin_imob)).forEach(b => imobCapIds(b).forEach(id => ids.add(String(id))));
+  (await ler(LISTS.rc_rep)).forEach(r => { if (r.CapId) ids.add(String(r.CapId)); });
+  return ids;
+}
+window.divCapLigados = divCapLigados;
+
+/* ---------- AG: Agência — Caixa só pelo administrador, também na guarda ---------- */
+{ const g0 = guardaEscrita; guardaEscrita = function (method, path) {
+    if (typeof AGCX !== "undefined" && AGCX.list && AGCX.list.id && /^(POST|PATCH|PUT|DELETE)$/i.test(method || "") && String(path || "").includes(AGCX.list.id) && !session.n1) {
+      const e = new Error("Só administradores gravam no controle de caixa das agências."); e.status = 403; e.semAcesso = true; throw e;
+    }
+    return g0.apply(this, arguments);
+  }; }
+
+/* ---------- LB-1 / LB-2: LevBom ---------- */
+const bilDiaFechado = d => (BIL_STATE.fech || []).some(x => x.Data && ymd(x.Data) === String(d || "").slice(0, 10) && x.Status === "Fechado");
+const bilQuem = () => (session.me && session.me.displayName) || "";
+const bilAgora = () => { const d = new Date(), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+{ const s0 = bilSave; bilSave = async function () {
+    const d = $("bData") ? $("bData").value : "";
+    if (d && bilDiaFechado(d)) { const e = $("bErr"); if (e) { e.style.display = "block"; e.textContent = `O dia ${fmtDate(d)} está com o fechamento "Fechado" — reabra o fechamento (Status Aberto ou Conferido) para lançar.`; } return; }
+    return s0.apply(this, arguments);
+  }; window.bilSave = bilSave; }
+{ const t0 = bilTableLanc; bilTableLanc = function (lanc) {
+    let h = t0.apply(this, arguments);
+    const ed = podeEditar("bilhet") && BIL_STATE.ready, ex = podeExcluir("bilhet") && BIL_STATE.ready;   /* revisão: excluir é do proprietário (como a guarda) */
+    if (!ed || !lanc.length) return h;
+    const ord = lanc.slice().sort((a, b) => (b.Data || "").localeCompare(a.Data || "") || (a.Horario || "").localeCompare(b.Horario || ""));
+    let i = 0;
+    h = h.replace("<th>Origem</th></tr>", "<th>Origem</th><th></th></tr>").replace(/<tr><td>/g, () => { const x = ord[i++]; return `<tr data-bil="${x ? esc(String(x._id)) : ""}"><td>`; });
+    h = h.replace(/(<tr data-bil="([^"]*)">[\s\S]*?)<\/tr>/g, (m, corpo, id) => { const x = lanc.find(y => String(y._id) === id); if (!x) return m; const trav = bilDiaFechado(ymd(x.Data));
+      return `${corpo}<td class="act nw">${trav ? `<span class="sup" title="Dia com fechamento Fechado">🔒 fechado</span>` : `<button class="btn mini" onclick="bilLancEditar(${esc(jsArg(id))})">Editar</button>${ex ? ` <button class="btn mini" style="color:var(--err)" onclick="bilLancExcluir(${esc(jsArg(id))})">Excluir</button>` : ""}`}</td></tr>`; });
+    return h;
+  }; }
+window.bilLancEditar = id => {
+  const x = (BIL_STATE.lanc || []).find(y => String(y._id) === String(id)); if (!x || !podeEditar("bilhet")) return;
+  if (bilDiaFechado(ymd(x.Data))) { toast("Dia com fechamento \"Fechado\": reabra o fechamento para editar."); return; }
+  const linhas = BIL_STATE.linhas.filter(l => l.Ativa !== false || l.Title === x.Linha);
+  const secs = l => BIL_STATE.tarifas.filter(t => t.Linha === l && (t.Ativa !== false || t.Secao === x.Secao));
+  const opt2 = (arr, sel) => arr.map(v => `<option ${v === sel ? "selected" : ""}>${esc(v)}</option>`).join("");
+  openModal(`Editar lançamento · ${fmtDate(x.Data)} · ${x.Linha} ${x.Sentido || ""}`, `<div class="form-grid">
+      <div class="field"><label>Data<span class="req">*</span></label><input type="date" id="beData" value="${esc(ymd(x.Data))}"></div>
+      <div class="field"><label>Linha<span class="req">*</span></label><select id="beLinha">${linhas.map(l => `<option value="${esc(l.Title)}" ${l.Title === x.Linha ? "selected" : ""}>${esc(l.Title)} — ${esc(l.Nome || "")}</option>`).join("")}</select></div>
+      <div class="field"><label>Sentido</label><select id="beSent">${opt2(["Ida", "Volta"], x.Sentido || "Ida")}</select></div>
+      <div class="field"><label>Horário</label><input id="beHora" maxlength="8" value="${esc(x.Horario || "")}"></div>
+      <div class="field"><label>Carro</label><input id="beCarro" maxlength="10" value="${esc(x.Carro || "")}"></div>
+      <div class="field"><label>Motorista</label><input id="beMot" maxlength="80" value="${esc(x.Motorista || "")}"></div>
+      <div class="field"><label>Origem</label><select id="beOrig">${opt2(BIL_ORIGENS, x.Origem || BIL_ORIGENS[0])}</select></div>
+      <div class="field"><label>Seção<span class="req">*</span></label><select id="beSec"></select></div>
+      <div class="field"><label>Passageiros<span class="req">*</span></label><input type="number" min="0" id="bePass" value="${esc(String(x.Passageiros ?? 0))}"></div>
+      <div class="field"><label>Gratuidades</label><input type="number" min="0" id="beGrat" value="${esc(String(x.Gratuidades ?? 0))}"></div>
+      <div class="field"><label>Método</label><select id="beMet">${opt2(BIL_METODOS, x.Metodo || BIL_METODOS[0])}</select></div>
+      <div class="field"><label>Receita (calculada)</label><div class="static" id="beRec"></div></div>
+      <div class="field"><label>Roleta inicial</label><input type="number" id="beRolI" value="${esc(x.RoletaInicial ?? "")}"></div>
+      <div class="field"><label>Roleta final</label><input type="number" id="beRolF" value="${esc(x.RoletaFinal ?? "")}"></div>
+      <div class="field"><label>Talão inicial</label><input id="beTalI" value="${esc(x.TalaoInicial || "")}"></div>
+      <div class="field"><label>Talão final</label><input id="beTalF" value="${esc(x.TalaoFinal || "")}"></div>
+      <div class="field full"><label>Motivo da alteração<span class="req">*</span></label><input id="beMotivo" maxlength="200" placeholder="Ex.: passageiros digitados errado"></div>
+    </div><p class="sup">A receita é recalculada com a tarifa vigente na data. A alteração fica registrada nas Observações (quem, quando, o que mudou e o motivo).</p><div class="err" id="beErr" style="display:none"></div>`, async () => {
+    const g = k => ($(k) ? String($(k).value).trim() : ""), err = m => { const e = $("beErr"); e.style.display = "block"; e.textContent = m; return false; };
+    const data = g("beData"), linha = g("beLinha"), sec = g("beSec"), pass = Number(g("bePass") || 0), grat = Number(g("beGrat") || 0), mot = g("beMotivo");
+    if (!data || !linha || !sec) return err("Preencha data, linha e seção.");
+    if (!mot) return err("Escreva o motivo da alteração.");
+    if (bilDiaFechado(data)) return err(`O dia ${fmtDate(data)} está com o fechamento "Fechado".`);
+    let tarifa = bilTarifa(linha, sec, data); const ri = g("beRolI"), rf = g("beRolF");
+    if (!(tarifa > 0)) { if (linha === x.Linha && sec === x.Secao && Number(x.Tarifa) > 0) tarifa = Number(x.Tarifa); else return err("Não há tarifa vigente para essa seção na data — confira a seção ou a aba Tarifas."); }   /* revisão: seção encerrada não zera a receita */
+    if (ri && rf && Number(rf) - Number(ri) !== pass + grat && !(await erpConfirmar({ titulo: "Roleta × passageiros", texto: `A roleta indica ${Number(rf) - Number(ri)} passagens e o lançamento tem ${pass + grat} (pagantes + gratuidades). Gravar mesmo assim?`, sim: "Gravar" }))) return false;
+    const novo = { Data: data, Linha: linha, Sentido: g("beSent"), Horario: g("beHora") || null, Carro: g("beCarro") || null, Motorista: g("beMot") || null, Origem: g("beOrig"), Secao: sec, Passageiros: pass, Gratuidades: grat, Tarifa: tarifa, Receita: Math.round(tarifa * pass * 100) / 100, Metodo: g("beMet"), RoletaInicial: ri ? Number(ri) : null, RoletaFinal: rf ? Number(rf) : null, TalaoInicial: g("beTalI") || null, TalaoFinal: g("beTalF") || null };
+    const rot = { Data: "data", Linha: "linha", Sentido: "sentido", Horario: "horário", Carro: "carro", Motorista: "motorista", Origem: "origem", Secao: "seção", Passageiros: "passageiros", Gratuidades: "gratuidades", Tarifa: "tarifa", Receita: "receita", Metodo: "método", RoletaInicial: "roleta inicial", RoletaFinal: "roleta final", TalaoInicial: "talão inicial", TalaoFinal: "talão final" };
+    const ant = k => k === "Data" ? ymd(x.Data) : x[k];
+    const mud = Object.keys(novo).filter(k => String(ant(k) ?? "") !== String(novo[k] ?? "")).map(k => `${rot[k]} ${ant(k) ?? "—"}→${novo[k] ?? "—"}`);
+    if (!mud.length) return err("Nada mudou.");
+    novo.Title = `${data} · ${linha} · ${novo.Sentido} · ${novo.Horario || "—"} · ${sec}`;
+    novo.Observacoes = [String(x.Observacoes || "").trim(), `[${bilAgora()} · ${bilQuem()}] alterou ${mud.join(", ")} · motivo: ${mot}`].filter(Boolean).join("\n");
+    while (novo.Observacoes.length > 6000 && novo.Observacoes.includes("\n")) novo.Observacoes = novo.Observacoes.slice(novo.Observacoes.indexOf("\n") + 1);   /* revisão: corta linhas inteiras, as mais antigas */
+    try { await SP.update(BIL_STATE.site.id, BIL_STATE.lists.bil_lanc.id, x._id, novo); toast("Lançamento alterado."); await loadBil(); paintBil(); return true; }
+    catch (e) { return err("Não foi possível gravar: " + e.message); }
+  });
+  const upd = () => { const l = $("beLinha").value, el = $("beSec"); el.innerHTML = secs(l).map(s => `<option value="${esc(s.Secao)}" ${s.Secao === x.Secao ? "selected" : ""}>${esc(s.Secao)} — ${esc(s.Descricao || "")}</option>`).join(""); calc(); };
+  const calc = () => { const t = bilTarifa($("beLinha").value, $("beSec").value, $("beData").value); $("beRec").textContent = `${fmtBRL(t * Number($("bePass").value || 0))} (tarifa ${fmtBRL(t)})`; };
+  $("beLinha").addEventListener("change", upd); $("beSec").addEventListener("change", calc); $("bePass").addEventListener("input", calc); $("beData").addEventListener("change", calc); upd();
+};
+window.bilLancExcluir = async id => {
+  const x = (BIL_STATE.lanc || []).find(y => String(y._id) === String(id)); if (!x) return;
+  if (!podeExcluir("bilhet")) { toast("Excluir lançamento é do proprietário do módulo."); return; }
+  if (bilDiaFechado(ymd(x.Data))) { toast("Dia com fechamento \"Fechado\": reabra o fechamento para excluir."); return; }
+  if (!(await erpConfirmar({ titulo: "Excluir lançamento", texto: `Excluir o lançamento de ${fmtDate(x.Data)} · ${x.Linha} ${x.Sentido || ""} · ${x.Horario || "—"} · seção ${x.Secao} (${x.Passageiros} passageiro(s), ${fmtBRL(x.Receita)})? Não pode ser desfeito.`, sim: "Excluir", perigo: true }))) return;
+  try { await graph(`/sites/${BIL_STATE.site.id}/lists/${BIL_STATE.lists.bil_lanc.id}/items/${x._id}`, { method: "DELETE" }); toast("Lançamento excluído."); await loadBil(); paintBil(); }
+  catch (e) { toast("Não foi possível excluir: " + e.message, 7000); }
+};
+/* LB-2: Fechamento carrega o dia já gravado; clicar num dia da tabela abre esse dia no formulário */
+{ const f0 = bilFech; bilFech = function (fech, lanc) {
+    let h = f0.apply(this, arguments);
+    h = h.replace(/<tr><td>([^<]*)<\/td><td class="right">/g, (m, dia) => { const d = String(dia).trim(); const iso = (fech.concat(lanc).map(x => ymd(x.Data)).find(v => fmtDate(v) === d)) || ""; return iso ? `<tr class="cons-l" style="cursor:pointer" title="Abrir este dia no formulário" onclick="bilFechDia('${esc(iso)}')"><td>${dia}</td><td class="right">` : m; });
+    h = h.replace('<h3>Fechar um dia</h3>', '<h3>Fechar um dia</h3><div class="hint" id="fcInfo" style="margin:-4px 0 8px"></div>');
+    setTimeout(() => { const d = $("fcData"); if (!d || d.dataset.carrega) return; d.dataset.carrega = "1"; d.addEventListener("change", bilFechCarregar); bilFechCarregar(); }, 0);
+    return h;
+  }; }
+function bilFechCarregar() {
+  const d = $("fcData"); if (!d) return;
+  const ex = (BIL_STATE.fech || []).find(x => x.Data && ymd(x.Data) === d.value) || null;
+  [["fcTL", "TransitoLev"], ["fcTC", "TransitoCx"], ["fcAL", "AgenciaLev"], ["fcAC", "AgenciaCx"], ["fcFr", "Fretamento"]].forEach(([id, k]) => { const el = $(id); if (el) el.value = ex && ex[k] != null ? String(ex[k]) : ""; });
+  const st = $("fcSt"); if (st) st.value = (ex && ex.Status) || "Aberto";
+  const info = $("fcInfo"); if (info) info.textContent = ex ? `Fechamento já gravado para ${fmtDate(d.value)} (${ex.Status || "Aberto"}): os valores abaixo são os gravados — altere e grave de novo.` : `Sem fechamento gravado para ${fmtDate(d.value)}.`;
+}
+window.bilFechCarregar = bilFechCarregar;
+window.bilFechDia = iso => { const d = $("fcData"); if (!d) return; d.value = iso; bilFechCarregar(); d.scrollIntoView({ behavior: "smooth", block: "center" }); };
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -42470,6 +42630,7 @@ CONFIG.version = "v0.14.18";   /* Fluxo de Caixa R2: tesouraria; despesa em dinh
 CONFIG.version = "v0.14.19";   /* CAP: fechamento mensal com trava; pacote com as despesas do caixa; "Vencido · aguarda NF"; credor "Própria empresa (NMB)"; Outros CNPJs para aprovação */
 CONFIG.version = "v0.14.20";   /* Consumíveis pronto para uso: catálogo sem repetidos, aprovação da Diretoria, recebimento item a item, histórico de preços; Terceiros CPF sem fantasia; Funcionários */
 CONFIG.version = "v0.14.21";   /* quem só tem "Ver" abre os registros do Banco de Dados do RH só para leitura */
+CONFIG.version = "v0.14.22";   /* Financeiro F0: LevBom editar/excluir e fechamento que carrega o dia; competência normalizada; pago sem data; parcela de dívida; migração confere vínculos; Agência — Caixa na guarda */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

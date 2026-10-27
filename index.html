@@ -42831,6 +42831,80 @@ function horEncaixar(doc, pg, F, ultima) {
   }; }
 { const p0 = paintHor; paintHor = function () { const r = p0.apply(this, arguments); const f = $("horActions") && $("horActions").querySelector(".hor-folha"); if (f) { f.setAttribute("onclick", "horPainelEscolher()"); f.textContent = "Imprimir cartaz / painel"; f.title = "Cartaz do passageiro (uma folha por tipo de dia) ou painel completo"; } return r; }; window.paintHor = paintHor; }
 { const p0 = paintTar; paintTar = function () { const r = p0.apply(this, arguments); const f = $("tarActions") && $("tarActions").querySelector(".hor-folha"); if (f) { f.setAttribute("onclick", "horPainelEscolher()"); f.textContent = "Imprimir horários"; f.title = "Cartaz do passageiro (uma folha por tipo de dia) ou painel completo"; } return r; }; window.paintTar = paintTar; }
+/* ==========================================================================================
+   v0.14.24 (27/10/2026) · Agentes Financeiros › Movimento de Caixa — folha em branco (A4) para
+   preencher à mão quando o sistema não estiver disponível. Mesmos campos do editor (Data, Caixa,
+   Turno, Agência / sub-agência, Município, Saldo anterior, lançamentos Histórico/Entrada/Saída,
+   totais, observações e assinaturas). Não lê nem grava dados: qualquer pessoa do módulo imprime.
+   ========================================================================================== */
+const AGMOV_FOLHA_LINHAS = 20;   /* no iPhone/iPad (margens maiores) saem 15; até 8 opções por campo, o resto em "Outro" */
+const AGMOV_FOLHA_CSS = `
+  .pg{min-height:0!important;page-break-after:auto!important;padding-bottom:0!important}
+  .mf-cab{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 10px;margin:6px 0 8px}
+  .mf-cab .c{border:1px solid #9CA3AF;border-radius:4px;padding:3px 7px 4px;min-height:30px}
+  .mf-cab .c,.mf-obs{text-align:left}.mf-cab .k{font-size:7.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#4B5563}
+  .mf-cab .op{display:flex;flex-wrap:wrap;gap:3px 12px;font-size:9.5px;margin-top:4px}
+  .mf-cab .op span::before{content:"";display:inline-block;width:9px;height:9px;border:1px solid #374151;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  .mf-cab .dt{font-size:12px;color:#9CA3AF;margin-top:6px;letter-spacing:.12em}
+  table.mf{width:100%;border-collapse:collapse;table-layout:fixed}
+  table.mf th{background:#1E2A4A;color:#fff;font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;padding:4px 6px;text-align:left}
+  table.mf th.r{text-align:right}
+  table.mf td{border:1px solid #C7CDD6;height:6.4mm;padding:0 6px;font-size:9px;color:#9CA3AF}
+  table.mf tbody tr:nth-child(even) td{background:#F6F8FB}
+  table.mf td.n{text-align:center;width:26px}
+  table.mf td.rs{text-align:left;font-size:8px}
+  table.mf tr.tot td{border-top:2px solid #374151;font-weight:700;color:#111827;background:#EEF2F7}
+  .mf-fim{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;margin-top:8px}
+  .mf-res{border:1px solid #9CA3AF;border-radius:4px}
+  .mf-res div{display:flex;justify-content:space-between;align-items:flex-end;padding:5px 8px;border-bottom:1px solid #E5E7EB;font-size:9.5px;min-height:24px}
+  .mf-res div:last-child{border-bottom:0;font-weight:800;background:#EEF2F7}
+  .mf-res div span:last-child{color:#9CA3AF;letter-spacing:.06em}
+  .mf-obs{border:1px solid #9CA3AF;border-radius:4px;padding:3px 7px}
+  .mf-obs .k{font-size:7.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#4B5563}
+  .mf-obs i{display:block;border-bottom:1px solid #D1D5DB;height:22px}
+  .mf-ass{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:18px}
+  .mf-ass div{border-top:1px solid #374151;padding-top:3px;font-size:8.5px;color:#374151}
+  .mf-ass div b{display:block;font-size:7.5px;color:#6B7280;font-weight:600;margin-top:1px}
+  .mf-dica{margin:8px 0 0;font-size:8.5px;color:#4B5563;border-left:3px solid #F59E0B;padding:3px 8px;background:#FFFBEB}
+`;
+function agmovFolhaHtml() {
+  const op = arr => `<div class="op">${(arr || []).filter(Boolean).slice(0, 8).map(v => `<span>${esc(v)}</span>`).join("")}<span>Outro: ________</span></div>`;
+  let subs = [], turnos = [], muns = [];
+  try { subs = lancSubs(); } catch (e) {} try { turnos = lancTurnos(); } catch (e) {} try { muns = lancMunicipios(); } catch (e) {}
+  const linhas = Array.from({ length: (typeof horSafari === "function" && horSafari()) ? 15 : AGMOV_FOLHA_LINHAS }, (_, i) => `<tr><td class="n">${i + 1}</td><td></td><td class="rs">R$</td><td class="rs">R$</td></tr>`).join("");
+  return `<div class="pg">${printCab("Movimento de Caixa · folha para preenchimento manual", "Use quando o sistema não estiver disponível · depois lance no ERP", { doc: "AGMOV-MANUAL", semQuem: true, meta: [["Folha", "____ de ____"]] })}
+    <div class="mf-cab">
+      <div class="c"><div class="k">Data *</div><div class="dt">____ / ____ / ________</div></div>
+      <div class="c"><div class="k">Caixa (responsável) *</div></div>
+      <div class="c"><div class="k">Saldo anterior</div><div class="dt">R$</div></div>
+      <div class="c"><div class="k">Agência / sub-agência *</div>${op(subs)}</div>
+      <div class="c"><div class="k">Turno</div>${op(turnos)}</div>
+      <div class="c"><div class="k">Município *</div>${op(muns)}</div>
+    </div>
+    <table class="mf"><colgroup><col style="width:26px"><col><col style="width:21%"><col style="width:21%"></colgroup>
+      <thead><tr><th>#</th><th>Histórico <span style="font-weight:400;text-transform:none;letter-spacing:0">(ex.: venda de passagens, sangria, banco de VT…)</span></th><th>Entrada</th><th>Saída</th></tr></thead>
+      <tbody>${linhas}<tr class="tot"><td></td><td>Totais</td><td class="rs">R$</td><td class="rs">R$</td></tr></tbody></table>
+    <div class="mf-fim">
+      <div class="mf-obs"><div class="k">Observações</div><i></i><i></i><i></i><i></i></div>
+      <div class="mf-res"><div><span>Saldo anterior</span><span>R$ ____________</span></div><div><span>(+) Entradas</span><span>R$ ____________</span></div><div><span>(−) Saídas</span><span>R$ ____________</span></div><div><span>(=) Saldo atual</span><span>R$ ____________</span></div></div>
+    </div>
+    <div class="mf-ass"><div>Caixa<b>nome e assinatura</b></div><div>Conferido por<b>administrador</b></div><div>Lançado no ERP em<b>data e quem lançou</b></div></div>
+    <p class="mf-dica">Depois, lance no ERP em Financeiro › Agentes Financeiros › Movimento de Caixa › <b>+ Novo movimento</b>, linha a linha, e guarde esta folha com o caixa do dia. Faltou linha? Continue numa segunda folha (Folha 2 de 2). * obrigatório. Cada linha leva valor na Entrada <b>ou</b> na Saída. Saldo atual = saldo anterior + entradas − saídas.</p>
+    ${printRodape("Financeiro › Agentes Financeiros › Movimento de Caixa · folha em branco", true)}</div>`;
+}
+window.agmovFolhaBranco = () => {
+  const fr0 = document.getElementById("printFrame"); if (fr0) fr0.remove();
+  printDoc({ titulo: "Movimento de Caixa - folha em branco", html: agmovFolhaHtml(), fonte: 10, css: AGMOV_FOLHA_CSS });
+};
+{ const p0 = lancPaint;
+  lancPaint = function (k) {
+    const r = p0.apply(this, arguments);
+    if (k === "agmov" && !(LANC_ED && LANC_ED.k === "agmov") && !(agcxAdmin() && AGCX.aba === "caixa")) {   /* revisão: só na aba dos movimentos */
+      const acts = $("agMovActions");
+      if (acts && !acts.querySelector(".agmov-folha")) acts.insertAdjacentHTML("afterbegin", `<button class="btn ghost agmov-folha" onclick="agmovFolhaBranco()" title="Folha A4 em branco para preencher à mão quando o sistema não estiver disponível">Folha em branco (A4)</button>`);
+    }
+    return r;
+  }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -42840,6 +42914,7 @@ CONFIG.version = "v0.14.20";   /* Consumíveis pronto para uso: catálogo sem re
 CONFIG.version = "v0.14.21";   /* quem só tem "Ver" abre os registros do Banco de Dados do RH só para leitura */
 CONFIG.version = "v0.14.22";   /* Financeiro F0: LevBom editar/excluir e fechamento que carrega o dia; competência normalizada; pago sem data; parcela de dívida; migração confere vínculos; Agência — Caixa na guarda */
 CONFIG.version = "v0.14.23";   /* cartaz do passageiro (uma folha por tipo de dia, letra grande) e painel completo (A4 deitada ou meia folha), centralizados; etiquetas "Saída de Madalena" / "Ponto final Madalena" como na tela */
+CONFIG.version = "v0.14.24";   /* Movimento de Caixa: folha em branco (A4) para preencher à mão */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

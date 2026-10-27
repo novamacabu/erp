@@ -42905,6 +42905,85 @@ window.agmovFolhaBranco = () => {
     }
     return r;
   }; }
+/* ==========================================================================================
+   v0.14.25 (27/10/2026) · Agentes Financeiros › Vendas da Agência — folha "Resumo do Movimento Diário"
+   (A4) para preencher à mão, no modelo de papel da agência: trecho (origem/destino), quantidade,
+   valor unitário e total por linha; total de passagens e total geral; resumo de vendas por forma
+   (Débito, Crédito, PIX, VT) com o Dinheiro calculado; observações, valor por extenso e assinaturas.
+   Não lê nem grava dados: qualquer pessoa do módulo imprime.
+   ========================================================================================== */
+const AGVEN_FOLHA_LINHAS = 14;   /* no iPhone/iPad (margens maiores) saem 10 */
+const AGVEN_FOLHA_CSS = AGMOV_FOLHA_CSS + `
+  table.mf.vd td.c{text-align:center}
+  table.mf.vd th.c{text-align:center}
+  table.mf.vd tr.tot td{font-size:9.5px}
+  .mf-fp{border:1px solid #9CA3AF;border-radius:4px;margin-top:8px}
+  .mf-fp .t{background:#1E2A4A;color:#fff;font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;font-weight:700}
+  .mf-fp .g{display:grid;grid-template-columns:repeat(5,1fr)}
+  .mf-fp .g>div{padding:4px 8px 6px;border-right:1px solid #E5E7EB;min-height:34px}
+  .mf-fp .g>div:last-child{border-right:0;background:#EEF2F7}
+  .mf-fp .k{font-size:7.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#4B5563}
+  .mf-fp .k small{font-weight:500;text-transform:none;letter-spacing:0;color:#6B7280}
+  .mf-fp .dt{font-size:11px;color:#9CA3AF;margin-top:5px}
+  .mf-ext{border:1px solid #9CA3AF;border-radius:4px;padding:3px 7px;margin-top:8px}
+  .mf-ext .k{font-size:7.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#4B5563}
+  .mf-ext i{display:block;border-bottom:1px solid #D1D5DB;height:20px}
+`;
+function agvenFolhaHtml() {
+  const op = arr => `<div class="op">${(arr || []).filter(Boolean).slice(0, 8).map(v => `<span>${esc(v)}</span>`).join("")}<span>Outro: ________</span></div>`;
+  let subs = [], turnos = [], muns = [];
+  try { subs = lancSubs(); } catch (e) {} try { turnos = lancTurnos(); } catch (e) {} try { muns = lancMunicipios(); } catch (e) {}
+  const n = (typeof horSafari === "function" && horSafari()) ? 10 : AGVEN_FOLHA_LINHAS;
+  const linhas = Array.from({ length: n }, (_, i) => `<tr><td class="n"></td><td></td><td></td><td></td><td class="rs">R$</td><td class="rs">R$</td></tr>`).join("");
+  return `<div class="pg mf-folha">${printCab("Resumo do Movimento Diário", "Vendas da agência · folha para preenchimento manual · depois lance no ERP", { doc: "AGVEN-MANUAL", semQuem: true, meta: [["Folha", "____ de ____"]] })}
+    <div class="mf-cab">
+      <div class="c"><div class="k">Data *</div><div class="dt">____ / ____ / ________</div></div>
+      <div class="c" style="grid-column:span 2"><div class="k">Vendedor(a) *</div></div>
+      <div class="c"><div class="k">Agência / sub-agência *</div>${op(subs)}</div>
+      <div class="c"><div class="k">Turno</div>${op(turnos)}</div>
+      <div class="c"><div class="k">Município *</div>${op(muns)}</div>
+    </div>
+    <table class="mf vd"><colgroup><col style="width:44px"><col><col><col style="width:11%"><col style="width:17%"><col style="width:19%"></colgroup>
+      <thead><tr><th>Tipo</th><th>Origem</th><th>Destino</th><th class="c">Qtde</th><th>Valor unitário</th><th>Valor total</th></tr></thead>
+      <tbody>${linhas}<tr class="tot"><td></td><td colspan="2">Totais</td><td class="c"></td><td style="color:#6B7280;font-weight:500">total geral →</td><td class="rs">R$</td></tr></tbody></table>
+    <div class="mf-fp"><div class="t">Resumo de vendas · por forma de pagamento</div><div class="g">
+      <div><div class="k">Débito</div><div class="dt">R$</div></div>
+      <div><div class="k">Crédito</div><div class="dt">R$</div></div>
+      <div><div class="k">PIX</div><div class="dt">R$</div></div>
+      <div><div class="k">VT <small>(vale-transporte)</small></div><div class="dt">R$</div></div>
+      <div><div class="k">Dinheiro <small>= total − as outras</small></div><div class="dt">R$</div></div>
+    </div></div>
+    <div class="mf-ext"><div class="k">Valor total por extenso</div><i></i></div>
+    <div class="mf-obs" style="margin-top:8px"><div class="k">Observações <span style="font-weight:500;text-transform:none;letter-spacing:0;color:#6B7280">(ex.: passagem perdida na impressora, gratuidades, troca)</span></div><i></i><i></i><i></i></div>
+    <div class="mf-ass"><div>Caixa / vendedor(a)<b>nome e assinatura</b></div><div>Conferido por<b>administrador</b></div><div>Lançado no ERP em<b>data e quem lançou</b></div></div>
+    <p class="mf-dica"><b>Tipo:</b> I = inteira · M = meia (estudante) · GI = gratuidade idoso · GP = gratuidade PcD · VT = vale-transporte (no ERP, VT é tipo de passagem; o valor entra em Dinheiro). Origem × Destino = Linha no ERP. Valor total da linha = quantidade × valor unitário. Total geral = soma dos valores totais = Débito + Crédito + PIX + VT + Dinheiro; cada linha também leva a forma de pagamento (anote ao lado do trecho se não for dinheiro). Depois, lance no ERP em Financeiro › Agentes Financeiros › Vendas da Agência › <b>+ Novo fechamento</b> e guarde esta folha com o caixa do dia. Faltou linha? Use uma segunda folha. * obrigatório.</p>
+    ${printRodape("Financeiro › Agentes Financeiros › Vendas da Agência · folha em branco", true)}</div>`;
+}
+window.agvenFolhaBranco = () => {
+  const fr0 = document.getElementById("printFrame"); if (fr0) fr0.remove();
+  printDoc({ titulo: "Resumo do Movimento Diario - folha em branco", html: agvenFolhaHtml(), fonte: 10, umaPagina: true, css: AGVEN_FOLHA_CSS });
+};
+{ const p0 = lancPaint;
+  lancPaint = function (k) {
+    const r = p0.apply(this, arguments);
+    if (k === "agven" && !(LANC_ED && LANC_ED.k === "agven")) {
+      const acts = $("agVenActions");
+      if (acts && !acts.querySelector(".agven-folha")) acts.insertAdjacentHTML("afterbegin", `<button class="btn ghost agven-folha" onclick="agvenFolhaBranco()" title="Resumo do Movimento Diário em branco (A4), para preencher à mão quando o sistema não estiver disponível">Folha em branco (A4)</button>`);
+    }
+    return r;
+  }; }
+/* folha em branco com muitas opções cadastradas: reduz por zoom até caber numa folha; no iPhone/iPad a área útil é menor (margens do Safari) */
+{ const c0 = printCaber; printCaber = function (doc, paisagem) {
+    const pgs = doc ? [...doc.querySelectorAll(".pg.mf-folha")] : [];
+    if (!pgs.length) return c0.apply(this, arguments);
+    const safari = typeof horSafari === "function" && horSafari();
+    const maxH = (safari ? 228 : 297 - 28) * 96 / 25.4 * 0.97;
+    pgs.forEach(pg => { pg.style.zoom = ""; const h = pg.scrollHeight; if (h > maxH) pg.style.zoom = String(Math.max(0.5, Math.floor(maxH / h * 1000) / 1000)); });
+  }; }
+/* a folha do Movimento de Caixa (v0.14.24) entra na mesma regra */
+{ const h0 = agmovFolhaHtml; agmovFolhaHtml = function () { return h0.apply(this, arguments).replace('<div class="pg">', '<div class="pg mf-folha">'); };
+  window.agmovFolhaBranco = () => { const fr0 = document.getElementById("printFrame"); if (fr0) fr0.remove();
+    printDoc({ titulo: "Movimento de Caixa - folha em branco", html: agmovFolhaHtml(), fonte: 10, umaPagina: true, css: AGMOV_FOLHA_CSS }); }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -42915,6 +42994,7 @@ CONFIG.version = "v0.14.21";   /* quem só tem "Ver" abre os registros do Banco 
 CONFIG.version = "v0.14.22";   /* Financeiro F0: LevBom editar/excluir e fechamento que carrega o dia; competência normalizada; pago sem data; parcela de dívida; migração confere vínculos; Agência — Caixa na guarda */
 CONFIG.version = "v0.14.23";   /* cartaz do passageiro (uma folha por tipo de dia, letra grande) e painel completo (A4 deitada ou meia folha), centralizados; etiquetas "Saída de Madalena" / "Ponto final Madalena" como na tela */
 CONFIG.version = "v0.14.24";   /* Movimento de Caixa: folha em branco (A4) para preencher à mão */
+CONFIG.version = "v0.14.25";   /* Vendas da Agência: Resumo do Movimento Diário em branco (A4) para preencher à mão */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -43662,6 +43662,40 @@ window.agHandbookBaixar = k => {
     return h.replace(/ <span class="sup">\((?:\d+ com tarifa diferente)?(?:, )?(?:\d+ em outra linha)?\)<\/span><\/span>/, "</span>" + sel);
   }; }
 
+/* v0.14.28.2 (28/10/2026) ·
+   1) LevBom › Tarifas: o cabeçalho preso da 2ª linha (Ponto A/B, Início/Fim) ficava transparente — o texto da linha de cima
+      vazava por trás ao rolar. A 1ª e a 2ª linha do thead ganham fundo opaco.
+   2) Folhas em branco (A4) do Movimento Diário e do Movimento de Caixa: o contorno da tabela não fechava à direita (o 1º th e
+      a última coluna não tinham borda direita). Fecho visual com borda em todos os lados do th e borda externa na tabela.
+   3) Handbook (PDF) do Movimento Diário e do Movimento de Caixa: o botão passa a abrir o PDF em nova aba (em vez de baixar);
+      a janela do PDF do navegador já oferece baixar e imprimir. */
+(() => { const st = document.createElement("style"); st.textContent = `
+.table-wrap table.bil-tar-t thead tr:first-child th,.table-wrap table.bil-tar-t thead tr:nth-child(2) th{background:var(--soft,#F3F5F8)}
+.table-wrap table.bil-tar-t thead tr:first-child th{box-shadow:inset 0 -1px 0 var(--line,#E4E8EA)}`; document.head.appendChild(st); })();
+/* folhas em branco: injeta correção dentro do iframe de impressão */
+const AG_FOLHA_CSS_FIX = `table.mf{border:1px solid #9CA3AF}table.mf th{border:1px solid #1E2A4A}table.mf td:last-child{border-right:1px solid #9CA3AF}table.mf td:first-child{border-left:1px solid #9CA3AF}`;
+{ const h0 = agmovFolhaHtml; agmovFolhaHtml = function () { return h0.apply(this, arguments).replace("</table>", "</table>").replace(/<\/style>/, AG_FOLHA_CSS_FIX + "</style>"); };
+  const g0 = agvenFolhaHtml; agvenFolhaHtml = function () { return g0.apply(this, arguments).replace(/<\/style>/, AG_FOLHA_CSS_FIX + "</style>"); }; }
+/* o CSS está no printDoc, não no html retornado: injeta no printDoc também para a 1ª vez */
+{ const p0 = printDoc; printDoc = function (o) { if (o && /Movimento de Caixa|Movimento Diario/.test(o.titulo || "") && o.css && !o.css.includes("mf_fix")) o.css = o.css + "\n/* mf_fix */ " + AG_FOLHA_CSS_FIX; return p0.apply(this, arguments); }; }
+/* Handbook: abre em nova aba (data: URL com Blob) em vez de forçar download */
+window.agHandbookBaixar = k => {
+  const h = AG_HANDBOOKS[k] || AG_HANDBOOKS.agven;
+  try {
+    const bin = atob(h.b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([u], { type: "application/pdf" }));
+    const w = window.open(url, "_blank"); if (!w) { toast("O navegador bloqueou a nova aba. Permita janelas pop-up e tente de novo."); return; }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) { toast("Não foi possível abrir o handbook neste navegador."); }
+};
+{ const p0 = lancPaint;
+  lancPaint = function (k) {
+    const r = p0.apply(this, arguments);
+    const b = (k === "agven" || k === "agmov") && document.querySelector(`#${k === "agven" ? "agVenActions" : "agMovActions"} .ag-handbook`);
+    if (b) b.title = (AG_HANDBOOKS[k].tit || "").replace(/^Handbook/, "Abrir o handbook");
+    return r;
+  }; }
+
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -43678,6 +43712,7 @@ CONFIG.version = "v0.14.27";   /* Movimento Diário (Linha + Trecho + valor auto
 CONFIG.version = "v0.14.27.1";   /* LevBom: caixas Linha e Seção presas à célula; cabeçalho de duas linhas das Tarifas preso na rolagem */
 CONFIG.version = "v0.14.28";   /* um handbook (PDF) por módulo: Movimento Diário e Movimento de Caixa */
 CONFIG.version = "v0.14.28.1";   /* Diário Oficial: oficial com dado a ajustar em laranja */
+CONFIG.version = "v0.14.28.2";   /* LevBom cabeçalho preso opaco; folhas A4 com contorno fechado; Handbook abre em nova aba */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

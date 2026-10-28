@@ -43696,6 +43696,301 @@ window.agHandbookBaixar = k => {
     return r;
   }; }
 
+/* ==========================================================================================
+   v0.14.29 (28/10/2026) · Diretoria › Detro RJ › Diário Oficial reconstruído em cinco abas — Publicações · Linhas · Trechos ·
+   Trechos não oficiais · Aderência às Tarifas — e o LevBom passa a tomar as linhas e os trechos do Diário Oficial (fonte
+   oficial). Sem lista nem coluna nova no SharePoint:
+   · Linhas (do_linhas): Linha ERP = LinhaERP · Cód. DETRO = Title · Trecho "Ponto A × Ponto B" = Ligacao · Tipo (Parador/Direto) = Caracteristica;
+   · Trechos (do_trechos da publicação vigente): Cód. DETRO = Linha · Ponto A = Origem · Ponto B = Destino · Cat. = Categoria · Tarifa;
+   · Trechos não oficiais: do_trechos com PubId = "NO" (Linha = linha do ERP);
+   · Aderência: tarifas do LevBom (bil_tarifas) comparadas com a publicação vigente; Editar/Excluir/Novo usam os formulários do LevBom.
+   A correspondência "Linha do ERP × linhas do DETRO" passa a sair da aba Linhas (o JSON antigo da publicação fica só como reserva).
+   ========================================================================================== */
+const DO_NO = "NO";   /* PubId dos trechos não oficiais */
+const DO_TIPOS_LINHA = ["Parador", "Direto"];
+/* ---------- fonte única: linhas e trechos do Diário Oficial ---------- */
+function doLinhasErp() {   /* linhas do ERP cadastradas na aba Linhas: [{ erp, det:[códigos], nome, tipo, a, b }] */
+  const m = new Map();
+  (DOL.itens || []).slice().sort((x, y) => (Number(x.Ordem) || 999) - (Number(y.Ordem) || 999) || String(x.Title || "").localeCompare(String(y.Title || ""))).forEach(x => {
+    const erp = String(x.LinhaERP || "").trim().toUpperCase(); if (!erp) return;
+    const p = bilTrechoPartes(x.Ligacao || ""), cod = String(x.Title || "").trim().toUpperCase();
+    if (!m.has(erp)) m.set(erp, { erp, det: [], a: p.a, b: p.b, tipo: String(x.Caracteristica || "").trim(), nome: "" });
+    const L = m.get(erp); if (cod && !L.det.includes(cod)) L.det.push(cod); if (!L.a && p.a) { L.a = p.a; L.b = p.b; } if (!L.tipo && x.Caracteristica) L.tipo = String(x.Caracteristica).trim();
+  });
+  m.forEach(L => { L.nome = [bilTrechoJunta(L.a, L.b), L.tipo].filter(Boolean).join(" - "); });
+  return [...m.values()].sort((a, b) => a.erp.localeCompare(b.erp, "pt-BR", { numeric: true }));
+}
+function doLinhaErpDe(cod) { const c = String(cod || "").toUpperCase(); const x = (DOL.itens || []).find(i => String(i.Title || "").toUpperCase() === c && i.LinhaERP); return x ? String(x.LinhaERP).toUpperCase() : ""; }
+function doCodigosDetro() {   /* códigos de linha DETRO conhecidos: trechos da publicação vigente + aba Linhas */
+  const s = new Set(); const v = doVigente(); if (v) doTrechosDe(v._id).forEach(t => { if (t.Linha) s.add(String(t.Linha).toUpperCase()); });
+  (DOL.itens || []).forEach(x => { if (x.Title) s.add(String(x.Title).toUpperCase()); });
+  return [...s].sort();
+}
+function doTrechosDaLinhaErp(erp) {   /* trechos oficiais (publicação vigente) das linhas DETRO ligadas à linha do ERP */
+  const L = doLinhasErp().find(x => x.erp === String(erp || "").toUpperCase()), v = doVigente(); if (!L || !v) return [];
+  return doTrechosDe(v._id).filter(t => L.det.includes(String(t.Linha || "").toUpperCase()));
+}
+/* a correspondência ERP × DETRO sai da aba Linhas; o JSON da publicação fica como reserva */
+{ const m0 = doLinhasMap; doLinhasMap = function (pub) { const m = {}; doLinhasErp().forEach(L => { if (L.det.length) m[L.erp] = L.det.slice(); }); return Object.assign({}, m0.apply(this, arguments), m); }; }   /* a aba Linhas vence; o JSON da publicação completa (ex.: S/N) */
+/* carga: as linhas do DETRO entram sempre que o módulo for lido com força (LevBom e Movimento Diário também precisam delas) */
+{ const c0 = doCarregar; doCarregar = async function (force) { const r = await c0.apply(this, arguments); if (force) { DO.ver++; DO.idx = null; } return r; }; }
+async function dolCarregar() {   /* só a lista de linhas (LevBom e Movimento Diário não precisam das publicações) */
+  try { if (!DO.site) DO.site = await SP.site(CONFIG.sites[LISTS.do_pub.siteKey]);
+    if (DO.lists.lin === undefined) { const ls = await SP.lists(DO.site.id); DO.lists.lin = ls.find(l => l.displayName === LISTS.do_linhas.displayName) || null; }
+    DOL.itens = DO.lists.lin ? (await SP.items(DO.site.id, DO.lists.lin.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+    DOL.erro = ""; DOL.em = Date.now(); DO.ver++; DO.idx = null; } catch (e) { DOL.erro = String((e && e.message) || e); DOL.em = Date.now(); }
+}
+async function doGarantirLinhas() { if (DOL.em && Date.now() - DOL.em < 300000 && DO.lists.lin !== undefined) return; await dolCarregar(); }
+/* M2 (revisão): "Atualizar dados oficiais" não sobrescreve o trecho (Ponto A × B) nem o tipo já cadastrados — eles ficam no JSON Dados */
+{ const u0 = SP.update; SP.update = async function (site, list, id, f) { try { if (DO.lists && DO.lists.lin && list === DO.lists.lin.id && f && "Dados" in f) { const x = (DOL.itens || []).find(i => i._id === String(id)); if (x) { if (x.Ligacao) delete f.Ligacao; if (x.Caracteristica) delete f.Caracteristica; } } } catch (e) {} return u0.apply(this, arguments); }; }
+/* nome da linha do ERP: primeiro a aba Linhas do Diário Oficial, depois o cadastro do LevBom */
+{ const n0 = bilLinhaNome; bilLinhaNome = function (cod) { const L = doLinhasErp().find(x => x.erp === String(cod || "").toUpperCase()); return L && L.nome ? L.nome : n0.apply(this, arguments); }; }
+{ const l0 = loadBil; loadBil = async function () { const r = await l0.apply(this, arguments); await doGarantirLinhas(); return r; }; }
+{ const a0 = agvenCarregarBil; agvenCarregarBil = async function () { const r = await a0.apply(this, arguments); await doGarantirLinhas(); return r; }; }
+
+/* ---------- bolinha de aderência (trecho oficial × LevBom) ---------- */
+function doAderTrecho(t) {   /* { k: ok|tar|nao|na, txt, det, tar? } — compara o trecho da portaria com as tarifas vigentes do LevBom */
+  const I = doIndice(); if (!I || typeof BIL_STATE === "undefined") return { k: "na", txt: "LevBom indisponível" };
+  const k = doPar(doPonto(t.Origem, I.A), doPonto(t.Destino, I.A));
+  const erp = doLinhaErpDe(t.Linha);
+  const usam = (BIL_STATE.tarifas || []).filter(x => x.Ativa !== false && (!erp || String(x.Linha).toUpperCase() === erp) && doParesDe(x.Secao, x.Descricao, I.A).includes(k));
+  if (!usam.length) return { k: "nao", txt: "Sem tarifa no LevBom", det: erp ? `nenhuma seção da linha ${erp} cobre este trecho` : "nenhuma seção do LevBom cobre este trecho (código DETRO sem linha do ERP na aba Linhas)" };
+  const igual = usam.find(x => Math.abs(Number(x.Valor) - Number(t.Tarifa)) < 0.005);
+  if (igual || !(Number(t.Tarifa) > 0)) return { k: "ok", txt: "No LevBom", det: usam.map(x => `${x.Linha} · ${x.Secao} · ${fmtBRL(x.Valor)}`).join(", "), tar: igual || usam[0] };
+  return { k: "tar", txt: "No LevBom · tarifa diferente", det: usam.map(x => `${x.Linha} · ${x.Secao} · ${fmtBRL(x.Valor)}`).join(", "), tar: usam[0] };
+}
+function doBola(st) { const cls = st.k === "ok" ? "do-b-ok" : st.k === "tar" ? "do-b-ok do-b-alerta" : st.k === "nao" ? "do-b-nao" : "do-b-na"; const tip = `${st.txt}${st.det ? " — " + st.det : ""}`; return `<span class="do-bola ${cls}" title="${esc(tip)}" role="img" aria-label="${esc(tip)}"><i></i></span>`; }
+
+/* ---------- página ---------- */
+const DO_ABAS = [["pubs", "Publicações"], ["linhas", "Linhas"], ["trechos", "Trechos"], ["nao", "Trechos não oficiais"], ["ader", "Aderência às Tarifas"]];
+DO.aba = "pubs";
+window.doAba = a => { DO.aba = DO_ABAS.some(x => x[0] === a) ? a : (a === "detro" ? "linhas" : "pubs"); DO.abre = ""; DOL.verDados = false; doPintar(); };
+window.doAbrir = id => { DO.abre = id ? String(id) : ""; DO.aba = "pubs"; doPintar(); const el = $("doPubDet"); if (el) el.scrollIntoView({ block: "start", behavior: "smooth" }); };
+function doPintar() {
+  const body = $("doBody"); if (!body || session.modAtual !== "diario") return;
+  const ed = doEd();
+  $("doActions").innerHTML = `<button class="btn" onclick="doAtualizar()">Atualizar</button>${ed && DO.lists.pub ? `<button class="btn primary" onclick="doPubForm()">+ Nova publicação</button>` : ""}`;
+  if (DO.erro) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível ler o Diário Oficial</h3><p>${esc(DO.erro.slice(0, 160))}</p></div>`; return; }
+  if (!DO.lists.pub || !DO.lists.tr) { body.innerHTML = `<div class="cap-empty"><h3>As listas do Diário Oficial ainda não existem</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração</a> para criar "${esc(LISTS.do_pub.displayName)}" e "${esc(LISTS.do_trechos.displayName)}" no site Financeiro.` : "Peça a um administrador para criá-las."}</p></div>`; return; }
+  const tabs = `<div class="cap-tools"><span class="seg-tabs" role="tablist">${DO_ABAS.map(([k, l]) => `<button class="${DO.aba === k ? "on" : ""}" role="tab" aria-selected="${DO.aba === k}" onclick="doAba('${k}')">${l}</button>`).join("")}</span><span class="grow"></span>${dolLinkSite()}</div>`;
+  const p = DO.abre && DO.pubs.find(x => x._id === DO.abre);
+  body.innerHTML = tabs + (DO.aba === "ader" ? doAderencia() : DO.aba === "linhas" ? doAbaLinhas() : DO.aba === "trechos" ? doAbaTrechos() : DO.aba === "nao" ? doAbaNao() : doListaPubs() + (p ? `<div id="doPubDet">${doDetalhe(p)}</div>` : ""));
+}
+/* 1) Publicações: tabela; clique abre o resumo abaixo */
+function doListaPubs() {
+  const vig = doVigente();
+  const ps = DO.pubs.slice().sort((a, b) => (Number(b.Ano) || 0) - (Number(a.Ano) || 0) || String(ymd(b.DataPublicacao || "")).localeCompare(String(ymd(a.DataPublicacao || ""))));
+  if (!ps.length) return `<div class="cap-empty"><h3>Nenhuma publicação</h3><p>${doEd() ? "Clique em \"+ Nova publicação\" e cadastre a portaria do DETRO com os trechos autorizados." : "Nenhuma portaria cadastrada ainda."}</p></div>`;
+  return `<div class="table-wrap"><table class="cap-table do-pubs"><thead><tr><th>Ano</th><th>Ato</th><th>Publicação</th><th>Vigência</th><th style="text-align:right">Trechos</th><th>PDF</th><th></th></tr></thead><tbody>${ps.map(p => `<tr onclick="doAbrir(${esc(jsArg(DO.abre === p._id ? "" : p._id))})" tabindex="0" class="do-clic ${DO.abre === p._id ? "do-sel" : ""}" aria-expanded="${DO.abre === p._id}">
+    <td><b>${esc(p.Ano ?? "—")}</b></td><td>${esc(p.Ato || p.Title || "—")}${p.Empresa ? `<div class="sup">${esc(p.Empresa)}</div>` : ""}</td><td>${p.DataPublicacao ? fmtDate(p.DataPublicacao) : "—"}</td><td>${p.VigenciaInicio ? "a partir de " + fmtDate(p.VigenciaInicio) : "—"}</td>
+    <td class="right">${doTrechosDe(p._id).length}</td><td>${doArq(p) ? `<button class="btn sm" onclick="event.stopPropagation(); doVerPdf(${esc(jsArg(p._id))})">📄 Ver</button>` : `<span class="sup">sem PDF</span>`}</td>
+    <td>${vig === p ? `<span class="do-selo do-ok">Vigente</span>` : p.Vigente === true ? `<span class="do-selo do-na">Marcada como vigente</span>` : ""}</td></tr>`).join("")}</tbody></table></div>
+    <p class="sup" style="margin-top:8px">Clique na publicação para ver e editar os trechos autorizados abaixo. A aderência usa a publicação <b>vigente</b>${vig ? ` (${esc(vig.Title || vig.Ato || "")})` : ""}.</p>`;
+}
+const doTrLinha = (t, i, ed, pid, comLinhaErp) => {
+  const erp = comLinhaErp ? doLinhaErpDe(t.Linha) : "";
+  return `<tr><td class="right sup">${i + 1}</td>${comLinhaErp ? `<td>${erp ? `<b>${esc(erp)}</b>` : `<span class="sup">—</span>`}</td>` : ""}<td class="nw"><b>${esc(doLinhaDO(t))}</b></td><td>${esc(t.Origem || "")}</td><td>${esc(t.Destino || "")}${t.Complemento ? ` <span class="sup">(${esc(t.Complemento)})</span>` : ""}${t.Observacao ? `<div class="sup">${esc(t.Observacao)}</div>` : ""}</td><td style="text-align:center">${esc(t.Categoria || "—")}</td><td class="right nw">${t.Tarifa != null ? esc(fmtBRL(t.Tarifa)) : "—"}</td>`;
+};
+function doDetalhe(p) {
+  const ed = doEd(), ts = doTrechosDe(p._id), arq = doArq(p), vig = doVigente() === p, pontos = doJson(p.Pontos, {});
+  const rows = ts.length ? ts.map((t, i) => `${doTrLinha(t, i, ed, p._id, false)}<td>${doUsoNoErp(t, p)}</td>${ed ? `<td class="right nw"><button class="btn sm" onclick="doTrForm(${esc(jsArg(p._id))}, ${esc(jsArg(t._id))})">Editar</button> <button class="btn sm danger-ghost" onclick="doTrExcluir(${esc(jsArg(t._id))})">Excluir</button></td>` : ""}</tr>`).join("")
+    : `<tr><td colspan="${ed ? 8 : 7}" class="sup">Nenhum trecho cadastrado.${ed ? " Use \"+ Trecho\" ou \"Colar da portaria\"." : ""}</td></tr>`;
+  return `<section class="cap-card do-cab" style="margin-top:14px"><div class="cap-tools" style="padding:0;border:0;box-shadow:none;background:none;margin-bottom:10px"><h3 style="margin:0">${esc(p.Ato || p.Title || "Publicação")} <span class="sup">${esc(p.Ano ?? "")}</span></h3><span class="grow"></span>${arq ? `<button class="btn sm" onclick="doVerPdf(${esc(jsArg(p._id))})">📄 Ver PDF</button>` : ""}${ed ? `<button class="btn sm" onclick="doPdfEscolher(${esc(jsArg(p._id))})">${arq ? "Trocar PDF" : "Anexar PDF"}</button><input type="file" id="doPdfArq" accept="application/pdf,image/*" hidden onchange="doPdfEnviar(${esc(jsArg(p._id))}, this)">` : ""}<button class="btn sm" onclick="doImprimir(${esc(jsArg(p._id))})">Imprimir</button>${ed ? `<button class="btn sm" onclick="doPubForm(${esc(jsArg(p._id))})">Editar dados</button>` : ""}${ed && !vig ? `<button class="btn sm" onclick="doMarcarVigente(${esc(jsArg(p._id))})">Tornar vigente</button>` : ""}${podeExcluir("diario") ? `<button class="btn sm danger-ghost" onclick="doPubExcluir(${esc(jsArg(p._id))})">Excluir publicação</button>` : ""}<button class="btn sm ghost" onclick="doAbrir('')" title="Fechar">✕</button></div>
+    <div class="do-cab-g"><div><span class="sup">Publicação</span><b>${p.DataPublicacao ? fmtDate(p.DataPublicacao) : "—"}</b></div><div><span class="sup">Vigência</span><b>${p.VigenciaInicio ? "a partir de " + fmtDate(p.VigenciaInicio) : "—"}</b></div><div><span class="sup">Empresa</span><b>${esc(p.Empresa || "—")}</b></div><div><span class="sup">Situação</span><b>${vig ? `<span class="do-selo do-ok">Vigente</span>` : `<span class="sup">não é a vigente</span>`}</b></div></div>${p.Observacoes ? `<p class="sup" style="margin:10px 0 0">${esc(p.Observacoes)}</p>` : ""}
+    <div class="cap-tools" style="margin-top:14px"><h3 style="margin:0">Trechos autorizados <span class="sup">${ts.length}</span></h3><span class="grow"></span>${ed ? `<button class="btn sm" onclick="doColar(${esc(jsArg(p._id))})">Colar da portaria</button><button class="btn sm primary" onclick="doTrForm(${esc(jsArg(p._id))})">+ Trecho</button>` : ""}</div>
+    <div class="table-wrap"><table class="cap-table do-t"><thead><tr><th rowspan="2" style="text-align:right;width:44px">#</th><th rowspan="2">Cód. DETRO</th><th colspan="2" class="bil-gr">Trecho</th><th rowspan="2" style="text-align:center">Cat.</th><th rowspan="2" style="text-align:right">Tarifa</th><th rowspan="2">No ERP</th>${ed ? `<th rowspan="2"></th>` : ""}</tr><tr><th class="bil-sub">Ponto A</th><th class="bil-sub">Ponto B</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <details class="do-cfg-det" style="margin-top:12px"><summary class="sup">Equivalências de pontos (nome usado no ERP = nome no Diário Oficial)${ed ? ` · <a href="#" onclick="event.preventDefault();doCfgForm(${esc(jsArg(p._id))}, 'Pontos')">editar</a>` : ""}</summary>${Object.keys(pontos).length ? `<table class="do-kv"><tbody>${Object.entries(pontos).map(([k, v]) => `<tr><td>${esc(k)}</td><td>= ${esc(v)}</td></tr>`).join("")}</tbody></table>` : `<p class="sup">Nenhuma equivalência extra (Conceição / Macabu, Madalena, Trajano, Curato, Imbé e Trevo 40 já são reconhecidos).</p>`}</details></section>`;
+}
+/* formulário de trecho: Cód. DETRO em lista (ou linha do ERP, nos não oficiais), Ponto A / Ponto B, Cat., Tarifa */
+window.doTrForm = (pid, tid) => {
+  const nao = String(pid) === DO_NO, t = tid ? DO.trechos.find(x => x._id === String(tid)) : null, ts = doTrechosDe(pid), ult = ts[ts.length - 1] || {};
+  const v = t || { Linha: ult.Linha || "", Categoria: nao ? "" : "SA", Secao: !nao && ult.Secao != null ? Number(ult.Secao) + 1 : null };
+  const cods = nao ? doLinhasErp().map(L => L.erp) : doCodigosDetro(); if (v.Linha && !cods.includes(String(v.Linha).toUpperCase())) cods.unshift(String(v.Linha).toUpperCase());
+  openModal(t ? (nao ? "Editar trecho não oficial" : "Editar trecho") : (nao ? "Novo trecho não oficial" : "Novo trecho"), `<div class="form-grid">
+    <div class="field"><label>${nao ? "Linha (ERP)" : "Cód. DETRO"}${nao ? '<span class="req">*</span>' : ""}</label><select id="dtLin">${opt(cods, String(v.Linha || "").toUpperCase(), true)}</select><div class="hint">${nao ? "Linha do ERP que opera o trecho (aba Linhas)" : "Linhas da publicação vigente e da aba Linhas; vazio = sem número (S/N)"}</div></div>
+    ${nao ? "" : `<div class="field"><label>Nº na portaria (seção)</label><input type="number" id="dtSec" min="0" max="999" value="${esc(v.Secao ?? "")}"></div>`}
+    <div class="field"><label>Ponto A (origem)<span class="req">*</span></label><input id="dtOri" value="${esc(v.Origem || "")}"></div>
+    <div class="field"><label>Ponto B (destino)<span class="req">*</span></label><input id="dtDes" value="${esc(v.Destino || "")}"></div>
+    <div class="field"><label>Complemento</label><input id="dtComp" value="${esc(v.Complemento || "")}" placeholder="Ex.: via Trajano de Moraes, Direto"></div>
+    <div class="field"><label>Cat.</label><select id="dtCat">${opt(DO_CATS.includes(v.Categoria) || !v.Categoria ? DO_CATS : DO_CATS.concat([v.Categoria]), v.Categoria || (nao ? "" : "SA"), nao)}</select></div>
+    <div class="field"><label>Tarifa (R$)</label><input type="number" step="0.01" min="0" id="dtTar" value="${esc(v.Tarifa ?? "")}"></div>
+    <div class="field full"><label>Observação</label><input id="dtObs" value="${esc(v.Observacao || "")}" placeholder="${nao ? "Ex.: trecho operado por demanda, pedido de inclusão enviado ao DETRO" : ""}"></div>
+  </div><div class="err-msg" id="dtErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const g = x => ($(x) ? $(x).value.trim() : ""), err = m => { $("dtErr").style.display = "block"; $("dtErr").textContent = m; return false; };
+    const ori = g("dtOri"), des = g("dtDes"); if (!ori || !des) return err("Informe o ponto A e o ponto B.");
+    const lin = g("dtLin").toUpperCase(); if (!lin && nao) return err("Escolha a linha do ERP.");
+    const sec = g("dtSec") === "" ? null : Math.max(0, Math.round(Number(g("dtSec")))), tar = g("dtTar") === "" ? null : Math.round(Number(g("dtTar")) * 100) / 100;
+    if (tar != null && !(tar >= 0)) return err("Tarifa inválida.");
+    const f = { Title: `${ori} - ${des}`, PubId: String(pid), Linha: lin || null, Secao: sec, Origem: ori, Destino: des, Complemento: g("dtComp") || null, Categoria: g("dtCat") || null, Tarifa: tar, Observacao: g("dtObs") || null };
+    if (t) await SP.update(DO.site.id, DO.lists.tr.id, t._id, f); else { f.Ordem = ts.length ? Math.max(...ts.map(x => Number(x.Ordem) || 0)) + 1 : 1; await SP.create(DO.site.id, DO.lists.tr.id, f); }
+    await doCarregar(true); doPintar(); toast(t ? "Trecho gravado" : "Trecho incluído"); return true;
+  });
+};
+/* 2) Linhas: tabela editável — Linha (ERP) · Cód. DETRO · Trecho (Ponto A / Ponto B) · Tipo */
+function doAbaLinhas() {
+  const ed = doEd(), its = dolOrd();
+  if (DOL.erro) return `<div class="cap-empty"><h3>Não foi possível ler as linhas</h3><p>${esc(DOL.erro.slice(0, 160))}</p></div>`;
+  if (!DO.lists.lin) return `<div class="cap-empty"><h3>A lista "${esc(LISTS.do_linhas.displayName)}" ainda não existe</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › Executar tudo</a> para criá-la no site Financeiro.` : "Peça a um administrador para rodar a Configuração."}</p></div>`;
+  const rows = its.map(x => { const p = bilTrechoPartes(x.Ligacao || ""); return `<tr class="${ed ? "bil-dbl" : ""}" ${ed ? `ondblclick="if (!event.target.closest('button')) dolForm(${esc(jsArg(x._id))})"` : ""}><td><b>${esc(x.LinhaERP || "—")}</b></td><td class="nw">${esc(x.Title || "—")}</td><td>${esc(p.a || "—")}</td><td>${esc(p.b || "—")}</td><td style="text-align:center">${esc(x.Caracteristica || "—")}</td><td class="sup nw">${x.AtualizadoEm ? `cópia de ${esc(fmtDate(x.AtualizadoEm))}` : "sem cópia"}</td>
+    <td class="right nw"><button class="btn sm" onclick="dolVer(${esc(jsArg(x._id))})" title="Dados oficiais copiados da consulta do DETRO (tarifas, horários, itinerários)">Dados oficiais</button> ${dolLinkLinha(x, "DETRO")}${ed ? ` <button class="btn sm" onclick="dolForm(${esc(jsArg(x._id))})">Editar</button>${podeExcluir("diario") ? ` <button class="btn sm danger-ghost" onclick="dolExcluir(${esc(jsArg(x._id))})">Excluir</button>` : ""}` : ""}</td></tr>`; }).join("");
+  const tab = `<div class="cap-tools"><span class="hint">Cada linha do ERP (1000, 1001, 2000…) ligada ao código da linha no DETRO (B140, B142, B155…), com o trecho principal e o tipo. É daqui que o LevBom, o Movimento Diário e a Aderência tomam as linhas.</span><span class="grow"></span>${ed ? `<button class="btn primary" onclick="dolForm('')">+ Linha</button>` : ""}</div>
+    <div class="table-wrap"><table class="cap-table do-t"><thead><tr><th rowspan="2">Linha</th><th rowspan="2">Cód. DETRO</th><th colspan="2" class="bil-gr">Trecho</th><th rowspan="2" style="text-align:center">Tipo</th><th rowspan="2">Dados oficiais</th><th rowspan="2"></th></tr><tr><th class="bil-sub">Ponto A</th><th class="bil-sub">Ponto B</th></tr></thead><tbody>${rows || `<tr><td colspan="7" class="sup">Nenhuma linha cadastrada.${ed ? " Clique em \"+ Linha\"." : ""}</td></tr>`}</tbody></table></div>`;
+  const x = DOL.verDados && its.find(i => i._id === DOL.sel);
+  return tab + (x ? `<div id="doLinDados" style="margin-top:14px"><div class="cap-tools"><h3 style="margin:0">Dados oficiais · ${esc(x.Title || "")}${x.LinhaERP ? ` <span class="sup">ERP ${esc(x.LinhaERP)}</span>` : ""}</h3><span class="grow"></span>${dolDados(x) ? `<button class="btn sm" onclick="dolImprimir(${esc(jsArg(x._id))})">🖨 Imprimir</button>` : ""}${ed ? `<button class="btn sm" onclick="dolImportar(${esc(jsArg(x._id))})">Atualizar dados oficiais</button>` : ""}<button class="btn sm ghost" onclick="DOL.verDados=false;doPintar()">✕</button></div>${dolDadosHtml(x)}</div>` : "");
+}
+function dolDadosHtml(x) { const d = dolDados(x); return `<p class="sup" style="margin:6px 0 12px">${x.AtualizadoEm ? `Cópia da consulta oficial do DETRO feita em <b>${esc(fmtDate(x.AtualizadoEm))}</b>${x.AtualizadoPor ? ` por ${esc(x.AtualizadoPor)}` : ""}.` : "Os dados oficiais desta linha ainda não foram copiados. Use \"Atualizar dados oficiais\"."}</p>` + (d ? dolHtml(x, d) : `<div class="cap-empty"><h3>Sem a cópia dos dados oficiais</h3><p>${x.CodigoDetro ? "Abra a linha no DETRO pelo botão da tabela." : "Cadastre o código da consulta do DETRO (Editar) para ter o link direto."}</p></div>`); }
+window.dolVer = id => { DOL.sel = String(id || ""); DOL.verDados = true; DO.aba = "linhas"; doPintar(); const el = $("doLinDados"); if (el) el.scrollIntoView({ block: "start", behavior: "smooth" }); };
+window.dolSel = id => { DOL.sel = String(id || ""); DOL.verDados = true; doPintar(); };
+window.dolForm = id => {
+  if (!doEd() || !DO.lists.lin) return;
+  const x = id ? DOL.itens.find(i => i._id === String(id)) : null, v = x || { Ordem: DOL.itens.length + 1 }, p = bilTrechoPartes(v.Ligacao || "");
+  const cods = doCodigosDetro(); if (v.Title && !cods.includes(String(v.Title).toUpperCase())) cods.unshift(String(v.Title).toUpperCase());
+  openModal(x ? `Linha ${x.LinhaERP || x.Title || ""}` : "Nova linha", `<div class="form-grid">
+      <div class="field"><label>Linha (ERP)<span class="req">*</span></label><input id="dlErp" maxlength="20" value="${esc(v.LinhaERP || "")}" placeholder="Ex.: 1000"><div class="hint">Como aparece no LevBom e no Movimento Diário</div></div>
+      <div class="field"><label>Cód. DETRO<span class="req">*</span></label><select id="dlTit">${opt(cods, String(v.Title || "").toUpperCase(), true)}</select><div class="hint">Códigos da publicação vigente${cods.length ? "" : " — cadastre a publicação primeiro"}; ou digite abaixo</div><input id="dlTitLivre" maxlength="20" placeholder="Outro código (ex.: B160)" style="margin-top:6px"></div>
+      <div class="field"><label>Ponto A<span class="req">*</span></label><input id="dlA" maxlength="70" value="${esc(p.a)}" placeholder="Ex.: Conceição de Macabu"></div>
+      <div class="field"><label>Ponto B<span class="req">*</span></label><input id="dlB" maxlength="70" value="${esc(p.b)}" placeholder="Ex.: Macaé"></div>
+      <div class="field"><label>Tipo<span class="req">*</span></label><select id="dlTipo">${opt(DO_TIPOS_LINHA.includes(v.Caracteristica) || !v.Caracteristica ? DO_TIPOS_LINHA : DO_TIPOS_LINHA.concat([v.Caracteristica]), v.Caracteristica || "", true)}</select></div>
+      <div class="field"><label>Código na consulta do DETRO</label><input id="dlCod" maxlength="20" inputmode="numeric" value="${esc(v.CodigoDetro || "")}" placeholder="Ex.: 000000000"><div class="hint">Número do site do DETRO; dá o link direto (opcional)</div></div>
+      <div class="field"><label>Ordem</label><input id="dlOrd" type="number" min="0" max="999" value="${esc(v.Ordem ?? "")}"></div>
+    </div><div class="err-msg" id="dlErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const g = k => ($(k) ? $(k).value.trim() : ""), err = m => { $("dlErr").style.display = "block"; $("dlErr").textContent = m; return false; };
+    const erp = g("dlErp").toUpperCase(); if (!erp) return err("Informe a linha do ERP.");
+    const tit = (g("dlTitLivre") || g("dlTit")).toUpperCase(); if (!tit) return err("Escolha ou digite o código da linha no DETRO.");
+    const a = g("dlA"), b = g("dlB"); if (!a || !b) return err("Informe o ponto A e o ponto B."); const tipo = g("dlTipo"); if (!tipo) return err("Escolha o tipo (Parador ou Direto).");
+    const cod = g("dlCod"); if (cod && !/^\d{3,15}$/.test(cod)) return err("O código da consulta do DETRO tem só números.");
+    if (DOL.itens.some(i => String(i.Title || "").toUpperCase() === tit && (!x || i._id !== x._id))) return err(`O código ${tit} já está cadastrado em outra linha.`);
+    const f = { Title: tit, LinhaERP: erp, CodigoDetro: cod || null, Ordem: g("dlOrd") === "" ? null : Math.min(999, Math.max(0, Math.round(Number(g("dlOrd")) || 0))), Ligacao: bilTrechoJunta(a, b), Caracteristica: tipo };
+    try { if (x) await SP.update(DO.site.id, DO.lists.lin.id, x._id, f); else await SP.create(DO.site.id, DO.lists.lin.id, f); await doCarregar(true); DO.aba = "linhas"; doPintar(); toast(x ? "Linha gravada" : "Linha cadastrada"); return true; }
+    catch (e) { return err("Não foi possível gravar: " + e.message); }
+  });
+  setTimeout(() => { const s = $("dlTit"), l = $("dlTitLivre"); if (s && l) { s.addEventListener("change", () => { if (s.value) l.value = ""; }); l.addEventListener("input", () => { if (l.value) s.value = ""; }); } }, 0);
+};
+/* 3) Trechos: os da publicação vigente, com a linha do ERP e a aderência ao LevBom */
+function doAbaTrechos() {
+  const ed = doEd(), v = doVigente();
+  if (!v) return `<div class="cap-empty"><h3>Sem publicação vigente</h3><p>Cadastre a portaria do DETRO na aba Publicações e marque-a como vigente.</p></div>`;
+  const ts = doTrechosDe(v._id);
+  const STS = ts.map(t => doAderTrecho(t)), n = { ok: 0, tar: 0, nao: 0 }; STS.forEach(st => { if (n[st.k] != null) n[st.k]++; });
+  const rows = ts.map((t, i) => `${doTrLinha(t, i, ed, v._id, true)}<td style="text-align:center">${doBola(STS[i])}</td>${ed ? `<td class="right nw"><button class="btn sm" onclick="doTrForm(${esc(jsArg(v._id))}, ${esc(jsArg(t._id))})">Editar</button> <button class="btn sm danger-ghost" onclick="doTrExcluir(${esc(jsArg(t._id))})">Excluir</button></td>` : ""}</tr>`).join("");
+  return `<div class="cap-tools"><span class="hint">Trechos autorizados na <b>${esc(v.Title || v.Ato || "publicação vigente")}</b>${v.VigenciaInicio ? ` (vigência a partir de ${fmtDate(v.VigenciaInicio)})` : ""}. A bolinha compara com as tarifas vigentes do LevBom: <span class="do-bola do-b-ok"><i></i></span> igual · <span class="do-bola do-b-ok do-b-alerta"><i></i></span> tarifa diferente · <span class="do-bola do-b-nao"><i></i></span> sem tarifa no LevBom.</span><span class="grow"></span><span class="bti-chip bti-nova">No LevBom: <b>${n.ok}</b></span><span class="bti-chip bti-ajuste">Tarifa diferente: <b>${n.tar}</b></span><span class="bti-chip bti-erro">Sem tarifa: <b>${n.nao}</b></span>${ed ? `<button class="btn sm" onclick="doColar(${esc(jsArg(v._id))})">Colar da portaria</button><button class="btn primary" onclick="doTrForm(${esc(jsArg(v._id))})">+ Trecho</button>` : ""}</div>
+    <div class="table-wrap"><table class="cap-table do-t"><thead><tr><th rowspan="2" style="text-align:right;width:44px">#</th><th rowspan="2">Linha</th><th rowspan="2">Cód. DETRO</th><th colspan="2" class="bil-gr">Trecho</th><th rowspan="2" style="text-align:center">Cat.</th><th rowspan="2" style="text-align:right">Tarifa</th><th rowspan="2" style="text-align:center">LevBom</th>${ed ? `<th rowspan="2"></th>` : ""}</tr><tr><th class="bil-sub">Ponto A</th><th class="bil-sub">Ponto B</th></tr></thead><tbody>${rows || `<tr><td colspan="${ed ? 9 : 8}" class="sup">Nenhum trecho nesta publicação.${ed ? " Use \"+ Trecho\" ou \"Colar da portaria\"." : ""}</td></tr>`}</tbody></table></div>`;
+}
+/* 4) Trechos não oficiais: registro próprio (fora da portaria), com sugestões vindas da aderência */
+function doAbaNao() {
+  const ed = doEd(), ts = doTrechosDe(DO_NO), I = doIndice();
+  const rows = ts.map((t, i) => `<tr><td class="right sup">${i + 1}</td><td><b>${esc(t.Linha || "—")}</b></td><td>${esc(t.Origem || "")}</td><td>${esc(t.Destino || "")}${t.Complemento ? ` <span class="sup">(${esc(t.Complemento)})</span>` : ""}</td><td style="text-align:center">${esc(t.Categoria || "—")}</td><td class="right nw">${t.Tarifa != null ? esc(fmtBRL(t.Tarifa)) : "—"}</td><td class="sup">${esc(t.Observacao || "")}</td>${ed ? `<td class="right nw"><button class="btn sm" onclick="doTrForm('${DO_NO}', ${esc(jsArg(t._id))})">Editar</button> <button class="btn sm danger-ghost" onclick="doTrExcluir(${esc(jsArg(t._id))})">Excluir</button></td>` : ""}</tr>`).join("");
+  const reg = new Set(ts.map(t => `${String(t.Linha || "").toUpperCase()}|${I ? doPar(doPonto(t.Origem, I.A), doPonto(t.Destino, I.A)) : bilTrechoNorm(bilTrechoJunta(t.Origem, t.Destino))}`));
+  const sug = I ? doLinhasAder().filter(x => x.st.k === "nao").filter(x => { const ks = doParesDe(x.t.Secao, x.t.Descricao, I.A); return !ks.some(k => reg.has(`${String(x.t.Linha).toUpperCase()}|${k}`)); }) : [];
+  return `<div class="cap-tools"><span class="hint">Trechos que a empresa opera e <b>não constam</b> da portaria vigente — registro para controle e para o pedido de inclusão ao DETRO. Não entram na prestação de contas (LevBom › BOM › "Só seções oficiais").</span><span class="grow"></span>${ed ? `<button class="btn primary" onclick="doTrForm('${DO_NO}')">+ Trecho não oficial</button>` : ""}</div>
+    <div class="table-wrap"><table class="cap-table do-t"><thead><tr><th rowspan="2" style="text-align:right;width:44px">#</th><th rowspan="2">Linha</th><th colspan="2" class="bil-gr">Trecho</th><th rowspan="2" style="text-align:center">Cat.</th><th rowspan="2" style="text-align:right">Tarifa</th><th rowspan="2">Observação</th>${ed ? `<th rowspan="2"></th>` : ""}</tr><tr><th class="bil-sub">Ponto A</th><th class="bil-sub">Ponto B</th></tr></thead><tbody>${rows || `<tr><td colspan="${ed ? 8 : 7}" class="sup">Nenhum trecho não oficial registrado.</td></tr>`}</tbody></table></div>
+    ${sug.length ? `<h3 style="margin:18px 0 6px">Seções do LevBom fora da portaria <span class="sup">${sug.length}</span></h3><p class="sup" style="margin-top:0">Aparecem como "Não oficial" na aderência e ainda não estão registradas aqui.</p><div class="table-wrap"><table class="cap-table"><tbody>${sug.map(x => { const p = bilTrechoPartes(x.t.Descricao); return `<tr><td><b>${esc(x.t.Linha)}</b></td><td>${esc(p.a)}</td><td>${esc(p.b)}</td><td class="right nw">${esc(fmtBRL(x.t.Valor))}</td><td class="right nw">${ed ? `<button class="btn sm" onclick="doNaoRegistrar(${esc(jsArg(x.t._id))})">Registrar como não oficial</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}`;
+}
+window.doNaoRegistrar = async id => {
+  const t = (BIL_STATE.tarifas || []).find(x => String(x._id) === String(id)); if (!t || !doEd()) return;
+  const p = bilTrechoPartes(t.Descricao), ts = doTrechosDe(DO_NO);
+  try { await SP.create(DO.site.id, DO.lists.tr.id, { Title: `${p.a} - ${p.b}`, PubId: DO_NO, Linha: String(t.Linha).toUpperCase(), Origem: p.a, Destino: p.b || p.a, Categoria: null, Tarifa: Number(t.Valor) || null, Observacao: `Registrado da aderência em ${new Date().toLocaleDateString("pt-BR")} (seção ${t.Secao} do LevBom)`, Ordem: ts.length + 1 }); await doCarregar(true); doPintar(); toast("Trecho registrado como não oficial"); }
+  catch (e) { toast("Erro: " + e.message, 6000); }
+};
+/* 5) Aderência: Linha (ERP) · Cód. DETRO · Trecho (Ponto A / Ponto B) · Tarifa ERP · Diário Oficial · Situação, com Editar/Excluir/Novo pelo LevBom */
+async function doBilPronto() { if (typeof BIL_STATE === "undefined") return false; if (!BIL_STATE.ready) { try { await loadBil(); } catch (e) {} } return !!(BIL_STATE.ready && BIL_STATE.lists.bil_tarifas); }
+window.doAderEditar = async id => { if (!(await doBilPronto())) { toast("As listas do LevBom ainda não existem."); return; } const i = bilSorted().findIndex(t => String(t._id) === String(id)); if (i < 0) { toast("Tarifa não encontrada no LevBom."); return; } bilTarifaEdit(i); };
+window.doAderExcluir = async id => { if (!(await doBilPronto())) return; const i = bilSorted().findIndex(t => String(t._id) === String(id)); if (i >= 0) bilTarExcluir(i); };
+window.doAderNovo = async () => { if (!(await doBilPronto())) { toast("As listas do LevBom ainda não existem."); return; } bilTarifaEdit(-1); };
+{ const p0 = paintBil; paintBil = function () { if (session.modAtual === "diario" && !$("bilBody")) { try { doPintar(); } catch (e) {} return; } return p0.apply(this, arguments); }; }   /* o LevBom repinta a página do Diário Oficial quando o formulário foi aberto de lá */
+function doAderencia() {
+  const I = doIndice();
+  if (!I) return `<div class="cap-empty"><h3>Sem publicação vigente</h3><p>Cadastre a portaria do DETRO e marque-a como vigente.</p></div>`;
+  const ed = podeEditar("bilhet"), exc = podeExcluir("bilhet"), R = doLinhasAder(), n = doResumo(R.map(x => x.st));
+  const vis = R.filter(x => !DO.filtro || x.st.k === DO.filtro);
+  const usados = new Set(); R.forEach(x => doParesDe(x.t.Secao, x.t.Descricao, I.A).forEach(k => usados.add(k)));
+  const semUso = doTrechosDe(I.pub._id).filter(t => !usados.has(doPar(doPonto(t.Origem, I.A), doPonto(t.Destino, I.A))));
+  const K = [["ok", "Oficiais", "constam da portaria"], ["tar", "Tarifa diferente", "oficial, valor ≠ portaria"], ["outra", "Em outra linha", "oficial, linha diferente"], ["nao", "Não oficiais", "fora do Diário Oficial"], ["na", "Não se aplica", "taxas, promoções, fretamento"]].concat(n.nr || DO.filtro === "nr" ? [["nr", "Não reconhecidas", "ajuste descrição ou equivalências"]] : []);
+  const cod = L => { const m = I.linhas && I.linhas[String(L || "").toUpperCase()]; return m && m.length ? m.join(", ") : ""; };
+  return `<p class="sup">Comparação com a <b>${esc(I.pub.Title || I.pub.Ato || "publicação vigente")}</b>${I.pub.VigenciaInicio ? ` (vigência a partir de ${fmtDate(I.pub.VigenciaInicio)})` : ""}. Fonte: tarifas vigentes do LevBom (as mesmas da Tabela de Tarifas); Editar, Excluir e + Trecho gravam no LevBom, com as permissões de lá. As seções <b>não oficiais</b> ficam fora da prestação de contas ao DETRO.</p>
+    <div class="cap-kpis">${K.map(([k, l, s]) => `<button class="kpi ${DO.filtro === k ? "on" : ""} ${k === "nao" && n.nao ? "venc" : ""}" onclick="doFiltro('${k}')" aria-pressed="${DO.filtro === k}"><div class="lbl">${l}</div><div class="val">${n[k]}</div><div class="sub">${DO.filtro === k ? "filtro ativo · clique para limpar" : s}</div></button>`).join("")}</div>
+    ${ed ? `<div class="cap-tools" style="margin-bottom:8px"><span class="grow"></span><button class="btn primary" onclick="doAderNovo()">+ Trecho no LevBom</button></div>` : ""}
+    <div class="table-wrap"><table class="cap-table do-t"><thead><tr><th rowspan="2">Linha</th><th rowspan="2">Cód. DETRO</th><th colspan="2" class="bil-gr">Trecho</th><th rowspan="2" style="text-align:right">Tarifa ERP</th><th rowspan="2">Diário Oficial</th><th rowspan="2">Situação</th>${ed ? `<th rowspan="2"></th>` : ""}</tr><tr><th class="bil-sub">Ponto A</th><th class="bil-sub">Ponto B</th></tr></thead><tbody>${vis.length ? vis.map(({ t, st }) => { const p = bilTrechoPartes(t.Descricao); return `<tr><td><b>${esc(t.Linha)}</b></td><td class="nw">${esc(cod(t.Linha) || "—")}</td><td>${esc(p.a || "")}</td><td>${esc(p.b || "")}</td><td class="right nw">${esc(fmtBRL(t.Valor))}</td><td class="sup">${esc(st.det || "")}</td><td>${doSelo(st, true)}</td>${ed ? `<td class="right nw"><button class="btn sm" onclick="doAderEditar(${esc(jsArg(t._id))})">Editar</button>${exc ? ` <button class="btn sm danger-ghost" onclick="doAderExcluir(${esc(jsArg(t._id))})">Excluir</button>` : ""}</td>` : ""}</tr>`; }).join("") : `<tr><td colspan="${ed ? 8 : 7}" class="sup">Nada neste filtro.</td></tr>`}</tbody></table></div>
+    ${semUso.length ? `<h3 style="margin:18px 0 6px">Autorizados sem seção no ERP <span class="sup">${semUso.length}</span></h3><p class="sup" style="margin-top:0">Trechos da portaria que não aparecem na lista de tarifas do LevBom (ou com nome que o ERP não reconheceu: ajuste nas equivalências de pontos da publicação).</p><div class="table-wrap"><table class="cap-table"><thead><tr><th>Linha</th><th>Cód. DETRO</th><th>Ponto A</th><th>Ponto B</th><th style="text-align:center">Cat.</th><th style="text-align:right">Tarifa</th></tr></thead><tbody>${semUso.map(t => `<tr><td><b>${esc(doLinhaErpDe(t.Linha) || "—")}</b></td><td>${esc(doLinhaDO(t))}</td><td>${esc(t.Origem)}</td><td>${esc(t.Destino)}${t.Complemento ? ` <span class="sup">(${esc(t.Complemento)})</span>` : ""}</td><td style="text-align:center">${esc(t.Categoria || "")}</td><td class="right nw">${esc(fmtBRL(t.Tarifa))}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+}
+
+/* ---------- LevBom › Tarifas: sem o campo de código da seção; Linha em lista do Diário Oficial; trecho oficial preenche Ponto A/B e tarifa ---------- */
+function bilSecaoUnica(linha, a, b, catA) { const base = (bilSecaoSugere(a, b) || "SEC") + (catA ? "-A" : ""); let s = base, n = 2; const tem = c => BIL_STATE.tarifas.some(x => String(x.Linha) === String(linha) && String(x.Secao).toUpperCase() === c.toUpperCase()); while (tem(s)) s = `${base}-${n++}`; return s; }
+window.bilTarifaEdit = (i, reajuste) => {
+  const hoje = todayISO(), nova = i < 0, orig = nova ? null : bilSorted()[i];
+  const t = nova ? { Linha: "", Ativa: true, VigenciaInicio: hoje } : orig;
+  const p = bilTrechoPartes(t.Descricao);
+  const iniForm = reajuste ? erpAnoMais(t.VigenciaInicio || hoje, 1) : bilTarDia(t.VigenciaInicio), fimForm = reajuste ? erpAnoMais(t.VigenciaFim, 1) : bilTarDia(t.VigenciaFim);
+  const LE = doLinhasErp(), linhas = [...new Set(LE.map(L => L.erp).concat(LE.length ? [] : BIL_STATE.linhas.map(l => String(l.Title))).concat(["AGENCIA"], t.Linha ? [String(t.Linha)] : []))];
+  const ofic = cod => doTrechosDaLinhaErp(cod).map(x => ({ id: x._id, rot: `${x.Origem} × ${x.Destino}${x.Complemento ? ` (${x.Complemento})` : ""} · ${x.Categoria || "SA"} · ${fmtBRL(x.Tarifa)}` }));
+  openModal(reajuste ? `Reajustar ${t.Linha} · ${t.Descricao || t.Secao}` : (nova ? "Novo trecho" : "Editar trecho"), `
+    <div class="form-grid">
+      <div class="field"><label>Linha<span class="req">*</span></label><select id="tLinha" ${reajuste ? "disabled" : ""}>${opt(linhas, t.Linha, true)}</select><div class="hint" id="tLinhaNome">${esc(bilLinhaNome(t.Linha) || (LE.length ? "Linhas da aba Diretoria › Diário Oficial › Linhas" : "Cadastre as linhas em Diretoria › Diário Oficial › Linhas"))}</div></div>
+      <div class="field"><label>Trecho oficial (Diário Oficial)</label><select id="tOfic" ${reajuste ? "disabled" : ""}><option value="">— preencher à mão —</option>${ofic(t.Linha).map(o => `<option value="${esc(o.id)}">${esc(o.rot)}</option>`).join("")}</select><div class="hint">Escolher um trecho da portaria preenche o ponto A, o ponto B e a tarifa</div></div>
+      <div class="field"><label>Ponto A (origem)<span class="req">*</span></label><input id="tPA" value="${esc(p.a)}" placeholder="Ex.: Macaé"></div>
+      <div class="field"><label>Ponto B (destino)</label><input id="tPB" value="${esc(p.b)}" placeholder="Ex.: Conceição de Macabu"></div>
+      <div class="field"><label>Tarifa (R$)<span class="req">*</span></label><input type="number" step="0.01" min="0" id="tVal" value="${t.Valor ?? ""}"></div>
+      <div class="field"><label>Competência</label><input id="tComp" value="${esc((iniForm || "").slice(0, 4))}" disabled><div class="hint">Ano do início da vigência</div></div>
+      <div class="field"><label>${reajuste ? "Vigência da nova tarifa — início" : "Vigência início"}</label><input type="date" id="tIni" value="${esc(iniForm)}"></div>
+      <div class="field"><label>Vigência fim</label><input type="date" id="tFim" value="${esc(fimForm)}"></div>
+      ${reajuste || nova ? "" : `<div class="field"><label>Situação</label><select id="tAtiva"><option value="1" ${t.Ativa !== false ? "selected" : ""}>Vigente</option><option value="0" ${t.Ativa === false ? "selected" : ""}>Encerrada</option></select></div>`}
+    </div>
+    ${reajuste ? `<p class="hint" style="margin-top:8px">Os dados do trecho foram replicados e a vigência foi levada um ano à frente — ajuste o que for preciso. Ao salvar, a tarifa atual é encerrada na véspera do novo início.</p>` : ""}
+    <div class="err-msg" id="tErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`,
+    async () => {
+      const g = id => ($(id) ? $(id).value.trim() : ""); const err = m => { $("tErr").style.display = "block"; $("tErr").textContent = m; return false; };
+      const val = Number(g("tVal")); if (!(val > 0)) return err("Informe a tarifa.");
+      const a = g("tPA"), b = g("tPB"); if (!a) return err("Informe o ponto A (origem).");
+      const linha = reajuste ? String(t.Linha || "") : g("tLinha").toUpperCase(); if (!linha) return err("Escolha a linha.");
+      const of = $("tOfic") && DO.trechos.find(y => String(y._id) === $("tOfic").value), catA = !!(of && String(of.Categoria || "").toUpperCase() === "A");
+      const sec = nova ? bilSecaoUnica(linha, a, b, catA) : String(t.Secao || "");   /* o código da seção é interno: gerado dos pontos (sufixo -A para tarifa A), único por linha, e não muda depois */
+      const ini = g("tIni") || null, fim = g("tFim") || null; if (ini && fim && fim < ini) return err("A vigência fim é anterior ao início.");
+      const desc = bilTrechoJunta(a, b), listId = BIL_STATE.lists.bil_tarifas.id, siteId = BIL_STATE.site.id;
+      if (reajuste) {
+        if (!ini) return err("Informe o início da nova vigência.");
+        if (t.Ativa === false && BIL_STATE.tarifas.some(x => x !== t && x.Linha === linha && x.Secao === sec && x.Ativa !== false)) return err("Já existe uma tarifa vigente para esse trecho: reajuste a vigente.");
+        const d = new Date(ini + "T12:00:00"); d.setDate(d.getDate() - 1); const veia = d.toISOString().slice(0, 10);
+        await SP.create(siteId, listId, { Title: `${linha} · ${sec}`, Linha: linha, Secao: sec, Descricao: desc, Valor: val, VigenciaInicio: ini, VigenciaFim: fim, Ativa: true });
+        if (t.Ativa !== false) { try { await SP.update(siteId, listId, t._id, { Ativa: false, VigenciaFim: veia }); } catch (e) { await loadBil(); paintBil(); toast(`A tarifa nova foi criada, mas a anterior não foi encerrada (${e.message || e}). Abra a anterior em Editar e marque como encerrada.`, 10000); return true; } }
+        toast(`Trecho ${linha} · ${desc} reajustado para ${fmtBRL(val)} a partir de ${fmtDate(ini)}`);
+      } else {
+        const fields = { Title: `${linha} · ${sec}`, Linha: linha, Secao: sec, Descricao: desc, Valor: val, VigenciaInicio: ini, VigenciaFim: fim, Ativa: nova ? true : g("tAtiva") !== "0" };
+        if (!nova) {
+          if (linha !== String(t.Linha)) {   /* M4 (revisão): trocar a linha muda a chave (linha, código) dos lançamentos e do histórico */
+            if (BIL_STATE.tarifas.some(x => x !== t && x.Linha === linha && x.Secao === sec)) return err(`A linha ${linha} já tem um trecho com o código ${sec} (vigente ou encerrado). Crie um trecho novo nela.`);
+            const hist = BIL_STATE.tarifas.filter(x => x !== t && x.Linha === t.Linha && x.Secao === sec).length, lanc = (BIL_STATE.lanc || []).filter(x => x.Linha === t.Linha && x.Secao === sec).length;
+            if (hist || lanc) { const ok = await erpConfirmar({ titulo: "Trocar a linha do trecho", html: `<p>Este trecho tem ${hist ? `${hist} tarifa(s) anterior(es)` : ""}${hist && lanc ? " e " : ""}${lanc ? `${lanc} lançamento(s) no LevBom` : ""} na linha <b>${esc(t.Linha)}</b>. Eles continuam na linha antiga e deixam de ter o trecho cadastrado (aparecem como "não reconhecido" no BOM).</p><p class="sup">Se for um erro de cadastro recente, siga; se o trecho tem histórico, prefira criar um trecho novo na linha ${esc(linha)}.</p>`, sim: "Trocar mesmo assim", nao: "Voltar", perigo: true }); if (!ok) return false; }
+          }
+          await SP.update(siteId, listId, t._id, fields); }
+        else { if (BIL_STATE.tarifas.some(x => x.Linha === linha && bilTrechoNorm(x.Descricao) === bilTrechoNorm(desc) && /-A$/i.test(String(x.Secao)) === catA && x.Ativa !== false)) return err("Já existe uma tarifa vigente para esse trecho nesta linha — use Reajustar."); await SP.create(siteId, listId, fields); }
+        toast("Trecho gravado");
+      }
+      await loadBil(); paintBil(); return true;
+    });
+  setTimeout(() => {
+    const sel = $("tLinha"), of = $("tOfic"), pa = $("tPA"), pb = $("tPB"), va = $("tVal"), ini = $("tIni"); if (!sel) return;
+    sel.addEventListener("change", () => { const n = $("tLinhaNome"); if (n) n.textContent = bilLinhaNome(sel.value); if (of) of.innerHTML = `<option value="">— preencher à mão —</option>` + ofic(sel.value).map(o => `<option value="${esc(o.id)}">${esc(o.rot)}</option>`).join(""); });
+    if (of) of.addEventListener("change", () => { const x = DO.trechos.find(y => String(y._id) === of.value); if (!x) return; pa.value = x.Origem || ""; pb.value = x.Destino || ""; if (x.Tarifa != null) va.value = Number(x.Tarifa); });
+    if (ini) ini.addEventListener("input", () => { const c = $("tComp"); if (c) c.value = (ini.value || "").slice(0, 4); });
+  }, 0);
+};
+/* o Movimento Diário lista as linhas do Diário Oficial (com nome e tipo), mantendo só as que têm trecho com tarifa no LevBom */
+{ const l0 = agvenLinhasBil; agvenLinhasBil = function () {
+    const LE = doLinhasErp(); if (!LE.length) return l0.apply(this, arguments);
+    const com = new Set((BIL_STATE.tarifas || []).filter(t => Number(t.Valor) > 0).map(t => String(t.Linha).toUpperCase()));
+    const ls = LE.filter(L => com.has(L.erp)).map(L => ({ cod: L.erp, nome: L.nome }));
+    (BIL_STATE.linhas || []).forEach(l => { const c = String(l.Title).toUpperCase(); if (l.Ativa !== false && com.has(c) && !ls.some(x => x.cod === c)) ls.push({ cod: c, nome: String(l.Nome || "") }); });   /* linhas só do LevBom continuam */
+    if (com.has("AGENCIA") && !ls.some(l => l.cod === "AGENCIA")) ls.push({ cod: "AGENCIA", nome: "Taxas e promoções da agência" });
+    return ls.sort((a, b) => a.cod.localeCompare(b.cod, "pt-BR", { numeric: true }));
+  }; }
+(() => { const st = document.createElement("style"); st.textContent = `
+.lanc-tots.eq>.lanc-tot.forte{border-left:0}
+.do-t th.bil-gr{text-align:center;border-bottom:1px solid rgba(255,255,255,.3)}.do-t th.bil-sub{font-weight:600;font-size:11px}
+.table-wrap table.do-t thead tr:first-child th,.table-wrap table.do-t thead tr:nth-child(2) th{background:var(--soft,#F3F5F8)}.table-wrap table.do-t thead tr:nth-child(2) th{top:var(--bil-th1,38px)}
+.do-pubs tr.do-sel td{background:#EEF2F7;box-shadow:inset 3px 0 0 var(--orange,#D6421F)}
+.do-cfg-det summary{cursor:pointer}.do-cfg-det .do-kv{margin-top:8px}`; document.head.appendChild(st); })();
+{ const p0 = doPintar; doPintar = function () { const r = p0.apply(this, arguments); requestAnimationFrame(() => { document.querySelectorAll("#doBody table.do-t").forEach(t => { const r1 = t.querySelector("thead tr:first-child"); if (r1) t.style.setProperty("--bil-th1", Math.round(r1.getBoundingClientRect().height) + "px"); }); }); return r; }; }
+
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -43713,6 +44008,7 @@ CONFIG.version = "v0.14.27.1";   /* LevBom: caixas Linha e Seção presas à cé
 CONFIG.version = "v0.14.28";   /* um handbook (PDF) por módulo: Movimento Diário e Movimento de Caixa */
 CONFIG.version = "v0.14.28.1";   /* Diário Oficial: oficial com dado a ajustar em laranja */
 CONFIG.version = "v0.14.28.2";   /* LevBom cabeçalho preso opaco; folhas A4 com contorno fechado; Handbook abre em nova aba */
+CONFIG.version = "v0.14.29";   /* Diário Oficial em cinco abas (Publicações, Linhas, Trechos, Não oficiais, Aderência); LevBom toma linhas e trechos do Diário Oficial; sem código de seção no cadastro */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

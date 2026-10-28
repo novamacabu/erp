@@ -43597,6 +43597,33 @@ window.lancXlAplicar = async () => {
     return r;
   }; }
 
+/* v0.14.27.1 (28/10/2026) · LevBom: (1) Lançamento do dia: as caixas Linha e Seção (texto longo nas opções) ultrapassavam a
+   célula da grade e cobriam Sentido e Passageiros. Causa: a lista suspensa nova (appearance: base-select) tem largura
+   mínima igual à opção mais longa e ignora o width: 100%; a rotina de largura estável (v0.12.29) então a fixava nesse tamanho.
+   A lista e o item da grade passam a aceitar encolher (min-width: 0); a opção longa termina em "…". Vale para todos os formulários .form-grid. */
+(() => { const st = document.createElement("style"); st.textContent = `.form-grid>.field{min-width:0}.field select{width:100%;min-width:0;max-width:100%;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}`; document.head.appendChild(st); })();
+/* a rotina de largura estável (v0.12.29) grava min-width inline igual ao maior item; nunca mais que a largura do campo que contém a lista */
+{ const s0 = selAjustarLote;
+  selAjustarLote = function (sels) {
+    const r = s0.apply(this, arguments);
+    (sels || []).forEach(sel => { try {
+      if (!sel || !sel.isConnected || !sel.style.minWidth) return;
+      const p = sel.parentElement; if (!p) return; const cs = getComputedStyle(p);
+      const pw = p.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+      if (pw > 0 && parseFloat(sel.style.minWidth) > pw) sel.style.minWidth = Math.floor(pw) + "px";
+    } catch (e) {} });
+    return r;
+  }; }
+/* LevBom › Tarifas: cabeçalho de duas linhas preso na rolagem — a 2ª linha (Ponto A/B, Início/Fim) fica logo abaixo da 1ª,
+   em vez de cobrir "Trecho" e "Vigência" (a regra global deixa todo th em top: 0). A altura da 1ª linha é medida depois de pintar. */
+(() => { const st = document.createElement("style"); st.textContent = `.table-wrap table.bil-tar-t thead tr:nth-child(2) th{top:var(--bil-th1,38px)}.table-wrap table.bil-tar-t thead th{box-shadow:inset 0 -1px 0 var(--line,#E4E8EA)}`; document.head.appendChild(st); })();
+function bilTarCabFixar() {
+  const t = document.querySelector("#bilBody table.bil-tar-t"); if (!t) return;
+  const r1 = t.querySelector("thead tr:first-child"); if (r1) t.style.setProperty("--bil-th1", Math.round(r1.getBoundingClientRect().height) + "px");
+}
+{ const p0 = paintBil; paintBil = function () { const r = p0.apply(this, arguments); requestAnimationFrame(bilTarCabFixar); return r; }; }
+window.addEventListener("resize", () => { if (document.querySelector("#bilBody table.bil-tar-t")) bilTarCabFixar(); });
+
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -43610,6 +43637,7 @@ CONFIG.version = "v0.14.24";   /* Movimento de Caixa: folha em branco (A4) para 
 CONFIG.version = "v0.14.25";   /* Movimento Diário: Resumo do Movimento Diário em branco (A4) para preencher à mão */
 CONFIG.version = "v0.14.26";   /* folhas em branco da agência: coluna Pgto, conferência do dinheiro, nº da folha e Handbook (PDF) para baixar */
 CONFIG.version = "v0.14.27";   /* Movimento Diário (Linha + Trecho + valor automático, Excel offline) e LevBom › Tarifas (Ponto A/B, vigência, competência, situação em bolinhas, Excluir, Reajustar +1 ano) */
+CONFIG.version = "v0.14.27.1";   /* LevBom: caixas Linha e Seção presas à célula; cabeçalho de duas linhas das Tarifas preso na rolagem */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

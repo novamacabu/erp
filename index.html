@@ -44997,6 +44997,68 @@ window.secDecorar = secDecorar;
     return v0.call(this, cab, linhas.map(l => grat(l) && !(lancNum(l.q) > 0) ? Object.assign({}, l, { q: 1 }) : l), ctx);   /* o resto da cadeia (município, trecho do LevBom) — a gratuidade com 0 passa como 1 só para a conferência */
   }; }
 
+/* ==========================================================================================
+   v0.14.35 (29/10/2026) · respostas do Rafael às decisões da v0.14.31–34 (22:18)
+   1. Gratuidade no Movimento Diário: a quantidade é digitada e conta em "Passagens"; só o valor unitário fica travado em R$ 0,00.
+   2. Tarifa bloqueada (trecho sem registro no Diário Oficial) também no LevBom: some da lista de seções do lançamento (novo e
+      edição), não pode ser gravada (inclusive por outros caminhos de gravação) e fica fora do BOM, com aviso do que ficou de fora.
+   3. "Um lançamento por trecho e competência" mantido (nada a mudar).
+   ========================================================================================== */
+/* ---------- 1. gratuidade: quantidade livre, valor 0 travado ---------- */
+{ const A = LANC.agven, ct = A.cols.find(c => c.k === "t"), grat = r => /gratuidade/i.test(String(r.t || ""));
+  const on0 = ct.onChange; ct.onChange = (r, E) => {
+    if (grat(r)) { if (r.q === 0) r.q = ""; r.u = 0; r._auto = true; try { lancPintarEditor(); } catch (e) {} return; }   /* quantidade fica para digitar */
+    if (r.u === 0 && r._auto && !r.s) r.u = "";   /* saiu da gratuidade numa linha sem trecho do LevBom: valor volta a vazio */
+    return on0 ? on0(r, E) : undefined; };
+  const g0 = A.gravar; A.gravar = function (cab, linhas, obs) { return g0.call(this, cab, linhas.map(l => grat(l) ? Object.assign({}, l, { u: 0 }) : l), obs); };   /* gratuidade grava sempre R$ 0 (inclusive do Excel) */
+  const c0 = lancCelHtml; lancCelHtml = function (c, v, i, ro) {
+    const row = LANC_ED && LANC_ED.k === "agven" ? LANC_ED.linhas[i] : null;
+    if (row && grat(row) && c.k === "q") { const g = row.t; row.t = ""; try { return c0.apply(this, arguments); } finally { row.t = g; } }   /* quantidade editável (pula a trava da v0.14.34) */
+    if (row && grat(row) && c.k === "u") return c0.apply(this, arguments).replace('title="Gratuidade: quantidade e valor ficam em 0"', 'title="Gratuidade: valor unitário fica em R$ 0,00"');
+    return c0.apply(this, arguments); };
+  const v0 = A.validar; A.validar = function (cab, linhas, ctx) {
+    const e = v0.apply(this, arguments); if (e) return e;   /* a cadeia (cabeçalho, trecho, tipo, pagamento) primeiro, na ordem das linhas */
+    const novo = !!(ctx && ctx.novo);
+    for (let i = 0; i < linhas.length; i++) { const l = linhas[i]; if (grat(l) && novo && !(lancNum(l.q) > 0)) return `Linha ${i + 1}: informe a quantidade de gratuidades.`; }
+    return ""; };
+}
+/* ---------- 2. LevBom: seção com tarifa bloqueada fora do lançamento e do BOM ---------- */
+function bilSecTarifa(linha, secao) { const ts = (BIL_STATE.tarifas || []).filter(t => String(t.Linha) === String(linha) && String(t.Secao) === String(secao)); return ts.find(t => t.Ativa !== false) || ts.sort((a, b) => String(b.VigenciaInicio || "").localeCompare(String(a.VigenciaInicio || "")))[0] || null; }
+function bilSecBloqueada(linha, secao) {   /* bloqueada = todas as tarifas ativas da seção estão sem registro no DO (sem ativa: a mais recente) */
+  const ts = (BIL_STATE.tarifas || []).filter(t => String(t.Linha) === String(linha) && String(t.Secao) === String(secao)), at = ts.filter(t => t.Ativa !== false);
+  if (at.length) return at.every(t => bilTarBloqueada(t));
+  const t = bilSecTarifa(linha, secao); return !!(t && bilTarBloqueada(t)); }
+{ const s0 = bilSecoes; bilSecoes = function (linha) { return s0.apply(this, arguments).filter(t => !bilSecBloqueada(t.Linha, t.Secao)); }; window.bilSecoes = bilSecoes; }
+{ const e0 = window.bilLancEditar; window.bilLancEditar = function (id) {
+    const r = e0.apply(this, arguments); const x = (BIL_STATE.lanc || []).find(y => String(y._id) === String(id));
+    const limpa = () => { const el = $("beSec"), l = $("beLinha"); if (!el || !l) return; [...el.options].forEach(o => { if (bilSecBloqueada(l.value, o.value) && !(x && l.value === x.Linha && o.value === x.Secao)) o.remove(); else if (bilSecBloqueada(l.value, o.value)) o.textContent += " (bloqueada)"; }); };
+    const limpa2 = () => { const el = $("beSec"), v = el && el.value; limpa(); if (el && el.value !== v) el.dispatchEvent(new Event("change")); };   /* receita recalculada com a seção que ficou */
+    limpa2(); const l = $("beLinha"); if (l) l.addEventListener("change", () => setTimeout(limpa2, 0));
+    return r; }; }
+/* guarda de gravação: lançamento novo, ou troca de linha/seção, numa seção bloqueada é recusado (vale para qualquer tela) */
+{ const c0 = SP.create, u0 = SP.update;
+  const ehLanc = list => !!(BIL_STATE.lists && BIL_STATE.lists.bil_lanc && String(list) === String(BIL_STATE.lists.bil_lanc.id));
+  const msg = (l, s) => new Error(`a seção ${s} da linha ${l} está bloqueada: o trecho não está registrado no Diário Oficial (Trechos, Trechos Não Oficiais ou em aprovação). Registre lá para voltar a lançar.`);
+  SP.create = async function (site, list, f) { if (ehLanc(list) && f && f.Linha && f.Secao && bilSecBloqueada(f.Linha, f.Secao)) throw msg(f.Linha, f.Secao); return c0.apply(this, arguments); };
+  SP.update = async function (site, list, id, f) {
+    if (ehLanc(list) && f && (f.Linha || f.Secao)) { const x = (BIL_STATE.lanc || []).find(y => String(y._id) === String(id)) || {}; const l = f.Linha || x.Linha, s = f.Secao || x.Secao; if ((l !== x.Linha || s !== x.Secao) && bilSecBloqueada(l, s)) throw msg(l, s); }   /* corrigir um lançamento antigo da mesma seção continua possível */
+    return u0.apply(this, arguments); }; }
+/* BOM: seções bloqueadas ficam fora, com o resumo do que saiu */
+{ const b0 = bilBOM; bilBOM = function (lanc) {
+    const bloq = (lanc || []).filter(x => bilSecBloqueada(x.Linha, x.Secao)); if (!bloq.length) return b0.apply(this, arguments);
+    const resto = lanc.filter(x => !bloq.includes(x)), secs = [...new Set(bloq.map(x => `${x.Linha} · ${x.Secao}`))];
+    const pass = bloq.reduce((s, x) => s + Number(x.Passageiros || 0), 0), rec = bloq.reduce((s, x) => s + Number(x.Receita || 0), 0);
+    const um = secs.length === 1;
+    const aviso = `<div class="rhf-aviso bil-bom-bloq"><b>${um ? "1 seção bloqueada fora do BOM" : `${secs.length} seções bloqueadas fora do BOM`}</b> — ${bloq.length} lançamento(s), ${pass.toLocaleString("pt-BR")} passageiro(s), ${esc(fmtBRL(rec))}: ${esc(secs.join(", "))}. ${um ? "O trecho não está registrado" : "Os trechos não estão registrados"} no Diário Oficial; registre em Diretoria › Diário Oficial (Trechos, Trechos Não Oficiais ou aprovação) para ${um ? "ela voltar" : "elas voltarem"} ao BOM. Os indicadores do topo continuam com o mês inteiro.</div>`;
+    if (!resto.length) return aviso + `<div class="cap-empty"><h3>BOM vazio</h3><p>Todos os lançamentos do mês são de seções bloqueadas.</p></div>`;
+    return aviso + b0.call(this, resto); }; }
+/* o Diário Oficial carrega depois da primeira pintura: refaz só a lista de seções do Lançar / da edição (sem repintar o formulário) */
+{ const c0 = doCarregar; doCarregar = async function () { const r = await c0.apply(this, arguments);
+    try { [["bLinha", "bSec"], ["beLinha", "beSec"]].forEach(([li, si]) => { const l = $(li), sEl = $(si); if (!l || !sEl) return; const v = sEl.value; l.dispatchEvent(new Event("change")); setTimeout(() => { const e = $(si); if (e && v && [...e.options].some(o => o.value === v)) { e.value = v; e.dispatchEvent(new Event("change")); } }, 10); }); } catch (e) {}
+    return r; }; }
+(() => { const st = document.createElement("style"); st.textContent = `.bil-bom-bloq{margin:0 0 12px}`; document.head.appendChild(st); })();
+{ const b0 = bilSitBola; bilSitBola = function (t) { return b0.apply(this, arguments).split("Não é oferecida no Movimento Diário até ser registrada lá de novo.").join("Fora do lançamento do LevBom, do BOM e do Movimento Diário até ser registrada lá de novo."); }; }
+
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -45020,6 +45082,7 @@ CONFIG.version = "v0.14.31";   /* Diário Oficial/LevBom/Movimento Diário: cabe
 CONFIG.version = "v0.14.32";   /* RH › Consumíveis: erros em janela, bloqueio, sugestões de mercado, catálogo em visualização com fornecedores, Valor só adm, botões, Exportar por aba (Excel/PDF), Importar, Saída só com funcionário cadastrado */
 CONFIG.version = "v0.14.33";   /* RH › Funcionários: Nome/Sobrenome, obrigatórios, Vida funcional, abas Documentos/Folha de Ponto/Avaliação, CNH; Avaliação de Desempenho: ciclos numa linha, vazio centralizado */
 CONFIG.version = "v0.14.34";   /* Movimento de Caixa e Movimento Diário ativos; Consumíveis › Painel Qtd/Valor e títulos; janelas com seções fechadas e Expandir/Comprimir tudo; Terceiros › Contas legenda */
+CONFIG.version = "v0.14.35";   /* gratuidade conta passagens (só o valor travado em 0); LevBom: seção bloqueada fora do lançamento, da gravação e do BOM */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

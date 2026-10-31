@@ -45059,6 +45059,89 @@ function bilSecBloqueada(linha, secao) {   /* bloqueada = todas as tarifas ativa
 (() => { const st = document.createElement("style"); st.textContent = `.bil-bom-bloq{margin:0 0 12px}`; document.head.appendChild(st); })();
 { const b0 = bilSitBola; bilSitBola = function (t) { return b0.apply(this, arguments).split("Não é oferecida no Movimento Diário até ser registrada lá de novo.").join("Fora do lançamento do LevBom, do BOM e do Movimento Diário até ser registrada lá de novo."); }; }
 
+/* ==========================================================================================
+   v0.14.36 (31/10/2026) · Marketing › Site Oficial: seções do site Online / Offline (pedido de 30/10)
+   O administrador (ou o proprietário do módulo Site Oficial) liga ou desliga cada seção do site público (novamacabu.com.br / prévia no GitHub) e clica em
+   "Publicar no site". O ERP manda a lista das seções offline ao Make (cenário 🌐 Site, ação "secoes", que confere
+   o login e só aceita administradores e o proprietário do Site Oficial) e o Make grava dados/secoes.js no repositório novamacabu/site. O site lê
+   esse arquivo ao abrir e esconde as seções offline (e os links para elas). O estado mostrado aqui é lido do próprio
+   site publicado (o que o visitante vê). Nenhuma lista ou coluna nova.
+   ========================================================================================== */
+const SITE_SECOES = [
+  { id: "porque", nome: "Por que viajar com a Nova Macabu" },   /* o topo (Início: logo e busca) fica sempre online */
+  { id: "rotas", nome: "Principais rotas (Linhas)" }, { id: "horarios", nome: "Quadro de horários" },
+  { id: "paradas", nome: "Itinerários (paradas por linha)" }, { id: "modalidades", nome: "Modalidades de serviço" },
+  { id: "gratuidade", nome: "Gratuidade e direitos do passageiro" }, { id: "viagem", nome: "Antes de viajar (embarque)" },
+  { id: "sobre", nome: "Sobre a Nova Macabu" }, { id: "duvidas", nome: "Perguntas frequentes" },
+  { id: "atendimento", nome: "Atendimento (contatos e SAC)" }
+];
+const SITE_SEC = { pub: null, em: "", por: "", edit: null, erro: "", carregando: false, enviando: false, aguardando: false };
+const SITE_SEC_LS = "erp.site.secoes.ult";   /* última publicação feita neste navegador: cobre o minuto em que o GitHub Pages ainda mostra o arquivo antigo */
+function siteSecUlt() { try { const o = JSON.parse(localStorage.getItem(SITE_SEC_LS) || "null"); return o && Date.now() - o.at < 5 * 60000 ? o : null; } catch (e) { return null; } }
+function siteSecPodeEditar() { const m = siteMod(); return !!(m && canSee(m) && (session.n1 || permModulo("site") === "proprietario") && !(typeof vcAtivo === "function" && vcAtivo())); }   /* administradores e o proprietário do Site Oficial (pedido 31/10 13:52) */
+async function siteSecLer() {   /* lê o arquivo publicado (público, sem login); o endereço muda a cada chamada para não pegar cache */
+  SITE_SEC.carregando = true; SITE_SEC.erro = "";
+  try {
+    const r = await fetch(SITE_ENDERECOS[SITE_PADRAO].url + "dados/secoes.js?erp=" + Date.now(), { cache: "no-store" });
+    if (r.status === 404) { SITE_SEC.pub = []; SITE_SEC.em = ""; SITE_SEC.por = ""; }
+    else if (!r.ok) throw new Error("status " + r.status);
+    else { const t = await r.text(), m = t.match(/window\.NM_SECOES\s*=\s*(\{[\s\S]*?\})\s*;/); const o = m ? JSON.parse(m[1]) : {};
+      SITE_SEC.pub = String(o.offline || "").split(",").filter(x => SITE_SECOES.some(s => s.id === x)); SITE_SEC.em = String(o.em || ""); SITE_SEC.por = String(o.por || ""); }
+    const u = siteSecUlt(); SITE_SEC.aguardando = false;
+    if (u && u.em !== SITE_SEC.em) { SITE_SEC.pub = u.off.slice(); SITE_SEC.em = u.em; SITE_SEC.por = u.por; SITE_SEC.aguardando = true; }   /* acabou de publicar: vale o que foi publicado */
+    const antes = SITE_SEC._lido; SITE_SEC._lido = SITE_SEC.pub.slice().sort().join(",");
+    if (!SITE_SEC.edit || antes !== SITE_SEC._lido) SITE_SEC.edit = new Set(SITE_SEC.pub);   /* o estado publicado mudou (outro administrador): recomeça dele */
+  } catch (e) { SITE_SEC.pub = null; SITE_SEC.edit = null; SITE_SEC.erro = "não foi possível ler o estado publicado no site (" + (e.message || e) + ")"; }   /* sem estado confiável: não mostra nem deixa publicar */
+  SITE_SEC.carregando = false;
+}
+const siteSecMudou = () => { if (!SITE_SEC.edit || !SITE_SEC.pub) return false; const a = [...SITE_SEC.edit].sort().join(","), b = SITE_SEC.pub.slice().sort().join(","); return a !== b; };
+window.siteSecTroca = id => { if (!siteSecPodeEditar() || !SITE_SEC.edit || SITE_SEC.enviando) return; if (SITE_SEC.edit.has(id)) SITE_SEC.edit.delete(id); else SITE_SEC.edit.add(id); siteSecPintar(); };
+window.siteSecDescartar = () => { SITE_SEC.edit = new Set(SITE_SEC.pub || []); siteSecPintar(); };
+window.siteSecPublicar = async () => {
+  if (!siteSecPodeEditar()) { toast("Só administradores e o proprietário do Site Oficial publicam as seções do site."); return; }
+  if (!siteSecMudou()) { toast("Nada mudou em relação ao que está publicado."); return; }
+  const off = SITE_SECOES.map(s => s.id).filter(id => SITE_SEC.edit.has(id));
+  const nomes = off.map(id => SITE_SECOES.find(s => s.id === id).nome);
+  if (!(await erpConfirmar({ titulo: "Publicar seções no site", html: `<p>O site público vai ficar assim:</p><p><b>Offline (escondidas do visitante):</b> ${off.length ? esc(nomes.join(", ")) : "nenhuma"}</p><p><b>Online:</b> ${off.length === SITE_SECOES.length ? "nenhuma" : "todas as outras"}</p><p class="sup">A mudança aparece para quem abrir o site em até 1 a 2 minutos (cache do GitHub Pages). Quem já está com o site aberto vê ao recarregar.</p>`, sim: "Publicar no site" }))) return;
+  SITE_SEC.enviando = true; siteSecPintar();
+  try {
+    const r = await erpWebhookResposta(await erpWebhook(SITE_HOOK, { acao: "secoes", offline: off.join(",") }, 45000, { mod: "site" }));
+    SITE_SEC.pub = off.slice(); SITE_SEC.em = r.em || ""; SITE_SEC.por = r.por || ""; SITE_SEC.edit = new Set(off); SITE_SEC._lido = off.slice().sort().join(","); SITE_SEC.aguardando = true;
+    try { localStorage.setItem(SITE_SEC_LS, JSON.stringify({ off, em: SITE_SEC.em, por: SITE_SEC.por, at: Date.now() })); } catch (e) {}
+    toast("Seções publicadas no site. O visitante vê a mudança em até 1 a 2 minutos.", 6000);
+  } catch (e) { toast(e && e.viaMake && e.message && !e.naoConfirmado && e.status !== 401 ? "Não publicado: " + e.message + "." : siteMotivo(e), 8000); }   /* o motivo do Make (só administradores, GitHub não gravou…) aparece como veio */
+  finally { SITE_SEC.enviando = false; siteSecPintar(); }
+};
+function siteSecHtml() {
+  const ed = siteSecPodeEditar(), carregado = !!SITE_SEC.pub;
+  const linhas = SITE_SECOES.map(s => {
+    const offPub = carregado && SITE_SEC.pub.includes(s.id), offEd = SITE_SEC.edit ? SITE_SEC.edit.has(s.id) : offPub, pend = carregado && offPub !== offEd;
+    const pill = on => `<span class="pill ${on ? "st-pago" : "st-vencido"}"><i></i>${on ? "Online" : "Offline"}</span>`;
+    return `<tr class="${pend ? "site-sec-pend" : ""}"><td><b>${esc(s.nome)}</b><div class="sup">#${esc(s.id)}</div></td><td>${carregado ? pill(!offPub) : `<span class="sup">—</span>`}</td>
+      <td>${ed && carregado ? `<button type="button" class="site-sw ${offEd ? "" : "on"}" role="switch" aria-checked="${!offEd}" aria-label="${esc(s.nome)}" onclick="siteSecTroca(${esc(jsArg(s.id))})" ${SITE_SEC.enviando ? "disabled" : ""}><span></span>${offEd ? "Offline" : "Online"}</button>${pend ? ` <span class="sup">a publicar</span>` : ""}` : carregado ? `<span class="sup">${offPub ? "escondida" : "visível"}</span>` : ""}</td></tr>`;
+  }).join("");
+  const nOff = carregado ? SITE_SEC.pub.length : 0;
+  return `<div class="cap-card site-sec"><div class="cap-card-h"><h3>Seções do site</h3><span class="cap-card-s">${carregado ? `${SITE_SECOES.length - nOff} online · ${nOff} offline${SITE_SEC.em ? ` · publicado em ${esc(SITE_SEC.em)}${SITE_SEC.por ? ` por ${esc(SITE_SEC.por)}` : ""}` : ""}${SITE_SEC.aguardando ? " · o site atualiza em até 1 a 2 minutos" : ""}` : SITE_SEC.carregando ? "lendo o site…" : ""}</span><span class="grow"></span>
+      ${ed && carregado ? `<button class="btn sm" onclick="siteSecDescartar()" ${siteSecMudou() && !SITE_SEC.enviando ? "" : "disabled"}>Descartar</button><button class="btn sm primary" onclick="siteSecPublicar()" ${siteSecMudou() && !SITE_SEC.enviando ? "" : "disabled"}>${SITE_SEC.enviando ? "Publicando…" : "Publicar no site"}</button>` : ""}</div>
+    ${SITE_SEC.erro ? `<p class="sup" style="padding:0 16px">${esc(SITE_SEC.erro)} · <a href="#" onclick="event.preventDefault(); siteSecRecarregar()">tentar de novo</a></p>` : ""}
+    ${carregado ? `<div class="table-wrap"><table class="cap-table site-sec-t"><thead><tr><th>Seção</th><th>No site agora</th><th>${ed ? "Mudar" : ""}</th></tr></thead><tbody>${linhas}</tbody></table></div>` : ""}
+    <p class="hint" style="padding:0 16px 12px">O topo (logo e busca de linhas) fica sempre online. Os botões de WhatsApp continuam mesmo com Atendimento offline. Offline esconde a seção do visitante e tira do menu, do rodapé e dos botões os links para ela. ${ed ? "Mude os botões e clique em <b>Publicar no site</b>; a mudança aparece em até 1 a 2 minutos." : "Só administradores e o proprietário do Site Oficial mudam as seções."} É só visual: o conteúdo continua no código da página.</p></div>`;
+}
+function siteSecPintar() { const el = $("siteSecBox"); if (el) el.innerHTML = siteSecHtml(); }
+window.siteSecRecarregar = async () => { SITE_SEC.edit = null; siteSecPintar(); await siteSecLer(); siteSecPintar(); };
+{ const p0 = paintSite; paintSite = function () {
+    const r = p0.apply(this, arguments); const body = $("siteBody");
+    if (body && !$("siteSecBox")) { body.insertAdjacentHTML("afterbegin", `<div id="siteSecBox"></div>`); }
+    siteSecPintar(); return r; }; }
+{ const r0 = renderSite; renderSite = async function () { const p = siteSecLer().then(siteSecPintar); const r = await r0.apply(this, arguments); await p; siteSecPintar(); return r; }; }
+MOD_RESET.site = () => { SITE_SEC.edit = null; };
+(() => { const st = document.createElement("style"); st.textContent = `
+#siteSecBox{margin:0 0 var(--gap,14px)}.site-sec .cap-card-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.site-sec-t td{vertical-align:middle}.site-sec-t tr.site-sec-pend td{background:#FFF8E1}
+.site-sw{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:#F3F4F6;border-radius:999px;padding:4px 12px 4px 4px;font:inherit;font-size:12.5px;font-weight:700;color:#5C6670;cursor:pointer;min-width:96px}
+.site-sw span{width:22px;height:22px;border-radius:50%;background:#B23A2F;flex:none;transition:background .15s}.site-sw.on{background:#E3F4EA;border-color:#9BD3B1;color:#1d6b3e}.site-sw.on span{background:#2F7D4F}
+.site-sw:disabled{opacity:.6;cursor:default}`; document.head.appendChild(st); })();
+
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -45083,6 +45166,7 @@ CONFIG.version = "v0.14.32";   /* RH › Consumíveis: erros em janela, bloqueio
 CONFIG.version = "v0.14.33";   /* RH › Funcionários: Nome/Sobrenome, obrigatórios, Vida funcional, abas Documentos/Folha de Ponto/Avaliação, CNH; Avaliação de Desempenho: ciclos numa linha, vazio centralizado */
 CONFIG.version = "v0.14.34";   /* Movimento de Caixa e Movimento Diário ativos; Consumíveis › Painel Qtd/Valor e títulos; janelas com seções fechadas e Expandir/Comprimir tudo; Terceiros › Contas legenda */
 CONFIG.version = "v0.14.35";   /* gratuidade conta passagens (só o valor travado em 0); LevBom: seção bloqueada fora do lançamento, da gravação e do BOM */
+CONFIG.version = "v0.14.36";   /* Site Oficial: seções do site Online/Offline (administrador) publicadas no site pelo Make */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

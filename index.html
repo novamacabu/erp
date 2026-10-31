@@ -18650,14 +18650,12 @@ SETUP_ORDER.push("cx_contas", "cx_mov", "cx_fech", "cx_mes"); /* v0.12.17: lista
    entra quando o repositório (GitHub) e a conexão existirem — até lá a resposta vem com publicado=false.
    Nada aqui grava no SharePoint; a guarda de escrita continua valendo para o resto.
    ===================================================================== */
-/* v0.12.18: o site novo está no GitHub (novamacabu/site) e publica em novamacabu.github.io/site enquanto o domínio
-   novamacabu.com.br ainda aponta para o WordPress. O ERP abre a Prévia por padrão; "Produção" mostra o domínio.
-   Quando o DNS virar, basta trocar SITE_PADRAO para "producao". Escolha de quem vê fica neste navegador. */
-const SITE_ENDERECOS = {
-  previa:   { url: "https://novamacabu.github.io/site/", rot: "Prévia (GitHub)" },
-  producao: { url: "https://novamacabu.com.br/",         rot: "Produção (novamacabu.com.br)" }
+/* v0.12.18 → v0.14.36.1: o site está no GitHub (novamacabu/site) e, desde 31/10/2026, publica em novamacabu.com.br
+   (Custom domain do GitHub Pages). A Prévia (novamacabu.github.io/site) saiu: esse endereço só redireciona. */
+const SITE_ENDERECOS = {   /* v0.14.36.1 (31/10/2026): o domínio novamacabu.com.br aponta para o GitHub Pages; novamacabu.github.io/site só redireciona para ele */
+  producao: { url: "https://novamacabu.com.br/",         rot: "novamacabu.com.br" }
 };
-const SITE_PADRAO = "previa";
+const SITE_PADRAO = "producao";
 const SITE_REPO = "https://github.com/novamacabu/site";
 function siteAmb() { let v = null; try { v = localStorage.getItem("erp.site.amb"); } catch (e) {} return Object.prototype.hasOwnProperty.call(SITE_ENDERECOS, v) ? v : SITE_PADRAO; }
 let SITE_URL = SITE_ENDERECOS[siteAmb()].url;
@@ -18726,7 +18724,7 @@ async function siteStatus() {
 function pageSite() {
   return `<div class="page">
     <div class="page-head"><div><h1>Site Oficial</h1>
-    <p class="lead">O site oficial dentro do ERP — a Prévia (novamacabu.github.io/site) mostra a versão nova que está sendo editada no GitHub. Daqui você também sincroniza a Tabela de Horários e a Tabela de Tarifas com o site (via Make).</p></div>
+    <p class="lead">O site oficial (novamacabu.com.br) dentro do ERP. Daqui você também sincroniza a Tabela de Horários e a Tabela de Tarifas com o site (via Make).</p></div>
     <div class="page-actions" id="siteActions"></div></div>
     <div id="siteBody"></div>
   </div>`;
@@ -18751,7 +18749,7 @@ function siteSandbox() { return "allow-scripts allow-forms allow-popups allow-po
 function paintSite(src) {
   const body = $("siteBody"); if (!body) return;
   const amb = siteAmb();
-  const acts = $("siteActions"); if (acts) acts.innerHTML = `<div class="seg" role="group" aria-label="Qual endereço mostrar">${Object.entries(SITE_ENDERECOS).map(([k, v]) => `<button type="button" class="${k === amb ? "on" : ""}" aria-pressed="${k === amb}" onclick="siteTrocarAmb(${jsArg(k)})">${esc(k === "previa" ? "Prévia" : "Produção")}</button>`).join("")}</div>${session.n1 || ["editar", "proprietario"].includes(permModulo("site")) || (session.roles && session.roles.has("admin")) ? `<a class="btn" href="${SITE_REPO}" target="_blank" rel="noopener" title="Repositório do site no GitHub (precisa de login no GitHub com acesso ao repositório)">Editar no GitHub ↗</a>` : ""}<a class="btn" href="${SITE_URL}" target="_blank" rel="noopener">Abrir em nova aba ↗</a><button class="btn" onclick="siteRecarregar()">Recarregar</button>`;
+  const acts = $("siteActions"); if (acts) acts.innerHTML = `${session.n1 || ["editar", "proprietario"].includes(permModulo("site")) || (session.roles && session.roles.has("admin")) ? `<a class="btn" href="${SITE_REPO}" target="_blank" rel="noopener" title="Repositório do site no GitHub (precisa de login no GitHub com acesso ao repositório)">Editar no GitHub ↗</a>` : ""}<a class="btn" href="${SITE_URL}" target="_blank" rel="noopener">Abrir em nova aba ↗</a><button class="btn" onclick="siteRecarregar()">Recarregar</button>`;
   const fr0 = $("siteFrame"), manter = !src && fr0 && fr0.dataset.base === SITE_URL;   /* v0.12.81: status e sincronização não recarregam o site embutido */
   const html = `<div class="site-grid">
       ${siteCartao("horarios", "Tabela de Horários", "quadro de partidas por tipo de dia", "#/operacional/tabela-de-horarios")}
@@ -18759,7 +18757,7 @@ function paintSite(src) {
     </div>
     <div class="site-frame"><div class="site-frame-h"><span><b>${esc(SITE_ENDERECOS[amb].rot)}</b> · ${esc(SITE_URL.replace(/^https?:\/\//, "").replace(/\/$/, ""))}</span><a href="${SITE_URL}" target="_blank" rel="noopener">abrir em nova aba ↗</a></div>
       <iframe id="siteFrame" data-base="${esc(SITE_URL)}" src="${esc(src || SITE_URL)}" title="Site oficial da Nova Macabu" loading="lazy" referrerpolicy="no-referrer" sandbox="${siteSandbox()}"></iframe>
-      <p class="hint">${amb === "previa" ? "A Prévia mostra o selo \"Prévia\" e o botão de destacar pendências — é o esperado neste endereço provisório. Depois de salvar uma edição no GitHub, espere 1 a 3 minutos e clique em Recarregar." : "Enquanto o domínio não for apontado para o GitHub, a Produção ainda mostra o site antigo (WordPress)."} Se o site não aparecer aqui, use "abrir em nova aba".</p></div>`;
+      <p class="hint">Depois de salvar uma edição no GitHub, espere 1 a 3 minutos e clique em Recarregar. Se o site não aparecer aqui, use "abrir em nova aba".</p></div>`;
   if (manter) { const tmp = document.createElement("div"); tmp.innerHTML = html; const g0 = body.querySelector(".site-grid"), g1 = tmp.querySelector(".site-grid"); if (g0 && g1) { g0.replaceWith(g1); return; } }
   body.innerHTML = html;
 }
@@ -45061,7 +45059,7 @@ function bilSecBloqueada(linha, secao) {   /* bloqueada = todas as tarifas ativa
 
 /* ==========================================================================================
    v0.14.36 (31/10/2026) · Marketing › Site Oficial: seções do site Online / Offline (pedido de 30/10)
-   O administrador (ou o proprietário do módulo Site Oficial) liga ou desliga cada seção do site público (novamacabu.com.br / prévia no GitHub) e clica em
+   O administrador (ou o proprietário do módulo Site Oficial) liga ou desliga cada seção do site público (novamacabu.com.br) e clica em
    "Publicar no site". O ERP manda a lista das seções offline ao Make (cenário 🌐 Site, ação "secoes", que confere
    o login e só aceita administradores e o proprietário do Site Oficial) e o Make grava dados/secoes.js no repositório novamacabu/site. O site lê
    esse arquivo ao abrir e esconde as seções offline (e os links para elas). O estado mostrado aqui é lido do próprio
@@ -45167,6 +45165,7 @@ CONFIG.version = "v0.14.33";   /* RH › Funcionários: Nome/Sobrenome, obrigat�
 CONFIG.version = "v0.14.34";   /* Movimento de Caixa e Movimento Diário ativos; Consumíveis › Painel Qtd/Valor e títulos; janelas com seções fechadas e Expandir/Comprimir tudo; Terceiros › Contas legenda */
 CONFIG.version = "v0.14.35";   /* gratuidade conta passagens (só o valor travado em 0); LevBom: seção bloqueada fora do lançamento, da gravação e do BOM */
 CONFIG.version = "v0.14.36";   /* Site Oficial: seções do site Online/Offline (administrador) publicadas no site pelo Make */
+CONFIG.version = "v0.14.36.1";   /* Site Oficial: endereço padrão novamacabu.com.br (domínio apontado para o GitHub Pages); sem a Prévia */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

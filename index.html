@@ -45140,6 +45140,118 @@ MOD_RESET.site = () => { SITE_SEC.edit = null; };
 .site-sw span{width:22px;height:22px;border-radius:50%;background:#B23A2F;flex:none;transition:background .15s}.site-sw.on{background:#E3F4EA;border-color:#9BD3B1;color:#1d6b3e}.site-sw.on span{background:#2F7D4F}
 .site-sw:disabled{opacity:.6;cursor:default}`; document.head.appendChild(st); })();
 
+/* ==========================================================================================
+   v0.14.37 (31/10/2026) · Marketing › Site Oficial › Seções do site (pedido de 31/10 15:28)
+   1. O topo do site entra na lista em duas partes: "Topo — destaque" (Sua viagem começa aqui!) e "Topo — Encontre sua linha".
+      O site esconde só o conteúdo; o âncora #inicio fica (logo e "voltar ao topo").
+   2. "Site em manutenção": o site público mostra uma sala de espera (logo, mensagem, ônibus animado, WhatsApp) no lugar
+      do site. Quem administra vê o site por trás com ?ver=1 no endereço. Gravado no mesmo dados/secoes.js ("manutencao").
+   3. Clicar num botão não refaz a tabela: só a linha clicada muda, e a página não pula para o início.
+   ========================================================================================== */
+SITE_SECOES.splice(0, 0, { id: "topo", nome: "Topo — destaque \"Sua viagem começa aqui!\"" }, { id: "busca", nome: "Topo — Encontre sua linha" });
+SITE_SEC.manPub = false; SITE_SEC.manEd = null;
+siteSecLer = async function () {
+  SITE_SEC.carregando = true; SITE_SEC.erro = "";
+  try {
+    const r = await fetch(SITE_ENDERECOS[SITE_PADRAO].url + "dados/secoes.js?erp=" + Date.now(), { cache: "no-store" });
+    if (r.status === 404) { SITE_SEC.pub = []; SITE_SEC.manPub = false; SITE_SEC.em = ""; SITE_SEC.por = ""; }
+    else if (!r.ok) throw new Error("status " + r.status);
+    else { const t = await r.text(), m = t.match(/window\.NM_SECOES\s*=\s*(\{[\s\S]*?\})\s*;/); const o = m ? JSON.parse(m[1]) : {};
+      SITE_SEC.pub = String(o.offline || "").split(",").filter(x => SITE_SECOES.some(s => s.id === x)); SITE_SEC.manPub = o.manutencao === "sim";
+      SITE_SEC.em = String(o.em || ""); SITE_SEC.por = String(o.por || ""); }
+    const u = siteSecUlt(); SITE_SEC.aguardando = false;
+    if (u && u.em !== SITE_SEC.em) { SITE_SEC.pub = u.off.slice(); SITE_SEC.manPub = !!u.man; SITE_SEC.em = u.em; SITE_SEC.por = u.por; SITE_SEC.aguardando = true; }   /* acabou de publicar: vale o que foi publicado */
+    const antes = SITE_SEC._lido; SITE_SEC._lido = SITE_SEC.pub.slice().sort().join(",") + "|" + SITE_SEC.manPub;
+    if (!SITE_SEC.edit || antes !== SITE_SEC._lido) { SITE_SEC.edit = new Set(SITE_SEC.pub); SITE_SEC.manEd = SITE_SEC.manPub; }   /* o estado publicado mudou: recomeça dele */
+  } catch (e) { SITE_SEC.pub = null; SITE_SEC.edit = null; SITE_SEC.manEd = null; SITE_SEC.erro = "não foi possível ler o estado publicado no site (" + (e.message || e) + ")"; }
+  SITE_SEC.carregando = false;
+};
+function siteSecMudou2() {
+  if (!SITE_SEC.edit || !SITE_SEC.pub) return false;
+  return [...SITE_SEC.edit].sort().join(",") !== SITE_SEC.pub.slice().sort().join(",") || !!SITE_SEC.manEd !== !!SITE_SEC.manPub;
+}
+/* atualiza só a linha clicada e os botões do cabeçalho — sem refazer a tabela (a página não pula) */
+function siteSecLinhaAtualiza(id) {
+  const box = $("siteSecBox"); if (!box) return siteSecPintar();
+  const tr = box.querySelector(`tr[data-sec="${id}"]`), bt = tr && tr.querySelector(".site-sw");
+  if (!tr || !bt) return siteSecPintar();
+  const man = id === "_manut", offPub = man ? !SITE_SEC.manPub : SITE_SEC.pub.includes(id), offEd = man ? !SITE_SEC.manEd : SITE_SEC.edit.has(id), pend = offPub !== offEd;
+  bt.classList.toggle("on", !offEd); bt.setAttribute("aria-checked", String(!offEd));
+  bt.lastChild.textContent = man ? (offEd ? "Desligada" : "Ligada") : (offEd ? "Offline" : "Online");
+  tr.classList.toggle("site-sec-pend", pend);
+  let nota = tr.querySelector(".site-sec-nota"); if (pend && !nota) { bt.insertAdjacentHTML("afterend", `<span class="sup site-sec-nota" style="margin-left:6px">a publicar</span>`); } else if (!pend && nota) nota.remove();
+  const ok = siteSecMudou2() && !SITE_SEC.enviando;
+  box.querySelectorAll("[data-sec-bt]").forEach(b => { b.disabled = !ok; });
+}
+window.siteSecTroca = id => {
+  if (!siteSecPodeEditar() || !SITE_SEC.edit || SITE_SEC.enviando) return;
+  if (id === "_manut") SITE_SEC.manEd = !SITE_SEC.manEd;
+  else if (SITE_SEC.edit.has(id)) SITE_SEC.edit.delete(id); else SITE_SEC.edit.add(id);
+  siteSecLinhaAtualiza(id);
+};
+window.siteSecDescartar = () => { SITE_SEC.edit = new Set(SITE_SEC.pub || []); SITE_SEC.manEd = SITE_SEC.manPub; siteSecPintar(); };
+window.siteSecPublicar = async () => {
+  if (!siteSecPodeEditar()) { toast("Só administradores e o proprietário do Site Oficial publicam as seções do site."); return; }
+  if (!siteSecMudou2()) { toast("Nada mudou em relação ao que está publicado."); return; }
+  const off = SITE_SECOES.map(s => s.id).filter(id => SITE_SEC.edit.has(id)), man = !!SITE_SEC.manEd;
+  const nomes = off.map(id => SITE_SECOES.find(s => s.id === id).nome);
+  const htmlMan = man ? `<p><b>Site em manutenção:</b> o visitante vê só a sala de espera (mensagem e WhatsApp), não o site. Para ver o site por trás: <b>novamacabu.com.br/?ver=1</b>.</p>` : SITE_SEC.manPub ? `<p><b>Manutenção desligada:</b> o site volta para o visitante.</p>` : "";
+  if (!(await erpConfirmar({ titulo: "Publicar no site", html: `${htmlMan}<p><b>Offline (escondidas do visitante):</b> ${off.length ? esc(nomes.join(", ")) : "nenhuma"}</p><p><b>Online:</b> ${off.length === SITE_SECOES.length ? "nenhuma" : "todas as outras"}</p><p class="sup">A mudança aparece para quem abrir o site em até 1 a 2 minutos (cache do GitHub Pages). Quem já está com o site aberto vê ao recarregar.</p>`, sim: "Publicar no site" }))) return;
+  SITE_SEC.enviando = true; siteSecPintar();
+  try {
+    const r = await erpWebhookResposta(await erpWebhook(SITE_HOOK, { acao: "secoes", offline: off.join(","), manutencao: man ? "sim" : "nao" }, 45000, { mod: "site" }));
+    SITE_SEC.pub = off.slice(); SITE_SEC.manPub = man; SITE_SEC.em = r.em || ""; SITE_SEC.por = r.por || ""; SITE_SEC.edit = new Set(off); SITE_SEC.manEd = man;
+    SITE_SEC._lido = off.slice().sort().join(",") + "|" + man; SITE_SEC.aguardando = true;
+    try { localStorage.setItem(SITE_SEC_LS, JSON.stringify({ off, man, em: SITE_SEC.em, por: SITE_SEC.por, at: Date.now() })); } catch (e) {}
+    toast(man ? "Publicado: o site está em manutenção (sala de espera) em até 1 a 2 minutos." : "Publicado no site. O visitante vê a mudança em até 1 a 2 minutos.", 6000);
+  } catch (e) { toast(e && e.viaMake && e.message && !e.naoConfirmado && e.status !== 401 ? "Não publicado: " + e.message + "." : siteMotivo(e), 8000); }
+  finally { SITE_SEC.enviando = false; siteSecPintar(); }
+};
+siteSecHtml = function () {
+  const ed = siteSecPodeEditar(), carregado = !!SITE_SEC.pub;
+  const pill = (on, t1, t0) => `<span class="pill ${on ? "st-pago" : "st-vencido"}"><i></i>${on ? t1 : t0}</span>`;
+  const linha = (id, nome, sub, offPub, offEd, tOn, tOff, pillHtml, fora) => {
+    const pend = carregado && offPub !== offEd;
+    return `<tr data-sec="${esc(id)}" class="${pend ? "site-sec-pend" : ""}"><td><b>${esc(nome)}</b><div class="sup">${sub}</div></td><td>${carregado ? pillHtml : `<span class="sup">—</span>`}</td>
+      <td>${ed && carregado ? `<button type="button" class="site-sw ${offEd ? "" : "on"}" role="switch" aria-checked="${!offEd}" aria-label="${esc(nome)}" onclick="siteSecTroca(${esc(jsArg(id))})" ${SITE_SEC.enviando ? "disabled" : ""}><span></span>${offEd ? tOff : tOn}</button>${pend ? `<span class="sup site-sec-nota" style="margin-left:6px">a publicar</span>` : ""}` : carregado ? `<span class="sup">${fora}</span>` : ""}</td></tr>`;
+  };
+  const manLinha = linha("_manut", "Site em manutenção (sala de espera)", "o visitante vê só uma mensagem e o WhatsApp · ver o site por trás: novamacabu.com.br/?ver=1",
+    !SITE_SEC.manPub, SITE_SEC.manEd == null ? !SITE_SEC.manPub : !SITE_SEC.manEd, "Ligada", "Desligada",
+    SITE_SEC.manPub ? `<span class="pill st-vencido"><i></i>Em manutenção</span>` : `<span class="pill st-pago"><i></i>No ar</span>`, SITE_SEC.manPub ? "ligada" : "desligada");
+  const linhas = SITE_SECOES.map(s => {
+    const offPub = carregado && SITE_SEC.pub.includes(s.id), offEd = SITE_SEC.edit ? SITE_SEC.edit.has(s.id) : offPub;
+    return linha(s.id, s.nome, "#" + esc(s.id === "topo" || s.id === "busca" ? "inicio" : s.id), offPub, offEd, "Online", "Offline", pill(!offPub, "Online", "Offline"), offPub ? "escondida" : "visível");
+  }).join("");
+  const nOff = carregado ? SITE_SEC.pub.length : 0, mud = siteSecMudou2() && !SITE_SEC.enviando;
+  return `<div class="cap-card site-sec"><div class="cap-card-h"><h3>Seções do site</h3><span class="cap-card-s">${carregado ? `${SITE_SEC.manPub ? "<b>em manutenção</b> · " : ""}${SITE_SECOES.length - nOff} online · ${nOff} offline${SITE_SEC.em ? ` · publicado em ${esc(SITE_SEC.em)}${SITE_SEC.por ? ` por ${esc(SITE_SEC.por)}` : ""}` : ""}${SITE_SEC.aguardando ? " · o site atualiza em até 1 a 2 minutos" : ""}` : SITE_SEC.carregando ? "lendo o site…" : ""}</span><span class="grow"></span>
+      ${ed && carregado ? `<button class="btn sm" data-sec-bt onclick="siteSecDescartar()" ${mud ? "" : "disabled"}>Descartar</button><button class="btn sm primary" data-sec-bt onclick="siteSecPublicar()" ${mud ? "" : "disabled"}>${SITE_SEC.enviando ? "Publicando…" : "Publicar no site"}</button>` : ""}</div>
+    ${SITE_SEC.erro ? `<p class="sup" style="padding:0 16px">${esc(SITE_SEC.erro)} · <a href="#" onclick="event.preventDefault(); siteSecRecarregar()">tentar de novo</a></p>` : ""}
+    ${carregado ? `<div class="table-wrap"><table class="cap-table site-sec-t"><thead><tr><th>Seção</th><th>No site agora</th><th>${ed ? "Mudar" : ""}</th></tr></thead><tbody>${manLinha}${linhas}</tbody></table></div>` : ""}
+    <p class="hint" style="padding:0 16px 12px">O logo e o menu do topo ficam sempre. Os botões de WhatsApp continuam mesmo com Atendimento offline. Offline esconde a seção do visitante e tira do menu, do rodapé e dos botões os links para ela. ${ed ? "Mude os botões e clique em <b>Publicar no site</b>; a mudança aparece em até 1 a 2 minutos." : "Só administradores e o proprietário do Site Oficial mudam as seções."} É só visual: o conteúdo continua no código da página.</p></div>`;
+};
+{ const m0 = MOD_RESET.site; MOD_RESET.site = () => { if (m0) m0(); SITE_SEC.manEd = null; }; }
+window.siteSecRecarregar = async () => { SITE_SEC.edit = null; SITE_SEC.manEd = null; siteSecPintar(); await siteSecLer(); siteSecPintar(); };
+(() => { const st = document.createElement("style"); st.textContent = `.site-sec-t tr[data-sec="_manut"] td{border-bottom:2px solid var(--line)}`; document.head.appendChild(st); })();
+/* 4. (pedido de 31/10 15:36) O site embutido no ERP abre em modo de visualização (?nmerp=1): nada some e cada seção mostra uma
+   etiqueta Online/Offline — só dentro do ERP. O ERP manda ao site embutido (postMessage) o estado que está sendo editado,
+   então a etiqueta muda ao clicar, antes de publicar ("a publicar"). */
+function siteSecPost() {
+  const fr = $("siteFrame"); if (!fr || !fr.contentWindow || !SITE_SEC.pub) return;
+  let alvo = "*"; try { alvo = new URL(SITE_URL).origin; } catch (e) {}
+  const ed = SITE_SEC.edit ? [...SITE_SEC.edit] : SITE_SEC.pub, man = SITE_SEC.manEd == null ? SITE_SEC.manPub : SITE_SEC.manEd;
+  try { fr.contentWindow.postMessage({ nmSecoes: { offline: ed.join(","), manutencao: man ? "sim" : "nao", pubOffline: SITE_SEC.pub.join(","), pubManutencao: SITE_SEC.manPub ? "sim" : "nao" } }, alvo); } catch (e) {}
+}
+siteSecPintar = function () { const el = $("siteSecBox"); if (el) el.innerHTML = siteSecHtml(); siteSecPost(); };
+{ const a0 = siteSecLinhaAtualiza; siteSecLinhaAtualiza = function (id) { const r = a0(id); siteSecPost(); return r; }; }
+{ const p0 = paintSite; paintSite = function () {
+    const r = p0.apply(this, arguments); const fr = $("siteFrame");
+    if (fr) {
+      const src = fr.getAttribute("src") || "";
+      if (!/[?&]nmerp=1(&|$)/.test(src)) fr.setAttribute("src", src + (src.includes("?") ? "&" : "?") + "nmerp=1");
+      if (!fr.dataset.nmPost) { fr.dataset.nmPost = "1"; fr.addEventListener("load", () => { siteSecPost(); setTimeout(siteSecPost, 600); }); }
+    }
+    return r; }; }
+
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -45166,6 +45278,7 @@ CONFIG.version = "v0.14.34";   /* Movimento de Caixa e Movimento Diário ativos;
 CONFIG.version = "v0.14.35";   /* gratuidade conta passagens (só o valor travado em 0); LevBom: seção bloqueada fora do lançamento, da gravação e do BOM */
 CONFIG.version = "v0.14.36";   /* Site Oficial: seções do site Online/Offline (administrador) publicadas no site pelo Make */
 CONFIG.version = "v0.14.36.1";   /* Site Oficial: endereço padrão novamacabu.com.br (domínio apontado para o GitHub Pages); sem a Prévia */
+CONFIG.version = "v0.14.37";   /* Site Oficial: topo em duas partes, site em manutenção (sala de espera), lista sem pular ao clicar */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

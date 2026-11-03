@@ -46029,7 +46029,7 @@ permResumo = function (a) {
   .perm-table tr.perm-pg-filho > td:first-child{padding-left:56px}`;
   document.head.appendChild(st);
 })();
-/* ===================== v0.14.40 · CAP: VÍDEO DE CADA ABA (janela sobreposta) =====================
+/* ===================== v0.14.40 · CAP: VÍDEO DE CADA ABA (janela sobreposta) — com os ajustes da v0.14.40.1 =====================
    Pedido do Rafael (03/11, 10:35): "Em CAP, ao clicar em cada módulo, adicionar um ícone de vídeo que abrirá o vídeo referente à
    página. O vídeo deve abrir em uma janela sobreposta."
    - Os vídeos ficam na biblioteca de documentos do site CAP, pasta "Vídeos do ERP/Contas a Pagar", um arquivo por aba:
@@ -46064,6 +46064,7 @@ function vidAtivo() { return session.modAtual === "cap" && !CAP_STATE.espelhoCC 
 function vidAlvo(method, path, body) {
   if (!/^(POST|PUT)$/i.test(method || "") || !DOC.drive) return false;
   const p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0], raiz = VID.pasta.split("/")[0];
+  if (/\.\.|%2e|\\|%5c/i.test(p0)) return false;   /* v0.14.40.1: nada de ".." ou "\" (o navegador resolveria para fora da pasta) */
   const base = `/drives/${DOC.drive.id}/root`;
   if (p0 === `${base}:/${docEncode(raiz)}` || p0.startsWith(`${base}:/${docEncode(raiz)}/`) || p0.startsWith(`${base}:/${docEncode(raiz)}:`)) return true;
   return p0 === `${base}/children` && !!body && body.name === raiz && !!body.folder;
@@ -46143,6 +46144,7 @@ function vidChipsHtml() {
 }
 function vidFootHtml() {
   if (!vidPodeEnviar()) return "";
+  if (VID.enviando) return `<div class="vid-foot"><span class="sup">Envio de vídeo em andamento… os botões voltam quando terminar.</span></div>`;   /* v0.14.40.1 */
   const a = vidAba(VID.atual), tem = !!(VID.itens || {})[VID.atual], dis = VID.enviando ? "disabled" : "";
   return `<div class="vid-foot"><span class="sup">Administrador: os vídeos ficam no site CAP, em <b>${esc(VID.pasta)}</b>.</span>
     <span class="vid-acts"><button type="button" class="btn sm" id="vidEnviarUm" onclick="vidEscolher(false)" ${dis}>${tem ? "Trocar" : "Enviar"} o vídeo de ${esc(a ? a.t : "")}</button>
@@ -46307,6 +46309,7 @@ async function vidSubir(drive, a, file, onProg) {
         try { r = await fetch(ses.uploadUrl, { method: "PUT", headers: { "Content-Range": `bytes ${pos}-${ate - 1}/${file.size}` }, body: file.slice(pos, ate) }); erro = null; }
         catch (e) { r = null; erro = e; }
         if (r && (r.ok || (r.status < 500 && r.status !== 429))) break;
+        if (t === 2) break;   /* última tentativa: sem esperar */
         const ra = r && Number(r.headers.get("Retry-After"));   /* 429/5xx: espera (o Retry-After, se vier) e tenta o mesmo pedaço */
         await new Promise(res => setTimeout(res, ra > 0 ? Math.min(ra, 30) * 1000 : 1500 * (t + 1)));
       }
@@ -46357,7 +46360,7 @@ async function vidEnviar(files, alvo) {
   if (vidAtivo()) vidPintar();
   const falhas = linhas.filter(l => l.st.startsWith("✗"));
   if (!naJanela()) {
-    if ($("vidBack")) vidPintarJanela();   /* outra janela aberta durante o envio: reativa os chips e o rodapé */
+    if ($("vidBack")) vidTocar(VID.atual);   /* outra janela aberta durante o envio: recarrega o vídeo, os chips e o rodapé (v0.14.40.1) */
     toast(`Vídeos da CAP: ${ok} de ${plano.length} enviado(s).${falhas.length ? " Falhou: " + falhas.map(l => `${l.t} (${l.st.slice(2)})`).join("; ") : ""}`, falhas.length ? 9000 : 4000);
     return;
   }
@@ -46426,6 +46429,7 @@ CONFIG.version = "v0.14.38";   /* acesso aos sites do SharePoint pelo ERP: grupo
 CONFIG.version = "v0.14.38.1";   /* grupos de acesso no padrão "Financeiro-ERP", "RH-ERP"… (nome da área antes de ERP), como foram criados no Entra ID */
 CONFIG.version = "v0.14.39";   /* Usuários e permissões: matriz na ordem do menu, grupos (Agentes Financeiros, Relatórios, Detro RJ) com os módulos de dentro; "Movimento de Caixa e Movimento Diário" */
 CONFIG.version = "v0.14.40";   /* CAP: ícone de vídeo no título e em cada aba, vídeo em janela sobreposta (arquivos no site CAP, envio pelo administrador) */
+CONFIG.version = "v0.14.40.1";   /* CAP › vídeos: guarda recusa ".." no caminho; janela reaberta durante o envio mostra o andamento e recarrega no fim */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -3792,7 +3792,7 @@ const CONFIG = {
   capInicio: "2026-06", /* v0.12.12: mês em que a CAP passou a valer — conta mais antiga não vira "parcela sem conta" nas Obrigações */
   /* v0.12.14: administradores fixos (de origem) — só o resumo SHA-256 do e-mail (minúsculo) fica neste arquivo público; o endereço não.
      v0.12.35: outros administradores são concedidos por um administrador em Sistema › Usuários e permissões (ver acessoConferir). */
-  n1: ["34c45b39927a82a91d7827a84db92ff5f3fcd624a29cd4761d6849842f3f0032", "fdd176ba175159520b499051ffe7c4f5d6d783b2804256a3c829df634f9c814a", "b0be5d0012690c941a2825c28c4d16935978bebde65a1fbfff9c9cd24f2eda98", "501099be2ba23aef5b9ffab4f77df6188663ea06c8d4e9e0592819088a361735"],   /* v0.14.11.4: + 4º administrador (pedido de 20/10 15:15) */
+  n1: ["34c45b39927a82a91d7827a84db92ff5f3fcd624a29cd4761d6849842f3f0032", "fdd176ba175159520b499051ffe7c4f5d6d783b2804256a3c829df634f9c814a", "b0be5d0012690c941a2825c28c4d16935978bebde65a1fbfff9c9cd24f2eda98"],   /* v0.14.11.4: + 4º administrador (pedido de 20/10 15:15) · v0.14.39: 4º administrador (Rodrigo) retirado, pedido de 03/11 10:41 */
   docsRaiz: "Fornecedores" /* v0.12.14: pasta raiz dos documentos (NF, boleto, comprovante, contrato) na biblioteca do site Financeiro — uma subpasta por fornecedor */
 };
 
@@ -45810,7 +45810,7 @@ async function agCfgPintar() {
         <div class="sup">Só o proprietário do grupo ou um administrador do Microsoft 365 consegue pôr e tirar pessoas — outro administrador do ERP recebe "sem permissão". O ERP só aceita o grupo se um dos proprietários for administrador do ERP.</div></li>
       <li><b>Incluir cada grupo no seu site</b> (uma vez, no SharePoint): abra o site › <i>Configurações</i> (engrenagem) › <i>Permissões do site</i> › <i>Adicionar membros</i> › <b>Compartilhar somente o site</b> › digite o nome do grupo (ex.: Operacional-ERP) › permissão <b>Editar</b> › Adicionar. O ERP não consegue conferir este passo.</li>
       <li><b>Listas de consulta que todos leem</b> (uma vez; o grupo TI-ERP é de todos os usuários): em cada lista abaixo › Configurações da lista › <i>Permissões para esta lista</i> › (se pedir, <i>Parar de herdar permissões</i>) › <i>Conceder permissões</i> › TI-ERP › <b>Leitura</b>.
-        <div class="sup">Site Diretoria: <i>Diretoria — CNPJs</i>, <i>Diretoria — Centros de custo</i>, <i>Diretoria — Plano de contas</i>. Site RH: <i>RH — Funcionários</i>, <i>RH — Funcionários · Fotos</i>, <i>RH — CNPJs ativos</i>. Assim quem usa Frota, CAP ou Tarefas vê os nomes, CNPJs e centros de custo sem entrar no site inteiro da Diretoria ou do RH (currículos, avaliações etc. continuam só para quem tem os módulos dessas áreas).</div></li>
+        <div class="sup">Site Diretoria: <i>Diretoria — CNPJs</i>, <i>Diretoria — Centros de custo</i>, <i>Diretoria — Plano de contas</i>. Site RH: <i>RH — Funcionários</i> e <i>RH — Funcionários · Fotos</i>. Assim quem usa Frota, CAP ou Tarefas vê os nomes, CNPJs e centros de custo sem entrar no site inteiro da Diretoria ou do RH (currículos, avaliações etc. continuam só para quem tem os módulos dessas áreas).</div></li>
       <li><b>Sincronizar</b>: em Usuários e permissões, <b>Sincronizar todos</b> põe cada pessoa nos grupos dos módulos que ela já tem. Daí em diante, salvar o acesso já acerta os grupos.</li></ol>
     <div class="table-wrap"><table class="cap-table"><thead><tr><th>Grupo</th><th>Situação</th><th>Site</th></tr></thead><tbody>${linhas}</tbody></table></div>
     <p class="hint">Os grupos do Microsoft 365 das áreas (financeiro@, rh@…) não mudam: quem só tem acesso pelo ERP não recebe os e-mails da área. Listas com permissão própria (Dívidas, Dados pessoais do RH, Links seguros) continuam à parte. Depois de incluir alguém, o SharePoint leva alguns minutos para valer.</p>
@@ -45929,6 +45929,106 @@ function agVcBanner() {
   #vcBar .vc-ag.falta{color:#FFE2B8;font-weight:700}`;
   document.head.appendChild(st);
 })();
+/* =====================================================================
+   v0.14.39 · USUÁRIOS E PERMISSÕES — a matriz segue o menu (pedido de 03/11, 10:31–10:33)
+   - Em cada departamento, os módulos na mesma ordem dos cartões do menu (alfabética).
+   - Os cartões que agrupam módulos viram TÍTULO de grupo, com os módulos de dentro recuados logo abaixo:
+     Agentes Financeiros (Arrecadação, Controle de Roletas, Escala Agência, Estatística de Passageiros, Movimento de Caixa e
+     Movimento Diário), Relatórios (CAPEX / OPEX, DRE, Relatório Executivo) e Detro RJ (Diário Oficial). Obrigações fica
+     logo abaixo de Contas a Pagar (é uma aba dela).
+   - O título do grupo não tem Nenhum/Ver/Editar/Proprietário: o cartão aparece para quem tem algum módulo de dentro (canSee).
+     Tem o seu "definir todos…", que marca só os módulos do grupo.
+   - "Operações da Agência" (módulo ag_conc) passa a se chamar "Movimento de Caixa e Movimento Diário" — é ele que libera as
+     duas páginas.
+   Nenhuma permissão muda: as chaves gravadas em "ERP — Acessos" são as mesmas (a do título do grupo deixa de ser gravada ao
+   salvar, porque não tem efeito).
+   ===================================================================== */
+const PERM_SOB = { obr: "cap" };   /* módulo que é aba de outro: fica recuado abaixo dele */
+const PERM_NOME = { ag_conc: "Movimento de Caixa e Movimento Diário" };
+{ const m = MODULES.find(x => x.id === "ag_conc"); if (m) m.name = PERM_NOME.ag_conc; }
+function permPaiDe(id, ids) {
+  const m = MODULES.find(x => x.id === id);
+  const p = (m && m.hubDe) || PERM_SOB[id] || null;
+  return p && (!ids || ids.has(p)) ? p : null;
+}
+{ const pa0 = permAreas; permAreas = function () {
+    return pa0.apply(this, arguments).map(({ area, mods }) => {
+      const ids = new Set(mods.map(m => m[0]));
+      const nome = m => PERM_NOME[m[0]] || m[1];
+      const cmp = (a, b) => nome(a).localeCompare(nome(b), "pt-BR", { sensitivity: "base" });
+      const out = [];
+      mods.filter(m => !permPaiDe(m[0], ids)).sort(cmp).forEach(m => {
+        out.push([m[0], nome(m), m[2]]);
+        mods.filter(x => permPaiDe(x[0], ids) === m[0]).sort(cmp).forEach(x => out.push([x[0], nome(x), x[2]]));
+      });
+      return { area, mods: out };
+    });
+  }; }
+/* contagem do resumo do departamento: o título do grupo não conta (não tem permissão própria) */
+permMarcados = function (area) {
+  const vals = [...document.querySelectorAll(`#pMatriz tr.perm-mod:not(.perm-hub)[data-area="${CSS.escape(area)}"]`)].map(tr => { const i = tr.querySelector("input[type=radio]:checked"); return i ? i.value : "nenhum"; });
+  const on = vals.filter(v => v !== "nenhum"); return { n: on.length, total: vals.length, vals: on };
+};
+function permAgrupar() {
+  const linhas = [...document.querySelectorAll("#pMatriz tr.perm-mod")], ids = new Set(linhas.map(tr => tr.dataset.mod));
+  linhas.forEach(tr => {
+    const mid = tr.dataset.mod, m = MODULES.find(x => x.id === mid) || {};
+    if (m.hub && linhas.some(x => permPaiDe(x.dataset.mod, ids) === mid)) {
+      tr.classList.add("perm-hub");
+      tr.querySelectorAll("td.perm-op").forEach(td => td.remove());
+      tr.insertAdjacentHTML("beforeend", `<td colspan="${PERM_OPC.length}" class="perm-hub-nota"><span class="sup">cartão do menu: aparece para quem tem algum módulo abaixo</span><select class="perm-area-sel perm-hub-sel" data-hub="${esc(mid)}" title="Definir todos os módulos deste grupo"><option value="">definir todos…</option>${PERM_OPC.map(p => `<option value="${p}">${PERM_ROT[p]}</option>`).join("")}</select></td>`);
+    } else if (permPaiDe(mid, ids)) { tr.classList.add("perm-filho"); document.querySelectorAll(`#pMatriz tr.perm-pg[data-pai="${CSS.escape(mid)}"]`).forEach(x => x.classList.add("perm-pg-filho")); }
+  });
+  const soVer = !$("mSave") || $("mSave").style.display === "none" || $("mSave").disabled;   /* revisão: o próprio registro abre só para ler */
+  document.querySelectorAll("#pMatriz .perm-hub-sel").forEach(sel => {
+    if (soVer) { sel.disabled = true; return; }
+    sel.addEventListener("click", ev => ev.stopPropagation());
+    sel.addEventListener("change", () => {
+      const p = sel.value, hub = sel.dataset.hub; sel.value = ""; if (!p) return;
+      let area = "";
+      document.querySelectorAll("#pMatriz tr.perm-mod.perm-filho").forEach(tr => {
+        if (permPaiDe(tr.dataset.mod, ids) !== hub) return;
+        const i = tr.querySelector(`input[type=radio][value="${p}"]`); if (i) i.checked = true;
+        permPgSeguir(tr.dataset.mod); area = tr.dataset.area;
+      });
+      if (area) permResumoArea(area);
+    });
+  });
+  document.querySelectorAll("#pMatriz tr.perm-area").forEach(tr => permResumoArea(tr.dataset.area));
+}
+{ const pf0 = window.permForm; window.permForm = function () {
+    const out = pf0.apply(this, arguments);
+    try { if ($("pMatriz")) permAgrupar(); } catch (e) { console.warn("perm agrupar", e); }
+    return out;
+  }; }
+/* caminho no topo de Movimento de Caixa e Movimento Diário: o card é Agentes Financeiros (o endereço antigo só redirecionava) */
+const PERM_AG_CRUMB = s => String(s).replace('<a href="#/financeiro/agencia-conceicao">Operações da Agência</a>', '<a href="#/financeiro/agentes">Agentes Financeiros</a>');
+{ const f0 = pageAgMov; pageAgMov = function () { return PERM_AG_CRUMB(f0.apply(this, arguments)); }; }
+{ const f0 = pageAgVen; pageAgVen = function () { return PERM_AG_CRUMB(f0.apply(this, arguments)); }; }
+/* resumo da tabela de usuários: o título do grupo não conta (revisão: "(todos)" voltava a aparecer só depois de salvar) */
+permResumo = function (a) {
+  const out = [];
+  permAreas().forEach(({ area, mods: m0 }) => {
+    const ids = new Set(m0.map(m => m[0]));
+    const mods = m0.filter(([id]) => !((MODULES.find(x => x.id === id) || {}).hub && m0.some(([c]) => permPaiDe(c, ids) === id)));
+    const on = mods.filter(([id]) => permEfetiva(a, id) !== "nenhum"); if (!on.length) return;
+    const vals = new Set(on.map(([id]) => permEfetiva(a, id))), todos = on.length === mods.length && vals.size === 1;
+    out.push(todos ? `${area}: ${PERM_ROT[permEfetiva(a, on[0][0])]} (todos)` : `${area}: ${on.map(([id, n]) => `${n} ${PERM_ROT[permEfetiva(a, id)]}`).join(", ")}`);
+  });
+  const pags = Object.keys(a.perm || {}).filter(k => k.includes(".") && PERM_OPC.includes(a.perm[k]));
+  if (pags.length) out.push(`${pags.length} página(s) com permissão própria`);
+  return out.join(" · ");
+};
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.perm-table tr.perm-hub td{font-weight:700;color:var(--navy);background:#F6F8FC}
+  .perm-table tr.perm-hub td.perm-hub-nota{text-align:right;font-weight:500}
+  .perm-table tr.perm-hub .perm-hub-sel{margin-left:12px}
+  .perm-table tr.perm-filho > td:first-child{padding-left:40px;position:relative}
+  .perm-table tr.perm-filho > td:first-child::before{content:"";position:absolute;left:22px;top:0;bottom:50%;width:10px;border-left:1.5px solid var(--line);border-bottom:1.5px solid var(--line);border-bottom-left-radius:4px}
+  .perm-table tr.perm-pg-filho > td:first-child{padding-left:56px}`;
+  document.head.appendChild(st);
+})();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -45961,6 +46061,7 @@ CONFIG.version = "v0.14.37.2";   /* Site Oficial: botão próprio para a foto da
 CONFIG.version = "v0.14.37.3";   /* "Sincronizar no site" publica horários e tarifas no site de verdade (Make grava no GitHub) */
 CONFIG.version = "v0.14.38";   /* acesso aos sites do SharePoint pelo ERP: grupos de segurança por site, sincronia ao salvar o acesso, conferência no Visualizar como */
 CONFIG.version = "v0.14.38.1";   /* grupos de acesso no padrão "Financeiro-ERP", "RH-ERP"… (nome da área antes de ERP), como foram criados no Entra ID */
+CONFIG.version = "v0.14.39";   /* Usuários e permissões: matriz na ordem do menu, grupos (Agentes Financeiros, Relatórios, Detro RJ) com os módulos de dentro; "Movimento de Caixa e Movimento Diário" */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

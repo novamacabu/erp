@@ -45325,13 +45325,13 @@ window.siteSync = async (tipo, btn) => {
    O ERP lê e grava no SharePoint com o login da própria pessoa: sem acesso ao site, o módulo liberado abre vazio. Até aqui o
    administrador precisava, além de liberar o módulo em Usuários e permissões, incluir a pessoa no grupo do site (e o grupo do
    Microsoft 365 traz também os e-mails da área). Agora:
-   - um GRUPO DE SEGURANÇA por site, sem caixa de e-mail ("ERP-Operacional", "ERP-CAP"…), criado à mão no Entra ID e achado pelo ERP (Configuração ›
+   - um GRUPO DE SEGURANÇA por site, sem caixa de e-mail ("Operacional-ERP", "CAP-ERP"…), criado à mão no Entra ID e achado pelo ERP (Configuração ›
      Acesso aos sites). Cada grupo entra UMA VEZ no site (Permissões do site › Compartilhar somente o site › Editar);
    - ao salvar, inativar ou remover um acesso em Usuários e permissões, o ERP põe e tira a pessoa desses grupos, pelo mapa
-     módulo → sites (AG_MOD_SITES, medido na bancada: os sites que cada módulo lê ou grava). O grupo "ERP-TI" é de todos;
+     módulo → sites (AG_MOD_SITES, medido na bancada: os sites que cada módulo lê ou grava). O grupo "TI-ERP" é de todos;
    - "Sincronizar todos" mostra a prévia (entra / sai) e aplica — inclusive para quem já estava na lista;
    - "Visualizar como" e a lista de Usuários e permissões conferem se a pessoa está num grupo que dá acesso a cada site
-     (ERP-… ou o grupo do Microsoft 365 do próprio site) e avisam o que vai abrir vazio no login dela.
+     (…-ERP ou o grupo do Microsoft 365 do próprio site) e avisam o que vai abrir vazio no login dela.
    Permissões delegadas pedidas só aqui, só para administradores (como a busca de pessoas da v0.12.36):
    GroupMember.ReadWrite.All e User.ReadBasic.All — concedidas pelo administrador do Microsoft 365 em nome da organização. Os 10
    grupos são criados à mão no Entra ID (Grupos › Novo grupo › Segurança) e o ERP os PROCURA pelo nome; só se a permissão ampla
@@ -45353,12 +45353,13 @@ const AG_SITES = [   /* chave do site (CONFIG.sites), nome no grupo, para quem *
 ];   /* Contabilidade e Jurídico ficam de fora: nenhum módulo grava ou lê nesses sites (02/11) */
 const AG_KEYS = AG_SITES.map(s => s[0]);
 const AG_NOME = Object.fromEntries(AG_SITES.map(s => [s[0], s[1]]));
-/* nome do grupo no padrão do Rafael (02/11, 21:43): "ERP-Financeiro", "ERP-Recursos Humanos"… — aceita também "ERP · X", "ERP - X" e os apelidos */
-const AG_NOME_GRUPO = { ti: "TI", diretoria: "Diretoria", financeiro: "Financeiro", cap: "CAP", agentes: "Agentes", terceiros: "Terceiros", operacional: "Operacional", rh: "Recursos Humanos", almoxarifado: "Almoxarifado", sac: "SAC" };
+/* nome do grupo no padrão em que o Rafael criou (02/11, 22:15): "Financeiro-ERP", "RH-ERP", "TI-ERP"… — aceita também "ERP-Financeiro",
+   "ERP · X", "X - ERP" e os apelidos (Recursos Humanos, Contas a Pagar, Agentes Financeiros) */
+const AG_NOME_GRUPO = { ti: "TI", diretoria: "Diretoria", financeiro: "Financeiro", cap: "CAP", agentes: "Agentes", terceiros: "Terceiros", operacional: "Operacional", rh: "RH", almoxarifado: "Almoxarifado", sac: "SAC" };
 const AG_APELIDOS = { ti: ["ti", "tecnologia da informacao"], diretoria: ["diretoria"], financeiro: ["financeiro"], cap: ["cap", "contas a pagar"], agentes: ["agentes", "agentes financeiros"], terceiros: ["terceiros"], operacional: ["operacional"], rh: ["rh", "recursos humanos"], almoxarifado: ["almoxarifado"], sac: ["sac"] };
-const AG_GRUPO_NOME = k => `ERP-${AG_NOME_GRUPO[k] || AG_NOME[k] || k}`;
+const AG_GRUPO_NOME = k => `${AG_NOME_GRUPO[k] || AG_NOME[k] || k}-ERP`;
 function agChaveDoNome(nome) {
-  const m = normName(nome).match(/^erp\s*[-·:_–—.]?\s*(.+)$/); if (!m) return null;
+  const n = normName(nome), m = n.match(/^erp\s*[-·:_–—.]?\s*(.+)$/) || n.match(/^(.+?)\s*[-·:_–—.]?\s*erp$/); if (!m) return null;
   const resto = m[1].trim();
   return AG_KEYS.find(k => (AG_APELIDOS[k] || []).includes(resto)) || null;
 }
@@ -45366,7 +45367,7 @@ const AG_APELIDO = k => `erp-acesso-${k}`;
 /* módulo → sites que ele lê ou grava, além do TI (que é de todos). Medido na bancada em 02/11 (t_mapa2.py: Membro só com o módulo,
    abrindo a página, as abas e os cartões). Ficam de fora as listas de consulta que vários módulos leem (ERP — Acessos e Parâmetros
    no TI; CNPJs, Centros de custo e Plano de contas na Diretoria; RH — Funcionários, Fotos e CNPJs ativos no RH): elas recebem leitura
-   própria para o grupo ERP-TI (de todos), para que quem usa Frota não precise do site inteiro do RH. Infrações e SAC são apps
+   própria para o grupo TI-ERP (de todos), para que quem usa Frota não precise do site inteiro do RH. Infrações e SAC são apps
    embutidos (sites Operacional e SAC) e o Site Oficial lê horários e tarifas ao sincronizar — somados à mão. */
 const AG_MOD_SITES = {
   adq: ["diretoria", "rh"],
@@ -45499,7 +45500,7 @@ async function agGruposLer(force) {
   return AG.grupos;
 }
 /* revisão (bloqueio 1): o parâmetro fica no site TI, que todos editam — antes de usar um id, o ERP confere no Microsoft 365 que é
-   mesmo o grupo de segurança "ERP-<site>", sem e-mail, não é grupo do Microsoft 365 nem dá função de administrador. Um id trocado
+   mesmo o grupo de segurança "<site>-ERP", sem e-mail, não é grupo do Microsoft 365 nem dá função de administrador. Um id trocado
    por fora é ignorado (nada é gravado nele) e aparece na Configuração. */
 async function agGrupoConferir(k, id) {
   if (AG.valido[id] && AG.valido[id].k === k) return AG.valido[id].r;
@@ -45510,7 +45511,7 @@ async function agGrupoConferir(k, id) {
       : agChaveDoNome(g.displayName) !== k ? `o id aponta para "${g.displayName}", não para "${AG_GRUPO_NOME(k)}"`
       : !g.securityEnabled || g.mailEnabled || (Array.isArray(g.groupTypes) && g.groupTypes.length) ? "não é um grupo de segurança sem e-mail"
       : g.isAssignableToRole ? "grupo que dá função de administrador" : true;
-    if (r === true) {   /* 2ª revisão: um "ERP-…" criado por qualquer pessoa não vale — um dos donos precisa ser administrador do ERP */
+    if (r === true) {   /* 2ª revisão: um "…-ERP" criado por qualquer pessoa não vale — um dos donos precisa ser administrador do ERP */
       const ow = ((await agGraph(`/groups/${encodeURIComponent(id)}/owners?$select=id,mail,userPrincipalName`)) || {}).value || [];
       let ok = false;
       for (const o of ow) { const em = [o.mail, o.userPrincipalName].map(normEmail).filter(Boolean); if (await ehN1(em) || em.some(e => { const rg = agRegistroDe(e); return rg && rg[1].nivel === "n1" && rg[1].valido; })) { ok = true; break; } }
@@ -45715,7 +45716,7 @@ window.agSincTodos = async () => {
       <td>${pl.entra.length ? esc(agListaNomes(pl.entra)) : "—"}</td><td>${pl.sai.length ? esc(agListaNomes(pl.sai)) : "—"}</td>
       <td class="sup">${pl.semConta ? "não encontrado no Microsoft 365" : ""}</td></tr>`).join("");
     modal(`<div class="modal-head"><h2>Sincronizar acesso aos sites</h2><button class="x" onclick="closeModal()">×</button></div>
-      <div class="modal-body"><p class="vc-help">Cada pessoa fica só nos grupos dos sites dos módulos que tem em Usuários e permissões (o grupo ERP-TI é de todos). Quem não está mais na lista, ou está Inativo / Sem acesso, sai dos grupos ERP. Os grupos do Microsoft 365 das áreas (e-mails) não mudam. Administradores fixos no sistema não são tocados.</p>
+      <div class="modal-body"><p class="vc-help">Cada pessoa fica só nos grupos dos sites dos módulos que tem em Usuários e permissões (o grupo TI-ERP é de todos). Quem não está mais na lista, ou está Inativo / Sem acesso, sai dos grupos ERP. Os grupos do Microsoft 365 das áreas (e-mails) não mudam. Administradores fixos no sistema não são tocados.</p>
       ${planos.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Pessoa</th><th>Entra em</th><th>Sai de</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>` : `<div class="cap-empty"><h3>Tudo certo</h3><p>Todos já estão nos grupos certos.</p></div>`}
       <div class="setup-log checks" id="agSincLog" style="display:none;max-height:240px;overflow:auto;margin-top:12px"></div></div>
       <div class="modal-foot"><button class="btn" onclick="closeModal()">${planos.length ? "Cancelar" : "Fechar"}</button>${planos.some(p => p.entra.length || p.sai.length) ? `<button class="btn primary" id="agSincGo" onclick="agSincAplicar()">Aplicar</button>` : ""}</div>`);
@@ -45755,7 +45756,7 @@ window.agCriarGrupos = async () => {
     /* revisão (médio 5): donos = quem cria + os administradores confirmados da lista (só dono ou administrador do Microsoft 365 mexe nos membros) */
     const donos = new Set([String(eu.id)]);
     if (podeCriar) for (const r of (ACESSO.itens || [])) { const a = acessoDe(r); if (a.nivel === "n1" && a.valido) { try { const u = await agUid(r.Title); if (u) donos.add(u); } catch (x) { /* segue só com quem cria */ } } }
-    const todosErp = await agGraphAll(`/groups?$filter=${encodeURIComponent("startswith(displayName,'ERP')")}&$select=id,displayName,securityEnabled,mailEnabled&$top=999`);
+    const todosErp = (await agGraphAll(`/groups?$select=id,displayName,securityEnabled,mailEnabled&$top=999`)).filter(g0 => agChaveDoNome(g0.displayName));   /* "X-ERP" ou "ERP-X": lê os grupos e casa pelo nome */
     for (const [k] of AG_SITES) {
       if (AG.grupos[k]) continue;
       try {
@@ -45803,12 +45804,12 @@ async function agCfgPintar() {
     <td><a href="https://${esc(CONFIG.spHost)}${esc(CONFIG.sites[k])}" target="_blank" rel="noopener">${esc(CONFIG.sites[k])} ↗</a></td></tr>`).join("");
   el.innerHTML = `<ol class="ag-passos">
       <li><b>Autorizar o ERP</b> (uma vez): ${autHtml}</li>
-      <li><b>Criar os grupos</b> (uma vez, no Entra ID › Grupos › Novo grupo): tipo <b>Segurança</b>, nome como na tabela abaixo (ex.: <i>ERP-Operacional</i>; também vale <i>ERP-RH</i>, <i>ERP-Contas a Pagar</i>, <i>ERP-Agentes Financeiros</i>), <b>você como proprietário</b> (e outros administradores do ERP, se quiser que eles também sincronizem), sem membros. Depois clique em Procurar: ${n}/${AG_KEYS.length} encontrado(s). ${n < AG_KEYS.length ? `<button type="button" class="btn sm primary" id="agCriarBtn" onclick="agCriarGrupos()" ${aut !== "ok" ? "disabled title=\"Autorize primeiro\"" : ""}>${autCriar ? "Procurar e criar os que faltam" : "Procurar os grupos"}</button>` : ""}
+      <li><b>Criar os grupos</b> (uma vez, no Entra ID › Grupos › Novo grupo): tipo <b>Segurança</b>, nome como na tabela abaixo (ex.: <i>Operacional-ERP</i>; também vale <i>ERP-Operacional</i>, <i>Recursos Humanos-ERP</i>, <i>Contas a Pagar-ERP</i>), <b>você como proprietário</b> (e outros administradores do ERP, se quiser que eles também sincronizem), sem membros. Depois clique em Procurar: ${n}/${AG_KEYS.length} encontrado(s). ${n < AG_KEYS.length ? `<button type="button" class="btn sm primary" id="agCriarBtn" onclick="agCriarGrupos()" ${aut !== "ok" ? "disabled title=\"Autorize primeiro\"" : ""}>${autCriar ? "Procurar e criar os que faltam" : "Procurar os grupos"}</button>` : ""}
         ${aut === "ok" && !autCriar && n < AG_KEYS.length ? `<div class="sup">Opcional: com a permissão delegada Group.ReadWrite.All (mais ampla: o ERP poderia alterar qualquer grupo) o próprio ERP cria os que faltam.</div>` : ""}${gruposErro ? `<div class="sup" style="color:var(--err)">${esc(gruposErro)}</div>` : ""}
         ${Object.keys(AG.invalidos || {}).length ? `<div class="perm-aviso" style="margin-top:8px"><span><b>Ignorado por segurança:</b> ${esc(Object.entries(AG.invalidos).map(([k, m]) => `${AG_GRUPO_NOME(k)} — ${m}`).join(" · "))}. O parâmetro "acesso_grupos" foi alterado fora do ERP; clique em Procurar para refazer.</span></div>` : ""}
         <div class="sup">Só o proprietário do grupo ou um administrador do Microsoft 365 consegue pôr e tirar pessoas — outro administrador do ERP recebe "sem permissão". O ERP só aceita o grupo se um dos proprietários for administrador do ERP.</div></li>
-      <li><b>Incluir cada grupo no seu site</b> (uma vez, no SharePoint): abra o site › <i>Configurações</i> (engrenagem) › <i>Permissões do site</i> › <i>Adicionar membros</i> › <b>Compartilhar somente o site</b> › digite o nome do grupo (ex.: ERP-Operacional) › permissão <b>Editar</b> › Adicionar. O ERP não consegue conferir este passo.</li>
-      <li><b>Listas de consulta que todos leem</b> (uma vez; o grupo ERP-TI é de todos os usuários): em cada lista abaixo › Configurações da lista › <i>Permissões para esta lista</i> › (se pedir, <i>Parar de herdar permissões</i>) › <i>Conceder permissões</i> › ERP-TI › <b>Leitura</b>.
+      <li><b>Incluir cada grupo no seu site</b> (uma vez, no SharePoint): abra o site › <i>Configurações</i> (engrenagem) › <i>Permissões do site</i> › <i>Adicionar membros</i> › <b>Compartilhar somente o site</b> › digite o nome do grupo (ex.: Operacional-ERP) › permissão <b>Editar</b> › Adicionar. O ERP não consegue conferir este passo.</li>
+      <li><b>Listas de consulta que todos leem</b> (uma vez; o grupo TI-ERP é de todos os usuários): em cada lista abaixo › Configurações da lista › <i>Permissões para esta lista</i> › (se pedir, <i>Parar de herdar permissões</i>) › <i>Conceder permissões</i> › TI-ERP › <b>Leitura</b>.
         <div class="sup">Site Diretoria: <i>Diretoria — CNPJs</i>, <i>Diretoria — Centros de custo</i>, <i>Diretoria — Plano de contas</i>. Site RH: <i>RH — Funcionários</i>, <i>RH — Funcionários · Fotos</i>, <i>RH — CNPJs ativos</i>. Assim quem usa Frota, CAP ou Tarefas vê os nomes, CNPJs e centros de custo sem entrar no site inteiro da Diretoria ou do RH (currículos, avaliações etc. continuam só para quem tem os módulos dessas áreas).</div></li>
       <li><b>Sincronizar</b>: em Usuários e permissões, <b>Sincronizar todos</b> põe cada pessoa nos grupos dos módulos que ela já tem. Daí em diante, salvar o acesso já acerta os grupos.</li></ol>
     <div class="table-wrap"><table class="cap-table"><thead><tr><th>Grupo</th><th>Situação</th><th>Site</th></tr></thead><tbody>${linhas}</tbody></table></div>
@@ -45854,7 +45855,7 @@ async function agPermPintarStatus() {
     document.querySelectorAll("#permBody td.ag-td").forEach(td => { td.textContent = "—"; });
     return;
   }
-  box.innerHTML = `<span><b>Acesso aos sites do SharePoint pelo ERP:</b> ao salvar um acesso, o ERP acerta os grupos ERP-… da pessoa. Vale em alguns minutos.</span><button type="button" class="btn sm" onclick="agSincTodos()">Sincronizar todos…</button><button type="button" class="btn sm" onclick="agConferirDeNovo()">Conferir de novo</button>`;
+  box.innerHTML = `<span><b>Acesso aos sites do SharePoint pelo ERP:</b> ao salvar um acesso, o ERP acerta os grupos …-ERP da pessoa. Vale em alguns minutos.</span><button type="button" class="btn sm" onclick="agSincTodos()">Sincronizar todos…</button><button type="button" class="btn sm" onclick="agConferirDeNovo()">Conferir de novo</button>`;
   const tds = [...document.querySelectorAll("#permBody td.ag-td")];
   for (const td of tds) {
     const r = (ACESSO.itens || []).find(x => String(x._id) === td.dataset.ag); if (!r) continue;
@@ -45870,7 +45871,7 @@ function agStatusHtml(c) {
   if (!c.need.length) return "—";
   if (c.semConta) return `<span class="ag-falta">conta não encontrada no Microsoft 365</span>`;
   if (!c.falta.length) return `<span class="ag-ok">✓ ${esc(agListaNomes(c.need))}</span>`;
-  return `<span class="ag-falta" title="O ERP não achou grupo ERP-… nem o grupo do site com a pessoa; pode haver acesso dado direto no site">falta ${esc(agListaNomes(c.falta))}</span>${c.ok.length ? `<div>✓ ${esc(agListaNomes(c.ok))}</div>` : ""}`;
+  return `<span class="ag-falta" title="O ERP não achou grupo …-ERP nem o grupo do site com a pessoa; pode haver acesso dado direto no site">falta ${esc(agListaNomes(c.falta))}</span>${c.ok.length ? `<div>✓ ${esc(agListaNomes(c.ok))}</div>` : ""}`;
 }
 
 /* ---- Visualizar como: o que vai abrir vazio no login da pessoa ---- */
@@ -45959,6 +45960,7 @@ CONFIG.version = "v0.14.37.1";   /* Site Oficial: clicar na etiqueta Online/Offl
 CONFIG.version = "v0.14.37.2";   /* Site Oficial: botão próprio para a foto da frota do topo */
 CONFIG.version = "v0.14.37.3";   /* "Sincronizar no site" publica horários e tarifas no site de verdade (Make grava no GitHub) */
 CONFIG.version = "v0.14.38";   /* acesso aos sites do SharePoint pelo ERP: grupos de segurança por site, sincronia ao salvar o acesso, conferência no Visualizar como */
+CONFIG.version = "v0.14.38.1";   /* grupos de acesso no padrão "Financeiro-ERP", "RH-ERP"… (nome da área antes de ERP), como foram criados no Entra ID */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

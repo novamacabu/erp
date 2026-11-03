@@ -45320,6 +45320,614 @@ window.siteSync = async (tipo, btn) => {
     if (u && u.publicado === false) h = h.replace(/<\/div>\s*$/, `<p class="hint">A última sincronização ficou guardada no Make, mas não chegou ao site. Clique em Sincronizar no site de novo.</p></div>`);
     return h; }; }
 
+/* =====================================================================
+   v0.14.38 · ACESSO AOS SITES DO SHAREPOINT PELO ERP — grupos de segurança (pedido de 02/11, 19:44)
+   O ERP lê e grava no SharePoint com o login da própria pessoa: sem acesso ao site, o módulo liberado abre vazio. Até aqui o
+   administrador precisava, além de liberar o módulo em Usuários e permissões, incluir a pessoa no grupo do site (e o grupo do
+   Microsoft 365 traz também os e-mails da área). Agora:
+   - um GRUPO DE SEGURANÇA por site, sem caixa de e-mail ("ERP-Operacional", "ERP-CAP"…), criado à mão no Entra ID e achado pelo ERP (Configuração ›
+     Acesso aos sites). Cada grupo entra UMA VEZ no site (Permissões do site › Compartilhar somente o site › Editar);
+   - ao salvar, inativar ou remover um acesso em Usuários e permissões, o ERP põe e tira a pessoa desses grupos, pelo mapa
+     módulo → sites (AG_MOD_SITES, medido na bancada: os sites que cada módulo lê ou grava). O grupo "ERP-TI" é de todos;
+   - "Sincronizar todos" mostra a prévia (entra / sai) e aplica — inclusive para quem já estava na lista;
+   - "Visualizar como" e a lista de Usuários e permissões conferem se a pessoa está num grupo que dá acesso a cada site
+     (ERP-… ou o grupo do Microsoft 365 do próprio site) e avisam o que vai abrir vazio no login dela.
+   Permissões delegadas pedidas só aqui, só para administradores (como a busca de pessoas da v0.12.36):
+   GroupMember.ReadWrite.All e User.ReadBasic.All — concedidas pelo administrador do Microsoft 365 em nome da organização. Os 10
+   grupos são criados à mão no Entra ID (Grupos › Novo grupo › Segurança) e o ERP os PROCURA pelo nome; só se a permissão ampla
+   Group.ReadWrite.All também for concedida o próprio ERP cria os que faltam (Group.Create não existe como permissão delegada). Os ids dos grupos ficam em "ERP — Parâmetros" (acesso_grupos), não no código.
+   Fora do alcance: as listas com permissão própria (Dívidas, Dados pessoais do RH, Links seguros) continuam à parte; e o
+   SharePoint leva alguns minutos para valer depois da inclusão no grupo.
+   ===================================================================== */
+const AG_SITES = [   /* chave do site (CONFIG.sites), nome no grupo, para quem */
+  ["ti", "TI", "todos os usuários do ERP (lista de acessos, parâmetros e Chamados)"],
+  ["diretoria", "Diretoria", "módulos da Diretoria"],
+  ["financeiro", "Financeiro", "Fluxo de Caixa, Bilhetagem, Diário Oficial, Tarifas…"],
+  ["cap", "CAP", "Contas a Pagar e Obrigações"],
+  ["agentes", "Agentes", "Agentes Financeiros"],
+  ["terceiros", "Terceiros", "Banco de Dados de Terceiros"],
+  ["operacional", "Operacional", "módulos do Operacional"],
+  ["rh", "RH", "módulos do RH"],
+  ["almoxarifado", "Almoxarifado", "Almoxarifado"],
+  ["sac", "SAC", "SAC"]
+];   /* Contabilidade e Jurídico ficam de fora: nenhum módulo grava ou lê nesses sites (02/11) */
+const AG_KEYS = AG_SITES.map(s => s[0]);
+const AG_NOME = Object.fromEntries(AG_SITES.map(s => [s[0], s[1]]));
+/* nome do grupo no padrão do Rafael (02/11, 21:43): "ERP-Financeiro", "ERP-Recursos Humanos"… — aceita também "ERP · X", "ERP - X" e os apelidos */
+const AG_NOME_GRUPO = { ti: "TI", diretoria: "Diretoria", financeiro: "Financeiro", cap: "CAP", agentes: "Agentes", terceiros: "Terceiros", operacional: "Operacional", rh: "Recursos Humanos", almoxarifado: "Almoxarifado", sac: "SAC" };
+const AG_APELIDOS = { ti: ["ti", "tecnologia da informacao"], diretoria: ["diretoria"], financeiro: ["financeiro"], cap: ["cap", "contas a pagar"], agentes: ["agentes", "agentes financeiros"], terceiros: ["terceiros"], operacional: ["operacional"], rh: ["rh", "recursos humanos"], almoxarifado: ["almoxarifado"], sac: ["sac"] };
+const AG_GRUPO_NOME = k => `ERP-${AG_NOME_GRUPO[k] || AG_NOME[k] || k}`;
+function agChaveDoNome(nome) {
+  const m = normName(nome).match(/^erp\s*[-·:_–—.]?\s*(.+)$/); if (!m) return null;
+  const resto = m[1].trim();
+  return AG_KEYS.find(k => (AG_APELIDOS[k] || []).includes(resto)) || null;
+}
+const AG_APELIDO = k => `erp-acesso-${k}`;
+/* módulo → sites que ele lê ou grava, além do TI (que é de todos). Medido na bancada em 02/11 (t_mapa2.py: Membro só com o módulo,
+   abrindo a página, as abas e os cartões). Ficam de fora as listas de consulta que vários módulos leem (ERP — Acessos e Parâmetros
+   no TI; CNPJs, Centros de custo e Plano de contas na Diretoria; RH — Funcionários, Fotos e CNPJs ativos no RH): elas recebem leitura
+   própria para o grupo ERP-TI (de todos), para que quem usa Frota não precise do site inteiro do RH. Infrações e SAC são apps
+   embutidos (sites Operacional e SAC) e o Site Oficial lê horários e tarifas ao sincronizar — somados à mão. */
+const AG_MOD_SITES = {
+  adq: ["diretoria", "rh"],
+  ag_conc: ["agentes", "financeiro"],
+  agentes: [],
+  almox: ["almoxarifado", "cap", "terceiros"],
+  bilhet: ["financeiro", "operacional"],
+  caixa: ["financeiro"],
+  cap: ["cap", "financeiro", "operacional", "terceiros"],
+  capex: ["cap", "diretoria", "financeiro", "operacional", "terceiros"],
+  contab: ["cap", "terceiros"],
+  di_detro: [],
+  di_equip: ["diretoria"],
+  di_mestres: ["diretoria"],
+  di_rel: [],
+  di_rj: ["diretoria"],
+  diario: ["financeiro"],
+  diesel: ["operacional"],
+  dir_tarefas: ["diretoria"],
+  diretoria: ["cap", "diretoria", "terceiros"],
+  dre: ["cap", "diretoria", "financeiro", "operacional", "terceiros"],
+  equip: ["operacional"],
+  escala: ["agentes"],
+  exec: ["diretoria", "operacional", "sac"],
+  fin_tarefas: ["cap"],
+  forn: ["terceiros"],
+  frota: ["operacional"],
+  garagem: ["operacional"],
+  globalbus: [],
+  horarios: ["operacional"],
+  imob: ["diretoria", "operacional"],
+  infracoes: ["operacional"],
+  itin: ["operacional"],
+  manut: ["cap", "terceiros"],
+  mapa_op: [],
+  obr: ["cap", "terceiros"],
+  ocorr: ["operacional"],
+  painel_hor: ["operacional"],
+  pax: ["financeiro"],
+  pesquisa: ["diretoria"],
+  recebimento: ["agentes"],
+  regul: ["operacional"],
+  rh_aval: ["rh"],
+  rh_clt: ["rh"],
+  rh_cons: ["rh"],
+  rh_db: ["rh"],
+  rh_rel: ["rh"],
+  riocard: ["operacional"],
+  roletas: ["agentes"],
+  sac: ["sac"],
+  site: ["financeiro", "operacional"],
+  sst: [],
+  talentos: ["rh"],
+  tarefas: ["operacional"],
+  tarifas: ["financeiro"],
+  ti_chamados: []
+};
+const AG_ESCOPO = ["GroupMember.ReadWrite.All", "User.ReadBasic.All"];
+const AG_ESCOPO_CRIAR = ["Group.ReadWrite.All"];   /* opcional: só para o ERP criar os grupos (Group.Create é só de aplicativo) */
+const AG = { ger: 0, invalidos: {}, valido: {}, falta: null, grupos: null, lidoEm: 0, siteGrp: {}, membros: {}, uid: {}, chk: {}, rodando: false, log: [] };
+
+function agSitesDe(a) {   /* sites que o acesso efetivo (acessoDe) pede */
+  if (!a || !a.valido || a.nivel === "sem") return [];
+  if (a.nivel === "n1") return AG_KEYS.slice();
+  const s = new Set(["ti"]);
+  Object.entries(a.perm || {}).forEach(([k, v]) => { if (!v || v === "nenhum") return; (AG_MOD_SITES[String(k).split(".")[0]] || []).forEach(x => s.add(x)); });
+  return AG_KEYS.filter(k => s.has(k));
+}
+function agModsDoSite(a, k) {   /* módulos liberados no acesso que dependem do site k (para os avisos) */
+  if (!a) return [];
+  return [...new Set(Object.entries(a.perm || {}).filter(([, v]) => v && v !== "nenhum").map(([m]) => String(m).split(".")[0]))]
+    .filter(m => (AG_MOD_SITES[m] || []).includes(k)).map(m => (MODULES.find(x => x.id === m) || {}).name || m);
+}
+/* registro que vale para o e-mail (mesma regra do login: o válido de maior nível) */
+function agRegistroDe(email) {
+  const ordem = { n1: 3, membro: 2, visitante: 1, sem: 0 }, e = normEmail(email);
+  return (ACESSO.itens || []).filter(r => normEmail(r.Title) === e).map(r => [r, acessoDe(r)])
+    .sort((x, y) => (ordem[y[1].nivel] || 0) - (ordem[x[1].nivel] || 0) || (y[1].valido - x[1].valido))[0] || null;
+}
+
+/* ---- token com as permissões dos grupos (só administradores; nunca no login dos outros) ---- */
+async function agToken(criar) {
+  const scopes = criar ? AG_ESCOPO.concat(AG_ESCOPO_CRIAR) : AG_ESCOPO, req = { scopes, account };
+  try { const t = (await pca.acquireTokenSilent(TOKEN_CACHE_RT === undefined ? req : Object.assign({ cacheLookupPolicy: TOKEN_CACHE_RT }, req))).accessToken; AG.falta = null; return t; }
+  catch (e) {
+    const cod = String((e && [e.errorCode, e.subError, e.message].join(" ")) || "");
+    if (e instanceof msal.InteractionRequiredAuthError || /consent_required|interaction_required|invalid_grant|AADSTS65001/i.test(cod)) {
+      AG.falta = /consent|65001/i.test(cod) ? "consentir" : "login";
+      const x = new Error(AG.falta === "consentir" ? (criar ? "falta a permissão Group.ReadWrite.All para o ERP criar grupos" : "falta autorizar as permissões dos grupos (GroupMember.ReadWrite.All e User.ReadBasic.All)") : "é preciso entrar de novo para autorizar");
+      x.precisaAutorizar = AG.falta; throw x;
+    }
+    throw e;
+  }
+}
+async function agGraph(path, opts, criar) {
+  opts = opts || {};
+  const escreve = /^(POST|PATCH|PUT|DELETE)$/i.test(opts.method || "GET");
+  if (escreve && (!vcN1Real() || vcAtivo())) { const e = new Error(vcAtivo() ? "Na visualização nada é gravado." : "Só administradores mexem nos grupos de acesso."); e.status = 403; e.semAcesso = true; throw e; }
+  const tok = await agToken(criar);
+  return graph(path, Object.assign({}, opts, { headers: Object.assign({}, opts.headers || {}, { Authorization: `Bearer ${tok}` }) }));
+}
+async function agGraphAll(path) {
+  const tok = await agToken(false);
+  return graphAll(path, { headers: { Authorization: `Bearer ${tok}` } });
+}
+window.agAutorizar = (criar) => {
+  if (vcAtivo()) { toast("Saia da visualização para autorizar.", 5000); return; }
+  if (!confirm("Ir à tela da Microsoft para autorizar o ERP a mexer nos grupos de acesso (incluir e tirar pessoas, criar os grupos)? Se o administrador do Microsoft 365 já concedeu em nome da organização, a tela só confirma o login.")) return;
+  try { sessionStorage.setItem("erp.voltar", location.hash || "#/configuracao"); } catch (e) { /* sem sessionStorage: volta ao Início */ }
+  Promise.resolve().then(() => pca.acquireTokenRedirect({ scopes: CONFIG.scopes.concat(AG_ESCOPO, criar ? AG_ESCOPO_CRIAR : []), account })).catch(e => {
+    try { sessionStorage.removeItem("erp.voltar"); } catch (x) { /* ok */ }
+    toast("Não foi possível abrir a tela da Microsoft: " + ((e && (e.errorMessage || e.message)) || e), 8000);
+  });
+};
+
+/* ---- grupos: ids no parâmetro "acesso_grupos" ({ g: { chave: id } }) ---- */
+async function agGruposLer(force) {
+  if (!force && AG.grupos && Date.now() - AG.lidoEm < 120000) return AG.grupos;
+  const p = await erpParamLer("acesso_grupos", true);
+  if (p === undefined) throw new Error('não foi possível ler "ERP — Parâmetros" agora');
+  const lidos = Object.assign({}, (p && p.valor && p.valor.g) || {}), ok = {}, inval = {}, vistos = new Set();
+  for (const k of AG_KEYS) {
+    const id = lidos[k]; if (!id) continue;
+    if (vistos.has(String(id))) { inval[k] = "o mesmo grupo aparece em dois sites"; continue; }
+    vistos.add(String(id));
+    const m = await agGrupoConferir(k, String(id));
+    if (m === true) ok[k] = String(id); else inval[k] = m;
+  }
+  AG.grupos = ok; AG.invalidos = inval; AG.lidoEm = Date.now();
+  return AG.grupos;
+}
+/* revisão (bloqueio 1): o parâmetro fica no site TI, que todos editam — antes de usar um id, o ERP confere no Microsoft 365 que é
+   mesmo o grupo de segurança "ERP-<site>", sem e-mail, não é grupo do Microsoft 365 nem dá função de administrador. Um id trocado
+   por fora é ignorado (nada é gravado nele) e aparece na Configuração. */
+async function agGrupoConferir(k, id) {
+  if (AG.valido[id] && AG.valido[id].k === k) return AG.valido[id].r;
+  let r;
+  try {
+    const g = await graph(`/groups/${encodeURIComponent(id)}?$select=id,displayName,securityEnabled,mailEnabled,groupTypes,isAssignableToRole`);
+    r = !g ? "grupo não encontrado"
+      : agChaveDoNome(g.displayName) !== k ? `o id aponta para "${g.displayName}", não para "${AG_GRUPO_NOME(k)}"`
+      : !g.securityEnabled || g.mailEnabled || (Array.isArray(g.groupTypes) && g.groupTypes.length) ? "não é um grupo de segurança sem e-mail"
+      : g.isAssignableToRole ? "grupo que dá função de administrador" : true;
+    if (r === true) {   /* 2ª revisão: um "ERP-…" criado por qualquer pessoa não vale — um dos donos precisa ser administrador do ERP */
+      const ow = ((await agGraph(`/groups/${encodeURIComponent(id)}/owners?$select=id,mail,userPrincipalName`)) || {}).value || [];
+      let ok = false;
+      for (const o of ow) { const em = [o.mail, o.userPrincipalName].map(normEmail).filter(Boolean); if (await ehN1(em) || em.some(e => { const rg = agRegistroDe(e); return rg && rg[1].nivel === "n1" && rg[1].valido; })) { ok = true; break; } }
+      if (!ok) r = "nenhum dono do grupo é administrador do ERP";
+    }
+  } catch (x) { if (x.status === 404) r = "grupo não encontrado (apagado?)"; else throw x; }
+  AG.valido[id] = { k, r }; return r;
+}
+function agConfigurado() { return !!(AG.grupos && Object.keys(AG.grupos).length); }
+async function agMembros(k, force) {
+  const id = AG.grupos && AG.grupos[k]; if (!id) return null;
+  if (!force && AG.membros[k]) return AG.membros[k];
+  const v = await agGraphAll(`/groups/${encodeURIComponent(id)}/members?$select=id,mail,userPrincipalName,displayName&$top=999`);
+  AG.membros[k] = v.map(u => ({ id: String(u.id), mail: normEmail(u.mail), upn: normEmail(u.userPrincipalName), nome: u.displayName || "" }));
+  return AG.membros[k];
+}
+function agEhMembro(k, email, uid) {
+  const e = normEmail(email);
+  return (AG.membros[k] || []).some(u => (uid && u.id === uid) || (e && (u.mail === e || u.upn === e)));
+}
+async function agUid(email) {
+  const e = normEmail(email); if (!e) return null;
+  if (e in AG.uid) return AG.uid[e];
+  try { const u = await agGraph(`/users/${encodeURIComponent(e)}?$select=id,mail,userPrincipalName`); AG.uid[e] = u && u.id ? String(u.id) : null; }
+  catch (x) {
+    if (x.status !== 404) throw x;
+    /* revisão (médio 3): o e-mail gravado pode não ser o login (UPN) — procura pelo e-mail */
+    const q = e.replace(/'/g, "''"), v = ((await agGraph(`/users?$filter=${encodeURIComponent(`mail eq '${q}' or userPrincipalName eq '${q}'`)}&$select=id,mail,userPrincipalName`)) || {}).value || [];
+    AG.uid[e] = v.length === 1 ? String(v[0].id) : null;
+  }
+  return AG.uid[e];
+}
+/* grupo do Microsoft 365 de cada site (dono da biblioteca): quem já está nele também tem acesso ao site */
+async function agSiteGrupo(k) {
+  if (k in AG.siteGrp) return AG.siteGrp[k];
+  try { const d = await graph(`/sites/${CONFIG.spHost}:${CONFIG.sites[k]}:/drive?$select=owner`); AG.siteGrp[k] = (d && d.owner && d.owner.group && d.owner.group.id) ? String(d.owner.group.id) : null; }
+  catch (e) { AG.siteGrp[k] = null; }
+  return AG.siteGrp[k];
+}
+
+/* ---- conferência: em quais sites a pessoa tem um grupo que dá acesso ---- */
+async function agConferir(email, a, force) {
+  const e = normEmail(email), need = agSitesDe(a), c0 = AG.chk[e];
+  if (!force && c0 && Date.now() - c0.em < 120000 && c0.need.join() === need.join()) return c0;
+  const r = { email: e, need, ok: [], falta: [], viaSite: [], semConta: false, erro: "", em: Date.now() }, ger = AG.ger;
+  if (!need.length) { AG.chk[e] = r; return r; }
+  try {
+    await agGruposLer();
+    const uid = await agUid(e);
+    if (!uid) { r.semConta = true; r.falta = need.slice(); }
+    else {
+      const gs = new Set((await agGraphAll(`/users/${encodeURIComponent(uid)}/transitiveMemberOf?$select=id,displayName&$top=999`)).map(g => String(g.id)));
+      for (const k of need) {
+        if (AG.grupos[k] && gs.has(String(AG.grupos[k]))) r.ok.push(k);
+        else { const sg = await agSiteGrupo(k); if (sg && gs.has(sg)) { r.ok.push(k); r.viaSite.push(k); } else r.falta.push(k); }
+      }
+    }
+  } catch (x) { r.erro = x.precisaAutorizar ? "autorizar" : (x.message || String(x)); }
+  if (ger === AG.ger) AG.chk[e] = r;   /* revisão (baixo 11): conferência que começou antes de uma mudança não fica guardada */
+  return r;
+}
+function agListaNomes0(n) { return n.length > 1 ? n.slice(0, -1).join(", ") + " e " + n[n.length - 1] : n.join(""); }
+function agListaNomes(ks) { const n = ks.map(k => AG_NOME[k] || k); return n.length > 1 ? n.slice(0, -1).join(", ") + " e " + n[n.length - 1] : n.join(""); }
+
+/* ---- plano e aplicação ---- */
+async function agPlanoPessoa(email, need) {
+  const e = normEmail(email), uid = await agUid(e);
+  const entra = [], sai = [];
+  for (const k of AG_KEYS) {
+    if (!AG.grupos[k]) continue;
+    const dentro = agEhMembro(k, e, uid);
+    if (need.includes(k) && !dentro) entra.push(k);
+    if (!need.includes(k) && dentro) sai.push(k);
+  }
+  return { email: e, uid, entra, sai, semConta: !uid && need.length > 0 };
+}
+async function agAplicar(pl) {
+  const feitos = { entrou: [], saiu: [], erros: [] };
+  if (!pl.uid) { if (pl.entra.length) feitos.erros.push(`${pl.email}: não encontrado no Microsoft 365`); return feitos; }
+  for (const k of pl.entra) {
+    try { await agGraph(`/groups/${encodeURIComponent(AG.grupos[k])}/members/$ref`, { method: "POST", body: { "@odata.id": `https://graph.microsoft.com/v1.0/directoryObjects/${pl.uid}` } }); feitos.entrou.push(k); }
+    catch (x) { if (x.status === 400 && /already exist/i.test(x.message)) feitos.entrou.push(k); else { feitos.erros.push(`${AG_GRUPO_NOME(k)}: ${agMotivo(x)}`); continue; } }
+    (AG.membros[k] = AG.membros[k] || []).push({ id: pl.uid, mail: pl.email, upn: pl.email, nome: "" });
+  }
+  for (const k of pl.sai) {
+    try { await agGraph(`/groups/${encodeURIComponent(AG.grupos[k])}/members/${encodeURIComponent(pl.uid)}/$ref`, { method: "DELETE" }); feitos.saiu.push(k); }
+    catch (x) { if (x.status === 404) feitos.saiu.push(k); else { feitos.erros.push(`${AG_GRUPO_NOME(k)}: ${agMotivo(x)}`); continue; } }
+    AG.membros[k] = (AG.membros[k] || []).filter(u => u.id !== pl.uid && u.mail !== pl.email && u.upn !== pl.email);
+  }
+  delete AG.chk[pl.email]; AG.ger++;
+  return feitos;
+}
+function agMotivo(x) {
+  if (x && x.precisaAutorizar) return "falta autorizar (Configuração › Acesso aos sites)";
+  if (x && x.status === 403) return "sem permissão no Microsoft 365 (é preciso ser dono do grupo ou administrador do Microsoft 365, e o consentimento das permissões)";
+  return (x && x.message) || String(x);
+}
+/* sites de uma conta: junta todos os registros da lista que levam à mesma conta (pelo e-mail e pelo login) — 2ª revisão: a mesma
+   pessoa com um registro Inativo e outro Ativo não perde o acesso */
+async function agNeedConta(uid, email) {
+  const s = new Set();
+  for (const e of [...new Set((ACESSO.itens || []).map(r => normEmail(r.Title)).filter(Boolean))]) {
+    if (e !== normEmail(email) && (!uid || (await agUid(e)) !== uid)) continue;
+    const rg = agRegistroDe(e); agSitesDe(rg ? rg[1] : null).forEach(k => s.add(k));
+  }
+  return AG_KEYS.filter(k => s.has(k));
+}
+async function agEhFixo(email, uid) {
+  if (await ehN1(email)) return true;
+  const u = uid && AG_KEYS.map(k => (AG.membros[k] || []).find(m => m.id === uid)).find(Boolean);
+  return !!(u && await ehN1([u.mail, u.upn].filter(Boolean)));
+}
+/* sincroniza uma pessoa pelo registro atual da lista (depois de salvar, inativar ou remover) */
+async function agSincEmail(email) {
+  await agGruposLer(); if (!agConfigurado()) return null;
+  const e = normEmail(email);
+  if (await ehN1(e)) return null;   /* administradores fixos no sistema: o ERP não mexe */
+  const uid0 = await agUid(e), need = await agNeedConta(uid0, e);
+  for (const k of AG_KEYS) if (AG.grupos[k]) await agMembros(k, true);   /* revisão (médio 6): sempre o estado atual do grupo */
+  if (await agEhFixo(e, uid0)) return null;
+  const pl = await agPlanoPessoa(e, need);
+  if (!pl.entra.length && !pl.sai.length) return { entrou: [], saiu: [], erros: [] };
+  return agAplicar(pl);
+}
+
+/* depois de cada gravação NESTA sessão na lista de acessos (salvar, inativar, remover, confirmar todos): acerta os grupos de quem
+   foi gravado. Revisão (bloqueio 2): mudanças feitas por outros ou direto no SharePoint não disparam nada sozinhas — só pelo
+   "Sincronizar todos", com prévia. */
+const AG_PEND = new Set();
+function agMarcarEscrita(path, opts) {
+  const met = String((opts && opts.method) || "GET").toUpperCase();
+  if (!/^(POST|PATCH|DELETE)$/.test(met) || !ACESSO.list || !ACESSO.list.id || !vcN1Real() || vcAtivo()) return;
+  const p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "");
+  const um = (m, p, b) => {
+    if (!String(p).includes(ACESSO.list.id)) return;
+    const it = String(p).match(/\/items\/([^/?]+)/);
+    if (it) { const r = (ACESSO.itens || []).find(x => String(x._id) === it[1]); if (r && normEmail(r.Title)) AG_PEND.add(normEmail(r.Title)); }
+    else if (/^POST$/i.test(m) && b && b.fields && b.fields.Title) AG_PEND.add(normEmail(b.fields.Title));
+  };
+  if (/\/\$batch$/.test(p0.split("?")[0])) ((opts.body && opts.body.requests) || []).forEach(r => um(r.method, "/" + String(r.url || ""), r.body));
+  else um(met, p0, opts && opts.body);
+}
+{ const g0 = graph; graph = async function (path, opts) { const out = await g0.apply(this, arguments); try { agMarcarEscrita(path, opts); } catch (e) { console.warn("ag marcar", e); } return out; }; }
+{ const ai0 = acessoItens; acessoItens = async function (force) {
+    const out = await ai0.apply(this, arguments);
+    if (force && AG_PEND.size && ACESSO.list && vcN1Real() && !vcAtivo()) { const mud = [...AG_PEND]; AG_PEND.clear(); setTimeout(() => agDepoisDeGravar(mud), 0); }
+    return out;
+  }; }
+async function agDepoisDeGravar(emails) {
+  for (let i = 0; AG.rodando && i < 240; i++) await new Promise(r => setTimeout(r, 250));   /* 2ª revisão: espera o "Sincronizar todos" */
+  try { await agGruposLer(); } catch (e) { return; }
+  if (!agConfigurado()) return;
+  const msgs = [], erros = [];
+  for (const e of emails) {
+    try {
+      const f = await agSincEmail(e); if (!f) continue;
+      const reg = agRegistroDe(e), nome = (reg && (reg[0].Nome || reg[0].Title)) || e;
+      if (f.entrou.length) msgs.push(`${nome} entrou em ${agListaNomes(f.entrou)}`);
+      if (f.saiu.length) msgs.push(`${nome} saiu de ${agListaNomes(f.saiu)}`);
+      f.erros.forEach(x => erros.push(`${nome} — ${x}`));
+    } catch (x) { erros.push(`${e} — ${agMotivo(x)}`); }
+  }
+  if (msgs.length) toast(`Sites do SharePoint: ${msgs.join(" · ")}. Vale em alguns minutos (a pessoa recarrega o ERP).`, 9000);
+  if (erros.length) setTimeout(() => erpAviso({ titulo: "Acesso aos sites: não foi possível acertar os grupos", texto: "O acesso no ERP foi gravado. Resolva o motivo abaixo e use \"Sincronizar todos\" em Usuários e permissões.", itens: erros }), msgs.length ? 600 : 0);
+  if ($("permBody")) { AG.chk = {}; agPermPintarStatus(); }
+}
+
+/* ---- Sincronizar todos: prévia e aplicação ---- */
+window.agSincTodos = async () => {
+  if (!vcN1Real() || vcAtivo()) { toast(vcAtivo() ? "Saia da visualização para sincronizar." : "Só administradores.", 5000); return; }
+  if (AG.rodando) return;
+  AG.rodando = true;
+  try {
+    toast("Lendo os grupos e a lista de acessos…", 3000);
+    await agGruposLer(true);
+    await acessoItens(true);
+    if (!ACESSO.list || !(ACESSO.itens || []).length) { toast("Lista de acessos vazia ou não encontrada — nada a sincronizar.", 7000); return; }   /* 2ª revisão */
+    if (!agConfigurado()) { toast("Crie os grupos no Entra ID e clique em Procurar (Configuração › Acesso aos sites).", 6000); return; }
+    for (const k of AG_KEYS) if (AG.grupos[k]) await agMembros(k, true);
+    /* revisão (médio 4): quem está na lista é casado pelo id da conta; os membros dos grupos ERP que sobram (por id, sem registro
+       pelo e-mail nem pelo login) saem */
+    const planos = [], cobertos = new Set();
+    for (const e of [...new Set((ACESSO.itens || []).map(r => normEmail(r.Title)).filter(Boolean))].sort()) {
+      if (await ehN1(e)) continue;
+      const uid = await agUid(e);
+      if (uid && cobertos.has(uid)) continue;   /* a mesma conta com dois registros (e-mail e login): um plano só */
+      if (uid) cobertos.add(uid);
+      if (await agEhFixo(e, uid)) continue;
+      const reg = agRegistroDe(e), pl = await agPlanoPessoa(e, await agNeedConta(uid, e));
+      pl.nome = (reg && (reg[0].Nome || reg[0].Title)) || e;
+      if (pl.entra.length || pl.sai.length || pl.semConta) planos.push(pl);
+    }
+    const sobra = {};
+    AG_KEYS.forEach(k => (AG.membros[k] || []).forEach(u => { if (!cobertos.has(u.id)) (sobra[u.id] = sobra[u.id] || { u, ks: [] }).ks.push(k); }));
+    for (const { u, ks } of Object.values(sobra)) {
+      if (!u.mail && !u.upn) continue;   /* 2ª revisão: grupo dentro do grupo, aplicativo ou dispositivo — não mexe */
+      if (agRegistroDe(u.mail) || agRegistroDe(u.upn) || await ehN1([u.mail, u.upn].filter(Boolean))) continue;
+      planos.push({ email: u.mail || u.upn || u.id, uid: u.id, entra: [], sai: ks, semConta: false, nome: u.nome || u.mail || u.upn || u.id, semRegistro: true });
+    }
+    AG.planos = planos;
+    const linhas = planos.map((pl, i) => `<tr><td><div class="desc">${esc(pl.nome)}</div><div class="sup">${esc(pl.email)}${pl.semRegistro ? " · fora da lista de acessos" : ""}</div></td>
+      <td>${pl.entra.length ? esc(agListaNomes(pl.entra)) : "—"}</td><td>${pl.sai.length ? esc(agListaNomes(pl.sai)) : "—"}</td>
+      <td class="sup">${pl.semConta ? "não encontrado no Microsoft 365" : ""}</td></tr>`).join("");
+    modal(`<div class="modal-head"><h2>Sincronizar acesso aos sites</h2><button class="x" onclick="closeModal()">×</button></div>
+      <div class="modal-body"><p class="vc-help">Cada pessoa fica só nos grupos dos sites dos módulos que tem em Usuários e permissões (o grupo ERP-TI é de todos). Quem não está mais na lista, ou está Inativo / Sem acesso, sai dos grupos ERP. Os grupos do Microsoft 365 das áreas (e-mails) não mudam. Administradores fixos no sistema não são tocados.</p>
+      ${planos.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Pessoa</th><th>Entra em</th><th>Sai de</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>` : `<div class="cap-empty"><h3>Tudo certo</h3><p>Todos já estão nos grupos certos.</p></div>`}
+      <div class="setup-log checks" id="agSincLog" style="display:none;max-height:240px;overflow:auto;margin-top:12px"></div></div>
+      <div class="modal-foot"><button class="btn" onclick="closeModal()">${planos.length ? "Cancelar" : "Fechar"}</button>${planos.some(p => p.entra.length || p.sai.length) ? `<button class="btn primary" id="agSincGo" onclick="agSincAplicar()">Aplicar</button>` : ""}</div>`);
+    $("modal").className = "modal wide";
+  } catch (x) { toast("Acesso aos sites: " + agMotivo(x), 8000); }
+  finally { AG.rodando = false; }
+};
+window.agSincAplicar = async () => {
+  const b = $("agSincGo"), log = $("agSincLog"); if (!AG.planos || !b) return;
+  b.disabled = true; b.textContent = "Aplicando…"; log.style.display = "block"; log.innerHTML = "";
+  const linha = (t, cls) => { log.insertAdjacentHTML("beforeend", `<div class="check ${cls || ""}">${esc(t)}</div>`); log.scrollTop = log.scrollHeight; };
+  let ok = 0, er = 0;
+  for (const pl of AG.planos) {
+    if (!pl.entra.length && !pl.sai.length) continue;
+    const f = await agAplicar(pl);
+    if (AG.falta) { linha("Falta autorizar o ERP a mexer nos grupos (Configuração › Acesso aos sites). Parei aqui.", "err"); er++; break; }
+    if (f.entrou.length) linha(`${pl.nome}: entrou em ${agListaNomes(f.entrou)}`, "ok");
+    if (f.saiu.length) linha(`${pl.nome}: saiu de ${agListaNomes(f.saiu)}`, "ok");
+    f.erros.forEach(x => { er++; linha(`${pl.nome}: ${x}`, "err"); });
+    ok += f.entrou.length + f.saiu.length;
+  }
+  linha(`Concluído: ${ok} mudança(s)${er ? `, ${er} erro(s)` : ""}. O SharePoint leva alguns minutos para valer; a pessoa recarrega o ERP.`, er ? "err" : "ok");
+  b.textContent = "Feito"; AG.planos = null; AG.chk = {};
+  if ($("permBody")) agPermPintarStatus();
+};
+
+/* ---- procurar (e, se autorizado, criar) os grupos ---- */
+window.agCriarGrupos = async () => {
+  if (!vcN1Real() || vcAtivo()) return;
+  const b = $("agCriarBtn"); if (b) { b.disabled = true; b.textContent = "Procurando…"; }
+  const criados = [], achados = [], erros = [], faltam = [];
+  try {
+    await agGruposLer(true);
+    let podeCriar = true; try { await agToken(true); } catch (x) { podeCriar = false; }
+    await agToken(false);   /* sem as permissões básicas para aqui com "falta autorizar" */
+    const eu = await graph("/me?$select=id");
+    /* revisão (médio 5): donos = quem cria + os administradores confirmados da lista (só dono ou administrador do Microsoft 365 mexe nos membros) */
+    const donos = new Set([String(eu.id)]);
+    if (podeCriar) for (const r of (ACESSO.itens || [])) { const a = acessoDe(r); if (a.nivel === "n1" && a.valido) { try { const u = await agUid(r.Title); if (u) donos.add(u); } catch (x) { /* segue só com quem cria */ } } }
+    const todosErp = await agGraphAll(`/groups?$filter=${encodeURIComponent("startswith(displayName,'ERP')")}&$select=id,displayName,securityEnabled,mailEnabled&$top=999`);
+    for (const [k] of AG_SITES) {
+      if (AG.grupos[k]) continue;
+      try {
+        const nome = AG_GRUPO_NOME(k);
+        const ex = todosErp.filter(g0 => agChaveDoNome(g0.displayName) === k);
+        if (ex.length) {   /* criado à mão no Entra ID (ou antes): só vale o grupo de segurança sem e-mail com um administrador do ERP como dono */
+          let ok = null, motivo = "";
+          for (const g0 of ex) { delete AG.valido[String(g0.id)]; const r = await agGrupoConferir(k, String(g0.id)); if (r === true) { ok = String(g0.id); break; } motivo = r; }
+          if (ok) { AG.grupos[k] = ok; achados.push(k); continue; }
+          erros.push(`${nome} (${ex.map(g0 => g0.displayName).join(", ")}): existe, mas não serve — ${motivo}. Ajuste no Entra ID (tipo Segurança, você ou outro administrador do ERP como proprietário).`); continue;
+        }
+        if (!podeCriar) { faltam.push(nome); continue; }
+        const g = await agGraph("/groups", { method: "POST", body: { displayName: nome, description: `Acesso ao site ${CONFIG.sites[k]} do SharePoint dado pelo ERP NMB (Usuários e permissões). Não incluir pessoas à mão: o ERP tira quem não tem módulo.`, mailEnabled: false, mailNickname: AG_APELIDO(k), securityEnabled: true, "owners@odata.bind": [...donos].slice(0, 20).map(d => `https://graph.microsoft.com/v1.0/users/${d}`) } }, true);
+        AG.grupos[k] = String(g.id); criados.push(k);
+      } catch (x) { erros.push(`${AG_GRUPO_NOME(k)}: ${agMotivo(x)}`); if (x.precisaAutorizar) break; }
+    }
+    if (AG.falta && !erros.some(e => /autorizar/.test(e))) AG.falta = null;
+  } catch (x) { erros.push(agMotivo(x)); }
+  try { if (criados.length || achados.length) await erpParamGravar("acesso_grupos", { g: AG.grupos, em: new Date().toISOString(), por: (session.me && session.me.displayName) || "" }); }
+  catch (x) { erros.push("os grupos foram achados, mas não consegui guardar a lista em ERP — Parâmetros: " + x.message + ". Clique de novo em Procurar."); }
+  if (criados.length || achados.length) toast(`Grupos: ${achados.length} encontrado(s)${criados.length ? `, ${criados.length} criado(s)` : ""}. Falta incluir cada um no seu site (passo 3).`, 8000);
+  if (faltam.length) erros.unshift(`Ainda não existem: ${faltam.join(", ")}. Crie no Entra ID › Grupos › Novo grupo (tipo Segurança, sem membros, você como proprietário) e clique em Procurar de novo.`);
+  if (erros.length) erpAviso({ titulo: "Grupos de acesso", itens: erros });
+  agCfgPintar();
+};
+
+/* ---- Configuração › Acesso aos sites ---- */
+function agCfgCard() {
+  return `<section class="setup-card" id="agCfgCard"><h2>Acesso aos sites do SharePoint (grupos de segurança)</h2>
+    <p class="desc">O ERP lê e grava no SharePoint com o login da própria pessoa: sem acesso ao site, o módulo liberado abre vazio. Com estes grupos (sem e-mail), o ERP põe e tira a pessoa do site certo quando você salva o acesso em Usuários e permissões — na maioria dos casos você não precisa mais mexer no SharePoint para cada pessoa.</p>
+    <div id="agCfgBody"><p class="cap-muted">Carregando…</p></div></section>`;
+}
+async function agCfgPintar() {
+  const el = $("agCfgBody"); if (!el) return;
+  let aut = "", gruposErro = "";
+  try { await agToken(false); aut = "ok"; } catch (x) { aut = x.precisaAutorizar ? "falta" : "erro:" + (x.message || x); }
+  let autCriar = aut === "ok"; if (autCriar) { try { await agToken(true); } catch (x) { autCriar = false; } AG.falta = null; }   /* revisão (médio 9): a permissão ampla é opcional */
+  try { await agGruposLer(true); } catch (x) { gruposErro = x.message; }
+  const G = AG.grupos || {}, n = AG_KEYS.filter(k => G[k]).length;
+  const autHtml = aut === "ok" ? `<span class="pill st-pago"><i></i>Autorizado</span>`
+    : aut === "falta" ? `<span class="pill st-pendente"><i></i>Falta autorizar</span> <button type="button" class="btn sm" onclick="agAutorizar()">Autorizar</button><div class="sup">Antes, no Entra ID › Registros de aplicativo › ERP NMB › Permissões de API: adicionar as delegadas GroupMember.ReadWrite.All e User.ReadBasic.All e clicar em "Conceder consentimento do administrador".</div>`
+    : `<span class="pill st-vencido"><i></i>Erro</span> <span class="sup">${esc(aut.slice(5))}</span>`;
+  const linhas = AG_SITES.map(([k, nome, quem]) => `<tr><td><div class="desc">${esc(AG_GRUPO_NOME(k))}</div><div class="sup">${esc(quem)}</div></td>
+    <td class="nw">${G[k] ? `<span class="pill st-pago"><i></i>Encontrado</span>` : `<span class="pill st-cinza"><i></i>Não encontrado</span>`}</td>
+    <td><a href="https://${esc(CONFIG.spHost)}${esc(CONFIG.sites[k])}" target="_blank" rel="noopener">${esc(CONFIG.sites[k])} ↗</a></td></tr>`).join("");
+  el.innerHTML = `<ol class="ag-passos">
+      <li><b>Autorizar o ERP</b> (uma vez): ${autHtml}</li>
+      <li><b>Criar os grupos</b> (uma vez, no Entra ID › Grupos › Novo grupo): tipo <b>Segurança</b>, nome como na tabela abaixo (ex.: <i>ERP-Operacional</i>; também vale <i>ERP-RH</i>, <i>ERP-Contas a Pagar</i>, <i>ERP-Agentes Financeiros</i>), <b>você como proprietário</b> (e outros administradores do ERP, se quiser que eles também sincronizem), sem membros. Depois clique em Procurar: ${n}/${AG_KEYS.length} encontrado(s). ${n < AG_KEYS.length ? `<button type="button" class="btn sm primary" id="agCriarBtn" onclick="agCriarGrupos()" ${aut !== "ok" ? "disabled title=\"Autorize primeiro\"" : ""}>${autCriar ? "Procurar e criar os que faltam" : "Procurar os grupos"}</button>` : ""}
+        ${aut === "ok" && !autCriar && n < AG_KEYS.length ? `<div class="sup">Opcional: com a permissão delegada Group.ReadWrite.All (mais ampla: o ERP poderia alterar qualquer grupo) o próprio ERP cria os que faltam.</div>` : ""}${gruposErro ? `<div class="sup" style="color:var(--err)">${esc(gruposErro)}</div>` : ""}
+        ${Object.keys(AG.invalidos || {}).length ? `<div class="perm-aviso" style="margin-top:8px"><span><b>Ignorado por segurança:</b> ${esc(Object.entries(AG.invalidos).map(([k, m]) => `${AG_GRUPO_NOME(k)} — ${m}`).join(" · "))}. O parâmetro "acesso_grupos" foi alterado fora do ERP; clique em Procurar para refazer.</span></div>` : ""}
+        <div class="sup">Só o proprietário do grupo ou um administrador do Microsoft 365 consegue pôr e tirar pessoas — outro administrador do ERP recebe "sem permissão". O ERP só aceita o grupo se um dos proprietários for administrador do ERP.</div></li>
+      <li><b>Incluir cada grupo no seu site</b> (uma vez, no SharePoint): abra o site › <i>Configurações</i> (engrenagem) › <i>Permissões do site</i> › <i>Adicionar membros</i> › <b>Compartilhar somente o site</b> › digite o nome do grupo (ex.: ERP-Operacional) › permissão <b>Editar</b> › Adicionar. O ERP não consegue conferir este passo.</li>
+      <li><b>Listas de consulta que todos leem</b> (uma vez; o grupo ERP-TI é de todos os usuários): em cada lista abaixo › Configurações da lista › <i>Permissões para esta lista</i> › (se pedir, <i>Parar de herdar permissões</i>) › <i>Conceder permissões</i> › ERP-TI › <b>Leitura</b>.
+        <div class="sup">Site Diretoria: <i>Diretoria — CNPJs</i>, <i>Diretoria — Centros de custo</i>, <i>Diretoria — Plano de contas</i>. Site RH: <i>RH — Funcionários</i>, <i>RH — Funcionários · Fotos</i>, <i>RH — CNPJs ativos</i>. Assim quem usa Frota, CAP ou Tarefas vê os nomes, CNPJs e centros de custo sem entrar no site inteiro da Diretoria ou do RH (currículos, avaliações etc. continuam só para quem tem os módulos dessas áreas).</div></li>
+      <li><b>Sincronizar</b>: em Usuários e permissões, <b>Sincronizar todos</b> põe cada pessoa nos grupos dos módulos que ela já tem. Daí em diante, salvar o acesso já acerta os grupos.</li></ol>
+    <div class="table-wrap"><table class="cap-table"><thead><tr><th>Grupo</th><th>Situação</th><th>Site</th></tr></thead><tbody>${linhas}</tbody></table></div>
+    <p class="hint">Os grupos do Microsoft 365 das áreas (financeiro@, rh@…) não mudam: quem só tem acesso pelo ERP não recebe os e-mails da área. Listas com permissão própria (Dívidas, Dados pessoais do RH, Links seguros) continuam à parte. Depois de incluir alguém, o SharePoint leva alguns minutos para valer.</p>
+    <div class="actions"><a class="btn" href="#/sistema/permissoes">Abrir Usuários e permissões</a>${n ? `<button type="button" class="btn" onclick="agSincTodos()" ${aut !== "ok" ? "disabled" : ""}>Sincronizar todos…</button>` : ""}</div>`;
+}
+{ const pcA = pageConfig; pageConfig = function () {
+    const h = pcA.apply(this, arguments);
+    if (!vcN1Real() || vcAtivo()) return h;
+    setTimeout(agCfgPintar, 0);
+    return h.replace("<h1>Configuração</h1>", "<h1>Configuração</h1>" + agCfgCard());
+  }; window.pageConfig = pageConfig; }
+
+/* ---- Usuários e permissões: faixa com o estado dos grupos e coluna "Sites" ---- */
+{ const pp0 = paintPerm; paintPerm = function () {
+    const out = pp0.apply(this, arguments);
+    try {
+      const body = $("permBody"), tab = body && body.querySelector("table.cap-table");
+      if (!body || !vcN1Real() || vcAtivo()) return out;
+      if (!$("agPermBox")) (tab ? tab.closest(".table-wrap") : body).insertAdjacentHTML(tab ? "beforebegin" : "afterbegin", `<div class="ag-perm" id="agPermBox"><span class="sup">Acesso aos sites do SharePoint: conferindo…</span></div>`);
+      if (tab) {
+        const th = tab.querySelector("thead tr"); if (th && !th.querySelector(".ag-th")) { const vc = th.querySelector(".vc-th"); (vc ? vc : th.lastElementChild).insertAdjacentHTML(vc ? "beforebegin" : "afterend", `<th class="ag-th">Sites (SharePoint)</th>`); }
+        tab.querySelectorAll("tbody tr").forEach(tr => {
+          const m = String(tr.getAttribute("onclick") || "").match(/permForm\(decodeURIComponent\('([^']*)'\)\)/); if (!m || tr.querySelector(".ag-td")) return;
+          const id = decodeURIComponent(m[1]), vc = tr.querySelector(".vc-td"), td = `<td class="ag-td sup" data-ag="${esc(id)}">…</td>`;
+          if (vc) vc.insertAdjacentHTML("beforebegin", td); else tr.insertAdjacentHTML("beforeend", td);
+        });
+      }
+      setTimeout(agPermPintarStatus, 0);
+    } catch (e) { console.warn("ag perm", e); }
+    return out;
+  }; }
+window.agConferirDeNovo = () => { AG.chk = {}; AG.siteGrp = {}; AG.uid = {}; AG.membros = {}; agPermPintarStatus(); };
+let AG_PERM_SEQ = 0;
+async function agPermPintarStatus() {
+  const box = $("agPermBox"); if (!box) return;
+  const seq = ++AG_PERM_SEQ;
+  let aut = true;
+  try { await agGruposLer(); await agToken(false); } catch (x) { aut = false; }
+  if (seq !== AG_PERM_SEQ || !$("agPermBox")) return;
+  if (!agConfigurado() || !aut) {
+    box.innerHTML = `<span><b>Acesso aos sites do SharePoint:</b> ${!aut ? "falta autorizar o ERP a mexer nos grupos" : "os grupos de acesso ainda não foram encontrados"}. Enquanto isso, além de liberar o módulo aqui, inclua a pessoa no site do SharePoint à mão.</span><a class="btn sm" href="#/configuracao">Configurar</a>`;
+    document.querySelectorAll("#permBody td.ag-td").forEach(td => { td.textContent = "—"; });
+    return;
+  }
+  box.innerHTML = `<span><b>Acesso aos sites do SharePoint pelo ERP:</b> ao salvar um acesso, o ERP acerta os grupos ERP-… da pessoa. Vale em alguns minutos.</span><button type="button" class="btn sm" onclick="agSincTodos()">Sincronizar todos…</button><button type="button" class="btn sm" onclick="agConferirDeNovo()">Conferir de novo</button>`;
+  const tds = [...document.querySelectorAll("#permBody td.ag-td")];
+  for (const td of tds) {
+    const r = (ACESSO.itens || []).find(x => String(x._id) === td.dataset.ag); if (!r) continue;
+    const a = acessoDe(r);
+    if (a.conf.fixo) { td.textContent = "administrador fixo"; continue; }
+    const c = await agConferir(r.Title, a);
+    if (seq !== AG_PERM_SEQ) return;
+    td.innerHTML = agStatusHtml(c);
+  }
+}
+function agStatusHtml(c) {
+  if (c.erro) return c.erro === "autorizar" ? "falta autorizar" : `<span title="${esc(c.erro)}">não conferido</span>`;
+  if (!c.need.length) return "—";
+  if (c.semConta) return `<span class="ag-falta">conta não encontrada no Microsoft 365</span>`;
+  if (!c.falta.length) return `<span class="ag-ok">✓ ${esc(agListaNomes(c.need))}</span>`;
+  return `<span class="ag-falta" title="O ERP não achou grupo ERP-… nem o grupo do site com a pessoa; pode haver acesso dado direto no site">falta ${esc(agListaNomes(c.falta))}</span>${c.ok.length ? `<div>✓ ${esc(agListaNomes(c.ok))}</div>` : ""}`;
+}
+
+/* ---- Visualizar como: o que vai abrir vazio no login da pessoa ---- */
+{ const ve0 = window.vcEntrar; window.vcEntrar = async function (id) {
+    const out = await ve0.apply(this, arguments);
+    try {
+      if (!vcAtivo() || !VIEW_AS.alvo) return out;
+      const reg = (ACESSO.itens || []).find(x => String(x._id) === String(id)); if (!reg) return out;
+      VIEW_AS.ag = { carregando: true }; VIEW_AS.agA = acessoDe(reg); vcBarra();
+      const c = await agConferir(reg.Title, acessoDe(reg), true);
+      if (!vcAtivo() || !VIEW_AS.alvo || VIEW_AS.alvo.id !== String(reg._id)) return out;
+      VIEW_AS.ag = c; vcBarra(); agVcBanner();
+    } catch (e) { console.warn("ag vc", e); }
+    return out;
+  }; }
+{ const vb0 = vcBarra; vcBarra = function () {
+    const out = vb0.apply(this, arguments);
+    try {
+      const bar = $("vcBar"); if (!bar || !vcAtivo()) return out;
+      const c = VIEW_AS.ag, txt = bar.querySelector(".vc-txt"); if (!txt || !c) return out;
+      let s;
+      if (c.carregando) s = "SharePoint: conferindo os sites…";
+      else if (c.erro) s = c.erro === "autorizar" ? "SharePoint: não conferido (autorize os grupos de acesso na Configuração)" : "SharePoint: não conferido (" + c.erro + ")";
+      else if (!c.need.length) s = "SharePoint: nenhum site necessário";
+      else if (c.semConta) s = "SharePoint: conta não encontrada no Microsoft 365";
+      else if (!c.falta.length) s = "SharePoint: ✓ grupos de acesso a " + agListaNomes(c.need) + " (listas com permissão própria ficam à parte)";
+      else { const mods = [...new Set(c.falta.flatMap(k => agModsDoSite(VIEW_AS.agA, k)))];
+        s = c.falta.includes("ti") ? "SharePoint: o ERP não achou grupo que dê acesso ao site TI — no login de " + VIEW_AS.alvo.nome + " os módulos podem não aparecer"
+          : "SharePoint: o ERP não achou grupo que dê acesso a " + agListaNomes(c.falta) + " — no login de " + VIEW_AS.alvo.nome + ", " + (mods.length === 1 ? mods[0] + " pode abrir vazio" : mods.length ? agListaNomes0(mods) + " podem abrir vazios" : "o que vem desse(s) site(s) pode abrir vazio"); }
+      txt.insertAdjacentHTML("beforeend", `<span class="vc-ag${c.falta && c.falta.length ? " falta" : ""}">${esc(s)}</span>`);
+    } catch (e) { console.warn("ag barra", e); }
+    return out;
+  }; }
+function agVcBanner() {
+  const main = $("main"); if (!main) return;
+  const old = main.querySelector(".ag-vc-banner"); if (old) old.remove();
+  if (!vcAtivo() || !VIEW_AS.ag || !Array.isArray(VIEW_AS.ag.falta) || !VIEW_AS.ag.falta.length) return;
+  const mod = session.modAtual, sites = (AG_MOD_SITES[mod] || []).concat(mod && mod !== "inicio" ? ["ti"] : []).filter(k => VIEW_AS.ag.falta.includes(k));
+  if (!sites.length) return;
+  const alvo = main.querySelector(".page") || main;
+  alvo.insertAdjacentHTML("afterbegin", `<div class="banner ag-vc-banner"><div><b>No login de ${esc(VIEW_AS.alvo.nome)}, esta página pode abrir vazia ou com erro:</b> o ERP não achou grupo que dê acesso ao(s) site(s) ${esc(agListaNomes([...new Set(sites)]))} do SharePoint (pode haver acesso dado direto no site). Aqui os dados aparecem porque a leitura é feita com o seu login. Para resolver: saia da visualização e use <b>Sincronizar todos</b> em Usuários e permissões (ou inclua a pessoa no site).</div></div>`);
+}
+{ const r0 = route; route = function () { const out = r0.apply(this, arguments); if (vcAtivo()) { setTimeout(agVcBanner, 300); setTimeout(agVcBanner, 1500); } return out; }; }
+{ const vs0 = window.vcSair; window.vcSair = function () { if (VIEW_AS) VIEW_AS.ag = null; return vs0.apply(this, arguments); }; }
+
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.ag-perm{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px;padding:10px 14px;border:1px solid var(--line);background:var(--surface);border-radius:10px;font-size:13px;line-height:1.4}
+  .ag-perm > span{flex:1 1 320px}
+  .ag-ok{color:#1B6B3A}.ag-falta{color:#9A3412;font-weight:600}
+  td.ag-td{min-width:150px;max-width:260px}
+  .ag-passos{margin:6px 0 14px 20px;display:grid;gap:8px;font-size:14px;line-height:1.45}
+  .ag-passos .sup{margin-top:4px}
+  #vcBar .vc-ag{display:block;font-size:12px;opacity:.95}
+  #vcBar .vc-ag.falta{color:#FFE2B8;font-weight:700}`;
+  document.head.appendChild(st);
+})();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -45350,6 +45958,7 @@ CONFIG.version = "v0.14.37";   /* Site Oficial: topo em duas partes, site em man
 CONFIG.version = "v0.14.37.1";   /* Site Oficial: clicar na etiqueta Online/Offline do site embutido troca o estado (a publicar) */
 CONFIG.version = "v0.14.37.2";   /* Site Oficial: botão próprio para a foto da frota do topo */
 CONFIG.version = "v0.14.37.3";   /* "Sincronizar no site" publica horários e tarifas no site de verdade (Make grava no GitHub) */
+CONFIG.version = "v0.14.38";   /* acesso aos sites do SharePoint pelo ERP: grupos de segurança por site, sincronia ao salvar o acesso, conferência no Visualizar como */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -46029,6 +46029,369 @@ permResumo = function (a) {
   .perm-table tr.perm-pg-filho > td:first-child{padding-left:56px}`;
   document.head.appendChild(st);
 })();
+/* ===================== v0.14.40 · CAP: VÍDEO DE CADA ABA (janela sobreposta) =====================
+   Pedido do Rafael (03/11, 10:35): "Em CAP, ao clicar em cada módulo, adicionar um ícone de vídeo que abrirá o vídeo referente à
+   página. O vídeo deve abrir em uma janela sobreposta."
+   - Os vídeos ficam na biblioteca de documentos do site CAP, pasta "Vídeos do ERP/Contas a Pagar", um arquivo por aba:
+     "CAP 0 - Visão geral.mp4", "CAP 1 - Lançamentos.mp4" … "CAP 7 - Contabilidade.mp4". Nada no GitHub (só o index.html vai para lá)
+     e nenhuma lista ou coluna nova.
+   - Ícone ▶ ao lado do título (visão geral) e botão "Vídeo" na barra das abas (vídeo da aba aberta). Só aparece quando o vídeo existe;
+     administrador ou proprietário da página Lançamentos da CAP vê o botão também sem o vídeo, para enviar.
+   - A janela toca o vídeo pelo link temporário do SharePoint (pedido na hora de abrir); Esc, × ou clique fora fecham e param o vídeo.
+   - Só aparecem os vídeos das abas que a pessoa pode abrir. Não aparece no espelho do Almoxarifado nem na Gestão de Dívidas. */
+const VID = {
+  pasta: "Vídeos do ERP/Contas a Pagar",
+  abas: [
+    { k: "geral", n: 0, t: "Visão geral" }, { k: "lista", n: 1, t: "Lançamentos" }, { k: "obr", n: 2, t: "Obrigações" },
+    { k: "forn", n: 3, t: "Fornecedores" }, { k: "fav", n: 4, t: "Favoritos" }, { k: "pend", n: 5, t: "Pendências" },
+    { k: "painel", n: 6, t: "Painel" }, { k: "contab", n: 7, t: "Contabilidade" }
+  ],
+  MAX: 300 * 1048576,
+  itens: null, lendo: null, lidoEm: 0, falhou: "", atual: "", enviando: false, foco: null, tok: 0
+};
+function vidAba(k) { return VID.abas.find(a => a.k === k) || null; }
+function vidNomeArq(a) { return `CAP ${a.n} - ${a.t}.mp4`; }
+/* quem envia: administrador, ou proprietário da página Lançamentos da CAP (a mesma que a guarda de escrita confere, ver vidG) */
+function vidPodeEnviar() { try { return !!(session.n1 || pagNivel("cap", "lista") === "proprietario"); } catch (e) { return !!session.n1; } }
+/* a pessoa pode abrir esta aba? (permissão própria da página, como no pagAba; Obrigações segue o módulo Obrigações) */
+function vidVeAba(k) {
+  if (k === "geral" || session.n1) return true;
+  try { const p = permPaginas("cap").find(x => x.k === k); return !p || pagNivelP("cap", p) !== "nenhum"; } catch (e) { return true; }
+}
+function vidAtivo() { return session.modAtual === "cap" && !CAP_STATE.espelhoCC && !(typeof DIV !== "undefined" && DIV.on) && !!$("capBody"); }
+/* gravações na pasta dos vídeos seguem a página Lançamentos da CAP, também nas novas tentativas do graph (429/503) e fora da CAP:
+   a guarda confere com modAtual "cap" e pagAtual "cap.lista" só para esses caminhos, e só para quem pode enviar */
+function vidAlvo(method, path, body) {
+  if (!/^(POST|PUT)$/i.test(method || "") || !DOC.drive) return false;
+  const p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0], raiz = VID.pasta.split("/")[0];
+  const base = `/drives/${DOC.drive.id}/root`;
+  if (p0 === `${base}:/${docEncode(raiz)}` || p0.startsWith(`${base}:/${docEncode(raiz)}/`) || p0.startsWith(`${base}:/${docEncode(raiz)}:`)) return true;
+  return p0 === `${base}/children` && !!body && body.name === raiz && !!body.folder;
+}
+{ const g0 = guardaEscrita;
+  guardaEscrita = function (method, path, body) {
+    if (vidAlvo(method, path, body) && vidPodeEnviar()) {
+      const pa = session.pagAtual, ma = session.modAtual;
+      session.pagAtual = "cap.lista"; session.modAtual = "cap";
+      try { return g0.apply(this, arguments); } finally { session.pagAtual = pa; session.modAtual = ma; }
+    }
+    return g0.apply(this, arguments);
+  };
+}
+const vidG = (path, opts) => graph(path, opts);
+/* lê a pasta: guarda por 10 minutos (30 s se a leitura falhou); forcar = lê de novo, mesmo com outra leitura em andamento */
+async function vidCarregar(forcar) {
+  const validade = VID.falhou ? 30000 : 600000;
+  if (!forcar && VID.itens && Date.now() - VID.lidoEm < validade) return VID.itens;
+  if (VID.lendo) { if (!forcar) return VID.lendo; try { await VID.lendo; } catch (e) {} }
+  const p = (async () => {
+    const out = {};
+    try {
+      const drive = await docDrive();
+      let lista = [];
+      try { lista = await graphAll(`/drives/${drive.id}/root:/${docEncode(VID.pasta)}:/children?$select=id,name,size,file,webUrl`); }
+      catch (e) { if (e.status !== 404) throw e; }
+      for (const f of lista) {
+        if (!f || !f.file) continue;
+        const m = String(f.name || "").match(/^CAP\s*(\d)\b.*\.mp4$/i); if (!m) continue;
+        const a = VID.abas.find(x => x.n === Number(m[1])); if (!a) continue;
+        if (!out[a.k] || String(f.name) === vidNomeArq(a)) out[a.k] = f;   /* o nome padrão ganha de uma cópia */
+      }
+      VID.falhou = ""; VID.itens = out;
+    } catch (e) { VID.falhou = (e && e.message) || "erro"; console.warn("vídeos da CAP", e); if (!VID.itens) VID.itens = out; }   /* falha passageira: mantém a lista anterior */
+    VID.lidoEm = Date.now();
+    return VID.itens;
+  })();
+  VID.lendo = p;
+  try { return await p; } finally { if (VID.lendo === p) VID.lendo = null; }
+}
+const VID_ICO = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 8.2v7.6l6.2-3.8z" fill="currentColor"/></svg>`;
+function vidBotaoHtml(k, onde) {
+  const a = vidAba(k); if (!a || !VID.itens || !vidVeAba(k)) return "";
+  const tem = !!VID.itens[k], envia = vidPodeEnviar();
+  if (!tem && !envia) return "";
+  const tit = tem ? (k === "geral" ? "Vídeo: visão geral da Contas a Pagar" : `Vídeo: como usar a aba ${a.t}`) : `Ainda não há vídeo de "${a.t}". Clique para enviar (administrador).`;
+  if (onde === "h1") return `<button type="button" class="vid-h1 ${tem ? "" : "sem"}" id="vidH1Btn" data-vid="${k}" onclick="vidAbrir('${k}')" title="${esc(tit)}" aria-label="${esc(tit)}">${VID_ICO}</button>`;
+  return `<button type="button" class="btn sm vid-btn ${tem ? "" : "sem"}" id="vidAbaBtn" data-vid="${k}" onclick="vidAbrir('${k}')" title="${esc(tit)}" aria-label="${esc(tit)}">${VID_ICO}<span>Vídeo</span></button>`;
+}
+/* põe (ou atualiza) os dois botões na página; não redesenha a CAP. Lista vencida: relê em segundo plano e repinta só os botões */
+function vidPintar() {
+  const velhos = () => { const a = $("vidH1Btn"); if (a) a.remove(); const b = $("vidAbaBtn"); if (b) b.remove(); };
+  if (!vidAtivo()) { velhos(); return; }
+  const vencida = !VID.itens || Date.now() - VID.lidoEm > (VID.falhou ? 30000 : 600000);
+  if (vencida && !VID.lendo) vidCarregar().then(() => { if (vidAtivo()) vidPintar(); });
+  if (!VID.itens) { velhos(); return; }
+  const h1 = document.querySelector("#main .page-head h1");
+  const b1 = $("vidH1Btn"); if (b1) b1.remove();
+  if (h1 && $("capActions") && h1.closest(".page-head") === $("capActions").closest(".page-head")) {
+    const html = vidBotaoHtml("geral", "h1");
+    if (html) h1.insertAdjacentHTML("beforeend", html);
+  }
+  const v = CAP_STATE.view || "lista", alvo = document.querySelector("#capBody .cap-topo .cap-atual"), b2 = $("vidAbaBtn");
+  if (b2) b2.remove();
+  if (alvo && vidAba(v) && v !== "geral") { const html = vidBotaoHtml(v, "aba"); if (html) alvo.insertAdjacentHTML("afterbegin", html); }
+}
+{ const p0 = paintCAP; paintCAP = function () { const r = p0.apply(this, arguments); try { vidPintar(); } catch (e) { console.warn("vidPintar", e); } return r; }; window.paintCAP = paintCAP; }
+
+/* ---------- janela sobreposta ---------- */
+function vidChipsHtml() {
+  const envia = vidPodeEnviar();
+  return VID.abas.filter(a => vidVeAba(a.k) && ((VID.itens || {})[a.k] || envia)).map(a => {
+    const tem = !!(VID.itens || {})[a.k], on = a.k === VID.atual;
+    return `<button type="button" class="vid-chip ${on ? "on" : ""} ${tem ? "" : "sem"}" data-k="${a.k}" aria-pressed="${on}" onclick="vidTocar('${a.k}')" ${VID.enviando ? "disabled" : ""} ${tem ? "" : `title="Ainda sem vídeo"`}>${esc(a.t)}</button>`;
+  }).join("");
+}
+function vidFootHtml() {
+  if (!vidPodeEnviar()) return "";
+  const a = vidAba(VID.atual), tem = !!(VID.itens || {})[VID.atual], dis = VID.enviando ? "disabled" : "";
+  return `<div class="vid-foot"><span class="sup">Administrador: os vídeos ficam no site CAP, em <b>${esc(VID.pasta)}</b>.</span>
+    <span class="vid-acts"><button type="button" class="btn sm" id="vidEnviarUm" onclick="vidEscolher(false)" ${dis}>${tem ? "Trocar" : "Enviar"} o vídeo de ${esc(a ? a.t : "")}</button>
+    <button type="button" class="btn sm" id="vidEnviarVarios" onclick="vidEscolher(true)" ${dis} title="Escolha vários arquivos de uma vez: cada um vai para a aba pelo nome (CAP 0 … CAP 7, ou o nome da aba)">Enviar vários…</button></span>
+    <input type="file" id="vidArq" accept="video/mp4,.mp4" hidden></div>`;
+}
+function vidPintarJanela() {   /* chips e rodapé, devolvendo o foco ao chip que estava com ele */
+  if (!$("vidBack")) return;
+  const fk = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("vid-chip") ? document.activeElement.dataset.k : "";
+  $("vidChips").innerHTML = vidChipsHtml();
+  if (!VID.enviando || !$("vidFoot").querySelector(".vid-log")) $("vidFoot").innerHTML = vidFootHtml();
+  if (fk) { const c = $("vidChips").querySelector(`.vid-chip[data-k="${fk}"]`); if (c) c.focus({ preventScroll: true }); }
+}
+function vidAbrir(k) {
+  if (!vidAba(k) || !vidVeAba(k)) return;
+  if ($("vidBack")) vidFechar(true);
+  VID.foco = document.activeElement; VID.atual = k;
+  const back = document.createElement("div");
+  back.id = "vidBack"; back.className = "vid-back";
+  back.innerHTML = `<div class="vid-box" role="dialog" aria-modal="true" aria-labelledby="vidTit">
+    <div class="vid-head"><h2 id="vidTit"></h2><button type="button" class="x" id="vidX" onclick="vidFecharX()" aria-label="Fechar o vídeo" title="Fechar (Esc)">×</button></div>
+    <div class="vid-stage"><video id="vidPlayer" controls playsinline preload="auto"></video><div class="vid-msg" id="vidMsg" role="status" aria-live="polite"></div></div>
+    <div class="vid-chips" id="vidChips" role="group" aria-label="Outros vídeos da Contas a Pagar"></div>
+    <div id="vidFoot"></div></div>`;
+  back.addEventListener("keydown", ev => { if (ev.key !== "Escape" && ev.key !== "Tab") ev.stopPropagation(); });   /* as teclas do player (espaço, setas) ficam com ele; não chegam à CAP */
+  back.addEventListener("mousedown", ev => { back._ini = ev.target; });
+  back.addEventListener("click", ev => { if (ev.target === back && back._ini === back) vidFecharX(); back._ini = null; });
+  document.body.appendChild(back);
+  document.addEventListener("keydown", vidTecla, true);
+  document.body.classList.add("vid-aberto");
+  vidTocar(k);
+  setTimeout(() => { const x = $("vidX"); if (x && !back.contains(document.activeElement)) x.focus({ preventScroll: true }); }, 30);
+}
+function vidTecla(ev) {
+  const back = $("vidBack"); if (!back) return;
+  if (ev.key === "Escape") { ev.stopPropagation(); ev.preventDefault(); vidFecharX(); return; }
+  if (ev.key === "Tab") {   /* o foco fica dentro da janela */
+    const f = [...back.querySelectorAll("button:not([disabled]), video, [href]")].filter(e => e.offsetParent !== null);
+    if (!f.length) return;
+    const i = f.indexOf(document.activeElement);
+    if (ev.shiftKey && (i <= 0)) { ev.preventDefault(); f[f.length - 1].focus(); }
+    else if (!ev.shiftKey && (i === f.length - 1 || i < 0)) { ev.preventDefault(); f[0].focus(); }
+    return;
+  }
+  if (!back.contains(ev.target)) ev.stopPropagation();   /* atalhos da CAP (n, r, ?) não disparam com o vídeo aberto */
+}
+/* ×, Esc e clique fora: durante um envio, pergunta antes (o envio continua e avisa no fim) */
+function vidFecharX() {
+  if (VID.enviando && !confirm("O envio do vídeo está em andamento. Fechar a janela? O envio continua e um aviso aparece quando terminar.")) return;
+  vidFechar();
+}
+function vidFechar(silencioso) {
+  VID.tok++;   /* invalida o que estiver carregando */
+  const back = $("vidBack");
+  if (back) {
+    const v = $("vidPlayer"); if (v) { try { v.pause(); v.removeAttribute("src"); v.load(); } catch (e) {} }
+    back.remove();
+  }
+  document.removeEventListener("keydown", vidTecla, true);
+  document.body.classList.remove("vid-aberto");
+  if (!silencioso) {
+    let f = VID.foco; VID.foco = null;
+    if (f && !f.isConnected && f.id) f = document.getElementById(f.id);   /* o botão foi redesenhado depois de um envio */
+    if (f && f.isConnected && typeof f.focus === "function") { try { f.focus({ preventScroll: true }); } catch (e) {} }
+  }
+}
+window.addEventListener("hashchange", () => { if ($("vidBack")) vidFechar(true); });
+window.addEventListener("beforeunload", ev => { if (VID.enviando) { ev.preventDefault(); ev.returnValue = ""; } });
+async function vidTocar(k) {
+  const a = vidAba(k), back = $("vidBack"); if (!a || !back) return;
+  const tok = ++VID.tok, vivo = () => VID.tok === tok && back.isConnected;   /* cada chamada tem a sua vez; a anterior desiste */
+  VID.atual = k;
+  const tit = $("vidTit"), v = $("vidPlayer"), msg = $("vidMsg");
+  tit.textContent = k === "geral" ? "Contas a Pagar · Visão geral" : `Contas a Pagar · ${a.t}`;
+  vidPintarJanela();
+  v.onerror = null; v.oncanplay = null;
+  try { v.pause(); } catch (e) {}
+  v.removeAttribute("src"); v.load(); v.hidden = true;
+  msg.className = "vid-msg on"; msg.textContent = "Carregando o vídeo…";
+  await vidCarregar();
+  if (!vivo()) return;
+  vidPintarJanela();
+  const f = (VID.itens || {})[k];
+  if (!f || !vidVeAba(k)) {
+    msg.innerHTML = "<div>" + (VID.falhou ? `Não foi possível ler a pasta dos vídeos no SharePoint (${esc(VID.falhou)}).`
+      : (vidPodeEnviar() ? `Ainda não há vídeo de <b>${esc(a.t)}</b>. Use <b>Enviar o vídeo de ${esc(a.t)}</b>, abaixo.` : `Ainda não há vídeo de <b>${esc(a.t)}</b>.`)) + "</div>";
+    return;
+  }
+  const falha = () => { v.hidden = true; msg.className = "vid-msg on"; msg.innerHTML = `<div>O navegador não conseguiu tocar este vídeo.${f.webUrl ? ` <a href="${esc(f.webUrl)}" target="_blank" rel="noopener">Abrir no SharePoint</a>` : ""}</div>`; };
+  const link = async () => {
+    const drive = await docDrive();
+    const it = await graph(`/drives/${drive.id}/items/${encodeURIComponent(f.id)}`);   /* link temporário (vale ~1 h): pedido a cada abertura */
+    const url = it && it["@microsoft.graph.downloadUrl"];
+    if (!url) throw new Error("o SharePoint não devolveu o link do vídeo");
+    return url;
+  };
+  try {
+    const url = await link();
+    if (!vivo()) return;
+    let renovou = false;
+    v.onerror = async () => {
+      if (!vivo()) return;
+      const t = v.currentTime || 0;
+      if (!renovou && t > 0) {   /* pausa longa: o link venceu — pede outro uma vez e continua de onde parou */
+        renovou = true;
+        try { const u2 = await link(); if (!vivo()) return; v.src = u2; v.currentTime = t; const p2 = v.play(); if (p2 && p2.catch) p2.catch(() => {}); return; } catch (e) {}
+      }
+      if (vivo()) falha();
+    };
+    v.oncanplay = () => { if (vivo()) { msg.className = "vid-msg"; msg.textContent = ""; } };
+    v.hidden = false;
+    v.src = url;
+    const p = v.play(); if (p && p.catch) p.catch(() => { if (vivo() && !v.error) msg.className = "vid-msg"; });   /* sem autoplay: fica o botão de tocar */
+  } catch (e) {
+    if (!vivo()) return;
+    v.hidden = true; msg.className = "vid-msg on"; msg.textContent = "Não foi possível abrir o vídeo: " + ((e && e.message) || e);
+  }
+}
+/* ---------- envio (administrador ou proprietário de Lançamentos da CAP) ---------- */
+function vidCasar(nome) {   /* "CAP 1 - Lancamentos (v1).mp4" → lista; também pelo nome da aba sem acento */
+  const s = String(nome || "");
+  const m = s.match(/(?:^|[^A-Za-z])CAP\s*(\d)\b/i); if (m) return VID.abas.find(a => a.n === Number(m[1])) || null;
+  const n = s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const pal = { geral: /visao geral|\bgeral\b/, lista: /lancamento/, obr: /obrigac/, forn: /fornecedor/, fav: /favorito/, pend: /pendencia/, painel: /painel/, contab: /contabilidade/ };
+  const ach = VID.abas.filter(a => pal[a.k].test(n));
+  return ach.length === 1 ? ach[0] : null;
+}
+function vidEscolher(varios) {
+  if (!vidPodeEnviar() || VID.enviando) return;
+  const inp = $("vidArq"); if (!inp) return;
+  inp.multiple = !!varios; inp.value = "";
+  inp.onchange = () => { const fs = [...(inp.files || [])]; if (fs.length) vidEnviar(fs, varios ? null : VID.atual); };
+  inp.click();
+}
+async function vidGarantirPasta(drive) {
+  let atual = "";
+  for (const p of VID.pasta.split("/")) {
+    const prox = atual ? `${atual}/${p}` : p;
+    if (!DOC.pastas.has(prox)) {
+      try { await graph(`/drives/${drive.id}/root:/${docEncode(prox)}`); }
+      catch (e) {
+        if (e.status !== 404) throw e;
+        const url = atual ? `/drives/${drive.id}/root:/${docEncode(atual)}:/children` : `/drives/${drive.id}/root/children`;
+        try { await vidG(url, { method: "POST", body: { name: p, folder: {}, "@microsoft.graph.conflictBehavior": "fail" } }); }
+        catch (e2) { if (e2.status !== 409) throw e2; }
+      }
+      DOC.pastas.add(prox);
+    }
+    atual = prox;
+  }
+}
+async function vidSubir(drive, a, file, onProg) {
+  const base = `/drives/${drive.id}/root:/${docEncode(VID.pasta)}/${encodeURIComponent(vidNomeArq(a))}`;
+  if (file.size < 4000000) return vidG(`${base}:/content?@microsoft.graph.conflictBehavior=replace`, { method: "PUT", body: file, headers: { "Content-Type": "video/mp4" } });
+  const ses = await vidG(`${base}:/createUploadSession`, { method: "POST", body: { item: { "@microsoft.graph.conflictBehavior": "replace" } } });
+  const CH = 16 * 327680; let pos = 0, fim = null;   /* pedaços de 5 MB, múltiplos de 320 KB */
+  try {
+    while (pos < file.size) {
+      const ate = Math.min(pos + CH, file.size);
+      let r = null, erro = null;
+      for (let t = 0; t < 3; t++) {   /* falha de rede ou 5xx: tenta o mesmo pedaço de novo */
+        try { r = await fetch(ses.uploadUrl, { method: "PUT", headers: { "Content-Range": `bytes ${pos}-${ate - 1}/${file.size}` }, body: file.slice(pos, ate) }); erro = null; }
+        catch (e) { r = null; erro = e; }
+        if (r && (r.ok || (r.status < 500 && r.status !== 429))) break;
+        const ra = r && Number(r.headers.get("Retry-After"));   /* 429/5xx: espera (o Retry-After, se vier) e tenta o mesmo pedaço */
+        await new Promise(res => setTimeout(res, ra > 0 ? Math.min(ra, 30) * 1000 : 1500 * (t + 1)));
+      }
+      if (!r) throw new Error(`o envio foi interrompido (${(erro && erro.message) || "rede"})`);
+      if (!r.ok) throw new Error(`o envio foi interrompido (${r.status})`);
+      if (r.status === 200 || r.status === 201) fim = await r.json();
+      pos = ate; if (onProg) onProg(pos / file.size);
+    }
+  } catch (e) { try { fetch(ses.uploadUrl, { method: "DELETE" }).catch(() => {}); } catch (x) {} throw e; }   /* cancela a sessão que ficou pela metade */
+  if (!fim || !fim.id) throw new Error("o SharePoint não confirmou o arquivo");
+  return fim;
+}
+async function vidEnviar(files, alvo) {
+  if (!vidPodeEnviar() || VID.enviando) return;
+  const back = $("vidBack"), naJanela = () => !!back && back.isConnected;
+  const plano = [], fora = [];
+  for (const f of files) {
+    const a = alvo ? vidAba(alvo) : vidCasar(f.name);
+    const ok = /\.mp4$/i.test(f.name) || f.type === "video/mp4";
+    if (!a || !ok) { fora.push(`${f.name} — ${!ok ? "não é .mp4" : "não reconheci a aba pelo nome"}`); continue; }
+    if (f.size > VID.MAX) { fora.push(`${f.name} — grande demais (${Math.round(f.size / 1048576)} MB; limite ${VID.MAX / 1048576} MB)`); continue; }
+    if (plano.some(p => p.a.k === a.k)) { fora.push(`${f.name} — outro arquivo já vai para ${a.t}`); continue; }
+    plano.push({ a, f });
+  }
+  const log = (html) => { if (naJanela() && $("vidFoot")) $("vidFoot").innerHTML = `<div class="vid-foot vid-log" role="status" aria-live="polite">${html}</div>`; };
+  if (!plano.length) { log(`<b>Nada enviado.</b><br>${fora.map(esc).join("<br>")}<br><button type="button" class="btn sm" onclick="vidTocar(VID.atual)">Voltar</button>`); return; }
+  const subst = plano.filter(p => VID.itens && VID.itens[p.a.k]).map(p => p.a.t);
+  if (subst.length && !confirm(`Substituir o vídeo de: ${subst.join(", ")}?`)) return;
+  VID.enviando = true;
+  if (naJanela()) { $("vidChips").innerHTML = vidChipsHtml(); }
+  const linhas = plano.map(p => ({ t: p.a.t, st: "na fila" }));
+  const resumo = () => `${linhas.map(l => `${esc(l.t)}: ${esc(l.st)}`).join("<br>")}${fora.length ? `<br><span class="sup">Ignorados: ${fora.map(esc).join("; ")}</span>` : ""}`;
+  const pinta = () => log(`<b>Enviando para o SharePoint…</b> não feche esta janela.<br>${resumo()}`);
+  pinta();
+  let ok = 0;
+  try {
+    const drive = await docDrive();
+    await vidGarantirPasta(drive);
+    for (let i = 0; i < plano.length; i++) {
+      linhas[i].st = "enviando…"; pinta();
+      try { await vidSubir(drive, plano[i].a, plano[i].f, x => { linhas[i].st = `enviando… ${Math.round(x * 100)}%`; pinta(); }); linhas[i].st = "✓ enviado"; ok++; }
+      catch (e) { linhas[i].st = "✗ " + ((e && e.message) || e); }
+      pinta();
+    }
+  } catch (e) { linhas.forEach(l => { if (l.st === "na fila") l.st = "✗ " + ((e && e.message) || e); }); }
+  VID.enviando = false;
+  await vidCarregar(true);
+  if (vidAtivo()) vidPintar();
+  const falhas = linhas.filter(l => l.st.startsWith("✗"));
+  if (!naJanela()) {
+    if ($("vidBack")) vidPintarJanela();   /* outra janela aberta durante o envio: reativa os chips e o rodapé */
+    toast(`Vídeos da CAP: ${ok} de ${plano.length} enviado(s).${falhas.length ? " Falhou: " + falhas.map(l => `${l.t} (${l.st.slice(2)})`).join("; ") : ""}`, falhas.length ? 9000 : 4000);
+    return;
+  }
+  const fim = `<b>${ok} de ${plano.length} vídeo(s) enviado(s).</b><br>${resumo()}`;
+  const k = (plano.find(p => p.a.k === VID.atual) || plano[0]).a.k;
+  await vidTocar(k);
+  if (naJanela() && $("vidFoot")) $("vidFoot").insertAdjacentHTML("afterbegin", `<div class="vid-foot vid-log" role="status" aria-live="polite">${fim}</div>`);
+}
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.vid-h1{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;width:30px;height:30px;margin:-4px 0 0 10px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--white);color:var(--navy);cursor:pointer}
+  .vid-h1 svg{width:18px;height:18px}.vid-h1:hover,.vid-h1:focus-visible{border-color:var(--orange);color:var(--orange)}
+  .vid-btn{display:inline-flex;align-items:center;gap:6px;margin-right:8px}.vid-btn svg{flex:0 0 auto}.vid-btn:hover{color:var(--orange)}
+  .vid-h1.sem,.vid-btn.sem{opacity:.5;border-style:dashed}
+  .vid-back{position:fixed;inset:0;z-index:9000;background:rgba(10,18,36,.72);display:flex;align-items:center;justify-content:center;padding:16px}
+  body.vid-aberto .toast{z-index:9100}
+  .vid-box{background:var(--white);color:var(--ink);border-radius:12px;width:min(1120px,100%);max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);display:flex;flex-direction:column}
+  .vid-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .vid-head h2{margin:0;font-size:17px}.vid-head .x{font-size:26px;line-height:1;background:none;border:0;cursor:pointer;color:var(--ink-2);padding:2px 8px;border-radius:6px}
+  .vid-head .x:hover,.vid-head .x:focus-visible{background:var(--line)}
+  .vid-stage{position:relative;background:#000;aspect-ratio:16/9;max-height:calc(100vh - 260px);max-height:calc(100dvh - 260px);display:flex;align-items:center;justify-content:center}
+  .vid-stage video{width:100%;height:100%;display:block;background:#000}
+  .vid-msg{display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;padding:24px;color:#E8ECF4;font-size:15px;line-height:1.5}
+  .vid-msg.on{display:flex}.vid-msg a{color:#FFC48A}
+  .vid-chips{display:flex;flex-wrap:wrap;gap:6px;padding:12px 16px}
+  .vid-chip{font:inherit;font-size:13px;font-weight:600;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--white);color:var(--ink-2);cursor:pointer}
+  .vid-chip.on{background:var(--navy);border-color:var(--navy);color:#fff}.vid-chip.sem{opacity:.55;border-style:dashed}.vid-chip:disabled{cursor:default}
+  .vid-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:0 16px 14px;font-size:13px}
+  .vid-foot .vid-acts{display:flex;gap:8px;flex-wrap:wrap}.vid-log{display:block;line-height:1.6}
+  body.vid-aberto{overflow:hidden}
+  @media (max-width:640px){.vid-back{padding:0}.vid-box{border-radius:0;max-height:100vh;max-height:100dvh;height:100%}.vid-stage{max-height:none}.vid-btn span{display:none}.vid-btn{margin-right:4px}}
+  @media print{.vid-h1,.vid-btn,.vid-back{display:none!important}}`;
+  document.head.appendChild(st);
+})();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -46062,6 +46425,7 @@ CONFIG.version = "v0.14.37.3";   /* "Sincronizar no site" publica horários e ta
 CONFIG.version = "v0.14.38";   /* acesso aos sites do SharePoint pelo ERP: grupos de segurança por site, sincronia ao salvar o acesso, conferência no Visualizar como */
 CONFIG.version = "v0.14.38.1";   /* grupos de acesso no padrão "Financeiro-ERP", "RH-ERP"… (nome da área antes de ERP), como foram criados no Entra ID */
 CONFIG.version = "v0.14.39";   /* Usuários e permissões: matriz na ordem do menu, grupos (Agentes Financeiros, Relatórios, Detro RJ) com os módulos de dentro; "Movimento de Caixa e Movimento Diário" */
+CONFIG.version = "v0.14.40";   /* CAP: ícone de vídeo no título e em cada aba, vídeo em janela sobreposta (arquivos no site CAP, envio pelo administrador) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

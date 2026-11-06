@@ -47621,6 +47621,79 @@ if (typeof AG_MOD_SITES !== "undefined") Object.keys(TAREFAS_EXCLUIDAS).forEach(
     return r0.apply(this, arguments);
   }; window.route = route; }
 
+
+/* =====================================================================
+   v0.14.41.6 · TERCEIROS — filtros numa linha só (pedido de 06/11, 18:42)
+   Com a busca e os 6 filtros (classificação, situação, produtos, categorias, centros de custo, estados), o último caía para a
+   linha de baixo. Agora todos dividem uma linha: cada caixa encolhe (texto cortado com "…"), rótulos mais curtos
+   ("Classificações", "Produtos", "Centro de custo"); "Limpar filtros" fica no fim da mesma linha. Em tela estreita (< 1000 px) volta a quebrar.
+   ===================================================================== */
+/* CAP (v0.14.41.6, pedido de 18:53): "pago dd/mm/aa" em duas linhas — quebra só no espaço (o CSS está mais abaixo) */
+{ const pc = paintCAP; paintCAP = function () {
+    const r = pc.apply(this, arguments);
+    try { document.querySelectorAll("#capBody .cap-table td.act > .sup").forEach(s => { if (/^pago \S+$/.test(s.textContent) && !s.querySelector("br")) { s.innerHTML = "pago<br>" + esc(s.textContent.slice(5)); s.classList.add("cap-pago"); } }); } catch (e) {}
+    return r;
+  }; window.paintCAP = paintCAP; }
+{ const pf = paintForn; paintForn = function () {
+    const r = pf.apply(this, arguments);
+    try {
+      const flt = $("fornBody") && $("fornBody").querySelector(".filters.terc-filtros"); if (!flt) return r;
+      const t = $("fornTipo"); if (t && t.options[0] && !t.options[0].value) t.options[0].textContent = "Classificações";
+      const pr = $("fornProd"); if (pr && pr.options[0] && !pr.options[0].value) pr.options[0].textContent = "Produtos";
+      const cc = $("fornCC"); if (cc && cc.options[0] && !cc.options[0].value) cc.options[0].textContent = "Centro de custo";
+      const lp = $("fornLimpar"); if (lp) lp.textContent = "Limpar";
+    } catch (e) {}
+    return r;
+  }; window.paintForn = paintForn; }
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `@media (min-width:1000px){
+    #fornBody .filters.terc-filtros{flex-wrap:nowrap;gap:8px}
+    #fornBody .filters.terc-filtros > *{flex:1 1 0;min-width:0;max-width:none;width:0}
+    #fornBody .filters.terc-filtros > #fornBusca{flex:2 1 0;min-width:180px;max-width:none;width:0}
+    #fornBody .filters.terc-filtros > select, #fornBody .filters.terc-filtros > input{font-size:13px}
+    #fornBody .filters.terc-filtros > select{text-overflow:ellipsis;white-space:nowrap;overflow:hidden;padding-left:10px;padding-right:26px;background-position:right 9px center}
+    #fornBody .filters.terc-filtros > #fornLimpar{flex:0 0 auto;width:auto;padding-left:12px;padding-right:12px}
+  }`;
+  document.head.appendChild(st);
+})();
+/* v0.14.41.6 · (pedido de 06/11, 18:50) a janela de confirmação do ERP abria deslizando da esquerda (usava a animação do aviso
+   rápido, que é centralizado por translate(-50%)). Agora aparece direto no centro, só com um leve surgimento. */
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `@keyframes erpSobreEntra{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+  .erp-sobre{animation:erpSobreEntra .14s ease-out!important}
+  .erp-sobre-back{align-items:center!important;padding:16px!important}`;
+  document.head.appendChild(st);
+})();
+/* v0.14.41.6 · CAP (pedido de 06/11, 18:53): a lista voltou a rolar na horizontal — o "pago dd/mm/aa" numa linha (v0.14.41.4)
+   alargou a última coluna. Agora fica em duas linhas inteiras (quebra só no espaço) ("pago" / "30/08/26"), sem cortar letra a letra e sem rolagem
+   horizontal; em telas até 1500 px as células ficam um pouco mais justas. */
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `@media (min-width:641px) and (max-width:1500px){#capBody .cap-lista-wrap .cap-table th,#capBody .cap-lista-wrap .cap-table td{padding-left:4px;padding-right:4px}#capBody .cap-lista-wrap select.forn-cls{width:104px;max-width:104px}}
+  #capBody .cap-table td.act > .sup.cap-pago{white-space:normal!important;word-break:keep-all;overflow-wrap:normal;display:inline-block;max-width:62px;text-align:center;line-height:1.25}`;
+  document.head.appendChild(st);
+})();
+/* v0.14.41.6 · CAP (pedido de 06/11, 18:57): com todos os centros de custo (e "sem centro de custo"), os chips ainda quebravam
+   para uma 2ª linha. Agora ficam numa linha só, como a Situação: chips mais compactos e, se a tela for estreita demais, a linha
+   rola de lado dentro dela mesma (a página não). */
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `@media (min-width:641px){.cap-chipbar .row > .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:4px}
+  .cap-chipbar .row > .chips::-webkit-scrollbar{display:none}
+  .cap-chipbar .row > .chips .chip{padding:4px 9px;font-size:12px;flex:0 0 auto}
+  .cap-chipbar .row > .lbl{min-width:122px}}`;   /* no celular os chips continuam quebrando (revisão) */
+  document.head.appendChild(st);
+})();
+/* v0.14.41.6 · Fluxo de Caixa (pedido de 06/11, 18:58): a data da caixa de dia ("01/10/2026") centralizada. */
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `#cxDiaSel{text-align:center;width:172px;padding-left:30px;padding-right:10px;box-sizing:border-box}
+  #cxDiaSel::-webkit-date-and-time-value{text-align:center}`;   /* Chrome não centraliza os campos da data: o recuo à esquerda equilibra o ícone do calendário */
+  document.head.appendChild(st);
+})();
+
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -47662,6 +47735,7 @@ CONFIG.version = "v0.14.41.2";   /* Terceiros: CNPJ preenche Razão Social, Nome
 CONFIG.version = "v0.14.41.3";   /* Terceiros: a busca procura também dentro dos catálogos e anexos do cadastro (Microsoft Search) */
 CONFIG.version = "v0.14.41.4";   /* Terceiros: Atualizar pela Receita (Razão Social, Nome Fantasia, UF/Cidade de todos os CNPJs, com prévia e religação da CAP) */
 CONFIG.version = "v0.14.41.5";   /* Central de Tarefas da Diretoria e do Financeiro excluídas (atividades vão para o Planner via Make) */
+CONFIG.version = "v0.14.41.6";   /* Terceiros: filtros numa linha; janela de confirmação no centro; CAP sem rolagem horizontal e chips numa linha; data centralizada no Fluxo de Caixa */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

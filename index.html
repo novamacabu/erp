@@ -46779,6 +46779,824 @@ function tercCapFornCasa(g, termos, hits) {
   document.head.appendChild(st);
 })();
 
+
+/* =====================================================================
+   v0.14.41.4 · TERCEIROS — "Atualizar pela Receita": acerto geral de Razão Social, Nome Fantasia e UF/Cidade (pedido de 06/11, 15:17)
+   - Botão em Terceiros › Banco de Dados, só para administrador e proprietário de Terceiros (nada no "Visualizar como").
+   - Consulta a Receita (BrasilAPI, a mesma da v0.14.41.2) para cada cadastro com CNPJ válido, um de cada vez, com progresso
+     e Parar. CPF fica de fora (nome de CPF não é público).
+   - Prévia por fornecedor com caixinhas: Razão Social (maiúsculas, sem acento; "… FILIAL nnnn" mantido), Nome Fantasia
+     (quando a Receita tem um) e UF/Cidade (nome da cidade pelo IBGE). Diferença só de acento/maiúscula não conta.
+     Avisos: situação na Receita diferente de ATIVA, CNPJ não encontrado, Receita sem resposta.
+   - Religar (escolha do Rafael): lançamentos da CAP e obrigações ligados ao fornecedor só pelo NOME ganham a referência do
+     cadastro antes da troca da Razão Social — assim nada se separa na CAP. Se algum não religar (mês fechado, sem
+     permissão), a Razão Social daquele fornecedor não é trocada. Dívidas — Parcelas não são tocadas (restritas).
+   - Grava só o marcado e registra uma observação no cadastro ("Atualizado pela Receita Federal …").
+   ===================================================================== */
+const TERC_ATU = { rod: false, parar: false, linhas: [], log: [], fase: "" };
+function tercAtuPode() { return !vcAtivo() && !!(session.n1 || permModulo("forn") === "proprietario"); }
+window.tercAtuPode = tercAtuPode;
+const tercAtuSuf = t => { const m = String(t || "").match(/\s+FILIAL\s+\d+\s*$/i); return m ? " FILIAL " + m[0].replace(/\D/g, "") : ""; };
+const tercAtuIgual = (a, b) => normName(String(a || "")) === normName(String(b || ""));
+function tercAtuLigados(cad) {   /* lançamentos/obrigações que só batem pelo nome (sem a referência do cadastro) */
+  const ids = new Set((FORN_STATE.items || []).map(f => String(f._id))), nome = normName(cad.Title || "");
+  const meus = new Set([docClean(cad.CNPJ)].concat((typeof tercCnpjsDe === "function" ? tercCnpjsDe(cad) : []).map(e => docClean(e.doc))).filter(Boolean));
+  const docOk = d => { const c = docClean(d); return !c || meus.has(c); };   /* revisão: conta com CNPJ de outro cadastro não é religada a este */
+  const caps = (CAP_STATE.items || []).filter(it => !(it.FornecedorRefLookupId != null && ids.has(String(it.FornecedorRefLookupId))) && normName(it.Fornecedor || "") === nome && docOk(it.CNPJ));
+  const obrs0 = (OBR_STATE.items || []).filter(o => !(o.FornecedorLookupId != null && ids.has(String(o.FornecedorLookupId))) && normName(o.FornecedorTexto || "") === nome && docOk(o.CNPJ));
+  const vis = o => typeof obrVisivel !== "function" || obrVisivel(o);
+  return { caps, obrs: obrs0.filter(vis), ocultas: obrs0.filter(o => !vis(o)).length };
+}
+function tercAtuModal(corpo, pe) {
+  modal(`<div class="modal-head"><h2>Atualizar pela Receita</h2><button class="x" onclick="tercAtuFechar()">×</button></div>
+    <div class="modal-body" id="tAtuBody">${corpo}</div><div class="modal-foot" id="tAtuFoot">${pe}</div>`);
+  const m = $("modal"); if (m) m.classList.add("wide", "terc-atu");
+}
+window.tercAtuFechar = () => {
+  if (TERC_ATU.rod && TERC_ATU.fase === "consulta") { TERC_ATU.parar = true; }
+  if (TERC_ATU.rod && TERC_ATU.fase === "grava") { toast("Gravando — espere terminar."); return; }
+  closeModal(); if (TERC_ATU.gravou) { TERC_ATU.gravou = false; loadForn(false).then(() => paintForn()).catch(() => {}); }
+};
+window.tercAtuAbrir = async () => {
+  if (!tercAtuPode()) { toast("Só o administrador ou o proprietário de Terceiros."); return; }
+  if (TERC_ATU.rod) return;
+  const alvo = (FORN_STATE.items || []).filter(x => { const d = docClean(x.CNPJ); return d.length === 14 && docValido(d); });
+  tercAtuModal(`<p>O ERP vai consultar a Receita Federal para <b>${alvo.length}</b> cadastro(s) com CNPJ (CPF fica de fora) e mostrar o que muda. <b>Nada é gravado</b> antes de você conferir e clicar em Aplicar.</p>
+      <div class="terc-atu-prog"><div class="terc-atu-bar"><i id="tAtuBar" style="width:0"></i></div><div id="tAtuSt" class="sup">Lendo a CAP e as obrigações…</div></div>`,
+    `<button class="btn" id="tAtuParar" onclick="tercAtuFechar()">Parar</button>`);
+  TERC_ATU.rod = true; TERC_ATU.parar = false; TERC_ATU.fase = "consulta"; TERC_ATU.linhas = []; TERC_ATU.log = []; TERC_ATU.capOk = true;
+  try {
+    try { await loadCAP({ soLeitura: true }); } catch (e) { TERC_ATU.capOk = false; }
+    try { await loadObr(); } catch (e) { TERC_ATU.capOk = false; }
+    if (!CAP_STATE.items || !OBR_STATE.items) TERC_ATU.capOk = false;
+    const st = () => $("tAtuSt"), bar = () => $("tAtuBar");
+    for (let i = 0; i < alvo.length; i++) {
+      if (TERC_ATU.parar || !$("tAtuBody")) break;
+      const cad = alvo[i], d = docClean(cad.CNPJ);
+      if (st()) st().textContent = `Consultando ${i + 1} de ${alvo.length}: ${cad.Title || ""}`;
+      if (bar()) bar().style.width = Math.round((i / alvo.length) * 100) + "%";
+      const novo = !TERC_RF.has(d);
+      let j = await tercRfDados(d);
+      if (!j && !TERC_ATU.parar) { await new Promise(r => setTimeout(r, 1500)); j = await tercRfDados(d); }   /* limite da BrasilAPI: espera e tenta de novo */
+      TERC_ATU.linhas.push(await tercAtuLinha(cad, j));
+      if (novo) await new Promise(r => setTimeout(r, 350));
+    }
+    TERC_ATU.parcial = TERC_ATU.parar;
+    tercAtuNomesUnicos();
+  } finally { TERC_ATU.rod = false; TERC_ATU.fase = ""; }
+  if ($("tAtuBody")) tercAtuPrevia();
+};
+async function tercAtuLinha(cad, j) {
+  const L = { id: String(cad._id), cad, doc: docFmt(cad.CNPJ), muda: {}, avisos: [], sem: !j ? "resp" : j.naoEncontrado ? "nao" : "" };
+  if (L.sem) return L;
+  const razao = tercRazaoNorm(j.razao_social || ""), suf = tercAtuSuf(cad.Title), novoNome = razao ? (razao + suf).slice(0, 255) : "";
+  if (novoNome && tercRazaoNorm(cad.Title || "") !== novoNome) L.muda.nome = { de: cad.Title || "", para: novoNome };
+  const fant = String(j.nome_fantasia || "").trim();
+  if (fant && tercRazaoNorm(fant) !== razao && !tercAtuIgual(fant, cad.NomeFantasia)) L.muda.fant = { de: cad.NomeFantasia || "", para: fant };
+  const uf = String(j.uf || "").toUpperCase();
+  if (/^[A-Z]{2}$/.test(uf) && UFS_BR.some(x => x[0] === uf)) {
+    let cid = String(j.municipio || "").trim();
+    try { const l = await tercCidades(uf); const a = (l || []).find(n => normName(n) === normName(cid)); if (a) cid = a; } catch (e) {}
+    if (cad.UF !== uf || !tercAtuIgual(cad.Cidade, cid)) L.muda.loc = { de: tercLocTxt(cad), para: [cid, uf].filter(Boolean).join(" / "), uf, cid };
+  }
+  const sit = String(j.descricao_situacao_cadastral || "").trim().toUpperCase();
+  if (sit && sit !== "ATIVA") L.avisos.push(`Situação na Receita: ${sit}`);
+  if (L.muda.nome && (FORN_STATE.items || []).filter(f => normName(f.Title || "") === normName(cad.Title || "")).length > 1) L.travaNome = "há mais de um cadastro com este nome — acerte à mão para não religar lançamentos ao cadastro errado";
+  if (L.muda.nome && !L.travaNome) {
+    if (!TERC_ATU.capOk) { L.travaNome = "não deu para ler a CAP e as obrigações para conferir os lançamentos ligados pelo nome"; }
+    else {
+      const lg = tercAtuLigados(cad); L.lig = lg;
+      const n = lg.caps.length + lg.obrs.length;
+      if (lg.ocultas) L.travaNome = `${lg.ocultas} obrigação(ões) de Dívidas ligada(s) pelo nome — a troca fica para um administrador (Gestão de Dívidas)`;
+      else if (n) {
+        const semCol = (lg.caps.length && !hasCol("FornecedorRefId")) || (lg.obrs.length && !hasColObr("FornecedorId"));
+        const semPerm = (lg.caps.length && !podeEditar("cap")) || (lg.obrs.length && !podeEditar("obr"));
+        if (semCol) L.travaNome = "a CAP ainda não tem a coluna de referência do fornecedor (Executar tudo)";
+        else if (semPerm) L.travaNome = `${n} lançamento(s)/obrigação(ões) ligados pelo nome e você não edita a CAP — não dá para religar`;
+        else L.religar = `${lg.caps.length ? lg.caps.length + " lançamento(s)" : ""}${lg.caps.length && lg.obrs.length ? " e " : ""}${lg.obrs.length ? lg.obrs.length + " obrigação(ões)" : ""} ligado(s) pelo nome — serão religados pela referência antes da troca`;
+      }
+    }
+  }
+  return L;
+}
+/* revisão: o nome continua único (a CAP também liga pelo nome). Matriz (/0001) primeiro; filial com o mesmo nome ganha
+   "FILIAL nnnn"; se ainda assim repetir, a Razão Social daquele cadastro fica travada para acerto à mão. */
+function tercAtuNomesUnicos() {
+  const ls = TERC_ATU.linhas.filter(l => l.muda.nome && !l.travaNome), ren = new Set(ls.map(l => l.id)), usado = new Set();
+  (FORN_STATE.items || []).forEach(f => { if (!ren.has(String(f._id))) usado.add(tercRazaoNorm(f.Title || "")); });
+  const mat = l => docClean(l.cad.CNPJ).slice(8, 12) === "0001" ? 0 : 1;
+  ls.sort((a, b) => mat(a) - mat(b)).forEach(l => {
+    let n = l.muda.nome.para;
+    if (usado.has(n)) {
+      const fil = docClean(l.cad.CNPJ).slice(8, 12), alt = fil && fil !== "0001" && !/ FILIAL \d+$/.test(n) ? `${n} FILIAL ${fil}` : "";
+      if (alt && !usado.has(alt)) n = alt;
+      else { l.travaNome = "outro cadastro já tem esse nome — confira (pode ser matriz e filial) e acerte à mão"; usado.add(tercRazaoNorm(l.cad.Title || "")); return; }
+    }
+    if (tercRazaoNorm(l.cad.Title || "") === n) { delete l.muda.nome; usado.add(n); return; }
+    l.muda.nome.para = n; usado.add(n);
+  });
+}
+function tercAtuPrevia() {
+  const ls = TERC_ATU.linhas, com = ls.filter(l => Object.keys(l.muda).length || l.avisos.length || l.sem);
+  const n = k => ls.filter(l => l.muda[k]).length, semR = ls.filter(l => l.sem === "resp").length, nao = ls.filter(l => l.sem === "nao").length;
+  const cx = (l, k) => { const m = l.muda[k]; if (!m) return `<td class="sup">—</td>`; const trava = k === "nome" && l.travaNome;
+    return `<td><label class="terc-atu-cx"><input type="checkbox" data-id="${esc(l.id)}" data-k="${k}" ${trava ? "disabled" : "checked"}> <span><s>${esc(m.de || "vazio")}</s><br><b>${esc(m.para)}</b></span></label>${trava ? `<div class="terc-atu-av">${esc(l.travaNome)}</div>` : k === "nome" && l.religar ? `<div class="sup">${esc(l.religar)}</div>` : ""}</td>`; };
+  const linhas = com.map(l => `<tr data-lid="${esc(l.id)}"><td><div class="desc">${esc(l.cad.Title || "—")}</div><div class="sup">${esc(l.doc)}</div>${l.avisos.map(a => `<div class="terc-atu-av">${esc(a)}</div>`).join("")}${l.sem === "nao" ? `<div class="terc-atu-av">CNPJ não encontrado na Receita — confira o número</div>` : l.sem === "resp" ? `<div class="sup">A Receita não respondeu — rode de novo depois</div>` : ""}</td>${cx(l, "nome")}${cx(l, "fant")}${cx(l, "loc")}</tr>`).join("");
+  const hd = (k, t) => `<th><label class="terc-atu-cx"><input type="checkbox" data-todos="${k}" ${n(k) ? "checked" : "disabled"}> ${t} (${n(k)})</label></th>`;
+  $("tAtuBody").innerHTML = `<p>${TERC_ATU.parcial ? `<b>Parado no meio:</b> ${ls.length} cadastro(s) consultado(s). ` : `${ls.length} cadastro(s) com CNPJ consultado(s). `}Mudanças: <b>${n("nome")}</b> Razão Social, <b>${n("fant")}</b> Nome Fantasia, <b>${n("loc")}</b> UF/Cidade.${nao ? ` ${nao} não encontrado(s).` : ""}${semR ? ` ${semR} sem resposta da Receita.` : ""}</p>
+    <p class="sup">Confira e desmarque o que não quiser. A troca da Razão Social religa antes, pela referência do cadastro, os lançamentos da CAP e as obrigações que estão ligados só pelo nome. Cada cadastro alterado ganha uma observação com o que mudou. Dívidas — Parcelas não são tocadas.</p>
+    ${com.length ? `<div class="table-wrap"><table class="cap-table terc-atu-tab"><thead><tr><th>Fornecedor</th>${hd("nome", "Razão Social")}${hd("fant", "Nome Fantasia")}${hd("loc", "UF/Cidade")}</tr></thead><tbody>${linhas}</tbody></table></div>` : `<div class="cap-empty"><h3>Tudo igual à Receita</h3><p>Nenhum cadastro com diferença.</p></div>`}
+    <div id="tAtuLog" class="terc-atu-log"></div>`;
+  $("tAtuFoot").innerHTML = `<span class="grow" id="tAtuConta"></span><button class="btn" onclick="tercAtuFechar()">Fechar</button>${com.some(l => Object.keys(l.muda).length) ? `<button class="btn primary" id="tAtuAplicar" onclick="tercAtuAplicar()">Aplicar o marcado</button>` : ""}`;
+  const conta = () => { const k = document.querySelectorAll("#tAtuBody input[data-k]:checked").length, c = $("tAtuConta"); if (c) c.textContent = `${k} mudança(s) marcada(s)`; const b = $("tAtuAplicar"); if (b) b.disabled = !k; };
+  document.querySelectorAll("#tAtuBody input[data-todos]").forEach(t => t.addEventListener("change", () => { document.querySelectorAll(`#tAtuBody input[data-k="${t.dataset.todos}"]:not(:disabled)`).forEach(i => { i.checked = t.checked; }); conta(); }));
+  document.querySelectorAll("#tAtuBody input[data-k]").forEach(i => i.addEventListener("change", conta));
+  conta();
+}
+function tercAtuLog(t, cls) { TERC_ATU.log.push(t); const l = $("tAtuLog"); if (l) { l.insertAdjacentHTML("beforeend", `<div class="${cls || ""}">${esc(t)}</div>`); l.scrollTop = l.scrollHeight; } }
+window.tercAtuAplicar = async () => {
+  if (!tercAtuPode() || TERC_ATU.rod) return;
+  const marc = {}; document.querySelectorAll("#tAtuBody input[data-k]:checked").forEach(i => { (marc[i.dataset.id] = marc[i.dataset.id] || new Set()).add(i.dataset.k); });
+  const ids = Object.keys(marc); if (!ids.length) return;
+  if (!confirm(`Gravar as mudanças marcadas em ${ids.length} cadastro(s)?\n\nCada um ganha uma observação com o que mudou. Lançamentos ligados só pelo nome são religados antes da troca da Razão Social.`)) return;   /* confirm(): a janela de confirmação do ERP fecharia esta */
+  TERC_ATU.rod = true; TERC_ATU.fase = "grava"; TERC_ATU.gravou = true;
+  document.querySelectorAll("#tAtuBody input").forEach(i => { i.disabled = true; }); const ap = $("tAtuAplicar"); if (ap) ap.disabled = true;
+  let ok = 0, falhas = 0, relig = 0, nomeFora = 0;
+  const hoje = new Date().toLocaleDateString("pt-BR");
+  try {
+    for (const id of ids) {
+      const L = TERC_ATU.linhas.find(l => l.id === id); if (!L) continue;
+      const cad = (FORN_STATE.items || []).find(x => String(x._id) === id) || L.cad, ks = marc[id], f = {}, txt = [];
+      if (ks.has("nome") && L.muda.nome && !L.travaNome) {
+        let religou = true;
+        const lg = L.lig || { caps: [], obrs: [] };
+        for (const it of lg.caps) { try { await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, { FornecedorRefLookupId: Number(id) }); it.FornecedorRefLookupId = Number(id); relig++; } catch (e) { religou = false; tercAtuLog(`   ${cad.Title}: lançamento "${it.Title || it._id}" não religou (${e.message})`, "warn"); } }
+        for (const o of lg.obrs) { try { await SP.update(OBR_STATE.site.id, OBR_STATE.list.id, o._id, { FornecedorLookupId: Number(id) }); o.FornecedorLookupId = Number(id); relig++; } catch (e) { religou = false; tercAtuLog(`   ${cad.Title}: obrigação "${o.Title || o._id}" não religou (${e.message})`, "warn"); } }
+        if (religou) {
+          f.Title = L.muda.nome.para; txt.push(`Razão Social "${L.muda.nome.de}" → "${L.muda.nome.para}"`);
+        }
+        else { nomeFora++; tercAtuLog(`${cad.Title}: a Razão Social NÃO foi trocada (há lançamento ligado só pelo nome que não religou).`, "warn"); }
+      }
+      if (ks.has("fant") && L.muda.fant) { f.NomeFantasia = L.muda.fant.para; txt.push(`Nome Fantasia "${L.muda.fant.de || "vazio"}" → "${L.muda.fant.para}"`); }
+      if (ks.has("sug") && L.muda.sug) { Object.assign(f, L.muda.sug.campos); txt.push(`Sugestões pela atividade: ${L.muda.sug.para}`); }
+      if (ks.has("loc") && L.muda.loc) { f.UF = L.muda.loc.uf; f.Cidade = L.muda.loc.cid || null; txt.push(`UF/Cidade "${L.muda.loc.de || "vazio"}" → "${L.muda.loc.para}"`); }
+      if (!txt.length) continue;
+      try {
+        Object.assign(f, tercNotaCampos(cad, `Atualizado pela Receita Federal em ${hoje}: ${txt.join("; ")}.`));
+        await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, id, f); Object.assign(cad, f); ok++;
+        tercAtuLog(`${f.Title || cad.Title}: ${txt.join("; ")}`, "ok");
+        if (f.Title) {   /* revisão: o nome novo também nas contas e obrigações ligadas pela referência (como o Unificar), só depois de o cadastro gravar —
+                            lançar parcela, preparar o mês e "nova a partir" procuram pelo nome. Mês fechado pode barrar o texto: a referência fica e basta. */
+          let txtN = 0, txtF = 0;
+          for (const it of (CAP_STATE.items || []).filter(x => String(x.FornecedorRefLookupId) === String(id) && x.Fornecedor !== f.Title)) { try { await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, { Fornecedor: f.Title }); it.Fornecedor = f.Title; txtN++; } catch (e) { txtF++; } }
+          for (const o of (OBR_STATE.items || []).filter(x => String(x.FornecedorLookupId) === String(id) && x.FornecedorTexto !== f.Title)) { try { await SP.update(OBR_STATE.site.id, OBR_STATE.list.id, o._id, { FornecedorTexto: f.Title }); o.FornecedorTexto = f.Title; txtN++; } catch (e) { txtF++; } }
+          if (txtN || txtF) tercAtuLog(`   ${f.Title}: nome novo em ${txtN} lançamento(s)/obrigação(ões)${txtF ? ` · ${txtF} mantiveram o nome antigo (mês fechado ou sem permissão) — continuam ligados pela referência` : ""}`, txtF ? "warn" : "");
+        }
+      } catch (e) { falhas++; tercAtuLog(`${cad.Title}: não gravou (${e.message})`, "warn"); }
+    }
+    tercAtuLog(`Concluído: ${ok} cadastro(s) atualizado(s)${relig ? `, ${relig} lançamento(s)/obrigação(ões) religado(s)` : ""}${nomeFora ? `, ${nomeFora} Razão Social mantida(s)` : ""}${falhas ? `, ${falhas} falha(s)` : ""}.`, falhas || nomeFora ? "warn" : "ok");
+    try { await erpParamGravar("terc_atu_receita", { em: new Date().toISOString(), por: capHistQuem(), cadastros: ok, religados: relig, falhas }); } catch (e) {}
+    CAP_STATE.rev = (CAP_STATE.rev || 0) + 1;
+  } finally { TERC_ATU.rod = false; TERC_ATU.fase = ""; }
+  const ft = $("tAtuFoot"); if (ft) ft.innerHTML = `<span class="grow">${ok} cadastro(s) atualizado(s)</span><button class="btn primary" onclick="tercAtuFechar()">Fechar</button>`;
+  else { TERC_ATU.gravou = false; loadForn(false).then(() => paintForn()).catch(() => {}); }   /* revisão: janela fechada com Esc no meio */
+};
+{ const pf = paintForn; paintForn = function () {
+    const r = pf.apply(this, arguments);
+    try {
+      const act = document.querySelector(".page .page-actions");
+      if (act && $("fornBody") && tercSoCadastro() && tercAtuPode() && !$("tercAtuBtn")) act.insertAdjacentHTML("afterbegin", `<button class="btn" id="tercAtuBtn" onclick="tercAtuAbrir()" title="Consulta a Receita para todos os CNPJs e mostra o que muda (Razão Social, Nome Fantasia, UF/Cidade) antes de gravar">Atualizar pela Receita</button>`);
+    } catch (e) {}
+    return r;
+  }; window.paintForn = paintForn; }
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `#modal.terc-atu{width:min(1100px,96vw);max-width:96vw}
+  .terc-atu-bar{height:8px;border-radius:6px;background:var(--line,#e5e7eb);overflow:hidden;margin:10px 0 6px}.terc-atu-bar i{display:block;height:100%;background:var(--navy);transition:width .2s}
+  .terc-atu-tab td{vertical-align:top}.terc-atu-tab s{color:var(--muted,#667085)}.terc-atu-cx{display:flex;gap:8px;align-items:flex-start;cursor:pointer}
+  .terc-atu-cx input{margin-top:3px}.terc-atu-av{color:var(--err);font-size:12px;margin-top:4px}
+  .terc-atu-log{max-height:180px;overflow:auto;font-size:12.5px;margin-top:12px}.terc-atu-log .warn{color:var(--err)}.terc-atu-log .ok{color:var(--ok,#067647)}`;
+  document.head.appendChild(st);
+})();
+/* ---------------------------------------------------------------------
+   v0.14.41.4 · SUGESTÕES PELA ATIVIDADE NA RECEITA (pedido de 06/11, 15:27)
+   - A partir do CNPJ (atividade principal — CNAE), o cadastro sugere Categoria, Subcategoria, Classificação de custo e Centro
+     de Custo (este também pela categoria escolhida, mesmo sem CNPJ). Só em campo vazio.
+   - A sugestão aparece em cinza, com a nota "Sugestão…" embaixo. Se a pessoa não trocar, ela vale: é gravada como escolha
+     (nada de fornecedor sem centro de custo). Trocar o campo tira o cinza.
+   - Na "Atualizar pela Receita": coluna Sugestões para os campos vazios (Classificação só quando não é Fixo/Variável, que
+     geram lançamentos sozinhos).
+   --------------------------------------------------------------------- */
+/* [prefixo do CNAE, categoria, subcategoria, classificação] — o prefixo mais longo vence */
+const TERC_CNAE = [
+  ["4731", "Combustível", "Diesel", "Variável"], ["4681", "Combustível", "Diesel", "Variável"], ["4784", "Utilidades", "Gás", "Variável"],
+  ["4520001", "Manutenção", "Serviços Mecânicos", "Eventual / Extraordinária"], ["4520002", "Manutenção", "Carroceria", "Eventual / Extraordinária"],
+  ["4520003", "Manutenção", "Elétrica", "Eventual / Extraordinária"], ["4520004", "Pneus", "Borracharia", "Eventual / Extraordinária"],
+  ["4520005", "Manutenção", "Lavagem", "Eventual / Extraordinária"], ["4520006", "Pneus", "Borracharia", "Eventual / Extraordinária"],
+  ["4520007", "Manutenção", "Serviços Mecânicos", "Eventual / Extraordinária"], ["4520", "Manutenção", "Serviços Mecânicos", "Eventual / Extraordinária"],
+  ["4530705", "Pneus", "Pneus Novos", "Eventual / Extraordinária"], ["4530", "Peças e Acessórios", "Peças", "Eventual / Extraordinária"],
+  ["2212", "Pneus", "Recapagem", "Eventual / Extraordinária"], ["4541", "Peças e Acessórios", "Peças", "Eventual / Extraordinária"],
+  ["2949", "Peças e Acessórios", "Peças", "Eventual / Extraordinária"], ["4661", "Peças e Acessórios", "Peças", "Eventual / Extraordinária"],
+  ["4732", "Manutenção", "Óleo e Lubrificantes", "Variável"], ["4689", "Manutenção", "Óleo e Lubrificantes", "Variável"],
+  ["351", "Utilidades", "Energia Elétrica", "Variável"], ["360", "Utilidades", "Água e Esgoto", "Variável"], ["370", "Utilidades", "Água e Esgoto", "Variável"],
+  ["352", "Utilidades", "Gás", "Variável"],
+  ["6110", "Telecom", "Telefonia Fixa", "Variável"], ["6120", "Telecom", "Telefonia Móvel", "Variável"], ["6130", "Telecom", "Internet", "Fixo"],
+  ["6141", "Telecom", "Internet", "Fixo"], ["6142", "Telecom", "Internet", "Fixo"], ["6190601", "Telecom", "Internet", "Fixo"], ["61", "Telecom", "Internet", "Variável"],
+  ["620", "Serviços", "Software / Sistemas", "Fixo"], ["631", "Serviços", "Software / Sistemas", "Fixo"], ["9511", "Serviços", "TI / Informática", "Eventual / Extraordinária"],
+  ["4751", "Serviços", "TI / Informática", "Eventual / Extraordinária"],
+  ["6920", "Serviços", "Contabilidade", "Fixo"], ["6911", "Jurídico", "Honorários Advocatícios", "Eventual / Extraordinária"],
+  ["7020", "Serviços", "Consultoria", "Eventual / Extraordinária"], ["8291", "Serviços", "Consulta de Crédito", "Variável"],
+  ["8020", "Serviços", "Rastreamento", "Fixo"], ["6619", "Serviços", "Bilhetagem Eletrônica", "Variável"],
+  ["651", "Seguros", "Seguro de Veículos", "Sazonal / Periódica"], ["652", "Seguros", "Seguro de Veículos", "Sazonal / Periódica"], ["662", "Seguros", "Seguro de Veículos", "Sazonal / Periódica"],
+  ["641", "Financeiras", "Tarifas Bancárias", "Variável"], ["642", "Financeiras", "Tarifas Bancárias", "Variável"], ["649", "Financeiras", "Capital de Giro", "Dívidas / Parcelamento"],
+  ["681", "Aluguel", "Imóvel", "Fixo"], ["682", "Aluguel", "Imóvel", "Fixo"], ["7719", "Frota Auxiliar", "Veículos de Apoio", "Eventual / Extraordinária"], ["7711", "Frota Auxiliar", "Veículos de Apoio", "Eventual / Extraordinária"],
+  ["9420", "Sindicatos e Associações", "Sindicato", "Fixo"], ["9411", "Sindicatos e Associações", "Federação / Associação", "Fixo"], ["9430", "Sindicatos e Associações", "Federação / Associação", "Fixo"],
+  ["812", "Terceirização", "Limpeza", "Fixo"], ["801", "Terceirização", "Segurança do Trabalho", "Fixo"],
+  ["4120", "Terceirização", "Manutenção Predial", "Eventual / Extraordinária"], ["432", "Terceirização", "Manutenção Predial", "Eventual / Extraordinária"],
+  ["433", "Terceirização", "Manutenção Predial", "Eventual / Extraordinária"], ["8111", "Terceirização", "Manutenção Predial", "Eventual / Extraordinária"],
+  ["4741", "Manutenção", "Manutenção Predial", "Eventual / Extraordinária"], ["4742", "Manutenção", "Manutenção Predial", "Eventual / Extraordinária"],
+  ["4744", "Manutenção", "Manutenção Predial", "Eventual / Extraordinária"], ["4672", "Material de Consumo", "Ferramentas", "Eventual / Extraordinária"],
+  ["4761", "Material de Consumo", "Material de Escritório", "Eventual / Extraordinária"], ["4647", "Material de Consumo", "Material de Escritório", "Eventual / Extraordinária"],
+  ["4649408", "Material de Consumo", "Material de Limpeza", "Eventual / Extraordinária"], ["2062", "Material de Consumo", "Material de Limpeza", "Eventual / Extraordinária"],
+  ["1412", "Benefícios", "Uniforme", "Eventual / Extraordinária"], ["4781", "Benefícios", "Uniforme", "Eventual / Extraordinária"],
+  ["561", "Benefícios", "Refeição / PAT", "Variável"], ["562", "Benefícios", "Refeição / PAT", "Variável"], ["4711", "Benefícios", "Cesta Básica", "Variável"],
+  ["8630", "Benefícios", "Saúde Ocupacional", "Eventual / Extraordinária"], ["8640", "Benefícios", "Saúde Ocupacional", "Eventual / Extraordinária"], ["8650", "Benefícios", "Saúde Ocupacional", "Eventual / Extraordinária"],
+  ["8599", "Treinamento", "Cursos", "Eventual / Extraordinária"], ["855", "Treinamento", "Cursos", "Eventual / Extraordinária"],
+  ["731", "Comunicação", "Publicidade", "Eventual / Extraordinária"], ["1813", "Comunicação", "Publicidade", "Eventual / Extraordinária"],
+  ["4930", "Frota Auxiliar", "Frete", "Eventual / Extraordinária"], ["5320", "Frota Auxiliar", "Frete", "Eventual / Extraordinária"],
+  ["7810", "Recrutamento", "Anúncios", "Eventual / Extraordinária"],
+  ["8411", "Tributárias", "", "Sazonal / Periódica"], ["8412", "Tributárias", "Licenciamento / DETRAN", "Sazonal / Periódica"], ["8413", "Tributárias", "Licenciamento / DETRAN", "Sazonal / Periódica"],
+  ["8424", "Tributárias", "Licenciamento / DETRAN", "Sazonal / Periódica"]
+];
+function tercSugCnae(cnae) {
+  const c = String(cnae || "").replace(/\D/g, ""); if (!c) return null;
+  let best = null; TERC_CNAE.forEach(r => { if (c.startsWith(r[0]) && (!best || r[0].length > best[0].length)) best = r; });
+  return best ? { cat: best[1], sub: best[2], classe: best[3] } : null;
+}
+const tercCnaeFmt = c => { const s = String(c || "").replace(/\D/g, "").padStart(7, "0"); return s.length === 7 ? `${s.slice(0, 4)}-${s[4]}/${s.slice(5)}` : s; };
+window.tercSugCnae = tercSugCnae;
+const TERC_SUG_IDS = ["gCat", "gSub", "gTipo", "gCC"];
+function tercSugTemOpcao(el, v) { return el.tagName !== "SELECT" || [...el.options].some(o => o.value === v); }
+function tercSugPor(el, val, motivo) {
+  if (!el || !val || el.disabled || el.readOnly || vcAtivo() || !podeEditar("forn")) return false;   /* revisão: nada em cadastro só de leitura */
+  if (el.value && !el.classList.contains("sug-campo")) return false;   /* preenchido pela pessoa (ou já gravado): não mexe */
+  if (!tercSugTemOpcao(el, val)) return false;
+  const m = $("modal"), suj = m ? m.dataset.sujo : "";
+  el._sugSet = true; el.value = val; el.classList.add("sug-campo"); el.dataset.sug = val;
+  try { if (el.id === "gCat" || el.id === "gCC") el.dispatchEvent(new Event("change", { bubbles: true })); } finally {   /* revisão: gSub/gTipo sem change (o plano de contas preencheria a Classificação sozinho) */ el._sugSet = false; if (m) m.dataset.sujo = suj; }   /* sugestão não conta como alteração da pessoa */
+  const fld = el.closest(".field"); if (fld) { let h = fld.querySelector(".sug-hint"); if (!h) { fld.insertAdjacentHTML("beforeend", `<div class="hint sug-hint"></div>`); h = fld.querySelector(".sug-hint"); } h.textContent = `Sugestão ${motivo}. Se não trocar, vale esta.`; }
+  return true;
+}
+function tercSugNota(el, txt) {   /* só a nota, sem preencher (revisão: Fixo/Variável) */
+  if (!el || el.value || el.disabled || vcAtivo() || !podeEditar("forn")) return;
+  const fld = el.closest(".field"); if (!fld) return; let h = fld.querySelector(".sug-hint"); if (!h) { fld.insertAdjacentHTML("beforeend", `<div class="hint sug-hint"></div>`); h = fld.querySelector(".sug-hint"); } h.textContent = txt;
+}
+function tercSugLimpar(el) { if (!el || !el.classList.contains("sug-campo")) return; el.classList.remove("sug-campo"); delete el.dataset.sug; const fld = el.closest(".field"), h = fld && fld.querySelector(".sug-hint"); if (h) h.remove(); }
+document.addEventListener("change", e => { const t = e.target; if (!t || t._sugSet || !TERC_SUG_IDS.includes(t.id) || !$("gCNPJ")) return; tercSugLimpar(t);
+  if (t.id === "gCat") { const sb = $("gSub"); if (sb && sb.classList.contains("sug-campo")) { sb.value = ""; tercSugLimpar(sb); } const cc = $("gCC"); if (cc && cc.classList.contains("sug-campo") && !CC_POR_CATEGORIA[t.value]) { cc.value = ""; tercSugLimpar(cc); } tercSugCC(); }
+  if (t.id === "gTipo") { const fld = t.closest(".field"), h = fld && fld.querySelector(".sug-hint"); if (h) h.remove(); } }, true);
+document.addEventListener("input", e => { const t = e.target; if (t && !t._sugSet && t.id === "gSub" && $("gCNPJ")) tercSugLimpar(t); }, true);
+function tercSugCC() {
+  const cc = $("gCC"), cat = ($("gCat") || {}).value; if (!cc || !cat) return;
+  const v = CC_POR_CATEGORIA[cat]; if (!v) return;
+  if (cc.classList.contains("sug-campo") || !cc.value) tercSugPor(cc, v, `pela categoria "${cat}"`);
+}
+async function tercSugAplicar() {
+  const d = $("gCNPJ"); if (!d || !$("gCat")) return;
+  const dc = docClean(d.value);
+  if (dc.length === 14 && docValido(dc)) {
+    const j = await tercRfDados(dc);
+    if (!$("gCNPJ") || docClean($("gCNPJ").value) !== dc) return;
+    const s = j && !j.naoEncontrado ? tercSugCnae(j.cnae_fiscal) : null;
+    if (s) {
+      const mot = `pela atividade na Receita (CNAE ${tercCnaeFmt(j.cnae_fiscal)}${j.cnae_fiscal_descricao ? " — " + String(j.cnae_fiscal_descricao).slice(0, 90) : ""})`;
+      const catOk = tercSugPor($("gCat"), s.cat, mot);
+      if (s.classe === "Fixo" || s.classe === "Variável") tercSugNota($("gTipo"), `Sugestão ${mot}: ${s.classe}. Escolha para confirmar — Fixo e Variável geram o lançamento do mês sozinhos, por isso não vêm marcados.`);
+      else tercSugPor($("gTipo"), s.classe, mot);
+      if (s.sub && (catOk || ($("gCat").value === s.cat))) tercSugPor($("gSub"), s.sub, mot);
+    }
+  }
+  tercSugCC();
+}
+window.tercSugAplicar = tercSugAplicar;
+{ const rc = tercRfConsultar; tercRfConsultar = async function () { const r = await rc.apply(this, arguments); try { await tercSugAplicar(); } catch (e) { console.warn("sugestões", e); } return r; }; window.tercRfConsultar = tercRfConsultar; }
+{ const fw = fornWireForm; fornWireForm = function () { const r = fw.apply(this, arguments); setTimeout(() => { tercSugAplicar().catch(() => {}); }, 0); return r; }; window.fornWireForm = fornWireForm; }
+/* lote: sugestões para os campos vazios */
+{ const ll = tercAtuLinha; tercAtuLinha = async function (cad, j) {
+    const L = await ll.apply(this, arguments);
+    if (!j || j.naoEncontrado) return L;
+    const s = tercSugCnae(j.cnae_fiscal), campos = {}, txt = [];
+    const cat = cad.CategoriaPadrao || (s && s.cat) || "";
+    if (s && !cad.CategoriaPadrao && CATEGORIAS.includes(s.cat)) { campos.CategoriaPadrao = s.cat; txt.push(`Categoria ${s.cat}`); }
+    if (s && s.sub && !cad.SubcategoriaPadrao && (cad.CategoriaPadrao || s.cat) === s.cat) { campos.SubcategoriaPadrao = s.sub; txt.push(`Subcategoria ${s.sub}`); }
+    if (!cad.CentroCustoPadrao && CC_POR_CATEGORIA[cat] && (cad.CategoriaPadrao || campos.CategoriaPadrao)) { campos.CentroCustoPadrao = CC_POR_CATEGORIA[cat]; txt.push(`Centro de Custo ${CC_POR_CATEGORIA[cat]}`); }
+    if (s && !cad.Tipo && s.classe !== "Fixo" && s.classe !== "Variável") { campos.Tipo = s.classe; txt.push(`Classificação ${s.classe}`); }
+    if (txt.length) L.muda.sug = { de: "", para: txt.join(" · "), campos, cnae: `${tercCnaeFmt(j.cnae_fiscal)}${j.cnae_fiscal_descricao ? " — " + j.cnae_fiscal_descricao : ""}` };
+    return L;
+  }; }
+{ const pv = tercAtuPrevia; tercAtuPrevia = function () {
+    pv.apply(this, arguments);
+    try {
+      const tab = document.querySelector("#tAtuBody table.terc-atu-tab"), ls = TERC_ATU.linhas;
+      const nS = ls.filter(l => l.muda.sug).length;
+      const p0 = document.querySelector("#tAtuBody > p"); if (p0 && nS) p0.insertAdjacentHTML("beforeend", ` Sugestões para campos vazios: <b>${nS}</b>.`);
+      if (!tab) {   /* só sugestões: a tabela não foi montada (nenhuma outra mudança) */
+        if (!nS) return;
+        const vazio = document.querySelector("#tAtuBody .cap-empty"); if (vazio) vazio.outerHTML = `<div class="table-wrap"><table class="cap-table terc-atu-tab"><thead><tr><th>Fornecedor</th><th>Razão Social</th><th>Nome Fantasia</th><th>UF/Cidade</th></tr></thead><tbody></tbody></table></div>`;
+        $("tAtuFoot").innerHTML = `<span class="grow" id="tAtuConta"></span><button class="btn" onclick="tercAtuFechar()">Fechar</button><button class="btn primary" id="tAtuAplicar" onclick="tercAtuAplicar()">Aplicar o marcado</button>`;
+      }
+      const t2 = document.querySelector("#tAtuBody table.terc-atu-tab"), hr = t2.querySelector("thead tr"), tb = t2.querySelector("tbody");
+      hr.insertAdjacentHTML("beforeend", `<th><label class="terc-atu-cx"><input type="checkbox" data-todos="sug" ${nS ? "checked" : "disabled"}> Sugestões (${nS})</label></th>`);
+      const porId = new Map([...tb.querySelectorAll("tr")].map(tr => [tr.dataset.lid, tr]));
+      tb.querySelectorAll("tr").forEach(tr => tr.insertAdjacentHTML("beforeend", `<td class="sup">—</td>`));
+      ls.filter(l => l.muda.sug).forEach(l => {
+        let tr = porId.get(l.id);
+        if (!tr) { tb.insertAdjacentHTML("beforeend", `<tr data-lid="${esc(l.id)}"><td><div class="desc">${esc(l.cad.Title || "—")}</div><div class="sup">${esc(l.doc)}</div></td><td class="sup">—</td><td class="sup">—</td><td class="sup">—</td><td class="sup">—</td></tr>`); tr = tb.lastElementChild; }
+        tr.lastElementChild.outerHTML = `<td><label class="terc-atu-cx"><input type="checkbox" data-id="${esc(l.id)}" data-k="sug" checked> <span class="sug-txt">${esc(l.muda.sug.para)}</span></label><div class="sup">sugestão pela atividade (CNAE ${esc(l.muda.sug.cnae.slice(0, 80))})</div></td>`;
+      });
+      const conta = () => { const k = document.querySelectorAll("#tAtuBody input[data-k]:checked").length, c = $("tAtuConta"); if (c) c.textContent = `${k} mudança(s) marcada(s)`; const b = $("tAtuAplicar"); if (b) b.disabled = !k; };
+      const tt = t2.querySelector("input[data-todos=sug]"); if (tt) tt.addEventListener("change", () => { document.querySelectorAll(`#tAtuBody input[data-k="sug"]`).forEach(i => { i.checked = tt.checked; }); conta(); });
+      document.querySelectorAll("#tAtuBody input[data-k=sug]").forEach(i => i.addEventListener("change", conta));
+      conta();
+    } catch (e) { console.warn("sugestões na prévia", e); }
+  }; }
+/* ---------------------------------------------------------------------
+   v0.14.41.4 · FILTROS DE TERCEIROS (pedido de 06/11, 15:28): abas e filtros centralizados; novos filtros Categoria, Centro de
+   Custo (com "Sem centro de custo") e Estado; "Limpar filtros" quando houver filtro; a busca diz tudo o que procura.
+   --------------------------------------------------------------------- */
+const tercCCDe = x => x.CentroCustoPadrao || "";   /* revisão: o filtro segue a coluna da lista (o centro de custo gravado no cadastro) */
+{ const ff = fornFiltered; fornFiltered = function () {
+    let arr = ff.apply(this, arguments); const f = FORN_STATE.filter || {};
+    if (!tercSoCadastro()) return arr;
+    if (f.cat) arr = arr.filter(x => f.cat === "__vazio" ? !x.CategoriaPadrao : x.CategoriaPadrao === f.cat);
+    if (f.cc) arr = arr.filter(x => f.cc === "__vazio" ? !tercCCDe(x) : tercCCDe(x) === f.cc);
+    if (f.uf) arr = arr.filter(x => f.uf === "__vazio" ? !x.UF : x.UF === f.uf);
+    return arr;
+  }; window.fornFiltered = fornFiltered; }
+window.tercFiltro = (k, v) => { FORN_STATE.filter[k] = v; FORN_STATE.pageN = 45; paintForn(); };
+window.tercFiltrosLimpar = () => { const f = FORN_STATE.filter; Object.assign(f, { tipo: "", ativo: "ativos", busca: "", pag: "", papel: "", prod: "", cat: "", cc: "", uf: "", semDoc: false }); FORN_STATE.pageN = 45; paintForn(); };
+{ const pf = paintForn; paintForn = function () {
+    const r = pf.apply(this, arguments);
+    try {
+      const body = $("fornBody"); if (!body || !tercSoCadastro()) return r;
+      const flt = body.querySelector(".filters"); if (!flt || flt.dataset.terc) return r;
+      flt.dataset.terc = "1"; flt.classList.add("terc-filtros");
+      const f = FORN_STATE.filter, all = FORN_STATE.items || [];
+      const b = $("fornBusca"); if (b) b.placeholder = "Buscar por nome, CNPJ/CPF, produto, observação, contato ou texto dos anexos…";
+      const sel = (id, k, rot, ops, vazio) => `<select id="${id}" title="${esc(rot)}" onchange="tercFiltro('${k}', this.value)"><option value="">${esc(rot)}</option>${vazio ? `<option value="__vazio" ${f[k] === "__vazio" ? "selected" : ""}>${esc(vazio)}</option>` : ""}${ops.map(o => `<option value="${esc(o)}" ${f[k] === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+      const usados = fn => [...new Set(all.map(fn).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+      flt.insertAdjacentHTML("beforeend", sel("fornCat", "cat", "Categorias", usados(x => x.CategoriaPadrao), "Sem categoria")
+        + sel("fornCC", "cc", "Centros de custo", [...new Set(CENTROS_CUSTO.concat(usados(tercCCDe)))], "Sem centro de custo")
+        + sel("fornUF", "uf", "Estados", usados(x => x.UF), "Sem estado"));
+      const ativo = f.busca || f.tipo || (f.ativo && f.ativo !== "ativos") || f.papel || f.prod || f.cat || f.cc || f.uf || f.semDoc;
+      if (ativo) flt.insertAdjacentHTML("beforeend", `<button class="btn ghost" id="fornLimpar" onclick="tercFiltrosLimpar()">Limpar filtros</button>`);
+      const n = (typeof fornFiltered === "function" ? fornFiltered() : []).length;
+      flt.insertAdjacentHTML("afterend", `<div class="terc-filtro-n sup" id="fornFiltroN">${ativo ? `${n} de ${all.length} cadastro(s) no filtro` : `${all.length} cadastro(s)`}</div>`);
+    } catch (e) { console.warn("filtros de Terceiros", e); }
+    return r;
+  }; window.paintForn = paintForn; }
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.sug-campo{color:#8A94A6!important;font-style:italic}.sug-campo option{color:var(--ink);font-style:normal}
+  .hint.sug-hint{color:#8A94A6;font-style:italic}
+  .terc-atu-tab .sug-txt{color:#8A94A6;font-style:italic}
+  #fornBody .seg-tabs.terc-abas{display:flex;width:fit-content;max-width:100%;margin:0 auto 12px;justify-content:center}
+  #fornBody .filters.terc-filtros{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
+  #fornBody .filters.terc-filtros > *{flex:1 1 170px;max-width:230px;width:auto}
+  #fornBody .filters.terc-filtros > #fornBusca{flex:2 1 320px;max-width:460px}
+  #fornBody .filters.terc-filtros > #fornLimpar{flex:0 0 auto}
+  #fornBody .terc-filtro-n{text-align:center;margin:-6px 0 10px}
+  #fornBody .terc-anx-st{text-align:center}`;
+  document.head.appendChild(st);
+})();
+/* v0.14.41.4 · CAP (pedido de 06/11, 15:33): "Situação" e "Centro de custo" na mesma linha dos seus chips — com muitos centros de
+   custo, a caixa dos chips ia inteira para a linha de baixo. O rótulo fica fixo à esquerda (mesma largura nas duas linhas, os chips
+   alinham) e os chips ocupam o resto da linha, um pouco mais compactos; só quebram dentro da própria coluna se não couberem. */
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.cap-chipbar .row{flex-wrap:nowrap;align-items:center}
+  .cap-chipbar .row > .lbl{flex:0 0 auto;min-width:112px;white-space:nowrap}
+  .cap-chipbar .row > .chips{flex:1 1 auto;min-width:0;gap:5px}
+  .cap-chipbar .row > .chips .chip{padding:5px 10px}`;
+  document.head.appendChild(st);
+})();
+/* ---------------------------------------------------------------------
+   v0.14.41.4 · CAP — mesmo fornecedor na mesma competência (pedido de 06/11, 15:43)
+   - Ao preencher o favorecido (ou o CNPJ/CPF) e a competência (vazia = mês do vencimento), o lançamento mostra na hora um aviso
+     amarelo com as contas que já existem para o mesmo fornecedor naquela competência: descrição, vencimento, valor, situação, NF,
+     parcela, com link para abrir. Mesmo fornecedor = mesmo CNPJ/CPF, ou mesma referência do cadastro, ou mesmo nome.
+   - Ao salvar um lançamento novo (ou um existente em que se trocou o fornecedor ou a competência), o ERP pede confirmação:
+     "Salvar mesmo assim". Várias contas no mês podem ser legítimas (outra NF, outra parcela), por isso não bloqueia.
+   - Continua a checagem forte que já existia ("Parece duplicada": mesmo valor e vencimento, mesma NF e parcela, mesma linha
+     digitável) — ela vem primeiro.
+   --------------------------------------------------------------------- */
+function capCompForm() {
+  const g = id => ($(id) ? String($(id).value).trim() : "");
+  const venc = g("fVenc");
+  return { Fornecedor: g("fForn"), CNPJ: g("fCNPJ"), Competencia: g("fComp") || compFromDate(venc), Vencimento: venc, Valor: g("fVal"), NumeroNF: g("fNF"), Parcela: g("fParc"), RefDocumento: g("fRef") };
+}
+function capMesmaComp(f, ignorarId) {
+  const comp = String(f.Competencia || "").slice(0, 7); if (!/^\d{4}-\d{2}$/.test(comp)) return [];
+  const doc = docClean(f.CNPJ), forn = normName(f.Fornecedor), cad = (doc && typeof fornByDoc === "function" ? fornByDoc(doc) : null) || (f.Fornecedor ? fornByName(f.Fornecedor) : null);
+  if (!doc && !forn) return [];
+  const atual = ignorarId != null ? CAP_STATE.items.find(x => String(x._id) === String(ignorarId)) : null, pd = atual && atual.ParcialDe;
+  return (CAP_STATE.items || []).filter(it => {
+    if (ignorarId != null && String(it._id) === String(ignorarId)) return false;
+    if (capCancelada(it) || (ignorarId != null && String(it.ParcialDe || "") === String(ignorarId)) || (pd && String(pd) === String(it._id))) return false;
+    if (String(itemComp(it) || "").slice(0, 7) !== comp) return false;
+    const d2 = docClean(it.CNPJ);
+    return (doc.length >= 11 && d2 === doc) || (cad && it.FornecedorRefLookupId != null && String(it.FornecedorRefLookupId) === String(cad._id)) || (forn && capFornNorm(it) === forn);
+  }).sort((a, b) => String(a.Vencimento || "").localeCompare(String(b.Vencimento || "")));
+}
+window.capMesmaComp = capMesmaComp;
+function capMesmaCompHtml(ls, comp) {
+  return `<b>Atenção:</b> este fornecedor já tem ${ls.length} lançamento(s) na competência ${esc(compLabel(comp))}:<ul>${ls.slice(0, 4).map(d => `<li><a href="#" onclick="closeModal(); capEdit(${jsArg(d._id)}); return false;" title="Abrir o lançamento existente">${esc(d.Title || "—")}</a> — vence ${esc(fmtDate(d.Vencimento))} · ${esc(fmtBRL(d.Valor))} · ${esc(d.Status === "Pendente" ? "Em aberto" : (d.Status || ""))}${d.NumeroNF ? " · NF " + esc(d.NumeroNF) : ""}${d.Parcela ? " · parcela " + esc(d.Parcela) : ""}</li>`).join("")}${ls.length > 4 ? `<li>e mais ${ls.length - 4}</li>` : ""}</ul><span class="sup">Se for outra conta (outra NF, outra parcela), pode seguir — ao salvar, o ERP pede confirmação.</span>`;
+}
+function capMesmaCompAviso() {
+  const fc = $("fComp"); if (!fc || !$("fForn") || !$("modal").contains(fc)) return;
+  const ed = CAP_STATE.editing && $("fSave") ? CAP_STATE.editing : null;
+  const f = capCompForm(), ls = capMesmaComp(f, ed ? ed._id : null);
+  let box = $("fCompAviso");
+  if (!ls.length) { if (box) box.remove(); return; }
+  if (!box) { const grid = fc.closest(".form-grid") || fc.closest(".field").parentElement; if (!grid) return; grid.insertAdjacentHTML("afterbegin", `<div class="field full cap-comp-aviso" id="fCompAviso"></div>`); box = $("fCompAviso"); }   /* revisão: no topo, fora das seções que abrem e fecham */
+  box.innerHTML = capMesmaCompHtml(ls, f.Competencia);
+}
+window.capMesmaCompAviso = capMesmaCompAviso;
+{ let t = 0; const ag = () => { clearTimeout(t); t = setTimeout(() => { try { capMesmaCompAviso(); } catch (e) {} }, 250); };
+  ["input", "change"].forEach(ev => document.addEventListener(ev, e => { const id = e.target && e.target.id; if (id === "fForn" || id === "fCNPJ" || id === "fComp" || id === "fVenc") ag(); }, true)); }
+{ const n0 = window.capNew, e0 = window.capEdit;
+  window.capNew = function () { const r = n0.apply(this, arguments); CAP_STATE.compOk = ""; setTimeout(() => { try { capMesmaCompAviso(); } catch (e) {} }, 0); return r; };
+  window.capEdit = function () { const r = e0.apply(this, arguments); CAP_STATE.compOk = ""; setTimeout(() => { try { capMesmaCompAviso(); } catch (e) {} }, 0); return r; }; }
+{ const sc = capSalvarChecado; capSalvarChecado = function (existing) {
+    try {
+      const f = capCompForm(), id = existing ? existing._id : null;
+      const mudou = !existing || normName(existing.Fornecedor) !== normName(f.Fornecedor) || docClean(existing.CNPJ) !== docClean(f.CNPJ) || String(itemComp(existing) || "").slice(0, 7) !== String(f.Competencia || "").slice(0, 7);
+      const chave = [docClean(f.CNPJ), normName(f.Fornecedor), f.Competencia].join("|");
+      const ls = mudou && CAP_STATE.compOk !== chave ? capMesmaComp(f, id) : [];
+      const fortes = ls.length && CAP_STATE.dupOk !== capDupChave(f) ? capDuplicadas(f, id) : [];
+      const e = $("fErr");
+      if (ls.length && !fortes.length && e) {   /* a duplicata forte ("Parece duplicada") continua com a mensagem dela */
+        e.style.display = "block";
+        e.innerHTML = `${capMesmaCompHtml(ls, f.Competencia).replace("<span class=\"sup\">Se for outra conta (outra NF, outra parcela), pode seguir — ao salvar, o ERP pede confirmação.</span>", "")} <button type="button" class="btn sm" id="fCompOk">${existing ? "Salvar" : "Cadastrar"} mesmo assim</button>`;
+        $("fCompOk").onclick = () => { CAP_STATE.compOk = chave; e.style.display = "none"; e.textContent = ""; capSalvarChecado(existing); };
+        e.scrollIntoView({ block: "nearest" });
+        return;
+      }
+    } catch (err) { console.warn("mesma competência", err); }
+    return sc.apply(this, arguments);
+  }; }
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.cap-comp-aviso{background:#FFF8E1;border:1px solid #F3D57A;border-radius:10px;padding:10px 12px;font-size:13px;color:var(--ink)}
+  .cap-comp-aviso ul{margin:6px 0 4px 18px;padding:0}.cap-comp-aviso li{margin:2px 0}.cap-comp-aviso a{color:var(--navy);text-decoration:underline}
+  #fErr ul{margin:6px 0 4px 18px;padding:0}`;
+  document.head.appendChild(st);
+})();
+/* revisão (bloqueio): lançamento/obrigação já ligado a um cadastro pela referência não perde a ligação ao ser salvo quando o
+   cadastro foi renomeado (o texto gravado na conta continua o nome antigo e fornByName não o acharia). Vale para qualquer renomeação. */
+let TERC_MANTER = null;
+{ const fb = fornByName; fornByName = function (name) {
+    if (TERC_MANTER && normName(name || "") === TERC_MANTER.nome) { const c = (FORN_STATE.items || []).find(f => String(f._id) === String(TERC_MANTER.id)); if (c) return c; }   /* revisão: a referência vem antes do nome */
+    return fb.apply(this, arguments);
+  }; window.fornByName = fornByName; }
+function tercManterRef(nome, ref) { const ok = ref != null && ref !== "" && (FORN_STATE.items || []).some(f => String(f._id) === String(ref)); return ok ? { nome: normName(nome || ""), id: String(ref) } : null; }
+{ const cs = capSave; capSave = async function (existing) {
+    const prev = TERC_MANTER; TERC_MANTER = existing ? tercManterRef(existing.Fornecedor, existing.FornecedorRefLookupId) : null;
+    let p; try { p = cs.apply(this, arguments); } finally { TERC_MANTER = prev; }   /* revisão: vale só na parte síncrona (a busca pelo fornecedor roda antes da 1ª espera) */
+    return await p;
+  }; window.capSave = capSave; }
+{ const os = obrSalvar; obrSalvar = async function (o) {
+    const prev = TERC_MANTER; TERC_MANTER = o && typeof o === "object" ? tercManterRef(o.FornecedorTexto, o.FornecedorLookupId) : null;
+    let p; try { p = os.apply(this, arguments); } finally { TERC_MANTER = prev; }
+    return await p;
+  }; window.obrSalvar = obrSalvar; }
+/* ---------------------------------------------------------------------
+   v0.14.41.4 · TÍTULOS EM TODO O ERP (pedido de 06/11, 16:10): em títulos e subtítulos, cada palavra com inicial maiúscula,
+   menos os conectivos (de, do, da, e, a, por, para, com…), que só sobem no começo ou depois de "—", ":" e "(".
+   Ex.: "Saídas por categoria" → "Saídas por Categoria"; "Saídas do mês — lançamento a lançamento" → "Saídas do Mês — Lançamento a Lançamento".
+   - Vale para h1–h6, cabeçalhos de seção das janelas (.form-sec/.obr-sec) e títulos de cartão; o texto auxiliar dentro do título
+     (.sup, .hint, small, contagens, botões, campos) fica como está. Nunca põe letra em minúscula (siglas e nomes ficam iguais).
+   - Aplicado na tela, conforme as páginas são desenhadas (MutationObserver); relatórios em PDF/Excel não mudam.
+   --------------------------------------------------------------------- */
+const TITULO_MINUSC = new Set(["a", "à", "ao", "aos", "as", "às", "o", "os", "e", "é", "ou", "de", "da", "das", "do", "dos", "di", "em", "no", "na", "nos", "nas", "num", "numa",
+  "por", "pelo", "pela", "pelos", "pelas", "para", "pra", "com", "sem", "sob", "sobre", "entre", "até", "um", "uma", "uns", "umas", "que", "se", "x", "vs", "via", "per"]);
+function tituloCaso(txt) {
+  let inicio = true;
+  return String(txt).replace(/(\S+)/g, tok => {
+    if (/[@\\/]|\p{L}\.\p{L}|^www\.|^https?:/u.test(tok)) { inicio = false; return tok; }   /* e-mail, endereço, arquivo, caminho: como está */
+    const m = tok.match(/^([^\p{L}\p{N}]*)([\p{L}][\p{L}\p{M}'’\-]*)(.*)$/u);
+    if (!m) { if (/[—–:(]$/.test(tok)) inicio = true; else if (/[\p{L}\p{N}]/u.test(tok)) inicio = false; return tok; }
+    const [, pre, pal, pos] = m, abre = /[(“"«]/.test(pre);
+    let out = pal;
+    const minusc = pal === pal.toLowerCase();
+    if (minusc && (inicio || abre || !TITULO_MINUSC.has(pal))) out = pal.charAt(0).toUpperCase() + pal.slice(1);
+    inicio = /[—–:]$/.test(pos) || /^[—–:]$/.test(pos);
+    return pre + out + pos;
+  });
+}
+window.tituloCaso = tituloCaso;
+const TITULO_SEL = "h1,h2,h3,h4,h5,h6,.form-sec,.obr-sec";
+const TITULO_PULA = ".sup,.hint,small,button,input,select,textarea,option,.cap-views-n,.pill,.chip,.badge,.tag,.cap-tag,[data-sem-titulo],[contenteditable]";
+function tituloAplicar(el) {
+  if (!el || el.isContentEditable || el.closest("[data-sem-titulo]")) return;
+  const FORMATA = new Set(["B", "STRONG", "EM", "I", "U", "A"]);
+  const temAntes = a => { let s0 = a.previousSibling; while (s0) { if (s0.nodeType === 1 ? /\p{L}/u.test(s0.textContent || "") : /\p{L}/u.test(s0.nodeValue || "")) return true; s0 = s0.previousSibling; } return false; };
+  const fora = n => { let a = n.parentElement;
+    while (a && a !== el) { if (a.matches(TITULO_PULA)) return true; if (!FORMATA.has(a.tagName) && temAntes(a)) return true; a = a.parentElement; }   /* revisão: <span> depois do título é texto auxiliar */
+    return false; };
+  const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: n => fora(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+  let n, primeiro = true;
+  while ((n = w.nextNode())) {
+    const v = n.nodeValue; if (!v || !/\p{Ll}/u.test(v)) { if (/\p{L}/u.test(v || "")) primeiro = false; continue; }
+    let novo = tituloCaso(v);
+    if (!primeiro && /^\s*\p{Ll}/u.test(v)) {   /* continuação do título depois de um <b>/<a>: o 1º termo não é começo */
+      const w1 = (v.match(/^\s*([\p{L}]+)/u) || [])[1]; if (w1 && TITULO_MINUSC.has(w1)) novo = v.match(/^\s*/)[0] + w1 + novo.slice(v.match(/^\s*/)[0].length + w1.length);
+    }
+    if (novo !== v) n.nodeValue = novo;
+    if (/\p{L}/u.test(v)) primeiro = false;
+  }
+}
+window.tituloAplicar = tituloAplicar;
+(function () {
+  const rodar = raiz => { try { if (raiz.matches && raiz.matches(TITULO_SEL)) tituloAplicar(raiz); if (raiz.querySelectorAll) raiz.querySelectorAll(TITULO_SEL).forEach(tituloAplicar); } catch (e) {} };
+  const pend = new Set(); let ag = false;
+  const fila = el => { pend.add(el); if (!ag) { ag = true; queueMicrotask(() => { ag = false; const xs = [...pend]; pend.clear(); xs.forEach(x => { if (x.isConnected) rodar(x); }); }); } };
+  const obs = new MutationObserver(ms => ms.forEach(m => {
+    if (m.type === "characterData") { const p = m.target.parentElement, t = p && p.closest(TITULO_SEL); if (t) fila(t); return; }
+    m.addedNodes.forEach(nd => { if (nd.nodeType === 1) fila(nd); else if (nd.nodeType === 3 && nd.parentElement) { const t = nd.parentElement.closest(TITULO_SEL); if (t) fila(t); } });
+  }));
+  const ini = () => { rodar(document.body); obs.observe(document.body, { childList: true, subtree: true, characterData: true }); };
+  if (document.body) ini(); else document.addEventListener("DOMContentLoaded", ini);
+})();
+/* ---------------------------------------------------------------------
+   v0.14.41.4 · TROCA DE FAVORECIDO SEM MISTURA DE DADOS (pedido de 06/11, 16:27)
+   Erro: no Novo lançamento, ao trocar o CNPJ/favorecido, os campos preenchidos pelo fornecedor anterior (CNPJ, categoria,
+   subcategoria, banco, forma, tipo do lançamento, descrição, vencimento) ficavam — e o lançamento misturava dois cadastros.
+   Regra (helper genérico erpAuto*, usado aqui e em Terceiros › funcionário):
+   - todo campo preenchido automaticamente guarda de quem veio; se a origem muda e a pessoa não mexeu no campo, ele passa a
+     seguir a nova origem (ou fica vazio, se a nova não tiver valor);
+   - campo que a pessoa mexeu não é trocado sozinho: aparece um aviso âmbar listando o que não segue o novo favorecido, com
+     "Usar os do novo favorecido";
+   - CNPJ e favorecido andam juntos: trocar o favorecido traz o CNPJ dele; digitar o CNPJ de outro cadastro troca o favorecido;
+   - ao salvar, CNPJ de um cadastro com favorecido de outro é barrado; CNPJ que não é do cadastro do favorecido pede confirmação.
+   --------------------------------------------------------------------- */
+function erpAutoPor(el, origem) { if (el) { el.dataset.autoDe = String(origem); el.dataset.autoVal = el.value; } }
+function erpAutoEhDe(el, origem) { return !!(el && el.dataset.autoDe != null && el.dataset.autoDe !== String(origem) && el.value === el.dataset.autoVal); }
+function erpAutoLimpar(el) { if (!el) return; if (el.id === "fTipoL") el.value = "Despesa"; else if (el.tagName === "SELECT") el.selectedIndex = 0; else el.value = ""; delete el.dataset.autoDe; delete el.dataset.autoVal; }
+window.erpAutoPor = erpAutoPor; window.erpAutoEhDe = erpAutoEhDe;
+["input", "change"].forEach(t => document.addEventListener(t, e => { const el = e.target; if (e.isTrusted && el && el.dataset && el.dataset.autoDe != null) { delete el.dataset.autoDe; delete el.dataset.autoVal; } }, true));   /* a pessoa mexeu: o campo é dela */
+const CAP_AUTO_CAMPOS = ["fCNPJ", "fCat", "fSub", "fBanco", "fForma", "fTipoL", "fTitle", "fVenc", "fComp", "fObs"];
+const CAP_AUTO_ROT = { fCat: "Categoria", fSub: "Subcategoria", fBanco: "Banco", fForma: "Forma de pagamento", fTipoL: "Tipo do lançamento" };
+function capDocsDe(f) { return f ? [docClean(f.CNPJ)].concat((typeof tercCnpjsDe === "function" ? tercCnpjsDe(f) : []).map(x => docClean(x.doc))).filter(Boolean) : []; }
+function capAutoPadroes(f) { return { fCat: fornCatConta(f.CategoriaPadrao), fSub: f.SubcategoriaPadrao, fBanco: f.BancoPadrao, fForma: f.FormaPadrao, fTipoL: f.TipoLancPadrao && TIPOS_LANC.includes(f.TipoLancPadrao) ? f.TipoLancPadrao : "" }; }
+function capTrocaAviso(html) {
+  let box = $("fTrocaAviso");
+  if (!html) { if (box) box.remove(); return; }
+  if (!box) { const h = $("fFornHint"), fld = h && h.closest(".field"); if (!fld) return; fld.insertAdjacentHTML("afterend", `<div class="field full erp-troca-aviso" id="fTrocaAviso"></div>`); box = $("fTrocaAviso"); }
+  box.innerHTML = html;
+}
+window.capTrocaUsar = () => {
+  const f = fornByName(($("fForn") || {}).value || ""); if (!f) return;
+  const P = capAutoPadroes(f);
+  Object.keys(CAP_AUTO_ROT).forEach(k => { const el = $(k); if (!el || !P[k]) return; if (el.tagName === "SELECT" && ![...el.options].some(o => o.value === P[k])) return; el.value = P[k]; erpAutoPor(el, f._id); });
+  if ($("fCat") && $("subList")) $("subList").innerHTML = subcatOptions($("fCat").value);
+  try { capCCHint(); } catch (e) {}
+  capTrocaAviso("");
+};
+{ const a0 = capApplyForn; capApplyForn = function (isNew) {
+    const fe = $("fForn"), f = fe ? fornByName(fe.value.trim()) : null;
+    if (!f) {   /* revisão: trocou para um nome sem cadastro (ou funcionário do RH): o que veio do cadastro anterior sai */
+      const orig = "txt:" + normName(fe ? fe.value : ""), ant = fe ? fe.dataset.fornAuto || "" : "";
+      if (fe && ant && ant !== orig && !ant.startsWith("txt:")) {
+        const tirados = CAP_AUTO_CAMPOS.filter(k => { const el = $(k); return el && el.dataset.autoDe === ant && el.value === el.dataset.autoVal; });
+        tirados.forEach(k => erpAutoLimpar($(k)));
+        const nomeAnt = ((FORN_STATE.items || []).find(x => String(x._id) === ant) || {}).Title || "o anterior";
+        if (tirados.length) capTrocaAviso(`<b>Favorecido trocado.</b> Os dados que vieram de ${esc(nomeAnt)} foram retirados (${tirados.map(k => CAP_AUTO_ROT[k] || ({ fCNPJ: "CNPJ/CPF", fTitle: "Descrição", fVenc: "Vencimento", fComp: "Competência", fObs: "Observação" })[k]).join(", ")}). Confira.`);
+      }
+      if (fe) fe.dataset.fornAuto = orig;
+      return a0.apply(this, arguments);
+    }
+    const id = String(f._id), ant = fe.dataset.fornAuto || "", trocou = !!ant && ant !== id;
+    const avisos = [];
+    /* CNPJ de outro cadastro: segue o favorecido escolhido */
+    const doc = $("fCNPJ"), dc = doc ? docClean(doc.value) : "";
+    if (doc && dc && !capDocsDe(f).includes(dc)) { const c = fornByDoc(dc); if (c && String(c._id) !== id) { avisos.push(`CNPJ/CPF trocado para o de ${esc(f.Title)} (era ${esc(docFmt(dc))}, de ${esc(c.Title)})`); erpAutoLimpar(doc); } }
+    CAP_AUTO_CAMPOS.forEach(k => { const el = $(k); if (erpAutoEhDe(el, id)) erpAutoLimpar(el); });
+    const antes = Object.fromEntries(CAP_AUTO_CAMPOS.map(k => [k, $(k) ? $(k).value : null]));
+    const r = a0.apply(this, arguments);
+    const vazio = k => !antes[k] || (k === "fTipoL" && antes[k] === "Despesa");
+    CAP_AUTO_CAMPOS.forEach(k => { const el = $(k); if (el && vazio(k) && el.value && el.value !== antes[k]) erpAutoPor(el, id); });
+    if (trocou) {
+      const P = capAutoPadroes(f), dif = Object.keys(CAP_AUTO_ROT).filter(k => { const el = $(k); return el && el.value && P[k] && el.value !== P[k] && el.dataset.autoDe !== id; });
+      if (dif.length) avisos.push(`Estes campos foram preenchidos antes e não seguem o cadastro de ${esc(f.Title)}: ${dif.map(k => `${CAP_AUTO_ROT[k]} (<s>${esc($(k).value)}</s> → ${esc(P[k])})`).join(", ")}. <button type="button" class="btn sm" onclick="capTrocaUsar()">Usar os de ${esc(f.Title)}</button>`);
+    }
+    if (avisos.length) capTrocaAviso(`<b>Favorecido trocado.</b> ${avisos.join(" · ")}`); else if (trocou) capTrocaAviso("");   /* mesmo favorecido de novo (ex.: sair do campo): o aviso fica como está, sem redesenhar */
+    fe.dataset.fornAuto = id;
+    return r;
+  }; }
+/* CNPJ digitado de outro cadastro: o favorecido segue o CNPJ */
+{ const cw = capWireForm; capWireForm = function (isNew) {
+    const r = cw.apply(this, arguments);
+    try {
+      const doc = $("fCNPJ"), fe = $("fForn");
+      if (doc && fe && !doc._troca) {
+        doc._troca = 1;
+        const fe0 = fornByName(fe.value.trim()); if (fe0) fe.dataset.fornAuto = String(fe0._id);   /* ponto de partida (editar) */
+        doc.addEventListener("input", () => {
+          const dc = docClean(doc.value); if (!(dc.length === 11 || dc.length === 14) || !docValido(dc)) return;
+          const c = fornByDoc(dc), atual = fornByName(fe.value.trim());
+          if (!c || (atual && (String(atual._id) === String(c._id) || capDocsDe(atual).includes(dc)))) return;
+          const era = fe.value.trim(); fe.value = c.Title; delete doc.dataset.autoDe;
+          fe.dispatchEvent(new Event("change", { bubbles: true }));   /* revisão: todos os ouvintes do favorecido (conta do fornecedor, banco do RH, avisos) */
+          if (era) { const box = $("fTrocaAviso"), extra = `Favorecido trocado para ${esc(c.Title)} — o CNPJ/CPF é dele (era "${esc(era)}").`; if (box) box.innerHTML = box.innerHTML.replace("<b>Favorecido trocado.</b>", `<b>Favorecido trocado.</b> ${extra} ·`); else capTrocaAviso(`<b>Favorecido trocado.</b> ${extra}`); }
+        });
+      }
+    } catch (e) { console.warn("troca de favorecido", e); }
+    return r;
+  }; }
+/* ao salvar: CNPJ de um cadastro e favorecido de outro não passa */
+{ const sc = capSalvarChecado; capSalvarChecado = function (existing) {
+    try {
+      const doc = docClean(($("fCNPJ") || {}).value || ""), fe = (($("fForn") || {}).value || "").trim(), e = $("fErr");
+      if (doc && fe && e && docValido(doc)) {
+        const c = fornByDoc(doc), f = fornByName(fe);
+        if (c && f && String(c._id) !== String(f._id) && !capDocsDe(f).includes(doc)) {
+          e.style.display = "block"; e.innerHTML = `<b>CNPJ/CPF e favorecido de cadastros diferentes.</b> ${esc(docFmt(doc))} é de <b>${esc(c.Title)}</b>, e o favorecido é <b>${esc(f.Title)}</b>. Ajuste um dos dois — nada foi gravado.`; e.scrollIntoView({ block: "nearest" }); return;
+        }
+        const docsF = f ? [docClean(f.CNPJ)].concat((typeof tercCnpjsDe === "function" ? tercCnpjsDe(f) : []).map(x => docClean(x.doc))).filter(Boolean) : [];
+        const chave = doc + "|" + (f ? f._id : "");
+        if (f && docsF.length && !docsF.includes(doc) && CAP_STATE.docOk !== chave) {
+          e.style.display = "block"; e.innerHTML = `<b>Confira o CNPJ/CPF:</b> ${esc(docFmt(doc))} não é o do cadastro de <b>${esc(f.Title)}</b> (${esc(docsF.map(docFmt).join(", "))}). <button type="button" class="btn sm" id="fDocOk">Salvar mesmo assim</button>`;
+          $("fDocOk").onclick = () => { CAP_STATE.docOk = chave; e.style.display = "none"; e.textContent = ""; capSalvarChecado(existing); }; e.scrollIntoView({ block: "nearest" }); return;
+        }
+      }
+    } catch (err) { console.warn("CNPJ × favorecido", err); }
+    return sc.apply(this, arguments);
+  }; }
+/* Terceiros › cadastro com papel Funcionário: nome e CPF vindos do RH seguem o funcionário escolhido */
+document.addEventListener("change", e => {   /* captura: roda antes do preenchimento do RH (tercFuncSelect) */
+  const sel = e.target; if (!sel || sel.id !== "gFunc") return;
+  try {
+    const n = $("gNome"), c = $("gCNPJ"), nv = sel.value || "x";
+    [n, c].forEach(el => { if (erpAutoEhDe(el, nv)) erpAutoLimpar(el); });
+    const n0 = n ? n.value : "", c0 = c ? c.value : "";
+    setTimeout(() => { if (n && !n0 && n.value) erpAutoPor(n, nv); if (c && !c0 && c.value) erpAutoPor(c, nv); }, 2500);
+  } catch (err) {}
+}, true);
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.erp-troca-aviso{background:#FFF4E5;border:1px solid #F5B54A;border-radius:10px;padding:10px 12px;font-size:13px;color:var(--ink)}
+  .erp-troca-aviso .btn{margin-left:6px}.erp-troca-aviso s{color:var(--muted,#667085)}`;
+  document.head.appendChild(st);
+})();
+/* ---------------------------------------------------------------------
+   v0.14.41.4 · NOTIFICAÇÕES POR CIMA (pedido de 06/11, 16:30) e CONFIRMAR AO CANCELAR (16:32) — valem em todo o ERP
+   - Mensagens de erro/aviso das janelas (".err-msg" e os campos "…Err": "Preencha os campos obrigatórios…", "Parece duplicada",
+     "Atenção…") aparecem como uma notificação flutuante por cima do formulário, no topo, com × para fechar — não mais escondidas
+     no fim da janela. Botões dentro da mensagem ("Salvar mesmo assim") continuam funcionando.
+   - Os avisos rápidos (toast) também saem no topo da tela, por cima do que está aberto.
+   - Cancelar, × ou Esc numa janela com algo digitado/alterado pede confirmação numa janela por cima ("Continuar editando" ×
+     "Descartar e fechar") — clique por engano não perde o lançamento. Janela sem alteração fecha direto.
+   --------------------------------------------------------------------- */
+function erpSobreConfirmar(o) {
+  return new Promise(res => {
+    const v = document.getElementById("erpSobre"); if (v && typeof v._fim === "function") v._fim(false); else if (v) v.remove();   /* revisão: a anterior responde "não" e solta o teclado */
+    document.body.insertAdjacentHTML("beforeend", `<div class="erp-sobre-back${o.so ? " so" : ""}" id="erpSobre" role="alertdialog" aria-modal="true"><div class="erp-sobre"><h3>${esc(o.titulo || "Confirmar")}</h3><p>${esc(o.texto || "")}</p><div class="erp-sobre-pe"><button type="button" class="btn" id="erpSobreNao">${esc(o.nao || "Não")}</button><button type="button" class="btn ${o.perigo ? "danger" : "primary"}" id="erpSobreSim">${esc(o.sim || "Sim")}</button></div></div></div>`);
+    const eu = document.getElementById("erpSobre"), foco0 = document.activeElement;
+    let feito = false;
+    const fim = r => { if (feito) return; feito = true; document.removeEventListener("keydown", tec, true); if (eu.isConnected) eu.remove();
+      try { if (foco0 && foco0.isConnected && foco0 !== document.body && typeof foco0.focus === "function") foco0.focus({ preventScroll: true }); } catch (e) {}   /* revisão: o foco volta para onde estava */
+      res(r); };
+    eu._fim = fim;
+    const tec = ev => {   /* revisão: só a janela de cima e só se ainda estiver na tela; Enter ativa o botão em foco (nunca "sim" escondido) */
+      if (!eu.isConnected || document.getElementById("erpSobre") !== eu) { document.removeEventListener("keydown", tec, true); return; }
+      if (ev.key === "Escape") { ev.preventDefault(); ev.stopImmediatePropagation(); fim(false); return; }
+      if (!eu.contains(document.activeElement)) { ev.preventDefault(); ev.stopImmediatePropagation(); const b = eu.querySelector(o.so ? "#erpSobreSim" : "#erpSobreNao"); if (b) b.focus(); return; }
+      ev.stopPropagation();
+    };
+    document.addEventListener("keydown", tec, true);
+    eu.querySelector("#erpSobreNao").onclick = () => fim(false);
+    eu.querySelector("#erpSobreSim").onclick = () => fim(true);
+    eu.addEventListener("click", ev => { if (ev.target === eu) fim(false); });
+    setTimeout(() => { const b = eu.querySelector(o.so ? "#erpSobreSim" : "#erpSobreNao"); if (b && eu.isConnected) b.focus(); }, 0);
+  });
+}
+window.erpSobreConfirmar = erpSobreConfirmar;
+/* selects, caixas e arquivos também marcam a janela como alterada (antes só o que se digitava) */
+document.addEventListener("change", ev => { const t = ev.target, m = $("modal"); if (!ev.isTrusted || !m || !t || !m.contains(t) || !t.matches || !t.matches("select,input[type=checkbox],input[type=radio],input[type=file],input[type=date],input[type=month]")) return; if (!t.closest(".field") || t.closest(".filters,.cap-filtros,[data-sem-sujo]")) return; m.dataset.sujo = "1"; }, true);   /* revisão: filtros e caixas de prévia não contam */
+const ERP_CANCELA_TXT = /^(cancelar|×|fechar|voltar|← voltar)$/i;
+let ERP_CANCELA_OK = false;
+async function erpCancelarConfirma() {
+  return erpSobreConfirmar({ titulo: "Sair sem salvar?", texto: "O que foi digitado nesta janela ainda não foi salvo e será perdido. Foi sem querer? Clique em \"Continuar editando\".", nao: "Continuar editando", sim: "Descartar e fechar", perigo: true });
+}
+document.addEventListener("click", async ev => {
+  if (ERP_CANCELA_OK) return;
+  const b = ev.target && ev.target.closest && ev.target.closest("#modal .modal-foot .btn, #modal .modal-head .x");
+  const m = $("modal"); if (!b || !m || m.dataset.sujo !== "1" || b.classList.contains("primary") || b.disabled) return;
+  if (!ERP_CANCELA_TXT.test((b.textContent || "").trim())) return;
+  ev.preventDefault(); ev.stopImmediatePropagation();
+  if (!(await erpCancelarConfirma())) return;
+  m.dataset.sujo = "";   /* já confirmado: os avisos antigos da própria janela não perguntam de novo */
+  ERP_CANCELA_OK = true; try { b.click(); } finally { ERP_CANCELA_OK = false; }
+}, true);
+fecharModalComCuidado = async function () {   /* Esc */
+  const m = $("modal"); if (document.getElementById("erpSobre")) return;
+  if (m && m.dataset.sujo === "1" && !(await erpCancelarConfirma())) return;
+  if (m) m.dataset.sujo = ""; closeModal();
+};
+window.fecharModalComCuidado = fecharModalComCuidado;
+/* mensagens das janelas como notificação flutuante */
+const ERP_NOTIF_SEL = ".err-msg, [id$='Err']";
+function erpNotifConferir() {
+  const m = $("modal"); if (!m) return;
+  m.querySelectorAll(ERP_NOTIF_SEL).forEach(e => {
+    if (e.closest(".erp-sobre-back")) return;
+    if (e.dataset.notifTxt != null && e.textContent !== e.dataset.notifTxt) { delete e.dataset.notifTxt; if (e.style.display === "none") e.style.display = ""; }   /* revisão: mensagem nova depois de fechar no × volta a aparecer */
+    const txt = (e.textContent || "").replace("×", "").trim(), vis = e.style.display !== "none" && getComputedStyle(e).display !== "none" && !!txt;
+    if (vis && !e.classList.contains("erp-notif")) { e.classList.add("erp-notif"); e.setAttribute("role", "alert"); }
+    if (!vis && e.classList.contains("erp-notif")) e.classList.remove("erp-notif");
+    if (vis && !e.querySelector(":scope > .erp-notif-x")) e.insertAdjacentHTML("afterbegin", `<button type="button" class="erp-notif-x" title="Fechar o aviso" aria-label="Fechar o aviso" onclick="const p = this.parentElement; p.dataset.notifTxt = p.textContent; p.style.display='none'">×</button>`);
+  });
+}
+(function () {
+  let ag = false; const rodar = () => { if (ag) return; ag = true; requestAnimationFrame(() => { ag = false; try { erpNotifConferir(); } catch (e) {} }); };
+  const ini = () => { const m = $("modal"); if (!m) return; new MutationObserver(rodar).observe(m, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style", "class"] }); };
+  if ($("modal")) ini(); else document.addEventListener("DOMContentLoaded", ini);
+})();
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.erp-notif{position:fixed!important;top:76px;left:50%;transform:translateX(-50%);z-index:2147481000;width:min(560px,calc(100vw - 32px));margin:0!important;
+    background:#fff;color:var(--ink)!important;border:1px solid #F1C8C3;border-left:5px solid var(--err);border-radius:12px;box-shadow:0 18px 48px rgba(11,22,40,.28);
+    padding:14px 42px 14px 16px!important;font-size:13.5px!important;line-height:1.5;animation:erpAvisoEntra .18s ease-out;max-height:60vh;overflow:auto}
+  .erp-notif .erp-notif-x{position:absolute;top:6px;right:8px;border:0;background:none;font-size:20px;line-height:1;color:var(--ink-3,#667085);cursor:pointer;padding:4px 6px}
+  .erp-notif .btn{margin-top:6px}
+  .toast{top:14px!important;bottom:auto!important;z-index:2147483500!important}
+  .erp-sobre-back{position:fixed;inset:0;z-index:2147483000;background:rgba(11,22,40,.35);display:flex;align-items:flex-start;justify-content:center;padding:110px 16px 16px}
+  .erp-sobre{background:#fff;border-radius:12px;box-shadow:0 24px 60px rgba(11,22,40,.35);width:min(440px,100%);padding:20px 22px;animation:erpAvisoEntra .18s ease-out}
+  .erp-sobre h3{margin:0 0 8px;font-size:17px;color:var(--navy)}.erp-sobre p{margin:0 0 16px;color:var(--ink-2);font-size:14px;line-height:1.5}
+  .erp-sobre-pe{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+  .erp-sobre .btn.danger{background:var(--err);border-color:var(--err);color:#fff}`;
+  document.head.appendChild(st);
+})();
+/* ---------------------------------------------------------------------
+   v0.14.41.4 · SEM JANELAS DO NAVEGADOR (pedido de 06/11, 16:33): as confirmações (ex.: "Excluir este lançamento em definitivo?")
+   e os alertas saem numa janela sobreposta do próprio ERP, não na caixa do navegador ("erp.novamacabu.com.br diz").
+   - confirm(): quando a pergunta nasce de um clique (antes de qualquer espera), o ERP mostra a janela dele com a mesma
+     pergunta; "Confirmar" refaz o clique já com a resposta "sim". Assim nada roda antes da resposta. Fora disso (perguntas que
+     aparecem depois de carregar algo), continua a caixa do navegador, para não repetir uma ação já começada.
+   - alert(): vira aviso na janela do ERP (com Ok), sem travar a tela.
+   --------------------------------------------------------------------- */
+const ERP_NATIVO = { confirm: window.confirm.bind(window), alert: window.alert.bind(window) };
+const ERP_CONF = { clique: null, noClique: false, aprovadas: [], ate: 0 };
+document.addEventListener("click", ev => {
+  if (!ev.isTrusted && !ERP_CONF.refazendo) return;
+  if (ev.isTrusted && !(ev.target && ev.target.closest && ev.target.closest("#erpSobre"))) ERP_CONF.aprovadas = [];   /* revisão: a aprovação vale só para o clique que a pediu */
+  const el = ev.target && ev.target.closest ? ev.target.closest("button, a, [onclick], input[type=checkbox], input[type=radio]") : null;
+  ERP_CONF.clique = el; ERP_CONF.noClique = true; setTimeout(() => { ERP_CONF.noClique = false; }, 0);   /* só a parte síncrona do clique */
+}, true);
+window.confirm = function (msg) {
+  const m = String(msg == null ? "" : msg);
+  if (ERP_CONF.aprovadas.length && Date.now() < ERP_CONF.ate) { const i = ERP_CONF.aprovadas.indexOf(m); if (i >= 0) return true; }   /* revisão: a aprovação vale até o fim do refazer (perguntas em sequência) */
+  const el = ERP_CONF.clique;
+  if (!ERP_CONF.noClique || !el || !el.isConnected || el.disabled || document.getElementById("erpSobre")) return ERP_NATIVO.confirm(m);
+  const aprov = ERP_CONF.aprovadas.slice(), perigo = /exclu|apag|remov|descart|zerar|desfaz|cancel/i.test(m);
+  const linhas = m.split(/\n/), titulo = perigo ? (/exclu|apag|remov/i.test(m) ? "Confirmar exclusão" : "Confirmar") : "Confirmar";
+  setTimeout(async () => {
+    const exc = perigo && /exclu|apag|remov/i.test(m);
+    const ok = await erpSobreConfirmar({ titulo, texto: linhas.join("\n"), sim: exc ? "Excluir" : "Sim", nao: exc ? "Não excluir" : "Não", perigo });
+    if (!ok || !el.isConnected) { ERP_CONF.aprovadas = []; return; }
+    ERP_CONF.aprovadas = aprov.concat([m]); ERP_CONF.ate = Date.now() + 15000;
+    ERP_CONF.refazendo = true; try { el.click(); } finally { ERP_CONF.refazendo = false; }
+    setTimeout(() => { if (Date.now() >= ERP_CONF.ate) ERP_CONF.aprovadas = []; }, 15500);
+  }, 0);
+  return false;
+};
+window.alert = function (msg) {
+  try { if (document.getElementById("erpSobre")) { toast(String(msg == null ? "" : msg), 8000); return; } erpSobreConfirmar({ titulo: "Aviso", texto: String(msg == null ? "" : msg), sim: "Ok", so: true }); } catch (e) { ERP_NATIVO.alert(msg); }   /* revisão: aviso não substitui uma pergunta aberta */
+};
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.erp-sobre p{white-space:pre-line}.erp-sobre-back.so #erpSobreNao{display:none}`;
+  document.head.appendChild(st);
+})();
+/* v0.14.41.4 · CAP (pedido de 06/11, 16:48): "pago dd/mm/aa" na última coluna saía uma letra por linha (coluna com largura
+   mínima e quebra livre). Agora fica numa linha só, um pouco menor; "cancelada" idem. */
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `#capBody .cap-table td.act > .sup{white-space:nowrap;display:inline-block;font-size:11.5px;line-height:1.3}`;
+  document.head.appendChild(st);
+})();
+/* v0.14.41.4 · (pedido de 06/11, 16:55) mensagens de "nada encontrado" ("Nenhum lançamento encontrado" / "Ajuste os filtros para
+   ver mais resultados.") centralizadas em todo o ERP — título, texto e botões. */
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.cap-empty,.page .empty{text-align:center}
+  .cap-empty h3,.page .empty h3{margin-left:auto;margin-right:auto;text-align:center}
+  .cap-empty p,.page .empty p{margin-left:auto;margin-right:auto;text-align:center}
+  .cap-empty .actions,.page .empty .actions{display:flex;justify-content:center;flex-wrap:wrap;gap:10px}`;
+  document.head.appendChild(st);
+})();
+
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -46818,6 +47636,7 @@ CONFIG.version = "v0.14.41";   /* vídeos de ajuda também no Movimento Diário,
 CONFIG.version = "v0.14.41.1";   /* CAP e demais janelas: o campo Nome Fantasia fica dentro da seção Identificação (abre e fecha com ela) */
 CONFIG.version = "v0.14.41.2";   /* Terceiros: CNPJ preenche Razão Social, Nome Fantasia e UF/Cidade pela Receita; CNPJ no topo da Identificação */
 CONFIG.version = "v0.14.41.3";   /* Terceiros: a busca procura também dentro dos catálogos e anexos do cadastro (Microsoft Search) */
+CONFIG.version = "v0.14.41.4";   /* Terceiros: Atualizar pela Receita (Razão Social, Nome Fantasia, UF/Cidade de todos os CNPJs, com prévia e religação da CAP) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

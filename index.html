@@ -46631,6 +46631,154 @@ window.tercBuscaCasa = tercBuscaCasa;
     return itens;
   }; window.buscaDados = buscaDados; }
 
+
+/* =====================================================================
+   v0.14.41.3 · TERCEIROS — a busca procura também DENTRO dos catálogos e anexos do cadastro (pedido de 06/11, 12:09)
+   - Com 3+ letras na busca (Terceiros › Banco de Dados e aba Fornecedores da CAP), o ERP pergunta ao índice do SharePoint
+     (Microsoft Search, /search/query) pelos arquivos da biblioteca do site Terceiros que contêm o texto. O arquivo que
+     estiver registrado em Documentos de um cadastro traz esse cadastro para a lista, com "achado em: <arquivo>" e o trecho.
+   - Vale para arquivos com texto (PDF digital, Word, Excel, PowerPoint); PDF escaneado/foto não tem texto para o índice.
+     Arquivo novo entra no índice do SharePoint em alguns minutos (às vezes horas).
+   - Só aparece o que a pessoa já pode abrir no SharePoint (a consulta é com a conta dela). Nada é gravado.
+   - Os outros filtros (papel, produto, classificação, ativos) continuam valendo. No "Visualizar como" a busca nos anexos
+     não roda (seria com a conta de quem visualiza).
+   - CAP › aba Fornecedores (correção da v0.14.41.2, que só valia em Terceiros): a busca dessa aba passa a usar as mesmas
+     regras (CNPJ/CPF sem pontuação, produtos, observações, contatos… do cadastro em Terceiros, várias palavras, sem acento)
+     e também procura dentro dos anexos.
+   ===================================================================== */
+const TERC_ANX = { q: "", hits: new Map(), pend: null, timer: 0, st: "", web: null };
+function tercAnxTermo() { return String((FORN_STATE.filter || {}).busca || "").trim(); }
+async function tercAnxWeb() {
+  if (TERC_ANX.web) return TERC_ANX.web;
+  if (!FORN_STATE.site) FORN_STATE.site = await SP.site(CONFIG.sites[LISTS.forn.siteKey]);
+  const d = await graph(`/sites/${FORN_STATE.site.id}/drive?$select=id,webUrl`);
+  TERC_ANX.web = { id: d.id, url: String(d.webUrl || "").replace(/\/+$/, "") }; return TERC_ANX.web;
+}
+const tercAnxTrecho = s => String(s || "").replace(/<ddd\/>/g, " … ").replace(/<\/?c0>/g, "\u0001").replace(/<[^>]*>/g, "")
+  .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim().slice(0, 220);
+async function tercAnxBuscar(q) {
+  const web = await tercAnxWeb();
+  const qs = q.replace(/["()]/g, " ").replace(/\s+/g, " ").trim(); if (qs.length < 3) return new Map();
+  let u = web.url; try { u = decodeURI(u); } catch (e) {}   /* revisão: o path: do KQL usa o endereço sem %20 */
+  const onde = u ? ` path:"${u}"` : "";   /* sem o endereço da biblioteca, procura em tudo que a pessoa pode ver; só vale o que estiver em Documentos de um cadastro */
+  /* revisão: até 200 arquivos (antes 50: termo comum deixava catálogos de fora); 30 s de prazo (o POST não tem o corte de 60 s do GET) */
+  const pedir = size => Promise.race([graph("/search/query", { method: "POST", body: { requests: [{ entityTypes: ["driveItem"], query: { queryString: qs + onde }, from: 0, size }] } }),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("A busca nos anexos não respondeu em 30 s")), 30000))]);
+  let r; try { r = await pedir(200); } catch (e) { if (e && e.status === 400) r = await pedir(50); else throw e; }
+  const hits = (((((r && r.value) || [])[0] || {}).hitsContainers || [])[0] || {}).hits || [];
+  const porItem = new Map(); hits.forEach(h => { const res = h.resource || {}, id = res.id || h.hitId; if (id) porItem.set(String(id), { trecho: tercAnxTrecho(h.summary), drive: res.parentReference && res.parentReference.driveId }); });
+  const out = new Map();
+  (FORN_STATE.items || []).forEach(x => tercDocsDe(x).forEach(a => {
+    const h = porItem.get(String(a.id)); if (!h || (h.drive && a.d && h.drive !== a.d)) return;
+    if (!out.has(String(x._id))) out.set(String(x._id), []);
+    out.get(String(x._id)).push({ id: a.id, n: a.n || "arquivo", t: a.t || "", trecho: h.trecho });
+  }));
+  return out;
+}
+const tercAnxAtivo = q => q.length >= 3 && !(typeof vcAtivo === "function" && vcAtivo());
+const tercAnxCapTermo = () => String((CAP_STATE.fv || {}).q || "").trim();
+function tercAnxRepintar(q) {
+  try {
+    if ($("fornBody") && tercAnxTermo() === q) { typeof keepFocus === "function" ? keepFocus(paintForn) : paintForn(); return; }
+    if ($("capBody") && CAP_STATE.view === "forn" && tercAnxCapTermo() === q) { typeof keepFocus === "function" ? keepFocus(paintCAP) : paintCAP(); }
+  } catch (e) {}
+}
+/* devolve os achados para q (ou null se ainda não há) e agenda a consulta quando preciso */
+function tercAnxGarantir(q) {
+  if (!tercAnxAtivo(q)) return null;
+  if (TERC_ANX.q === q) return TERC_ANX.hits;
+  if (TERC_ANX.pend !== q) { TERC_ANX.st = "busca"; tercAnxAgendar(q); }
+  return null;
+}
+function tercAnxAgendar(q) {
+  clearTimeout(TERC_ANX.timer);
+  TERC_ANX.timer = setTimeout(async () => {
+    if ((tercAnxTermo() !== q && tercAnxCapTermo() !== q) || !tercAnxAtivo(q)) return;
+    TERC_ANX.st = "busca"; TERC_ANX.pend = q;
+    let hits = new Map(), st = "";
+    try { hits = await tercAnxBuscar(q); } catch (e) { st = "erro"; console.warn("busca nos anexos", e); }
+    if (TERC_ANX.pend !== q) return;   /* outra busca começou depois */
+    TERC_ANX.pend = null; TERC_ANX.q = q; TERC_ANX.hits = hits; TERC_ANX.st = st;
+    tercAnxRepintar(q);
+  }, 700);
+}
+{ const ff = fornFiltered; fornFiltered = function () {
+    const arr = ff.apply(this, arguments), q = tercAnxTermo();
+    const hits = tercAnxGarantir(q);
+    if (!hits || !hits.size) return arr;
+    const f = FORN_STATE.filter, b = f.busca; f.busca = ""; let base;
+    try { base = ff.apply(this, arguments); } finally { f.busca = b; }
+    const tem = new Set(arr.map(x => String(x._id)));
+    return arr.concat(base.filter(x => !tem.has(String(x._id)) && TERC_ANX.hits.has(String(x._id))))
+      .sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR", { sensitivity: "base" }));   /* revisão: na ordem alfabética, como a lista */
+  }; window.fornFiltered = fornFiltered; }
+window.tercAnxAbrir = (ev, id, did) => { if (ev) { ev.preventDefault(); ev.stopPropagation(); } tercDocVer(id, did); };
+const tercAnxHtml = (cid, hs) => `<div class="terc-anx">${hs.slice(0, 3).map(h => `<div>📎 achado em: <a href="#" onclick="tercAnxAbrir(event, ${jsArg(cid)}, ${jsArg(h.id)})">${esc(h.t ? h.t + " · " : "")}${esc(h.n)}</a>${h.trecho ? `<span class="terc-anx-tr"> — ${esc(h.trecho).replace(/\u0001([^\u0001]*)\u0001/g, "<b>$1</b>").replace(/\u0001/g, "")}</span>` : ""}</div>`).join("")}${hs.length > 3 ? `<div>+ ${hs.length - 3} arquivo(s)</div>` : ""}</div>`;
+function tercAnxStatus(root, q, stId) {
+  const st = root.querySelector("#" + stId), msg = !tercAnxAtivo(q) ? ""
+    : TERC_ANX.st === "busca" ? "Procurando também dentro dos catálogos e anexos…"
+    : TERC_ANX.st === "erro" ? "A busca dentro dos anexos não respondeu agora (a lista mostra só o cadastro)."
+    : TERC_ANX.q === q ? (TERC_ANX.hits.size ? `${TERC_ANX.hits.size} cadastro(s) com o texto dentro de catálogos ou anexos.` : "Nada encontrado dentro dos catálogos e anexos.") : "";
+  if (st) st.textContent = msg;
+  else if (msg) { const flt = root.querySelector(".filters"); if (flt) flt.insertAdjacentHTML("afterend", `<div class="sup terc-anx-st" id="${stId}">${esc(msg)}</div>`); }
+}
+function tercAnxMarcar(root) {
+  if (!root) return; const q = tercAnxTermo();
+  tercAnxStatus(root, q, "fornAnxSt");
+  if (!tercAnxAtivo(q) || TERC_ANX.q !== q || !TERC_ANX.hits.size) return;
+  root.querySelectorAll("table.cap-table tbody tr").forEach(tr => {
+    const m = String(tr.getAttribute("onclick") || "").match(/fornAbrir\('(?:id:|id%3A)(\d+)'/i); if (!m || tr.querySelector(".terc-anx")) return;
+    const hs = TERC_ANX.hits.get(m[1]); if (!hs) return;
+    const td = tr.querySelector("td"); if (!td) return;
+    td.insertAdjacentHTML("beforeend", tercAnxHtml(m[1], hs));
+  });
+}
+{ const pf = paintForn; paintForn = function () {
+    const r = pf.apply(this, arguments);
+    try { tercAnxMarcar($("fornBody")); } catch (e) { console.warn("anexos na busca", e); }
+    return r;
+  }; window.paintForn = paintForn; }
+/* CAP › Fornecedores: a busca da aba passa a seguir as regras do cadastro (v0.14.41.2) e a olhar os anexos.
+   A tela é montada com a busca vazia; cada linha (capFornLinha) é mantida só se o grupo casar; o rodapé é refeito. */
+let TERC_CAPF = null;
+function tercCapFornCasa(g, termos, hits) {
+  const cad = g && g.cad;
+  if (cad && hits && hits.has(String(cad._id))) return true;
+  const extra = buscaNorm([g.nome, ...Object.keys(g.nomes || {})].join(" "));
+  const b = cad ? tercBuscaTexto(cad) : { txt: "", dig: "" };
+  return termos.every(t => extra.includes(t) || b.txt.includes(t) || (/^[\d.\/\-()\s]+$/.test(t) && docClean(t).length >= 3 && b.dig.includes(docClean(t))));
+}
+{ const cl = capFornLinha; capFornLinha = function (g) {
+    const h = cl.apply(this, arguments); if (!TERC_CAPF) return h;
+    if (!tercCapFornCasa(g, TERC_CAPF.termos, TERC_CAPF.hits)) return "";
+    TERC_CAPF.ok.push(g);
+    const cid = g.cad && TERC_CAPF.hits && TERC_CAPF.hits.has(String(g.cad._id)) ? String(g.cad._id) : "";
+    return cid ? String(h).replace(/^(\s*<tr)/, `$1 data-anx="${esc(cid)}"`) : h;
+  }; window.capFornLinha = capFornLinha; }
+{ const pc = paintCapForn; paintCapForn = function (body) {
+    const F = CAP_STATE.fv || {}, q0 = F.q, q = String(q0 || "").trim();
+    if (!q) return pc.apply(this, arguments);
+    TERC_CAPF = { termos: buscaNorm(q).split(/\s+/).filter(Boolean), hits: tercAnxGarantir(q), ok: [] };
+    if (!tercAnxAtivo(q)) TERC_CAPF.hits = null;
+    F.q = ""; let r; const ok = TERC_CAPF.ok;
+    try { r = pc.apply(this, arguments); } finally { F.q = q0; TERC_CAPF = null; }   /* revisão: nunca fica preso (Favoritos) */
+    try {
+      const b = $("cfBusca"); if (b) b.value = q0;
+      const foot = body.querySelector(".cap-foot");
+      if (foot && ok.length) foot.innerHTML = `<span><b>${ok.length}</b> fornecedor(es) no filtro</span><span>Em aberto <b>${esc(fmtBRL(ok.reduce((s, g) => s + g.r.vAberto, 0)))}</b></span><span class="venc">Vencido <b>${esc(fmtBRL(ok.reduce((s, g) => s + g.r.vVencido, 0)))}</b></span><span class="pago">Pago <b>${esc(fmtBRL(ok.reduce((s, g) => s + g.r.vPago, 0)))}</b></span>`;
+      if (tercAnxAtivo(q)) body.querySelectorAll("tr[data-anx]").forEach(tr => { const hs = TERC_ANX.hits.get(tr.dataset.anx), td = tr.children[1]; if (hs && td && !td.querySelector(".terc-anx")) td.insertAdjacentHTML("beforeend", tercAnxHtml(tr.dataset.anx, hs)); });
+      tercAnxStatus(body, q, "cfAnxSt");
+    } catch (e) { console.warn("busca CAP fornecedores", e); }
+    return r;
+  }; window.paintCapForn = paintCapForn; }
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.terc-anx{margin-top:4px;font-size:12px;color:var(--muted,#667085);font-weight:400;white-space:normal;line-height:1.45}
+  .terc-anx a{color:var(--navy);text-decoration:underline}.terc-anx b{color:var(--ink);background:#FFF3C4}
+  .terc-anx-st{margin:8px 2px 0;color:var(--muted,#667085)}`;
+  document.head.appendChild(st);
+})();
+
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -46669,6 +46817,7 @@ CONFIG.version = "v0.14.40.1";   /* CAP › vídeos: guarda recusa ".." no camin
 CONFIG.version = "v0.14.41";   /* vídeos de ajuda também no Movimento Diário, no Movimento de Caixa e em RH › Consumíveis (bloco da v0.14.40 virou genérico por módulo) */
 CONFIG.version = "v0.14.41.1";   /* CAP e demais janelas: o campo Nome Fantasia fica dentro da seção Identificação (abre e fecha com ela) */
 CONFIG.version = "v0.14.41.2";   /* Terceiros: CNPJ preenche Razão Social, Nome Fantasia e UF/Cidade pela Receita; CNPJ no topo da Identificação */
+CONFIG.version = "v0.14.41.3";   /* Terceiros: a busca procura também dentro dos catálogos e anexos do cadastro (Microsoft Search) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

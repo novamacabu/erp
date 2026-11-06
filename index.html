@@ -46472,6 +46472,21 @@ async function vidEnviar(files, alvo) {
   @media print{.vid-h1,.vid-btn,.vid-back{display:none!important}}`;
   document.head.appendChild(st);
 })();
+/* =====================================================================
+   v0.14.41.1 · CAP (e demais janelas com seções): o campo "Nome Fantasia" fica dentro da seção Identificação (pedido de 06/11, 11:05)
+   O campo é acrescentado ao lado do favorecido/fornecedor (fornFantDecorar) DEPOIS que a seção já foi fechada (v0.14.34: as janelas
+   abrem com as seções fechadas). Ele entrava sem a marca "sec-oculto" e ficava à vista com a seção fechada, até alguém abrir e fechar
+   a seção. Agora, o campo Nome Fantasia (.forn-fant) acompanha o estado da seção em que está.
+   ===================================================================== */
+function secDoElemento(el) { let e = el && el.previousElementSibling; while (e && !e.classList.contains("form-sec") && !e.classList.contains("obr-sec")) e = e.previousElementSibling; return e || null; }
+function secSincronizar(root) {
+  (root && root.querySelectorAll ? root : document).querySelectorAll(".forn-fant").forEach(el => {
+    const h = secDoElemento(el); if (!h || !h.dataset.sec) return;
+    el.classList.toggle("sec-oculto", h.classList.contains("sec-fechada"));
+  });
+}
+{ const fd0 = fornFantDecorar; fornFantDecorar = function (root) { const out = fd0.apply(this, arguments); try { secSincronizar($("modal")); } catch (e) { console.warn("sec fant", e); } return out; }; }
+{ const sd0 = secDecorar; secDecorar = function (root) { const out = sd0.apply(this, arguments); try { secSincronizar($("modal")); } catch (e) { console.warn("sec fant", e); } return out; }; window.secDecorar = secDecorar; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -46508,6 +46523,7 @@ CONFIG.version = "v0.14.39";   /* Usuários e permissões: matriz na ordem do me
 CONFIG.version = "v0.14.40";   /* CAP: ícone de vídeo no título e em cada aba, vídeo em janela sobreposta (arquivos no site CAP, envio pelo administrador) */
 CONFIG.version = "v0.14.40.1";   /* CAP › vídeos: guarda recusa ".." no caminho; janela reaberta durante o envio mostra o andamento e recarrega no fim */
 CONFIG.version = "v0.14.41";   /* vídeos de ajuda também no Movimento Diário, no Movimento de Caixa e em RH › Consumíveis (bloco da v0.14.40 virou genérico por módulo) */
+CONFIG.version = "v0.14.41.1";   /* CAP e demais janelas: o campo Nome Fantasia fica dentro da seção Identificação (abre e fecha com ela) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

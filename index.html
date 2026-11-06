@@ -47597,6 +47597,30 @@ window.alert = function (msg) {
   document.head.appendChild(st);
 })();
 
+
+/* =====================================================================
+   v0.14.41.5 · CENTRAL DE TAREFAS da Diretoria e do Financeiro excluídas (pedido de 06/11, 17:49)
+   As atividades passam a ser tratadas no Microsoft Planner, via Make, em outro momento.
+   - Saem do menu, dos cartões, da busca, da matriz de Usuários e permissões e do mapa de acesso aos sites.
+   - Os endereços antigos levam ao departamento, com um aviso.
+   - Configuração › Executar tudo deixa de criar/atualizar as listas "Central de Tarefas" (site CAP) e "Diretoria — Tarefas"
+     (site Diretoria). As listas e os dados continuam no SharePoint — nada é apagado; excluir as listas é decisão do Rafael.
+   - Com o módulo, saem as tarefas automáticas "lançamento a vencer" que a CAP mostrava na Central do Financeiro (v0.14.12).
+   - A Central de Tarefas do Operacional continua.
+   ===================================================================== */
+const TAREFAS_EXCLUIDAS = { fin_tarefas: "Financeiro", dir_tarefas: "Diretoria" };
+for (let i = MODULES.length - 1; i >= 0; i--) if (TAREFAS_EXCLUIDAS[MODULES[i].id]) MODULES.splice(i, 1);
+for (let i = SETUP_ORDER.length - 1; i >= 0; i--) if (TAREFAS_EXCLUIDAS[SETUP_ORDER[i]]) SETUP_ORDER.splice(i, 1);
+if (typeof MST_FONTES !== "undefined") for (let i = MST_FONTES.length - 1; i >= 0; i--) if (TAREFAS_EXCLUIDAS[MST_FONTES[i].k]) MST_FONTES.splice(i, 1);
+if (typeof SITES_MIG !== "undefined") for (let i = SITES_MIG.length - 1; i >= 0; i--) if (TAREFAS_EXCLUIDAS[SITES_MIG[i].k]) SITES_MIG.splice(i, 1);   /* revisão: a migração antiga de sites não copia mais as tarefas */
+if (typeof AG_MOD_SITES !== "undefined") Object.keys(TAREFAS_EXCLUIDAS).forEach(k => { delete AG_MOD_SITES[k]; });
+{ const r0 = route; route = function () {
+    const h = String(location.hash || "").split("?")[0];
+    const dep = h === "#/financeiro/central-de-tarefas" ? "Financeiro" : h === "#/diretoria/central-de-tarefas" ? "Diretoria" : "";
+    if (dep) { location.replace("#/area/" + dep); setTimeout(() => { try { toast("A Central de Tarefas saiu do ERP — as atividades vão para o Planner.", 6000); } catch (e) {} }, 300); return; }
+    return r0.apply(this, arguments);
+  }; window.route = route; }
+
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -47637,6 +47661,7 @@ CONFIG.version = "v0.14.41.1";   /* CAP e demais janelas: o campo Nome Fantasia 
 CONFIG.version = "v0.14.41.2";   /* Terceiros: CNPJ preenche Razão Social, Nome Fantasia e UF/Cidade pela Receita; CNPJ no topo da Identificação */
 CONFIG.version = "v0.14.41.3";   /* Terceiros: a busca procura também dentro dos catálogos e anexos do cadastro (Microsoft Search) */
 CONFIG.version = "v0.14.41.4";   /* Terceiros: Atualizar pela Receita (Razão Social, Nome Fantasia, UF/Cidade de todos os CNPJs, com prévia e religação da CAP) */
+CONFIG.version = "v0.14.41.5";   /* Central de Tarefas da Diretoria e do Financeiro excluídas (atividades vão para o Planner via Make) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

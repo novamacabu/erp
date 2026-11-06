@@ -46487,6 +46487,150 @@ function secSincronizar(root) {
 }
 { const fd0 = fornFantDecorar; fornFantDecorar = function (root) { const out = fd0.apply(this, arguments); try { secSincronizar($("modal")); } catch (e) { console.warn("sec fant", e); } return out; }; }
 { const sd0 = secDecorar; secDecorar = function (root) { const out = sd0.apply(this, arguments); try { secSincronizar($("modal")); } catch (e) { console.warn("sec fant", e); } return out; }; window.secDecorar = secDecorar; }
+
+/* =====================================================================
+   v0.14.41.2 · TERCEIROS — CNPJ preenche Razão Social, Nome Fantasia e UF/Cidade pela Receita (pedido de 06/11, 11:31)
+   - CNPJ / CPF passa a ser o 1º campo da Identificação: digita-se o documento e o resto vem.
+   - CNPJ válido e completo (ao digitar o 14º dígito ou ao sair do campo) → consulta pública da BrasilAPI (dados abertos
+     da Receita; nada sai do ERP além do número). Uma consulta por CNPJ por sessão.
+   - Cadastro novo: preenche Razão Social (maiúsculas, sem acento — regra da v0.14.15), Nome Fantasia (se houver) e
+     UF/Cidade (só se vazias). Trocar o CNPJ troca a Razão Social e o Nome Fantasia que a Receita tinha preenchido; o que
+     a pessoa digitou não é apagado.
+   - Editar (ou nome já digitado): não troca nada sozinho. Se o nome difere do da Receita, aviso com "Usar o da Receita".
+   - Situação na Receita diferente de ATIVA (baixada, inapta, suspensa, nula) → aviso.
+   - CPF: o nome não é público (só por serviço pago/conveniado) — continua digitado.
+   - Receita fora do ar: o cadastro segue normal, digitado.
+   BUSCA (pedido de 06/11, 11:35) — Terceiros › Banco de Dados e aba Fornecedores da CAP:
+   - CNPJ/CPF acha com ou sem pontuação (68807189000162 = 68.807.189/0001-62), também nos Outros CNPJs; telefone idem.
+   - Acha por qualquer palavra salva no cadastro: razão social, nome fantasia, produtos e serviços, observações (as de
+     antes e as registradas uma a uma), contato principal, outros contatos (nome, telefone, e-mail), e-mail, cidade/UF,
+     papéis, classificação, categoria/subcategoria, centro de custo, banco, contas do fornecedor.
+   - Sem diferença de acento ou maiúsculas; várias palavras = todas precisam aparecer (em qualquer campo).
+   - A busca geral do topo passa a achar o Terceiro pelas mesmas informações.
+   ===================================================================== */
+const TERC_RF = new Map();
+function tercRfDados(cnpj) {
+  const d = docClean(cnpj);
+  if (!TERC_RF.has(d)) {
+    const p = fetch(`https://brasilapi.com.br/api/cnpj/v1/${d}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined })
+      .then(r => r.ok ? r.json() : (r.status === 404 ? { naoEncontrado: true } : null)).catch(() => null);
+    TERC_RF.set(d, p); p.then(j => { if (!j) TERC_RF.delete(d); });   /* falha não fica guardada: tenta de novo depois */
+  }
+  return TERC_RF.get(d);
+}
+window.tercReceita = async cnpj => {   /* mesma consulta, agora guardada (antes: uma por chamada) */
+  const j = await tercRfDados(cnpj); if (!j || j.naoEncontrado) return null;
+  return { razao: j.razao_social || "", fantasia: j.nome_fantasia || "", uf: String(j.uf || "").toUpperCase(), municipio: j.municipio || "", situacao: String(j.descricao_situacao_cadastral || "").trim() };
+  /* revisão: a localização é preenchida em tercRfConsultar, depois de conferir que o CNPJ e a janela são os mesmos */
+};
+function tercRfAviso(html) { const a = $("gRfAviso"); if (!a) return; a.innerHTML = html || ""; a.hidden = !html; }
+function tercRfHint(txt, cls) { const h = $("gCNPJHint"); if (h) { h.textContent = txt; h.className = "hint " + (cls || ""); } }
+async function tercRfConsultar(forcar) {
+  const d = $("gCNPJ"), nome = $("gNome"), fz = $("gFantasia"); if (!d || !nome) return;
+  const dc = docClean(d.value);
+  if (dc.length !== 14 || !docValido(dc)) { d.dataset.rf = ""; tercRfAviso(""); return; }
+  const dup = fornByDoc(dc), ed = FORN_STATE.editando, proprio = !!(dup && ed && String(dup._id) === String(ed._id));
+  if (dup && !proprio) { tercRfAviso(""); return; }   /* "Já cadastrado: …" continua no aviso do campo */
+  if (d.dataset.rf === dc && !forcar) return; d.dataset.rf = dc;
+  tercRfHint("Válido · consultando a Receita…", "ok"); tercRfAviso("");
+  const r = await window.tercReceita(dc);
+  if (!$("gCNPJ") || docClean($("gCNPJ").value) !== dc || $("gNome") !== nome) return;   /* trocou o número ou fechou a janela */
+  if (!r) { d.dataset.rf = TERC_RF.has(dc) ? dc : ""; tercRfHint(TERC_RF.has(dc) ? "Válido · CNPJ não encontrado na Receita — confira o número" : "Válido · a Receita não respondeu — digite o nome", "warn"); return; }
+  const razao = tercRazaoNorm(r.razao), fant = String(r.fantasia || "").trim(), temFant = !!fant && tercRazaoNorm(fant) !== razao;
+  const atual = nome.value.trim(), fAtual = fz ? fz.value.trim() : "";
+  const nomeLivre = !proprio && (!atual || atual === nome.dataset.rfAuto || atual === r.razao);
+  const fantLivre = fz && !proprio && (!fAtual || fAtual === fz.dataset.rfAuto);
+  const feitos = [];
+  if (nomeLivre && razao) { nome.value = razao; nome.dataset.rfAuto = razao; feitos.push("Razão Social"); }
+  if (fantLivre) { fz.value = temFant ? fant : ""; fz.dataset.rfAuto = fz.value; if (temFant) feitos.push("Nome Fantasia"); }
+  if (!proprio) { const uf = $("gUF"), u0 = uf ? uf.value : ""; try { tercLocPreencher(r.uf, r.municipio); } catch (e) {} if (uf && uf.value !== u0) feitos.push("UF/Cidade"); }
+  if (feitos.length) { const m = $("modal"); if (m) m.dataset.sujo = "1"; }
+  const semFilial = v => tercRazaoNorm(v).replace(/ FILIAL \d+$/, "");   /* revisão: filial gravada como "… FILIAL nnnn" (v0.14.17.1) não é diferença */
+  const difNome = razao && semFilial(nome.value) !== razao, difFant = temFant && fz && tercRazaoNorm(fz.value) !== tercRazaoNorm(fant);
+  const nomes = feitos.length > 1 ? feitos.slice(0, -1).join(", ") + " e " + feitos[feitos.length - 1] : feitos[0];
+  tercRfHint(feitos.length ? `Válido · ${nomes} preenchid${feitos.length > 1 ? "os" : feitos[0] === "UF/Cidade" ? "as" : "a"} pela Receita${!temFant ? " (sem nome fantasia na Receita)" : ""} — confira`
+    : difNome || difFant ? "Válido · difere da Receita (veja abaixo)" : "Válido · confere com a Receita", feitos.length || !(difNome || difFant) ? "ok" : "warn");
+  const linhas = [];
+  if (difNome || difFant) {
+    window.__tercRf = { razao, fant: temFant ? fant : "" };
+    linhas.push(`<div>Na Receita: <b>${esc(razao)}</b>${temFant ? ` · fantasia <b>${esc(fant)}</b>` : ""}${nome.disabled || nome.readOnly ? "" : ` <button type="button" class="btn sm ghost" id="gRfUsar" onclick="tercRfUsar()">Usar o da Receita</button>`}</div>`);
+  }
+  if (r.situacao && r.situacao.toUpperCase() !== "ATIVA") linhas.push(`<div class="terc-rf-sit">Situação na Receita: <b>${esc(r.situacao.toUpperCase())}</b> — confira antes de lançar ou pagar.</div>`);
+  tercRfAviso(linhas.join(""));
+}
+window.tercRfConsultar = tercRfConsultar;
+window.tercRfUsar = () => {
+  const x = window.__tercRf, nome = $("gNome"), fz = $("gFantasia"); if (!x || !nome) return;
+  nome.value = x.razao; nome.dataset.rfAuto = x.razao;
+  if (fz && x.fant) { fz.value = x.fant; fz.dataset.rfAuto = x.fant; }
+  const m = $("modal"); if (m) m.dataset.sujo = "1";
+  tercRfHint("Válido · Razão Social" + (x.fant ? " e Nome Fantasia" : "") + " da Receita — confira e salve", "ok");
+  const a = $("gRfAviso"); if (a) { const b = a.querySelector("#gRfUsar"); if (b) b.closest("div").remove(); a.hidden = !a.innerHTML.trim(); }
+};
+/* formulário: CNPJ / CPF no topo da Identificação; lugar do aviso da Receita */
+{ const ff = fornForm; fornForm = function () {
+    let h = ff.apply(this, arguments);
+    const ini = h.indexOf('<div class="field"><label>CNPJ / CPF'), anc = '<div class="hint" id="gCNPJHint"></div></div>';
+    const fim = ini >= 0 ? h.indexOf(anc, ini) : -1, raz = h.indexOf('<div class="field full"><label>Razão Social');
+    if (ini > raz && fim > 0 && raz >= 0) {
+      const cnpj = h.slice(ini, fim + anc.length).replace('<div class="field">', '<div class="field full">');
+      h = h.slice(0, ini) + h.slice(fim + anc.length);
+      h = h.slice(0, raz) + cnpj + h.slice(raz);
+    }
+    return h.replace('<div class="hint" id="gCNPJHint"></div>', '<div class="hint" id="gCNPJHint"></div><div class="hint terc-rf" id="gRfAviso" hidden></div>');
+  }; window.fornForm = fornForm; }
+{ const fw = fornWireForm; fornWireForm = function () {
+    const r = fw.apply(this, arguments);
+    try {
+      const d = $("gCNPJ");
+      if (d && !d._rf) {
+        d._rf = 1;
+        /* a consulta antiga (só no "change", com o nome vazio) fica no lugar desta: barra-se aqui para não consultar duas vezes */
+        d.addEventListener("change", ev => { ev.stopImmediatePropagation(); tercRfConsultar(); }, true);
+        d.addEventListener("input", () => { const c = docClean(d.value); if (c.length === 14) tercRfConsultar(); else { d.dataset.rf = ""; tercRfAviso(""); } });
+        if (docClean(d.value).length === 14) setTimeout(() => tercRfConsultar(), 0);
+      }
+    } catch (e) { console.warn("terc receita", e); }
+    return r;
+  }; window.fornWireForm = fornWireForm; }
+(function () {
+  const st = document.createElement("style");
+  st.textContent = `.hint.terc-rf{display:block;margin-top:6px;color:var(--ink);line-height:1.5}
+  .hint.terc-rf .btn{margin-left:6px;vertical-align:middle}
+  .hint.terc-rf .terc-rf-sit{color:var(--err);margin-top:4px}`;
+  document.head.appendChild(st);
+})();
+
+function tercBuscaTexto(x) {
+  const docs = [x.CNPJ].concat((typeof tercCnpjsDe === "function" ? tercCnpjsDe(x) : []).flatMap(e => [e.doc, e.rot]));
+  const conts = tercContatosDe(x);
+  const partes = [x.Title, x.NomeFantasia, ...docs, ...(typeof tercProdutosDe === "function" ? tercProdutosDe(x) : []), x.Observacoes,
+    ...(typeof tercNotas === "function" ? tercNotas(x).map(n => n.t) : []), x.Contato, x.Telefone, x.Email, x.Cidade, x.UF,
+    ...conts.flatMap(c => [c.n, c.s, c.tel, c.email]), ...tercPapeis(x), x.Tipo, x.CategoriaPadrao, x.SubcategoriaPadrao, x.CentroCustoPadrao,
+    x.BancoPadrao, x.FormaPadrao, x.Estabelecimento, ...tercContasDe(x).flatMap(c => [c.n, c.id])];
+  const txt = buscaNorm(partes.filter(v => v != null && v !== "").join(" \u0001 "));
+  const dig = [x.CNPJ, x.Telefone].concat(docs, conts.map(c => c.tel), tercContasDe(x).map(c => c.id)).map(docClean).filter(Boolean).join(" ");
+  return { txt, dig };
+}
+function tercBuscaCasa(x, termos) {
+  const b = tercBuscaTexto(x);
+  return termos.every(t => b.txt.includes(t) || (/^[\d.\/\-()\s]+$/.test(t) && docClean(t).length >= 3 && b.dig.includes(docClean(t))));
+}
+window.tercBuscaCasa = tercBuscaCasa;
+{ const ff = fornFiltered; fornFiltered = function () {
+    const f = FORN_STATE.filter || {}, b = String(f.busca || "").trim();
+    if (!b) return ff.apply(this, arguments);
+    const termos = buscaNorm(b).split(/\s+/).filter(Boolean);
+    f.busca = ""; let base;
+    try { base = ff.apply(this, arguments); } finally { f.busca = b; }
+    return base.filter(x => tercBuscaCasa(x, termos));
+  }; window.fornFiltered = fornFiltered; }
+{ const b0 = buscaDados; buscaDados = async function () {
+    const itens = await b0.apply(this, arguments);
+    try { (itens || []).forEach(i => { if (i.t !== "Terceiro" || !i.ir || !i.ir.forn || i._rf) return; const f = (FORN_STATE.items || []).find(x => String(x._id) === String(i.ir.forn)); if (!f) return; i._rf = 1; const t = tercBuscaTexto(f); i.chave += " " + t.txt + " " + t.dig; }); } catch (e) {}
+    return itens;
+  }; window.buscaDados = buscaDados; }
+
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -46524,6 +46668,7 @@ CONFIG.version = "v0.14.40";   /* CAP: ícone de vídeo no título e em cada aba
 CONFIG.version = "v0.14.40.1";   /* CAP › vídeos: guarda recusa ".." no caminho; janela reaberta durante o envio mostra o andamento e recarrega no fim */
 CONFIG.version = "v0.14.41";   /* vídeos de ajuda também no Movimento Diário, no Movimento de Caixa e em RH › Consumíveis (bloco da v0.14.40 virou genérico por módulo) */
 CONFIG.version = "v0.14.41.1";   /* CAP e demais janelas: o campo Nome Fantasia fica dentro da seção Identificação (abre e fecha com ela) */
+CONFIG.version = "v0.14.41.2";   /* Terceiros: CNPJ preenche Razão Social, Nome Fantasia e UF/Cidade pela Receita; CNPJ no topo da Identificação */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

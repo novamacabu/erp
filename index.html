@@ -48080,6 +48080,347 @@ pageHome = function () {
   @media print { .ini-atu { display: none; } }
   `;
   document.head.appendChild(st); }
+/* =====================================================================
+   v0.14.43 · Pedidos de 08/11 (08:14–08:37): Início v2 aprovado. Mais duas mudanças:
+   1. O Início e as páginas de departamento se atualizam sozinhos:
+      - a cada acesso;
+      - ao voltar para a aba do ERP;
+      - a cada 2 minutos com a página aberta e visível.
+      Enquanto relê, os números anteriores continuam na tela, e o botão Atualizar sai. O intervalo de 5 s ficou descartado:
+      cada leitura relê a CAP, o caixa e as aprovações inteiras, e o SharePoint frearia o ERP todo.
+   2. "Minhas rotinas" no topo de cada departamento (item 2 dos candidatos de design). Cada rotina é uma regra no código:
+      - quando vale (todo dia, até o dia 5);
+      - para quem: a permissão da página do módulo, como no Início;
+      - como o ERP sabe que está feita.
+      O "feito" é sempre automático, conferido nos dados do módulo, e ninguém marca ou desmarca à mão.
+      Nada é gravado e não há lista nova.
+      Rotinas desta versão:
+      - Financeiro: dar baixa nas contas que vencem hoje; não deixar conta vencida sem baixa; conferir o boletim do caixa
+        do último dia com movimento; aprovar os boletins conferidos; aprovar os movimentos de caixa das agências.
+      - Recursos Humanos: importar o relatório do ponto do mês anterior até o dia 5; aprovar as ordens de compra de consumíveis.
+      - Terceiros: responder aos pedidos de cadastro (administrador).
+      - Diretoria: classificar os trechos do Diário Oficial (administrador).
+   3. Pedido de 08/11, 08:41: design 4 dos candidatos, as tabelas.
+      - Cabeçalho em letra normal, sem caixa alta.
+      - Zebra sutil nas linhas, só no computador.
+      - Nas tabelas largas que rolam para o lado, a 1ª coluna fica fixa, menos quando ela é uma caixa de seleção ou a estrela.
+      - Aviso "Role para o lado para ver mais colunas →", que some quando chega ao fim.
+   4. Pedido de 08/11, 08:45: design 5, os relatórios A4.
+      - O padrão único de impressão (printDocHtml) passa para a paleta do Design System: azul-marinho #0F1E3A, cabeçalho
+        e ficha em letra normal, seções com o número num quadrado azul-marinho, tabelas com cabeçalho em letra normal,
+        total com filete azul-marinho e cantoneiras (laranja no cabeçalho, azul-marinho no rodapé).
+      - A logo da empresa continua nos impressos.
+   5. Pedido de 08/11, 08:51: o 9A, modo foco. Com ele o lote de candidatos de design termina; os outros foram desaprovados.
+      - Toda janela de formulário (cabeçalho e 3 campos ou mais) ganha o botão "Modo foco", que ocupa a tela inteira em
+        branco, só com o formulário no centro, campos maiores e a barra "Modo foco · <janela>" com "Sair do modo foco (Esc)".
+      - No modo foco, Esc sai do modo foco e não fecha a janela.
+      - A escolha fica guardada neste navegador: as próximas janelas de formulário já abrem em modo foco, até a pessoa sair dele.
+      - No celular as janelas já ocupam a tela, e o botão não aparece.
+   ===================================================================== */
+const ROT_INTERVALO = 120000, ROT_MIN = 15000;   /* releitura automática: 2 min com a página visível; acessos seguidos em menos de 15 s usam o que já está na tela */
+/* leituras: os números anteriores ficam na tela enquanto relê (não pisca "…" a cada 2 min) */
+function iniZerar(ch) { INI.chave = ch; INI.dados = {}; INI.emK = {}; INI.em = 0; INI.ger++; INI.carregando = 0; }   /* outra pessoa ou "visualizar como": começa do zero */
+/* alvo: as fontes que a tela usa (o Início lê todas; um departamento, só as das suas rotinas — revisão L1) */
+iniCarregar = async function (forcar, alvo) {
+  const ch = iniChave(); if (INI.chave !== ch) iniZerar(ch);
+  INI.emK = INI.emK || {};
+  INI.fontes = iniFontes();
+  Object.keys(INI.dados || {}).forEach(k => { if (!INI.fontes.includes(k)) { delete INI.dados[k]; delete INI.emK[k]; } });
+  const quer = (alvo || iniAlvoTela() || INI.fontes).filter(k => INI.fontes.includes(k));
+  const ler = forcar ? quer : quer.filter(k => !(INI.emK[k] && Date.now() - INI.emK[k] < ROT_MIN));
+  if (!ler.length) { iniPintar(); return; }
+  if (INI.carregando && Date.now() - INI.carregando < 300000) { INI.depoisLer = true; return; }   /* já está relendo (revisão L6: não empilha leituras lentas); ao terminar, confere de novo o que a tela pede */
+  const ger = ++INI.ger; INI.carregando = Date.now();
+  iniPintar();
+  await Promise.all(ler.map(async k => {
+    let r; try { r = await INI_LER[k](); } catch (e) { r = { erro: (e && e.message) || String(e) }; }
+    if (ger !== INI.ger) return;
+    INI.dados[k] = r || { falta: true }; INI.emK[k] = Date.now(); iniPintar();
+  }));
+  if (ger === INI.ger) { INI.em = Date.now(); INI.carregando = 0; iniPintar(); if (INI.depoisLer) { INI.depoisLer = false; setTimeout(() => { if (iniTelaAberta()) iniCarregar(false); }, 0); } }
+};
+window.iniAtualizar = () => iniCarregar(true);
+{ const ph0 = pageHome;
+  pageHome = function () {
+    const ch = iniChave(); if (INI.chave !== ch) iniZerar(ch);
+    INI.fontes = iniFontes();
+    const em = INI.em; INI.em = Date.now();   /* a página nova mostra o que já foi lido; a releitura vem logo depois */
+    let h; try { h = ph0.apply(this, arguments); } finally { INI.em = em; }
+    return String(h || "").replace(/<button type="button" class="ini-atu"[\s\S]*?<\/button>/, "");
+  };
+}
+/* leituras com os dados que as rotinas usam */
+INI_LER.cap = async function () {
+  const its = await iniItens("cap"); if (!its) return { falta: true };
+  const hoje = [], venc = []; let hojeTot = 0;
+  its.forEach(it => {
+    const c = classifyItem(it); if (c.cancelada || c.dias === null) return;   /* mesma regra dos chips "Vencem hoje" e "Vencidas" da CAP */
+    if (c.dias === 0) hojeTot++;
+    if (c.pago) return;
+    const v = Number(it.Valor || 0) || 0;
+    if (c.dias === 0) hoje.push(v); else if (c.dias < 0) venc.push({ v, d: ymd(c.venc) });
+  });
+  return { hojeN: hoje.length, hojeV: hoje.reduce((s, v) => s + v, 0), hojeTot, vencN: venc.length, vencV: venc.reduce((s, x) => s + x.v, 0), antiga: venc.map(x => x.d).sort()[0] || "" };
+};
+{ const c0 = INI_LER.caixa;
+  INI_LER.caixa = async function () {
+    const r = await c0.apply(this, arguments); if (!r || r.falta || r.erro) return r;
+    const hj = ymd(new Date()), dias = CX.mov.map(x => x._d).filter(d => d && d < hj).sort(), ult = dias[dias.length - 1] || "";
+    return Object.assign(r, { ultDia: ult, ultSt: ult ? String((cxFechDe(ult) || {}).Status || "") : "" });
+  };
+}
+INI_LER.agmov = async function () {
+  const its = await iniItens("ag_mov"); if (!its) return { falta: true };
+  const hj = ymd(new Date()), p = its.filter(x => x.Status === "Pendente"), ds = p.map(x => x.Data ? ymd(x.Data) : "").filter(Boolean).sort();
+  return { n: p.length, nAnt: ds.filter(d => d < hj).length, antiga: ds[0] || "" };
+};
+{ const p0 = INI_LER.ponto;
+  INI_LER.ponto = async function () {
+    const r = await p0.apply(this, arguments); if (!r || r.falta || r.erro) return r;
+    return Object.assign(r, { meses: (RH_PONTO_STATE.rels || []).map(x => String(x.Competencia || "")).filter(Boolean) });
+  };
+}
+
+/* ---------- regras das rotinas ---------- */
+const rotMesAnt = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`; };
+const rotMesNome = c => /^\d{6}$/.test(c || "") ? pontoMesLabel(c) : c;
+const ROT_FEITO = (det) => ({ st: "feito", det }), ROT_NADA = det => ({ st: "nada", det }), ROT_PEND = det => ({ st: "pend", det }), ROT_ATRASO = det => ({ st: "atraso", det });
+const ROT = [
+  { k: "capHoje", area: "Financeiro", freq: "Todo dia", tit: "Dar baixa nas contas que vencem hoje", mod: "Contas a Pagar", fonte: "cap", ir: "capHoje",
+    pode: () => (INI.fontes || []).includes("cap"),
+    av: d => !d.hojeTot ? ROT_NADA("nenhuma conta vence hoje") : !d.hojeN ? ROT_FEITO(`${d.hojeTot} ${iniPl(d.hojeTot, "conta paga", "contas pagas")}`) : ROT_PEND(`${d.hojeN} em aberto · ${fmtBRL(d.hojeV)}`) },
+  { k: "capVenc", area: "Financeiro", freq: "Todo dia", tit: "Não deixar conta vencida sem baixa", mod: "Contas a Pagar", fonte: "cap", ir: "capVenc",
+    pode: () => (INI.fontes || []).includes("cap"),
+    av: d => !d.vencN ? ROT_FEITO("nenhuma conta vencida") : ROT_ATRASO(`${d.vencN} ${iniPl(d.vencN, "vencida", "vencidas")} · ${fmtBRL(d.vencV)}${d.antiga ? ` · desde ${iniDM(d.antiga)}` : ""}`) },
+  { k: "cxConf", area: "Financeiro", freq: "Todo dia", tit: "Conferir o boletim do caixa do último dia com movimento", mod: "Fluxo de Caixa", fonte: "caixa", ir: "cxUlt",
+    pode: () => (INI.fontes || []).includes("caixa") && iniComPag("caixa.boletim", () => podeEditar("caixa")),
+    av: d => !d.ultDia ? ROT_NADA("sem movimento antes de hoje") : ["Conferido", "Aprovado"].includes(d.ultSt) ? ROT_FEITO(`boletim de ${iniDM(d.ultDia)} ${d.ultSt.toLowerCase()}`) : ROT_PEND(`boletim de ${iniDM(d.ultDia)} ${d.ultSt ? "ainda aberto" : "não fechado"}`) },
+  { k: "cxAprov", area: "Financeiro", freq: "Todo dia", tit: "Aprovar os boletins conferidos pela Tesouraria", mod: "Fluxo de Caixa", fonte: "caixa", ir: "cxBol",
+    pode: () => (INI.fontes || []).includes("caixa") && iniCxAprova(),
+    av: d => !d.conf.length ? ROT_FEITO("nenhum boletim esperando") : ROT_PEND(`${d.conf.length} ${iniPl(d.conf.length, "boletim conferido", "boletins conferidos")} · ${d.conf.slice(0, 3).map(iniDM).join(", ")}${d.conf.length > 3 ? "…" : ""}`) },
+  { k: "agmov", area: "Financeiro", freq: "Todo dia", tit: "Aprovar os movimentos de caixa das agências", mod: "Agentes Financeiros", fonte: "agmov", ir: "agmov",
+    pode: () => (INI.fontes || []).includes("agmov"),
+    av: d => !d.n ? ROT_FEITO("nenhum movimento pendente") : d.nAnt ? ROT_ATRASO(`${d.n} ${iniPl(d.n, "pendente", "pendentes")} · ${d.nAnt} de dias anteriores`) : ROT_PEND(`${d.n} ${iniPl(d.n, "enviado", "enviados")} hoje`) },
+  { k: "ponto", area: "Recursos Humanos", freq: "Até dia 5", tit: "Importar o relatório do ponto do mês anterior", mod: "Controle de Ponto", fonte: "ponto", ir: "pontoImp",
+    pode: () => (INI.fontes || []).includes("ponto") && iniComPag("rh_rel.ponto", () => podeEditar("rh_rel")),
+    av: d => { const m = rotMesAnt(); if ((d.meses || []).includes(m)) return ROT_FEITO(`${rotMesNome(m)} importado`); return new Date().getDate() <= 5 ? ROT_PEND(`${rotMesNome(m)} · até o dia 5`) : ROT_ATRASO(`${rotMesNome(m)} · o prazo era o dia 5`); } },
+  { k: "oc", area: "Recursos Humanos", freq: "Todo dia", tit: "Aprovar as ordens de compra de consumíveis", mod: "Consumíveis", fonte: "oc", ir: "oc",
+    pode: () => (INI.fontes || []).includes("oc"), some: d => d === undefined || (d && d.naoAprova),   /* só aparece depois de saber que a pessoa aprova (revisão L5) */
+    av: d => !d.n ? ROT_FEITO("nenhuma ordem esperando") : ROT_PEND(`${d.n} ${iniPl(d.n, "ordem esperando", "ordens esperando")}`) },
+  { k: "terc", area: "Terceiros", freq: "Todo dia", tit: "Responder aos pedidos de cadastro de terceiros", mod: "Fornecedores", fonte: "terc", ir: "terc",
+    pode: () => (INI.fontes || []).includes("terc"),
+    av: d => !d.n ? ROT_FEITO("nenhum pedido esperando") : ROT_PEND(`${d.n} ${iniPl(d.n, "pedido", "pedidos")} de inclusão ou exclusão`) },
+  { k: "do", area: "Diretoria", freq: "Todo dia", tit: "Classificar os trechos do Diário Oficial", mod: "Diário Oficial", fonte: "do", ir: "do",
+    pode: () => (INI.fontes || []).includes("do"),
+    av: d => !d.n ? ROT_FEITO("nenhum trecho esperando") : ROT_PEND(`${d.n} ${iniPl(d.n, "trecho lançado", "trechos lançados")} no LevBom fora da portaria`) }
+];
+Object.assign(INI_IR, {
+  cxUlt: () => { const d = INI.dados && INI.dados.caixa && INI.dados.caixa.ultDia; iniAbrir("#/financeiro/fluxo-de-caixa", "caixa", () => { CX.tab = "boletim"; if (d) { CX.dia = d; CX.comp = d.slice(0, 7); } }); },
+  pontoImp: () => iniAbrir("#/rh/relatorios/controle-de-ponto", null, () => { RH_PONTO_STATE.tab = "imp"; })
+});
+/* rotinas que valem para a pessoa neste departamento (antes de ler: pela permissão; depois: some a que a leitura disser que não vale) */
+function rotPossiveis(area) { return ROT.filter(r => r.area === area && (() => { try { return r.pode(); } catch (e) { return false; } })()); }
+function iniAlvoTela() { if ($("iniPrecisa")) return null; const r = $("rotBody"); if (r) return [...new Set(rotPossiveis(r.dataset.area || "").map(x => x.fonte))]; return []; }
+function rotDaArea(area) { return ROT.filter(r => r.area === area && (() => { try { return r.pode(); } catch (e) { return false; } })() && !(r.some && r.some((INI.dados || {})[r.fonte]))); }
+const ROT_PILL = { feito: ["Feita", "ok"], nada: ["Nada hoje", "cinza"], pend: ["Pendente", "warn"], atraso: ["Atrasada", "err"] };
+function rotHtml(area) {
+  const rs = rotDaArea(area); if (!rs.length) return "";
+  const D = INI.dados || {};
+  let emDia = 0, prontas = 0;
+  const linhas = rs.map(r => {
+    const d = D[r.fonte]; let a;
+    if (d === undefined) a = { st: "carr", det: "conferindo…" };
+    else if (!d || d.erro || d.falta) a = { st: "erro", det: "não foi possível conferir" };
+    else { try { a = r.av(d); } catch (e) { a = { st: "erro", det: "não foi possível conferir" }; } }
+    if (a.st !== "carr" && a.st !== "erro") { prontas++; if (a.st === "feito" || a.st === "nada") emDia++; }
+    const p = ROT_PILL[a.st] || (a.st === "carr" ? ["…", "cinza"] : ["—", "cinza"]);
+    const ok = a.st === "feito" || a.st === "nada";
+    return `<button type="button" class="ini-row rot-row${ok ? " ok" : ""}" data-k="${r.k}" data-st="${a.st}" onclick="iniIr('${r.ir}')"><span class="rot-freq">${esc(r.freq)}</span><span class="txt"><b>${esc(r.tit)}</b><span>${esc(r.mod)} · ${esc(a.det)}</span></span><span class="ini-pill ${p[1]}">${esc(p[0])}</span></button>`;
+  }).join("");
+  const resumo = prontas === rs.length ? `${emDia} de ${rs.length} em dia` : "conferindo…";
+  return `<div class="ini-card-h"><div><h2 id="rotH">Minhas rotinas</h2><p class="rot-sub">O que você faz com frequência em ${esc(area)}. <b id="rotResumo">${esc(resumo)}</b></p></div><span class="ini-em"><span class="rot-em" id="rotEm"></span></span></div><div class="rot-lista">${linhas}</div><p class="rot-nota">Cada rotina fica feita sozinha quando o trabalho é concluído no módulo.</p>`;
+}
+{ const pa0 = pageArea;
+  pageArea = function (name) {
+    const h = pa0.apply(this, arguments); if (!h) return h;
+    const ch = iniChave(); if (INI.chave !== ch) iniZerar(ch);   /* revisão (2ª): zera também os horários por fonte */
+    INI.fontes = iniFontes();
+    if (!rotPossiveis(name).length) return h;
+    const rot = rotHtml(name);
+    setTimeout(() => { if ($("rotBody")) iniCarregar(false); }, 0);
+    return h.replace('<div class="tiles">', `<section class="ini-card rot" id="rotBody" data-area="${esc(name)}" aria-labelledby="rotH"${rot ? "" : " hidden"}>${rot}</section><h2 class="ini-sec rot-mods"${rot ? "" : " hidden"}>Módulos</h2><div class="tiles">`);
+  };
+}
+iniPrecisaHtml = (function (p0) { return function () { return p0.apply(this, arguments).replace('Tente "Atualizar".', "O ERP tenta de novo sozinho daqui a 2 minutos."); }; })(iniPrecisaHtml);   /* revisão L3 */
+const iniHora = ms => ms ? `atualizado às ${String(new Date(ms).getHours()).padStart(2, "0")}:${String(new Date(ms).getMinutes()).padStart(2, "0")}` : "";
+const iniPoe = (el, h) => { if (el._h !== h) { el.innerHTML = h; el._h = h; } };   /* repinta só quando muda: o foco do teclado e o leitor de tela não são interrompidos a cada releitura */
+iniPintar = function () {
+  const k = $("iniKpis"), p = $("iniPrecisa"), em = $("iniEm"), r = $("rotBody");
+  const lendo = (INI.fontes || []).some(x => (INI.dados || {})[x] === undefined);
+  if (k) { const h = iniKpisHtml(); iniPoe(k, h); k.hidden = !h; }
+  if (p) { iniPoe(p, iniPrecisaHtml()); p.setAttribute("aria-busy", lendo ? "true" : "false"); }
+  if (em && em.textContent !== iniHora(INI.em)) em.textContent = iniHora(INI.em);
+  if (r) {
+    const h = rotHtml(r.dataset.area || ""); iniPoe(r, h); r.hidden = !h;
+    const t = document.querySelector(".rot-mods"); if (t) t.hidden = !h;
+    const re = $("rotEm"); if (re && re.textContent !== iniHora(INI.em)) re.textContent = iniHora(INI.em);
+  }
+};
+/* releitura automática: com a página visível, a cada 2 min; ao voltar para a aba */
+const iniTelaAberta = () => !!($("iniPrecisa") || $("rotBody"));
+setInterval(() => {
+  if (document.visibilityState !== "visible" || !iniTelaAberta()) return;
+  const alvo = (iniAlvoTela() || INI.fontes || []).filter(k => (INI.fontes || []).includes(k)); if (!alvo.length) return;
+  const velha = Math.min(...alvo.map(k => (INI.emK && INI.emK[k]) || 0));
+  if (Date.now() - velha >= ROT_INTERVALO - 1000) iniCarregar(true, alvo);
+}, 20000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && iniTelaAberta()) iniCarregar(false); });
+{ const st = document.createElement("style"); st.id = "erp-v01443";
+  st.textContent = `
+  .ini-atu { display: none !important; }
+  .rot { margin: 4px 0 26px; }
+  .rot .ini-card-h { align-items: flex-start; }
+  .rot-sub { margin: 4px 0 0; font-size: 13px; color: var(--ink-2); }
+  .rot-sub b { color: var(--navy); }
+  .rot-row .rot-freq { flex: none; width: 92px; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-2); }
+  .rot-row.ok .txt b { color: var(--ink-2); }
+  .ini-pill.ok { background: #E6F4EA; color: #197A46; }
+  .ini-pill.cinza { background: #EEF0ED; color: var(--ink-2); }
+  .rot-lista .rot-row:last-child { border-bottom: 0; }
+  .rot-nota { margin: 0; padding: 10px 20px 14px; font-size: 12px; color: var(--ink-2); border-top: 1px solid var(--line-2, #EDEFF2); }
+  .rot-mods { margin-top: 0; }
+  @media (max-width: 640px) {
+    .rot .ini-card-h { flex-direction: column; gap: 4px; }
+    .rot-row { flex-wrap: wrap; row-gap: 4px; }
+    .rot-row .rot-freq { width: 100%; }
+    .rot-nota { padding: 10px 14px 12px; }
+  }
+  `;
+  document.head.appendChild(st); }
+
+/* ---------- design 4 · tabelas ---------- */
+function tabArrumar() {
+  document.querySelectorAll("#main .table-wrap, .modal .table-wrap").forEach(w => {
+    const t = w.querySelector(":scope > table"); if (!t) return;
+    const rola = w.offsetParent !== null && w.scrollWidth - w.clientWidth > 2;
+    w.classList.toggle("rola-lado", rola);
+    const th = t.querySelector("thead th, tr > th, tr > td");
+    w.classList.toggle("fixa-1", rola && t.classList.contains("cap-table") && !(th && /\b(selc|favc)\b/.test(th.className)) && !t.querySelector("[rowspan]"));
+    let av = w.previousElementSibling && w.previousElementSibling.classList.contains("rola-aviso") ? w.previousElementSibling : null;
+    if (rola && !av) { av = document.createElement("div"); av.className = "rola-aviso"; av.setAttribute("aria-hidden", "true"); av.innerHTML = `Role para o lado para ver mais colunas <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>`; w.parentNode.insertBefore(av, w); }
+    if (!rola && av) { av.remove(); av = null; }
+    if (av) av.classList.toggle("fim", w.scrollLeft + w.clientWidth >= w.scrollWidth - 4);
+    if (!w.dataset.rolaOuvido) { w.dataset.rolaOuvido = "1"; w.addEventListener("scroll", () => { const a = w.previousElementSibling; if (a && a.classList.contains("rola-aviso")) a.classList.toggle("fim", w.scrollLeft + w.clientWidth >= w.scrollWidth - 4); }, { passive: true }); }
+  });
+}
+{ let tm = 0; const agenda = () => { clearTimeout(tm); tm = setTimeout(() => { try { tabArrumar(); } catch (e) {} }, 180); };
+  new MutationObserver(muts => { if (muts.some(m => !(m.target.closest && m.target.closest(".rola-aviso")))) agenda(); }).observe(document.body, { childList: true, subtree: true });
+  window.addEventListener("resize", agenda); }
+/* ---------- design 5 · relatórios A4 (padrão único de impressão) ---------- */
+const PRINT_V2 = `
+  .doc-cab { position: relative; border-bottom: 2px solid #0F1E3A; padding: 8px 0 9px 12px; }
+  .doc-cab::before { content: ""; position: absolute; top: 0; left: 0; width: 18px; height: 18px; border-top: 2px solid #D6421F; border-left: 2px solid #D6421F; }   /* dentro da área útil: o que passa da margem não sai na impressão */
+  .doc-cab .emp { font-size: 9.5px; letter-spacing: .06em; font-weight: 700; color: #5B6068; }
+  .doc-cab h1, .doc-cab h1 b { font-size: 21px; color: #0F1E3A; }
+  .doc-cab .doc-sub { color: #5B6068; }
+  .doc-meta { border-left: 0; }
+  .doc-meta dt { text-transform: none; letter-spacing: 0; font-size: 10px; font-weight: 600; color: #5B6068; }
+  .kpis { border-color: #C9CED6; border-radius: 0; }
+  .kpis > div { border-left-color: #C9CED6; }
+  .kpis .l { text-transform: none; letter-spacing: 0; font-size: 10px; font-weight: 700; color: #5B6068; }
+  .kpis .v { color: #0F1E3A; }
+  h2.sec { font-size: 12.5px; letter-spacing: 0; text-transform: none; color: #0F1E3A; border-bottom: 0; margin: 16px 0 6px; padding: 0; gap: 8px; align-items: center; }
+  h2.sec .n { display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 3px; background: #0F1E3A; color: #FFFFFF; font-size: 9.5px; font-weight: 800; }
+  h2.sec .s { font-size: 10px; color: #5B6068; }
+  table.t th, table.blk th { background: #F2F4F7; color: #0F1E3A; font-size: 10px; font-weight: 700; text-transform: none; letter-spacing: 0; padding: 5px 8px; border-bottom: 1px solid #C9CED6; }
+  table.t td, table.blk td { padding: 4px 8px; border-bottom-color: #E2E5E9; }
+  table.blk th.tit { background: #0F1E3A; color: #FFFFFF; text-transform: none; letter-spacing: 0; }
+  table.blk th.sub { background: #F6F7F9; color: #5B6068; }
+  tr.tot td { border-top: 1px solid #0F1E3A; color: #0F1E3A; background: transparent; }
+  tr.grp td { color: #0F1E3A; }
+  .assin b { text-transform: none; letter-spacing: 0; color: #0F1E3A; }
+  .rod, p.rod { position: relative; border-top-color: #E2E5E9; color: #5B6068; padding-right: 14px; padding-bottom: 6px; }
+  .rod::after { content: ""; position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; border-right: 2px solid #0F1E3A; border-bottom: 2px solid #0F1E3A; }
+  .stamp { border-radius: 2px; } .obs { border-radius: 0; }
+`;
+{ const pd0 = printDocHtml;
+  printDocHtml = function (o) { return pd0.call(this, Object.assign({}, o || {}, { css: PRINT_V2 + ((o && o.css) || "") })); };   /* o CSS de cada módulo continua valendo por cima */
+}
+{ const st = document.createElement("style"); st.id = "erp-v01443-tab";
+  st.textContent = `
+  .cap-table th { text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+  #capBody .cap-table th { font-size: 11.5px; letter-spacing: 0; }
+  @media (min-width: 641px) { :where(.cap-table > tbody > tr:nth-child(even)) { background-color: #FAFBFC; } }   /* na linha e sem peso: as cores de linha dos módulos ganham (revisão M2) */
+  .table-wrap.fixa-1 > .cap-table tr > :first-child { position: sticky; left: 0; z-index: 1; box-shadow: inset -1px 0 0 var(--line); }
+  .table-wrap.fixa-1 > .cap-table thead tr > :first-child { z-index: 6; }
+  :where(.table-wrap.fixa-1 > .cap-table tbody tr > td:first-child) { background-color: #FFFFFF; }
+  @media (min-width: 641px) { :where(.table-wrap.fixa-1 > .cap-table > tbody > tr:nth-child(even) > td:first-child) { background-color: #FAFBFC; } }
+  .rola-aviso { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 12.5px; font-weight: 700; color: var(--navy); }
+  .rola-aviso.fim { visibility: hidden; }
+  @media print { .rola-aviso { display: none; } }
+  `;
+  document.head.appendChild(st); }
+
+/* ---------- 9A · modo foco nas janelas de formulário ---------- */
+const MF_K = "erp.modoFoco";
+const mfPref = () => { try { return localStorage.getItem(MF_K) === "1"; } catch (e) { return false; } };
+const mfGuarda = v => { try { if (v) localStorage.setItem(MF_K, "1"); else localStorage.removeItem(MF_K); } catch (e) {} };
+const mfAtivo = () => { const b = $("modalBack"); return !!(b && b.classList.contains("on") && b.classList.contains("foco")); };
+function mfEhForm(m) { const h = m && m.querySelector(":scope > .modal-head"); return !!(h && m.querySelectorAll(".modal-body input:not([type=hidden]):not([type=checkbox]):not([type=radio]), .modal-body select, .modal-body textarea").length >= 3); }
+const mfCabe = () => !window.matchMedia || window.matchMedia("(min-width: 641px)").matches;   /* no celular a janela já ocupa a tela (revisão L4) */
+function mfAplicar(on) {
+  const b = $("modalBack"), m = $("modal"); if (!b || !m) return;
+  on = !!on && mfCabe() && mfEhForm(m);
+  if (b.classList.contains("foco") !== on) b.classList.toggle("foco", on);
+  if (document.body.classList.contains("modo-foco") !== on) document.body.classList.toggle("modo-foco", on);
+  const bt = m.querySelector(".mf-btn"), q = on ? "true" : "false";
+  if (bt && bt.getAttribute("aria-pressed") !== q) {   /* só escreve quando muda: escrever sempre disparava o observador de novo, sem parar (revisão B1) */
+    bt.innerHTML = on ? `Sair do modo foco <kbd>Esc</kbd>` : "Modo foco"; bt.setAttribute("aria-pressed", q); bt.title = on ? "Voltar à janela normal (Esc)" : "Só o formulário na tela, sem menu nem avisos"; }
+}
+window.mfAlternar = () => { const on = !mfAtivo(); mfGuarda(on); mfAplicar(on); const f = $("modal") && $("modal").querySelector(".modal-body input, .modal-body select, .modal-body textarea"); if (on && f && !$("modal").contains(document.activeElement)) { try { f.focus({ preventScroll: true }); } catch (e) {} } };
+function mfPreparar() {
+  const m = $("modal"), b = $("modalBack"); if (!m || !b) return;
+  if (!b.classList.contains("on")) { if (b.classList.contains("foco")) mfAplicar(false); return; }
+  if (!mfEhForm(m)) { if (b.classList.contains("foco")) mfAplicar(false); return; }
+  const h = m.querySelector(":scope > .modal-head");
+  if (!h.querySelector(".mf-btn")) { const bt = document.createElement("button"); bt.type = "button"; bt.className = "btn ghost mf-btn"; bt.setAttribute("onclick", "mfAlternar()"); const x = h.querySelector(".x"); h.insertBefore(bt, x || null); }
+  if (!h.querySelector(".mf-tag")) { const t = document.createElement("span"); t.className = "mf-tag"; t.textContent = "Modo foco"; h.insertBefore(t, h.firstChild); }
+  mfAplicar(mfPref() || b.classList.contains("foco"));
+}
+{ let em = false; const ag = () => { if (em) return; em = true; try { mfPreparar(); } finally { em = false; } };   /* na hora (sem piscar a confirmação em tela cheia); mfPreparar só escreve o que mudou */
+  const ob = () => { const m = $("modal"), b = $("modalBack"); if (!m || !b) return setTimeout(ob, 500);
+    new MutationObserver(ag).observe(m, { childList: true, subtree: true }); new MutationObserver(ag).observe(b, { attributes: true, attributeFilter: ["class"] }); };
+  ob(); }
+/* Esc: só sai do modo foco quando nada está por cima do formulário (aviso "Sair sem salvar?", visualizador de documento, lista aberta) — revisão M1 */
+const mfAlgoPorCima = () => { if (document.getElementById("erpSobre")) return true; return ["docOverlay", "erpChartOverlay"].some(id => { const d = document.getElementById(id); return !!(d && d.isConnected && getComputedStyle(d).display !== "none" && getComputedStyle(d).visibility !== "hidden"); }); };
+document.addEventListener("keydown", ev => {
+  if (ev.key !== "Escape" || ev.defaultPrevented || !mfAtivo() || mfAlgoPorCima()) return;
+  if (ev.target && ev.target.closest && ev.target.closest("[role=dialog]:not(#modal), [role=alertdialog]")) return;
+  ev.preventDefault(); ev.stopImmediatePropagation(); mfGuarda(false); mfAplicar(false);
+});
+{ const c0 = closeModal; closeModal = function () { const b = $("modalBack"); if (b) b.classList.remove("foco"); document.body.classList.remove("modo-foco"); return c0.apply(this, arguments); }; window.closeModal = closeModal; }
+{ const st = document.createElement("style"); st.id = "erp-v01443-foco";
+  st.textContent = `
+  .mf-btn { margin-left: auto; margin-right: 6px; font-size: 13px; white-space: nowrap; }
+  .mf-btn kbd { font: inherit; font-size: 11px; border: 1px solid var(--line); padding: 0 5px; border-radius: 2px; margin-left: 4px; }
+  .modal-head .mf-btn + .x { margin-left: 0; }
+  .mf-tag { display: none; }
+  #modalBack.foco { background: #FFFFFF; padding: 0; align-items: stretch; overflow: hidden; }
+  #modalBack.foco > .modal { max-width: none; width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; display: flex; flex-direction: column; overflow: hidden; }
+  #modalBack.foco > .modal > .modal-head { flex: none; position: static; padding: 12px max(22px, calc(50% - 420px)); border-bottom: 1px solid var(--line); background: #FFFFFF; gap: 10px; }
+  #modalBack.foco > .modal > .modal-head .mf-tag { display: inline; font-size: 13px; font-weight: 700; color: var(--ink-2); white-space: nowrap; }
+  #modalBack.foco > .modal > .modal-head .mf-tag::after { content: "·"; margin-left: 10px; color: var(--ink-3, #8A9099); }
+  #modalBack.foco > .modal > .modal-head h2 { font-size: 15px; }
+  #modalBack.foco > .modal > .modal-head .x { display: none; }
+  #modalBack.foco > .modal > .modal-body { flex: 1 1 auto; max-height: none; overflow: auto; padding: 32px max(22px, calc(50% - 400px)) 40px; }
+  #modalBack.foco > .modal > .modal-foot { flex: none; position: static; padding: 14px max(22px, calc(50% - 400px)); border-top: 1px solid var(--line); background: #FFFFFF; }
+  #modalBack.foco .modal-body .field input:not([type=checkbox]):not([type=radio]), #modalBack.foco .modal-body .field select { min-height: 44px; font-size: 15px; }
+  #modalBack.foco .modal-body .field textarea { font-size: 15px; }
+  body.modo-foco .toast-wrap, body.modo-foco #toast { z-index: 80; }
+  @media (max-width: 640px) { .mf-btn { display: none; } }
+  @media print { .mf-btn, .mf-tag { display: none !important; } }
+  `;
+  document.head.appendChild(st); }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -48124,6 +48465,7 @@ CONFIG.version = "v0.14.41.5";   /* Central de Tarefas da Diretoria e do Finance
 CONFIG.version = "v0.14.41.6";   /* Terceiros: filtros numa linha; janela de confirmação no centro; CAP sem rolagem horizontal e chips numa linha; data centralizada no Fluxo de Caixa */
 CONFIG.version = "v0.14.41.7";   /* marca do sistema ERP: quadrados + "ERP | Nova Macabu" no topo, no menu lateral, no ícone do app e na aba */
 CONFIG.version = "v0.14.42";   /* Início v2 (painel executivo, prancha 1A): indicadores do dia por permissão de módulo; "Precisa de você" calculada dos módulos (contas de hoje e vencidas, aprovações, alertas do ponto), sem a Central de Tarefas; "Você estava em", Favoritos e Departamentos compactos */
+CONFIG.version = "v0.14.43";   /* Minhas rotinas em cada departamento (regras no código, feito automático pelos dados do módulo, permissão por página); Início e departamentos se atualizam sozinhos (a cada acesso, ao voltar à aba e a cada 2 min com a página visível), sem o botão Atualizar; tabelas no padrão novo (cabeçalho em letra normal, zebra, 1ª coluna fixa e aviso nas largas); impressos A4 na paleta do Design System; modo foco nas janelas de formulário */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

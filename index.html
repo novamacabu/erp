@@ -47715,6 +47715,371 @@ if (typeof AG_MOD_SITES !== "undefined") Object.keys(TAREFAS_EXCLUIDAS).forEach(
   @media print { .erp-simb { display: none; } }
   `;
   document.head.appendChild(st); }
+/* =====================================================================
+   v0.14.42 · Pedido de 07/11 (21:38): Início v2 — painel executivo. Prancha 1A da tela de design "ERP NMB · Candidatos",
+   com os ajustes combinados na conversa de 07/11:
+   1. Indicadores do dia: A pagar hoje, Vencidas, Aprovações suas, Ônibus parados e Saldo em caixa. Cada bloco segue a
+      permissão do módulo de onde vêm os números: quem não tem acesso ao módulo não vê o bloco.
+   2. "Precisa de você": calculada na hora a partir dos módulos (sem lista nova e sem a Central de Tarefas):
+      contas que vencem hoje e vencidas sem baixa (para quem dá baixa na CAP); movimento de caixa das agências, boletins do
+      Fluxo de Caixa, ordens de compra de consumíveis, cadastros de terceiros e trechos do Diário Oficial aguardando
+      aprovação (só para quem aprova cada um); alertas de atenção do controle de ponto (para quem vê RH › Relatórios).
+      A CAP não tem etapa de aprovação: lá vira alerta. Cada linha abre o módulo já no ponto certo.
+   3. "Você estava em" (últimas páginas abertas, guardadas neste navegador), Favoritos e Departamentos em blocos compactos.
+   Só leitura: o Início não grava nada no SharePoint. Os números ficam 2 minutos em memória; "Atualizar" relê.
+   ===================================================================== */
+const INI = { dados: null, fontes: [], em: 0, chave: "", ger: 0, depois: null, sites: {}, listas: {} };
+const INI_NOMES = { cap: "Contas a Pagar", caixa: "Fluxo de Caixa", frota: "Frota", agmov: "Movimento de Caixa das agências", oc: "Ordens de compra", terc: "Terceiros", do: "Diário Oficial", ponto: "Controle de Ponto" };
+const iniVe = id => { const m = MODULES.find(x => x.id === id); return !!m && canSee(m); };
+const iniPl = (n, s, p) => n === 1 ? s : p;
+const iniDM = s => /^\d{4}-\d{2}-\d{2}/.test(s || "") ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : "";
+function iniChave() {
+  const eu = normEmail((session.me && (session.me.mail || session.me.userPrincipalName)) || "");
+  return [eu, session.nivel || "", session.n1 ? 1 : 0, vcAtivo() ? "vc" : "", JSON.stringify((session.acesso && session.acesso.perm) || {})].join("|");
+}
+/* quem vê o quê: a permissão da PÁGINA de onde vêm os números (revisão B1/B2/M1/M2/L5), como o módulo faz com session.pagAtual */
+function iniComPag(pa, fn) { const prev = session.pagAtual; session.pagAtual = pa; try { return !!fn(); } finally { session.pagAtual = prev; } }
+const iniPagVe = (mid, k) => pagNivel(mid, k) !== "nenhum";
+function iniCxAprova() { return iniVe("caixa") && iniComPag("caixa.boletim", () => (session.n1 || permModulo("caixa") === "proprietario") && podeEditar("caixa")); }   /* = cxPodeAprovar na aba Boletim */
+const iniFrotaVe = () => iniVe("frota") && ["veic", "geral"].some(k => iniPagVe("frota", k));
+function iniFontes() {
+  const F = [];
+  if (iniVe("cap") && iniComPag("cap.lista", () => podeEditar("cap"))) F.push("cap");   /* página Lançamentos (Faturas) da CAP */
+  if (iniVe("caixa") && ["boletim", "mensal", "painel", "resumo"].some(k => iniPagVe("caixa", k))) F.push("caixa");   /* abas que mostram o saldo */
+  if (iniFrotaVe() || iniVe("manut")) F.push("frota");
+  if (iniVe("ag_conc") && iniComPag("ag_conc.mov", () => lancAprovador("ag_conc") && podeEditar("ag_conc"))) F.push("agmov");
+  if (iniVe("rh_cons") && podeEditar("rh_cons")) F.push("oc");   /* quem aprova é conferido na leitura (consOcAprovador) */
+  if (session.n1 && iniVe("forn")) F.push("terc");
+  if (session.n1 && iniVe("diario")) F.push("do");
+  if (iniVe("rh_rel") && iniPagVe("rh_rel", "ponto")) F.push("ponto");
+  return F;
+}
+/* leitura genérica de uma lista do ERP (só GET) */
+async function iniItens(k) {
+  const def = LISTS[k]; if (!def) return null;
+  const rel = CONFIG.sites[def.siteKey]; if (!rel) return null;
+  const st = await (INI.sites[rel] || (INI.sites[rel] = SP.site(rel).catch(e => { delete INI.sites[rel]; throw e; })));
+  const ls = await (INI.listas[st.id] || (INI.listas[st.id] = SP.lists(st.id).catch(e => { delete INI.listas[st.id]; throw e; })));
+  const l = (ls || []).find(x => x.displayName === def.displayName); if (!l) return null;
+  return (await SP.items(st.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {}));
+}
+const INI_LER = {
+  async cap() {
+    const its = await iniItens("cap"); if (!its) return { falta: true };
+    const hoje = [], venc = [];
+    its.forEach(it => {
+      const c = classifyItem(it); if (c.cancelada || c.pago || c.dias === null) return;   /* mesma regra dos chips "Vencem hoje" e "Vencidas" da CAP */
+      const v = Number(it.Valor || 0) || 0;
+      if (c.dias === 0) hoje.push(v); else if (c.dias < 0) venc.push({ v, d: ymd(c.venc) });
+    });
+    return { hojeN: hoje.length, hojeV: hoje.reduce((s, v) => s + v, 0), vencN: venc.length, vencV: venc.reduce((s, x) => s + x.v, 0), antiga: venc.map(x => x.d).sort()[0] || "" };
+  },
+  async caixa() {
+    await loadCx(true); if (!CX.ready) return { falta: true };
+    const am = new Date(); am.setDate(am.getDate() + 1);
+    return { saldo: cxSaldoAnterior(ymd(am)), conf: iniCxAprova() ? CX.fech.filter(f => f.Status === "Conferido").map(f => f._d).sort() : [] };
+  },
+  async frota() {
+    const its = await iniItens("frota_veic"); if (!its) return { falta: true };
+    const p = its.filter(v => v.Situacao === "Em manutenção");
+    return { n: p.length, pref: p.map(v => v.Title).filter(Boolean) };
+  },
+  async agmov() {
+    const its = await iniItens("ag_mov"); if (!its) return { falta: true };
+    const p = its.filter(x => x.Status === "Pendente");
+    return { n: p.length, antiga: p.map(x => x.Data ? ymd(x.Data) : "").filter(Boolean).sort()[0] || "" };
+  },
+  async oc() {
+    let aprova = false; try { aprova = await consOcAprovador(); } catch (e) { aprova = false; }
+    if (!aprova) return { naoAprova: true };
+    const its = await iniItens("rh_cons_oc"); if (!its) return { falta: true };
+    return { n: its.filter(o => o.Status === "Aguardando aprovação").length };
+  },
+  async terc() {
+    const its = await iniItens("forn"); if (!its) return { falta: true };
+    const p = its.filter(x => tercAprov(x));
+    return { n: p.length, inc: p.filter(x => tercAprov(x).tipo === "inclusao").length };
+  },
+  async do() {
+    await doCarregar(); if (DO.erro) return { erro: DO.erro };
+    return { n: doPendentes().length };
+  },
+  async ponto() {
+    await loadRhPonto(); if (!RH_PONTO_STATE.ready) return { falta: true };
+    await pontoFuncsCarregar(); await pontoParamsCarregar(); await pontoColsCarregar();
+    const mes = RH_PONTO_STATE.rels.map(x => String(x.Competencia || "")).filter(Boolean).sort().slice(-1)[0] || "";
+    if (!mes) return { n: 0, mes: "" };
+    const nivel = k => (PONTO_REGRAS.find(g => g.k === k) || {}).nivel;
+    return { n: pontoRecs(mes).filter(r => (r.alertas || []).some(a => nivel(a.k) === "alto")).length, mes };
+  }
+};
+async function iniCarregar(forcar) {
+  const ch = iniChave();
+  if (!forcar && INI.dados && INI.chave === ch && INI.em && Date.now() - INI.em < 120000) { iniPintar(); return; }
+  const ger = ++INI.ger;
+  if (forcar) { INI.sites = {}; INI.listas = {}; }
+  INI.chave = ch; INI.fontes = iniFontes(); INI.dados = {}; INI.em = 0; iniPintar();
+  await Promise.all(INI.fontes.map(async k => {
+    let r; try { r = await INI_LER[k](); } catch (e) { r = { erro: (e && e.message) || String(e) }; }
+    if (ger !== INI.ger) return;
+    INI.dados[k] = r || { falta: true }; iniPintar();
+  }));
+  if (ger === INI.ger) { INI.em = Date.now(); iniPintar(); }
+}
+window.iniAtualizar = () => iniCarregar(true);
+
+/* ---------- indicadores ---------- */
+const INI_APROV = ["agmov", "caixa", "oc", "terc", "do"];
+function iniAprovacoes() {
+  const D = INI.dados || {}, F = INI.fontes || [], itens = []; let carregando = false, algum = false;
+  const conta = (k, n, rot, curto) => { algum = true; if (n) itens.push({ k, n, rot, curto }); };
+  INI_APROV.forEach(k => {
+    if (!F.includes(k)) return;
+    if (k === "caixa" && !iniCxAprova()) return;
+    const d = D[k];
+    if (d === undefined) { algum = true; carregando = true; return; }
+    if (!d || d.erro || d.falta || d.naoAprova) { if (d && (d.erro || d.falta)) algum = true; return; }
+    if (k === "agmov") conta(k, d.n, iniPl(d.n, "caixa das agências", "caixas das agências"), "agências");
+    if (k === "caixa") conta(k, d.conf.length, iniPl(d.conf.length, "boletim do caixa", "boletins do caixa"), "caixa");
+    if (k === "oc") conta(k, d.n, iniPl(d.n, "ordem de compra", "ordens de compra"), "compras");
+    if (k === "terc") conta(k, d.n, iniPl(d.n, "cadastro de terceiros", "cadastros de terceiros"), "terceiros");
+    if (k === "do") conta(k, d.n, "Diário Oficial", "Diário Oficial");
+  });
+  return { algum, carregando, itens, total: itens.reduce((s, x) => s + x.n, 0) };
+}
+function iniKpisHtml() {
+  const D = INI.dados || {}, F = INI.fontes || [], out = [];
+  const kp = (id, lbl, val, sub, cls, valCls, tit) => `<button type="button" class="ini-kpi ${cls || ""}" data-k="${id}" onclick="iniIr('${id}')"${tit ? ` title="${esc(tit)}"` : ""}><span class="lbl">${esc(lbl)}</span><span class="val ${valCls || ""}">${val}</span><span class="sub">${esc(sub)}</span></button>`;
+  const est = d => d === undefined ? "…" : "—", subRuim = d => d === undefined ? "conferindo…" : d && d.falta ? "lista não encontrada" : "não foi possível ler";
+  const ok = d => d && !d.erro && !d.falta;
+  if (F.includes("cap")) {
+    const d = D.cap;
+    out.push(ok(d) ? kp("capHoje", "A pagar hoje", esc(fmtBRL(d.hojeV)), d.hojeN ? `${d.hojeN} ${iniPl(d.hojeN, "conta", "contas")} · Contas a Pagar` : "nenhuma conta vence hoje", "", "din") : kp("capHoje", "A pagar hoje", est(d), subRuim(d), "", "din"));
+    out.push(ok(d) ? kp("capVenc", "Vencidas", String(d.vencN), d.vencN ? `${fmtBRL(d.vencV)} em atraso` : "nenhuma em atraso", "", d.vencN ? "err" : "") : kp("capVenc", "Vencidas", est(d), subRuim(d)));
+  }
+  const ap = iniAprovacoes();
+  if (ap.algum) out.push(kp("aprov", "Aprovações suas", ap.carregando && !ap.total ? "…" : String(ap.total), ap.total ? (ap.itens.length === 1 ? ap.itens[0].rot : ap.itens.map(x => x.curto).join(", ")) : ap.carregando ? "conferindo…" : "nada para aprovar", ap.total ? "destaque" : ""));
+  if (F.includes("frota")) { const d = D.frota; out.push(ok(d) ? kp("frota", "Ônibus parados", String(d.n), "em manutenção · Frota", "", "", d.pref.length ? d.pref.join(", ") : "") : kp("frota", "Ônibus parados", est(d), subRuim(d))); }
+  if (F.includes("caixa")) { const d = D.caixa; out.push(ok(d) ? kp("caixa", "Saldo em caixa", esc(fmtBRL(d.saldo)), "tesouraria · até hoje", "", "din" + (d.saldo < 0 ? " err" : "")) : kp("caixa", "Saldo em caixa", est(d), subRuim(d), "", "din")); }
+  return out.join("");
+}
+
+/* ---------- "Precisa de você" ---------- */
+const INI_ICO = {
+  ok: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`,
+  alerta: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>`,
+  dia: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="1"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>`,
+  caixa: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="1"/><circle cx="12" cy="12" r="2.5"/></svg>`,
+  relogio: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`
+};
+function iniPrecisaHtml() {
+  const D = INI.dados || {}, F = INI.fontes || [], rows = [];
+  const row = (id, ico, icoCls, tit, sub, pill, pCls) => `<button type="button" class="ini-row" data-k="${id}" onclick="iniIr('${id}')"><span class="ini-ico ${icoCls || ""}">${INI_ICO[ico]}</span><span class="txt"><b>${esc(tit)}</b><span>${esc(sub)}</span></span><span class="ini-pill ${pCls}">${esc(pill)}</span></button>`;
+  const ok = k => { const d = D[k]; return d && !d.erro && !d.falta && !d.naoAprova ? d : null; };
+  let d;
+  if ((d = ok("cap")) && d.hojeN) rows.push(row("capHoje", "dia", "", `${d.hojeN} ${iniPl(d.hojeN, "conta vence hoje", "contas vencem hoje")}`, `Contas a Pagar · ${fmtBRL(d.hojeV)}`, "Hoje", "warn"));
+  if ((d = ok("cap")) && d.vencN) rows.push(row("capVenc", "alerta", "err", `${d.vencN} ${iniPl(d.vencN, "conta vencida sem baixa", "contas vencidas sem baixa")}`, `Contas a Pagar · ${fmtBRL(d.vencV)}${d.antiga ? ` · a mais antiga venceu em ${iniDM(d.antiga)}` : ""}`, "Vencida", "err"));
+  if ((d = ok("agmov")) && d.n) rows.push(row("agmov", "caixa", "", `Aprovar ${d.n} ${iniPl(d.n, "movimento de caixa das agências", "movimentos de caixa das agências")}`, `Agentes Financeiros${d.antiga ? ` · ${iniPl(d.n, "de", "o mais antigo de")} ${iniDM(d.antiga)}` : ""}`, "Para aprovar", "nav"));
+  if ((d = ok("caixa")) && d.conf.length) rows.push(row("cxBol", "caixa", "", `Aprovar ${d.conf.length} ${iniPl(d.conf.length, "boletim do caixa", "boletins do caixa")}`, `Fluxo de Caixa · ${iniPl(d.conf.length, "conferido", "conferidos")} pela Tesouraria · ${d.conf.slice(0, 3).map(iniDM).join(", ")}${d.conf.length > 3 ? "…" : ""}`, "Para aprovar", "nav"));
+  if ((d = ok("oc")) && d.n) rows.push(row("oc", "ok", "", `Aprovar ${d.n} ${iniPl(d.n, "ordem de compra", "ordens de compra")}`, "RH › Consumíveis · orçamentos prontos para a aprovação", "Para aprovar", "nav"));
+  if ((d = ok("terc")) && d.n) rows.push(row("terc", "ok", "", `${d.n} ${iniPl(d.n, "pedido de cadastro de terceiros", "pedidos de cadastro de terceiros")}`, `Terceiros · ${d.inc && d.inc < d.n ? `${d.inc} de inclusão e ${d.n - d.inc} de exclusão` : d.inc ? iniPl(d.n, "inclusão aguardando o administrador", "inclusões aguardando o administrador") : iniPl(d.n, "exclusão aguardando o administrador", "exclusões aguardando o administrador")}`, "Para aprovar", "nav"));
+  if ((d = ok("do")) && d.n) rows.push(row("do", "ok", "", `Classificar ${d.n} ${iniPl(d.n, "trecho do Diário Oficial", "trechos do Diário Oficial")}`, "Diretoria › Diário Oficial · lançados no LevBom fora da portaria", "Para aprovar", "nav"));
+  if ((d = ok("ponto")) && d.n) rows.push(row("ponto", "relogio", "", `${d.n} ${iniPl(d.n, "colaborador com alerta", "colaboradores com alerta")} no controle de ponto`, `RH › Relatórios · ${pontoMesLabel(d.mes)} · acima dos limites das regras`, "Atenção", "warn"));
+  const carregando = F.some(k => D[k] === undefined);
+  const ruins = F.filter(k => D[k] && (D[k].erro || D[k].falta)).map(k => INI_NOMES[k]);
+  let h = rows.join("");
+  if (carregando) h += `<div class="ini-vazio ini-carr">Conferindo os módulos…</div>`;
+  else if (!rows.length) h += `<div class="ini-vazio"><b>Nada esperando por você hoje.</b>Contas, aprovações e alertas dos módulos que você usa aparecem aqui.</div>`;
+  if (ruins.length) h += `<p class="ini-nota">Não foi possível conferir: ${esc(ruins.join(", "))}. Tente "Atualizar".</p>`;
+  return h;
+}
+function iniPintar() {
+  const k = $("iniKpis"), p = $("iniPrecisa"), em = $("iniEm");
+  if (k) { const h = iniKpisHtml(); k.innerHTML = h; k.hidden = !h; }
+  if (p) { p.innerHTML = iniPrecisaHtml(); p.setAttribute("aria-busy", (INI.fontes || []).some(x => (INI.dados || {})[x] === undefined) ? "true" : "false"); }
+  if (em) { const d = INI.em ? new Date(INI.em) : null; em.textContent = d ? `atualizado às ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : ""; }
+}
+
+/* ---------- abrir o módulo no ponto certo ---------- */
+function iniAbrir(hash, modId, depois) {
+  if (modId) navPrimeiraPagina(modId);
+  INI.depois = depois ? { hash, fn: depois, em: Date.now() } : null;
+  if ((location.hash || "").split("?")[0] === hash) route(); else location.hash = hash;
+}
+const INI_IR = {
+  capHoje: () => { navPrimeiraPagina("cap"); CAP_STATE.filter = Object.assign(capFiltroVazio(), { sit: ["hoje"] }); iniAbrir("#/financeiro/contas-a-pagar"); },
+  capVenc: () => { navPrimeiraPagina("cap"); CAP_STATE.filter = Object.assign(capFiltroVazio(), { sit: ["vencida"] }); iniAbrir("#/financeiro/contas-a-pagar"); },
+  aprov: () => { const s = $("iniPrecisaSec"); if (s) { s.scrollIntoView({ behavior: "smooth", block: "start" }); const b = s.querySelector(".ini-row[data-k=agmov], .ini-row[data-k=cxBol], .ini-row[data-k=oc], .ini-row[data-k=terc], .ini-row[data-k=do]"); if (b) setTimeout(() => b.focus({ preventScroll: true }), 350); } },
+  agmov: () => iniAbrir("#/financeiro/agencia-conceicao/movimento-de-caixa", null, () => { AG_MOV_STATE.filtroStatus = "Pendente"; }),
+  cxBol: () => { const d = INI.dados && INI.dados.caixa && INI.dados.caixa.conf && INI.dados.caixa.conf[0]; iniAbrir("#/financeiro/fluxo-de-caixa", "caixa", () => { CX.tab = "boletim"; if (d) { CX.dia = d; CX.comp = d.slice(0, 7); } }); },
+  oc: () => iniAbrir("#/rh/consumiveis", "rh_cons", () => { CONS.aba = "oc"; CONS.fo = Object.assign({ q: "" }, CONS.fo || {}, { st: "Aguardando aprovação" }); }),
+  terc: () => iniAbrir("#/terceiros/fornecedores", "forn"),
+  do: () => iniAbrir("#/diretoria/diario-oficial", "diario"),
+  ponto: () => { const m = INI.dados && INI.dados.ponto && INI.dados.ponto.mes; iniAbrir("#/rh/relatorios/controle-de-ponto", null, () => { RH_PONTO_STATE.tab = "alertas"; if (m) RH_PONTO_STATE.mes = m; }); },   /* revisão L4: o mês contado */
+  frota: () => iniFrotaVe() ? iniAbrir("#/operacional/frota", "frota") : iniAbrir("#/operacional/manutencao", "manut"),   /* revisão L1 */
+  caixa: () => iniAbrir("#/financeiro/fluxo-de-caixa", "caixa")
+};
+window.iniIr = k => { const f = INI_IR[k]; if (f) f(); };
+
+/* ---------- "Você estava em": últimas páginas abertas (neste navegador, por pessoa) ---------- */
+const iniRecK = () => "erp.recentes." + normEmail((session.me && (session.me.mail || session.me.userPrincipalName)) || "");
+function iniRecLer() { try { const v = JSON.parse(localStorage.getItem(iniRecK()) || "[]"); return Array.isArray(v) ? v.filter(x => x && typeof x.h === "string" && /^#\/[^\s"'<>]*$/.test(x.h) && x.t) : []; } catch (e) { return []; } }
+function iniRecMarcar(hash) {
+  if (vcAtivo()) return;   /* visualizando como outra pessoa: não mexe no histórico de quem está visualizando */
+  setTimeout(() => {
+    try {
+      if ((location.hash || "").split("?")[0] !== hash) return;
+      const cr = document.querySelector("#main nav.crumbs");
+      let partes = cr ? [...cr.querySelectorAll("a, b")].map(e => e.textContent.trim()).filter(Boolean) : [];
+      if (partes[0] === "Início") partes.shift();
+      if (!partes.length) { const h1 = document.querySelector("#main h1"); if (h1) partes = [h1.textContent.trim()]; }
+      if (!partes.length) return;
+      const lst = iniRecLer().filter(x => x.h !== hash);
+      lst.unshift({ h: hash, t: partes[partes.length - 1].slice(0, 80), c: partes.slice(0, -1).join(" › ").slice(0, 120), em: Date.now() });
+      localStorage.setItem(iniRecK(), JSON.stringify(lst.slice(0, 6)));
+    } catch (e) {}
+  }, 1200);
+}
+function iniQuando(ms) {
+  const d = new Date(ms), agora = new Date(), min = Math.round((agora - d) / 60000), hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  if (!(min >= 0)) return "";
+  if (min < 1) return "agora há pouco";
+  if (min < 60) return `há ${min} ${iniPl(min, "minuto", "minutos")}`;
+  const dia = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(), dd = Math.round((dia(agora) - dia(d)) / 86400000);
+  if (dd === 0) return `hoje às ${hm}`;
+  if (dd === 1) return `ontem às ${hm}`;
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} às ${hm}`;
+}
+function iniRecHtml() {
+  const r = iniRecLer().slice(0, 3);
+  if (!r.length) return `<p class="ini-vazio-lado">As páginas que você abrir aparecem aqui para voltar rápido.</p>`;
+  return r.map((x, i) => `<a class="ini-rec${i === 0 ? " ult" : ""}" href="${esc(x.h)}">${x.c ? `<span class="cam">${esc(x.c)}</span>` : ""}<b>${esc(x.t)}</b><span class="quando">${esc(iniQuando(x.em))}</span></a>`).join("");
+}
+function iniFavHtml() {
+  const favs = favGet().map(id => MODULES.find(m => m.id === id)).filter(m => m && canSee(m));
+  if (!favs.length) return `<p class="ini-vazio-lado">Marque a ☆ em um módulo, dentro de um departamento, para ele aparecer aqui.</p>`;
+  return `<div class="ini-favs">${favs.map(m => `<a class="ini-fav" href="${esc(m.path)}" onclick="navPrimeiraPagina(${jsArg(m.id)})" title="${esc(m.name)}">${esc(m.name)}</a>`).join("")}</div>`;
+}
+
+/* ---------- a página ---------- */
+pageHome = function () {
+  const first = (session.me?.displayName || "").split(" ")[0];
+  const semAcesso = !session.n1 && (!session.nivel || session.nivel === "sem"), meuEmail = normEmail(session.me && (session.me.mail || session.me.userPrincipalName));
+  const ac = session.acesso, porque = !ac ? "Seu e-mail ainda não está cadastrado no ERP." : !ac.valido ? (ac.conf && ac.conf.motivo === "alterado-fora" ? "Seu acesso foi alterado fora do ERP e precisa ser confirmado por um administrador." : "Seu acesso de administrador ainda não foi confirmado por um administrador.") : "Seu cadastro está como Sem acesso ou Inativo.";
+  const banner = (semAcesso && !session.acessoErro && !vcAtivo() ? `<div class="banner"><div><b>Você ainda não tem acesso aos módulos do ERP.</b> ${porque} Peça a um administrador para liberar em Sistema › Usuários e permissões, informando o e-mail <b>${esc(meuEmail)}</b>.</div></div>` : "")
+    + (session.acessoErro ? `<div class="banner"><div><b>Não foi possível ler a lista de acessos do ERP</b> (${esc(session.acessoErro)}). Sem ela, o ERP não libera os módulos. Avise um administrador para conferir a leitura da lista "ERP — Acessos" (site TI).</div></div>` : "");
+  const h = new Date().getHours(), saud = h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
+  let data = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }); data = data.charAt(0).toUpperCase() + data.slice(1);
+  const ch = iniChave(), fresco = INI.dados && INI.chave === ch && INI.em && Date.now() - INI.em < 120000;
+  if (!fresco) { INI.fontes = iniFontes(); INI.dados = {}; INI.em = 0; }
+  const deps = navAreasOrdenadas().filter(a => areaMods(a.name).length).map(a => { const n = areaMods(a.name).length; return `<a class="ini-dep" href="#/area/${encodeURIComponent(a.name)}"><b>${esc(a.name)}</b><span>${n} ${iniPl(n, "módulo", "módulos")}${a.desc ? " · " + esc(a.desc) : ""}</span></a>`; }).join("");
+  const kpis = semAcesso ? "" : iniKpisHtml();
+  setTimeout(() => { if ($("iniPrecisa")) iniCarregar(false); }, 0);
+  return `<div class="page ini">
+    <div class="ini-topo"><div><h1>${esc(saud)}${first ? ", " + esc(first) : ""}</h1><p class="lead">${esc(data)}${semAcesso ? "" : " · o que precisa de você hoje está primeiro."}</p></div></div>
+    ${banner}
+    ${semAcesso ? "" : `<section class="ini-kpis" id="iniKpis" aria-label="Indicadores do dia"${kpis ? "" : " hidden"}>${kpis}</section>
+    <div class="ini-meio">
+      <section class="ini-card ini-precisa" id="iniPrecisaSec" aria-labelledby="iniHPrecisa"><div class="ini-card-h"><h2 id="iniHPrecisa">Precisa de você</h2><span class="ini-em"><span id="iniEm"></span><button type="button" class="ini-atu" onclick="iniAtualizar()" title="Ler de novo os números dos módulos">Atualizar</button></span></div><div id="iniPrecisa" aria-live="polite">${iniPrecisaHtml()}</div></section>
+      <aside class="ini-lado">
+        <section class="ini-card" aria-labelledby="iniHEstava"><h2 id="iniHEstava">Você estava em</h2>${iniRecHtml()}</section>
+        <section class="ini-card" aria-labelledby="iniHFav"><h2 id="iniHFav">Favoritos</h2>${iniFavHtml()}</section>
+      </aside>
+    </div>`}
+    ${deps ? `<h2 class="ini-sec">Departamentos</h2><div class="ini-deps">${deps}</div>` : ""}
+  </div>`;
+};
+{ const r0 = route;
+  route = function () {
+    const out = r0.apply(this, arguments);
+    const h = (location.hash || "#/inicio").split("?")[0], p = INI.depois;
+    if (p) { INI.depois = null; if (p.hash === h && Date.now() - p.em < 5000) { try { p.fn(); } catch (e) { console.warn("Início › abrir no ponto", e); } } }   /* revisão L2: vale só para a próxima rota */
+    if (h !== "#/inicio" && !h.startsWith("#/area/")) iniRecMarcar(h);
+    return out;
+  };
+}
+{ const st = document.createElement("style"); st.id = "erp-v01442";
+  st.textContent = `
+  .ini-topo { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 28px; margin-bottom: 22px; }
+  .ini-topo .lead { margin: 6px 0 0; }
+  .ini-kpis { display: flex; flex-wrap: wrap; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 2px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 20px; }
+  .ini-kpis[hidden] { display: none; }
+  .ini-kpi { flex: 1 1 190px; min-width: 0; display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; text-align: left; padding: 18px 22px 16px; background: #fff; border: 0; border-radius: 0; color: inherit; font: inherit; cursor: pointer; }
+  .ini-kpi:hover { background: #FAFBFC; }
+  .ini-kpi .lbl { display: block; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+  .ini-kpi .val { display: block; margin-top: 8px; font-size: 28px; line-height: 1.15; font-weight: 800; color: var(--navy); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }   /* revisão L3: valor grande quebra a linha em vez de cortar */
+  .ini-kpi .val.din { font-size: 22px; line-height: 1.45; }
+  .ini-kpi .val.err { color: #B3271E; }
+  .ini-kpi .sub { display: block; margin-top: 8px; font-size: 12px; line-height: 1.4; color: var(--ink-2); }
+  .ini-kpi.destaque { background: #F6F8FB; box-shadow: inset 0 -3px 0 var(--orange); }
+  .ini-meio { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px; margin-bottom: 30px; }
+  .ini-card { background: #fff; border: 1px solid var(--line); border-radius: 2px; box-shadow: var(--shadow); }
+  .ini-card h2 { margin: 0; font-size: 16px; font-weight: 800; color: var(--navy); }
+  .ini-precisa { flex: 999 1 560px; min-width: 0; }
+  .ini-card-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .ini-em { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+  .ini-atu { min-height: 32px; padding: 4px 10px; background: none; border: 1px solid var(--line); border-radius: 2px; font: inherit; font-size: 12.5px; font-weight: 700; color: var(--navy); cursor: pointer; }
+  .ini-atu:hover { background: #FFF1EA; border-color: #F6C3AE; }
+  .ini-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 14px 20px; background: none; border: 0; border-bottom: 1px solid var(--line-2, #EDEFF2); border-radius: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .ini-row:last-of-type { border-bottom: 0; }
+  .ini-row:hover { background: #F8FAFC; }
+  .ini-ico { width: 36px; height: 36px; border-radius: 2px; background: #EEF2F8; color: var(--navy); display: grid; place-items: center; flex: none; }
+  .ini-ico.err { background: #FDE8E6; color: #B3271E; }
+  .ini-row .txt { flex: 1; min-width: 0; }
+  .ini-row .txt b { display: block; font-size: 14px; line-height: 1.35; }
+  .ini-row .txt span { display: block; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
+  .ini-pill { flex: none; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+  .ini-pill.warn { background: #FFF6DB; color: #9A6A00; }
+  .ini-pill.err { background: #FDE8E6; color: #B3271E; }
+  .ini-pill.nav { background: #EEF2F8; color: var(--navy); }
+  .ini-vazio { padding: 22px 20px; font-size: 13.5px; color: var(--ink-2); }
+  .ini-vazio b { display: block; margin-bottom: 2px; font-size: 15px; color: var(--navy); }
+  .ini-carr { border-top: 1px solid var(--line-2, #EDEFF2); }
+  .ini-row + .ini-carr { border-top: 1px solid var(--line-2, #EDEFF2); }
+  .ini-nota { margin: 0; padding: 10px 20px 14px; font-size: 12px; color: var(--ink-2); border-top: 1px solid var(--line-2, #EDEFF2); }
+  .ini-lado { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+  .ini-lado .ini-card { padding: 16px 20px; }
+  .ini-lado h2 { margin-bottom: 10px; }
+  .ini-rec { display: block; padding: 10px 12px; border: 1px solid var(--line); border-radius: 2px; text-decoration: none; color: inherit; }
+  .ini-rec + .ini-rec { margin-top: 8px; }
+  .ini-rec.ult { background: var(--soft); }
+  .ini-rec .cam, .ini-rec .quando { display: block; font-size: 12px; color: var(--ink-2); }
+  .ini-rec b { display: block; margin-top: 2px; font-size: 14px; color: var(--navy); }
+  .ini-favs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .ini-fav { display: flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 2px; font-size: 13.5px; font-weight: 700; text-decoration: none; color: var(--navy); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ini-fav:hover, .ini-rec:hover { background: #FFF1EA; border-color: #F6C3AE; }
+  .ini-vazio-lado { margin: 0; font-size: 13px; color: var(--ink-2); }
+  .ini-sec { margin: 0 0 12px; font-size: 16px; font-weight: 800; color: var(--navy); }
+  .ini-deps { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+  .ini-dep { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; background: #fff; border: 1px solid var(--line); border-radius: 2px; box-shadow: var(--shadow); text-decoration: none; color: inherit; }
+  .ini-dep b { font-size: 15px; color: var(--navy); }
+  .ini-dep span { font-size: 12.5px; line-height: 1.45; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .ini-dep::before, .ini-dep::after { content: ""; position: absolute; width: 22px; height: 22px; pointer-events: none; transition: width .2s, height .2s; }
+  .ini-dep::before { top: -1px; left: -1px; border-top: 2px solid var(--orange); border-left: 2px solid var(--orange); }
+  .ini-dep::after { right: -1px; bottom: -1px; border-right: 2px solid var(--navy); border-bottom: 2px solid var(--navy); }
+  .ini-dep:hover, .ini-dep:focus-visible { background: #FFF1EA; border-color: #F6C3AE; }
+  .ini-dep:hover::before, .ini-dep:hover::after, .ini-dep:focus-visible::before, .ini-dep:focus-visible::after { width: 40px; height: 40px; }
+  @media (max-width: 640px) {
+    .ini-topo { margin-bottom: 16px; }
+    .ini-kpi { flex: 1 1 calc(50% - 1px); padding: 14px 16px; }
+    .ini-kpi .val { font-size: 24px; }
+    .ini-kpi .val.din { font-size: 18px; line-height: 1.55; }
+    .ini-meio { gap: 16px; margin-bottom: 24px; }
+    .ini-precisa, .ini-lado { flex-basis: 100%; }
+    .ini-card-h { padding: 14px 16px; }
+    .ini-row { gap: 10px; padding: 12px 14px; }
+    .ini-pill { padding: 3px 8px; font-size: 11px; }
+    .ini-atu { min-height: 44px; }
+    .ini-card-h h2 { white-space: nowrap; }
+    #iniEm { display: none; }
+    .ini-lado .ini-card { padding: 14px 16px; }
+    .ini-deps { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .ini-dep { padding: 12px 14px; }
+    .ini-dep span { -webkit-line-clamp: 3; }
+  }
+  @media print { .ini-atu { display: none; } }
+  `;
+  document.head.appendChild(st); }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -47758,6 +48123,7 @@ CONFIG.version = "v0.14.41.4";   /* Terceiros: Atualizar pela Receita (Razão So
 CONFIG.version = "v0.14.41.5";   /* Central de Tarefas da Diretoria e do Financeiro excluídas (atividades vão para o Planner via Make) */
 CONFIG.version = "v0.14.41.6";   /* Terceiros: filtros numa linha; janela de confirmação no centro; CAP sem rolagem horizontal e chips numa linha; data centralizada no Fluxo de Caixa */
 CONFIG.version = "v0.14.41.7";   /* marca do sistema ERP: quadrados + "ERP | Nova Macabu" no topo, no menu lateral, no ícone do app e na aba */
+CONFIG.version = "v0.14.42";   /* Início v2 (painel executivo, prancha 1A): indicadores do dia por permissão de módulo; "Precisa de você" calculada dos módulos (contas de hoje e vencidas, aprovações, alertas do ponto), sem a Central de Tarefas; "Você estava em", Favoritos e Departamentos compactos */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

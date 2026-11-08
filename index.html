@@ -41919,9 +41919,9 @@ async function ctbFechLer(force) {
 }
 function ctbFechMes(c) { const m = c && CTB_FECH.val && CTB_FECH.val.meses ? CTB_FECH.val.meses[c] : null; return m && m.st === "Fechado" ? m : null; }
 function ctbFechTravaIt(it) { if (!it) return ""; const c1 = capCtbComp(it), c2 = it.DataPagamento ? ymd(it.DataPagamento).slice(0, 7) : ""; return ctbFechMes(c1) ? c1 : c2 && ctbFechMes(c2) ? c2 : ""; }
-const ctbFechPode = () => !!(session.n1 || (permModulo("cap") === "proprietario" && podeEditar("cap")));
+const ctbFechPode = () => !!(session.n1 || (["proprietario", "editar"].includes(permModulo("cap")) && podeEditar("cap")));   /* v0.14.45: também quem edita a CAP (decisão de 08/11) */
 function ctbFech403(msg) { const e = new Error(msg); e.status = 403; e.semAcesso = true; e.ctbFech = true; return e; }
-function ctbFechErro(c) { const m = ctbFechMes(c) || {}; return ctbFech403(`${compLabel(c)} está fechado na Contabilidade${m.por ? ` (por ${m.por}${m.em ? " em " + new Date(m.em).toLocaleString("pt-BR") : ""})` : ""}: lançamentos desse mês não podem ser incluídos, alterados, pagos ou excluídos. ${ctbFechPode() ? "Reabra o mês na aba Contabilidade da CAP antes." : "Peça a reabertura ao administrador ou ao proprietário da CAP."}`); }
+function ctbFechErro(c) { const m = ctbFechMes(c) || {}; return ctbFech403(`${compLabel(c)} está fechado na Contabilidade${m.por ? ` (por ${m.por}${m.em ? " em " + new Date(m.em).toLocaleString("pt-BR") : ""})` : ""}: lançamentos desse mês não podem ser incluídos, alterados, pagos ou excluídos. ${ctbFechPode() ? "Reabra o mês na aba Contabilidade da CAP antes." : "Peça a reabertura ao administrador, ao proprietário ou a quem edita a CAP."}`); }
 /* o que conta como alteração: só campos cujo valor muda (o formulário manda todos); vazio = nulo; datas pelo dia; números com centavos */
 function ctbNorm(v) { if (v == null || v === "" || v === false) return ""; if (typeof v === "number") return String(Math.round(v * 100) / 100); const s = String(v).trim(); if (/^\d{4}-\d{2}-\d{2}/.test(s)) return ymd(s); if (/^-?\d+(\.\d+)?$/.test(s)) return String(Math.round(Number(s) * 100) / 100); return s; }
 const CTB_ABERTOS = new Set(["Aguardando NF", "Em aberto", "Vencido", "Pendente"]);   /* trocar entre eles não mexe em total (ex.: a NF chegou) */
@@ -41932,7 +41932,7 @@ function ctbFechChecar(M, p0, body) {
   const iid = m[2] ? decodeURIComponent(m[2]) : null;
   if (CAP_PARAM.list && m[1] === CAP_PARAM.list.id) {   /* o registro dos fechamentos: só quem fecha (revisão M3) */
     const alvo = (iid && CTB_FECH.id && iid === CTB_FECH.id) || (M === "POST" && body && body.fields && body.fields.Title === "ctb_fechamentos");
-    if (alvo && !ctbFechPode()) throw ctbFech403("Só o administrador ou o proprietário da CAP fecham e reabrem o mês da Contabilidade.");
+    if (alvo && !ctbFechPode()) throw ctbFech403("Só o administrador, o proprietário ou quem edita a CAP fecham e reabrem o mês da Contabilidade.");
     return;
   }
   if (m[1] !== CAP_STATE.list.id) return;
@@ -41995,7 +41995,7 @@ function ctbFechTotais(c) {
 const ctbFechQuem = () => (typeof capHistQuem === "function" ? capHistQuem() : ((session.me && session.me.displayName) || ""));
 window.ctbFecharMes = async c => {
   if (typeof DIV !== "undefined" && DIV.on) { toast("O fechamento do mês é da CAP, não da Gestão de Dívidas."); return; }
-  if (!ctbFechPode()) { toast("Fechar o mês na Contabilidade é do administrador ou do proprietário da CAP."); return; }
+  if (!ctbFechPode()) { toast("Fechar o mês na Contabilidade é do administrador, do proprietário ou de quem edita a CAP."); return; }
   if (vcAtivo()) { toast(vcErro().message); return; }
   try { await loadCAP({ soLeitura: true }); } catch (e) { toast("Não foi possível reler a CAP: " + e.message, 7000); return; }
   const U = Object.assign({}, capCtbUI(), { comp: c, base: "comp" }), D = capCtbDados(U), C = capCtbConferencia(D, null);
@@ -42011,7 +42011,7 @@ window.ctbFecharMes = async c => {
 };
 window.ctbReabrirMes = async c => {
   if (typeof DIV !== "undefined" && DIV.on) { toast("O fechamento do mês é da CAP, não da Gestão de Dívidas."); return; }
-  if (!ctbFechPode()) { toast("Reabrir o mês é do administrador ou do proprietário da CAP."); return; }
+  if (!ctbFechPode()) { toast("Reabrir o mês é do administrador, do proprietário ou de quem edita a CAP."); return; }
   if (vcAtivo()) { toast(vcErro().message); return; }
   const m = prompt(`Motivo para reabrir ${compLabel(c)} na Contabilidade (obrigatório):`); if (m == null) return; if (!m.trim()) { toast("Informe o motivo."); return; }
   try {
@@ -48542,6 +48542,291 @@ window.cxTopoLinha = cxTopoLinha;
   @media (max-width:640px){.ini-deps.as-list .ini-dep{grid-template-columns:minmax(0,1fr)}.ini-deps.as-list .ini-dep span{display:none}}`;
   document.head.appendChild(st);
 })();
+/* =====================================================================
+   v0.14.45 · Rodada 1, pedido 1 de 08/11 (11:40), item 5 — CAP › COLABORADORES
+   Aba nova na Contas a Pagar com os pagamentos internos da empresa aos colaboradores:
+   - lê RH — Funcionários (todos os cadastrados; por padrão mostra os que não estão desligados) e, quando a pessoa tem acesso à lista
+     restrita "RH — Funcionários · Dados pessoais", o CPF e os dados bancários (Banco, Agência, Conta);
+   - cada colaborador tem as CARTEIRAS padrão (Salário, Adiantamento, Horas Extras, Férias, 13º Salário, FGTS, INSS, Vale Transporte,
+     Rescisão e Outros). A carteira de um lançamento é a sua Categoria › Subcategoria no plano de contas — nenhuma coluna nova;
+   - os lançamentos de um colaborador são os da CAP com favorecido Funcionário e o nome dele (ou o CPF, quando conhecido);
+   - "+ Lançar" abre o Novo lançamento já preenchido (favorecido, CPF, categoria/subcategoria da carteira, centro de custo), e o
+     formulário traz os dados bancários do RH (v0.14.2). A permissão de lançar é a da página Lançamentos;
+   - página própria "Colaboradores" (cap.colab) em Usuários e permissões.
+   ===================================================================== */
+/* revisão M5: a página Colaboradores é só de consulta (ver/nenhum na matriz). Para as ações (lançar pela tecla "n", capNew(),
+   guarda da lista da CAP), ela vale o mesmo que a página Lançamentos: "nenhum" esconde a aba; qualquer outro valor segue cap.lista. */
+{ const pv0 = permPagValor;
+  permPagValor = function (mid, k, perm) {
+    const v = pv0.apply(this, arguments);
+    if (mid === "cap" && k === "colab") { const bruto = (perm || (session.acesso && session.acesso.perm) || {})["cap.colab"]; if (bruto === "nenhum") return v; return pv0("cap", "lista", perm); }
+    return v;
+  }; window.permPagValor = permPagValor; }
+PAG_DEF.cap.splice(PAG_DEF.cap.findIndex(p => p.k === "forn") + 1, 0, { k: "colab", n: "Colaboradores", aba: "capSetView('colab')", soNenhum: true });
+
+const CAP_COLAB_CARTEIRAS = [
+  { k: "sal",  n: "Salário",        cat: "Pessoal",          sub: "Salários" },
+  { k: "adi",  n: "Adiantamento",   cat: "Pessoal",          sub: "Adiantamento" },
+  { k: "hex",  n: "Horas Extras",   cat: "Pessoal",          sub: "Horas Extras" },
+  { k: "fer",  n: "Férias",         cat: "Encargos Sociais", sub: "Férias" },
+  { k: "dec",  n: "13º Salário",    cat: "Encargos Sociais", sub: "13º Salário" },
+  { k: "fgts", n: "FGTS",           cat: "Encargos Sociais", sub: "FGTS" },
+  { k: "inss", n: "INSS",           cat: "Encargos Sociais", sub: "INSS" },
+  { k: "vt",   n: "Vale Transporte", cat: "Benefícios",      sub: "Vale Transporte" },
+  { k: "resc", n: "Rescisão",       cat: "Encargos Sociais", sub: "Rescisão", alt: [["Rescisões", "Verbas Rescisórias"], ["Rescisões", "Homologação"]] },
+  { k: "out",  n: "Outros",         cat: "",                 sub: "" }
+];
+const COLAB = { funcs: null, em: 0, erro: "", q: "", sit: "ativos", ord: "nome", aberto: null, cart: "", ano: String(new Date().getFullYear()), lendo: false };
+const colabDig = v => String(v || "").replace(/\D/g, "");
+function colabCarteiraDe(it) {
+  const c = normName(it.Categoria), s = normName(it.Subcategoria);
+  for (const w of CAP_COLAB_CARTEIRAS) {
+    if (!w.sub) continue;
+    if (s && s === normName(w.sub)) return w;
+    if (w.alt && w.alt.some(([c2, s2]) => c === normName(c2) && s === normName(s2))) return w;
+  }
+  return CAP_COLAB_CARTEIRAS[CAP_COLAB_CARTEIRAS.length - 1];
+}
+/* todos os funcionários do RH (inclusive desligados), com os dados pessoais quando a lista restrita puder ser lida */
+async function colabFuncsLer(force) {
+  if (!force && COLAB.funcs && Date.now() - COLAB.em < 300000) return COLAB.funcs;
+  if (COLAB.lendo) return COLAB.funcs || [];
+  COLAB.lendo = true; COLAB.erro = "";
+  try {
+    const st = await SP.site(CONFIG.sites[LISTS.rh_func.siteKey]), ls = await SP.lists(st.id), l = ls.find(x => x.displayName === LISTS.rh_func.displayName);
+    if (!l) { COLAB.funcs = []; COLAB.erro = `A lista "${LISTS.rh_func.displayName}" não existe ou você não tem acesso a ela.`; }
+    else COLAB.funcs = (await SP.items(st.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})).sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR"));
+    try { await rhPesCarregar(); } catch (e) {}
+    if (rhPesAtivo()) COLAB.funcs.forEach(f => { const r = RH_PES.map.get(String(f._id)); if (r) f._pes = r; });
+    if (typeof TERC_RH !== "undefined" && TERC_RH) { TERC_RH.funcs = COLAB.funcs.filter(f => f.Situacao !== "Desligado"); TERC_RH.em = Date.now(); }   /* o formulário da CAP usa a mesma leitura */
+  } catch (e) { COLAB.funcs = COLAB.funcs || []; COLAB.erro = e.message || String(e); }
+  COLAB.em = Date.now(); COLAB.lendo = false;
+  return COLAB.funcs;
+}
+function colabCpf(f) { return colabDig(f && f._pes ? f._pes.CPF : (f && f.CPF) || ""); }
+function colabCpfsConhecidos() { const s = new Set(); (COLAB.funcs || []).forEach(x => { const c = colabCpf(x); if (c) s.add(c); }); return s; }
+function colabItensDe(f) {
+  const nome = normName(f.Title), cpf = colabCpf(f), outros = colabCpfsConhecidos();
+  return CAP_STATE.items.filter(it => {
+    if (capCancelada(it)) return false;
+    const fun = (it.TipoFavorecido || "") === "Funcionário";
+    const doc = colabDig(it.CNPJ);
+    if (cpf && doc && doc === cpf) return true;
+    if (doc.length === 11 && (cpf ? doc !== cpf : outros.has(doc))) return false;   /* CPF de outra pessoa: não casa pelo nome (homônimos) */
+    return fun && nome && normName(it.Fornecedor) === nome;
+  });
+}
+function colabResumo(f, itens) {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const mesK = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  const r = { n: itens.length, pagoMes: 0, aberto: 0, vencido: 0, nVenc: 0, nAberto: 0, ultimo: null, ultimoV: 0 };
+  itens.forEach(it => {
+    const c = classifyItem(it);
+    if (c.pago) { const v = capValorEfetivo(it); if (it.DataPagamento && String(ymd(it.DataPagamento)).slice(0, 7) === mesK) r.pagoMes += v; if (it.DataPagamento && (!r.ultimo || ymd(it.DataPagamento) > r.ultimo)) { r.ultimo = ymd(it.DataPagamento); r.ultimoV = v; } }
+    else if (!c.isenta) { const v = Number(it.Valor || 0); if (c.dias !== null && c.dias < 0) { r.vencido += v; r.nVenc++; } else { r.aberto += v; r.nAberto++; } }
+  });
+  return r;
+}
+function colabSitPill(f) { const s = f.Situacao || "Ativo"; const cls = s === "Ativo" ? "st-pago" : s === "Desligado" ? "st-vencido" : "st-aguardando"; return `<span class="pill ${cls}"><i></i>${esc(s)}</span>`; }
+function colabBancoTxt(f) {
+  if (!rhPesAtivo()) return { ok: null, txt: "sem acesso" };
+  const p = f._pes || {}, tem = ["Banco", "Agencia", "Conta"].filter(k => !rhPesVazio(p[k]));
+  if (!tem.length) return { ok: false, txt: "não cadastrados" };
+  return { ok: tem.length === 3, txt: `${p.Banco || "—"} · ag. ${p.Agencia || "—"} · c/c ${p.Conta || "—"}` };
+}
+function colabPodeLancar() { const prev = session.pagAtual; session.pagAtual = "cap.lista"; let ok = false; try { ok = !!podeEditar("cap") && !(typeof vcAtivo === "function" && vcAtivo()); } catch (e) {} session.pagAtual = prev; return ok; }
+window.capColabFiltro = (k, v) => { COLAB[k] = v; paintCAP(); };
+window.capColabLimpar = () => { COLAB.q = ""; COLAB.sit = "ativos"; COLAB.ord = "nome"; paintCAP(); };
+window.capColabAtualizar = async () => { COLAB.funcs = null; await colabFuncsLer(true); paintCAP(); };
+
+function paintCapColab(body) {
+  if (!COLAB.funcs && !COLAB.lendo) { colabFuncsLer().then(() => { if (CAP_STATE.view === "colab") paintCAP(); }); }
+  const funcs = COLAB.funcs;
+  const vis = capViewsBar();
+  if (!funcs) { body.innerHTML = `${vis}<div class="cap-empty"><h3>Lendo os colaboradores do RH…</h3><p>A lista "${esc(LISTS.rh_func.displayName)}" está sendo lida.</p></div>`; return; }
+  if (COLAB.erro && !funcs.length) { body.innerHTML = `${vis}<div class="cap-empty"><h3>Não foi possível ler os colaboradores</h3><p>${esc(COLAB.erro)}</p><div class="actions"><button class="btn" onclick="capColabAtualizar()">Tentar de novo</button></div></div>`; return; }
+  const todos = funcs.map(f => { const itens = colabItensDe(f); return { f, itens, r: colabResumo(f, itens) }; });
+  const q = normName(COLAB.q);
+  let arr = todos.filter(x => (COLAB.sit === "todos" || (COLAB.sit === "ativos" ? x.f.Situacao !== "Desligado" : COLAB.sit === "deslig" ? x.f.Situacao === "Desligado" : COLAB.sit === "aberto" ? (x.r.nAberto + x.r.nVenc) > 0 : COLAB.sit === "venc" ? x.r.nVenc > 0 : true))
+    && (!q || normName([x.f.Title, x.f.Cargo, x.f.Departamento, x.f.Setor, x.f.Matricula].join(" ")).includes(q)));
+  const nome = (a, b) => String(a.f.Title || "").localeCompare(String(b.f.Title || ""), "pt-BR");
+  const ORD = { nome, cc: (a, b) => String(a.f.Departamento || "").localeCompare(String(b.f.Departamento || ""), "pt-BR") || nome(a, b), venc: (a, b) => b.r.vencido - a.r.vencido || nome(a, b), aberto: (a, b) => (b.r.aberto + b.r.vencido) - (a.r.aberto + a.r.vencido) || nome(a, b), ultimo: (a, b) => String(b.r.ultimo || "").localeCompare(String(a.r.ultimo || "")) || nome(a, b) };
+  arr.sort(ORD[COLAB.ord] || nome);
+  const ativos = todos.filter(x => x.f.Situacao !== "Desligado");
+  const K = (lbl, val, sub, cls, sit) => `<button class="kpi ${cls || ""} ${sit && COLAB.sit === sit ? "on" : ""}" onclick="capColabFiltro('sit', ${jsArg(sit || "ativos")})"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div><div class="sub">${esc(sub)}</div></button>`;
+  const soma = (xs, k) => xs.reduce((s, x) => s + x.r[k], 0);
+  const kpis = `<div class="cap-kpis">
+    ${K("Colaboradores", ativos.length, `${todos.length - ativos.length ? `${todos.length - ativos.length} desligado(s) · ` : ""}${ativos.filter(x => x.r.n).length} com lançamentos`, "", "ativos")}
+    ${K("Pagos no Mês", fmtBRL(soma(todos, "pagoMes")), "pagamentos a colaboradores neste mês", "pago", "")}
+    ${K("Em Aberto", fmtBRL(soma(todos, "aberto")), `${todos.filter(x => x.r.nAberto).length} colaborador(es) com lançamento a vencer`, "", "aberto")}
+    ${K("Vencidos", todos.filter(x => x.r.nVenc).length, soma(todos, "vencido") ? fmtBRL(soma(todos, "vencido")) + " vencido" : "nenhum lançamento vencido", todos.some(x => x.r.nVenc) ? "venc" : "", "venc")}
+  </div>`;
+  const sel = (id, opts, v, k) => `<select id="${id}" onchange="capColabFiltro('${k}', this.value)">${opts.map(([val, l]) => `<option value="${val}" ${val === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  const linha = x => { const b = colabBancoTxt(x.f); return `<tr class="colab-lin" data-id="${esc(x.f._id)}" onclick="capColabAbrir(${jsArg(x.f._id)})" style="cursor:pointer">
+      <td><div class="desc">${esc(x.f.Title || "—")}</div><div class="sup">${esc([x.f.Cargo, x.f.Matricula ? "mat. " + x.f.Matricula : ""].filter(Boolean).join(" · ") || "—")}</div></td>
+      <td>${esc(x.f.Departamento || x.f.Setor || "—")}</td>
+      <td>${colabSitPill(x.f)}</td>
+      <td class="colab-banco ${b.ok === true ? "ok" : b.ok === false ? "falta" : ""}" title="${esc(b.txt)}">${b.ok === true ? "✓ " + esc(b.txt) : b.ok === false ? "falta cadastrar" : "sem acesso"}</td>
+      <td style="text-align:right">${x.r.n}</td>
+      <td style="text-align:right" class="pago">${x.r.pagoMes ? esc(fmtBRL(x.r.pagoMes)) : "—"}</td>
+      <td style="text-align:right">${x.r.aberto ? esc(fmtBRL(x.r.aberto)) : "—"}</td>
+      <td style="text-align:right" class="${x.r.vencido ? "venc" : ""}">${x.r.vencido ? esc(fmtBRL(x.r.vencido)) : "—"}</td>
+      <td>${x.r.ultimo ? `${esc(fmtDate(x.r.ultimo))} <span class="sup">${esc(fmtBRL(x.r.ultimoV))}</span>` : "—"}</td>
+      <td><button type="button" class="btn sm" onclick="event.stopPropagation(); capColabAbrir(${jsArg(x.f._id)})">Abrir</button></td></tr>`; };
+  body.innerHTML = `${vis}${kpis}
+    <div class="filters" role="search"><input type="search" class="span-2" id="ccBusca" placeholder="Buscar colaborador, cargo, matrícula ou centro de custo…" value="${esc(COLAB.q)}">
+      ${sel("ccSit", [["ativos", "Ativos, férias e afastados"], ["todos", "Todos, inclusive desligados"], ["deslig", "Só desligados"], ["aberto", "Com lançamento em aberto"], ["venc", "Com lançamento vencido"]], COLAB.sit, "sit")}
+      ${sel("ccOrd", [["nome", "Ordem: nome (A → Z)"], ["cc", "Ordem: centro de custo"], ["venc", "Ordem: maior vencido"], ["aberto", "Ordem: maior em aberto"], ["ultimo", "Ordem: último pagamento"]], COLAB.ord, "ord")}
+      <button class="btn ghost" onclick="capColabLimpar()">Limpar filtros</button><button class="btn ghost" onclick="capColabAtualizar()" title="Reler a lista de funcionários do RH">Atualizar do RH</button></div>
+    ${COLAB.erro ? `<div class="import-help">${esc(COLAB.erro)}</div>` : ""}
+    <div class="hint" style="margin:-6px 0 6px">Aparecem aqui os lançamentos da CAP com favorecido Funcionário no nome do colaborador ou com o CPF dele. A carteira é a categoria › subcategoria do lançamento.</div>
+    ${!rhPesAtivo() ? `<div class="hint" style="margin:-6px 0 10px">CPF e dados bancários ficam na lista restrita "${esc(LISTS.rh_func_pes.displayName)}"; sem acesso a ela, a coluna Dados Bancários mostra "sem acesso" e o CPF é digitado no lançamento.</div>` : ""}
+    ${arr.length ? `<div class="table-wrap"><table class="cap-table colab-table"><thead><tr><th>Colaborador</th><th>Centro de Custo</th><th>Situação</th><th>Dados Bancários</th><th style="text-align:right">Lançamentos</th><th style="text-align:right">Pago no Mês</th><th style="text-align:right">Em Aberto</th><th style="text-align:right">Vencido</th><th>Último Pagamento</th><th></th></tr></thead><tbody>${arr.map(linha).join("")}</tbody></table></div>
+      <div class="cap-foot"><span><b>${arr.length}</b> colaborador(es) no filtro</span><span>Em aberto <b>${esc(fmtBRL(soma(arr, "aberto")))}</b></span><span class="venc">Vencido <b>${esc(fmtBRL(soma(arr, "vencido")))}</b></span><span class="pago">Pago no mês <b>${esc(fmtBRL(soma(arr, "pagoMes")))}</b></span></div>`
+      : `<div class="cap-empty"><h3>${funcs.length ? "Nenhum colaborador com esses filtros" : "Nenhum colaborador cadastrado no RH"}</h3><p>${funcs.length ? "Ajuste os filtros para ver mais resultados." : "Cadastre os colaboradores em RH › Funcionários; eles aparecem aqui automaticamente."}</p></div>`}`;
+  const bq = $("ccBusca"); if (bq) bq.addEventListener("input", ev => { const v = ev.target.value; clearTimeout(COLAB._t); COLAB._t = setTimeout(() => { COLAB.q = v; if ($("ccBusca")) keepFocus(paintCAP); }, 160); });
+}
+window.paintCapColab = paintCapColab;
+
+/* cartão do colaborador: identificação, dados bancários, carteiras e histórico */
+window.capColabAbrir = (id, manter) => {
+  const f = (COLAB.funcs || []).find(x => String(x._id) === String(id)); if (!f) return;
+  COLAB.aberto = String(id);
+  const itens = colabItensDe(f), r = colabResumo(f, itens), pes = f._pes || {}, lanca = colabPodeLancar() && f.Situacao !== "Desligado";
+  const anos = [...new Set(itens.map(it => String(itemComp(it) || ymd(it.Vencimento) || "").slice(0, 4)).filter(Boolean))].sort().reverse();
+  const anoAtual = String(new Date().getFullYear()); if (!anos.includes(anoAtual)) anos.unshift(anoAtual);
+  if (COLAB.ano !== "todos" && !anos.includes(COLAB.ano)) COLAB.ano = anoAtual;
+  const noAno = it => COLAB.ano === "todos" || String(itemComp(it) || ymd(it.Vencimento) || "").slice(0, 4) === COLAB.ano;
+  const porCart = new Map(CAP_COLAB_CARTEIRAS.map(w => [w.k, { w, itens: [] }]));
+  itens.forEach(it => porCart.get(colabCarteiraDe(it).k).itens.push(it));
+  const cartHtml = CAP_COLAB_CARTEIRAS.map(w => {
+    const xs = porCart.get(w.k).itens.filter(noAno), rc = colabResumo(f, xs);
+    const pagos = xs.filter(it => it.Status === "Pago"), vPago = pagos.reduce((s, it) => s + capValorEfetivo(it), 0);
+    return `<div class="colab-cart ${COLAB.cart === w.k ? "on" : ""} ${xs.length ? "" : "vazia"}" role="button" tabindex="0" onclick="capColabCart(${jsArg(COLAB.cart === w.k ? "" : w.k)})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+      <div class="colab-cart-t">${esc(w.n)}${w.sub ? `<span class="sup">${esc(w.cat)} › ${esc(w.sub)}</span>` : `<span class="sup">demais categorias</span>`}</div>
+      <div class="colab-cart-v">${pagos.length ? `<b>${esc(fmtBRL(vPago))}</b> <span class="sup">${pagos.length} pago(s)${COLAB.ano === "todos" ? "" : " em " + esc(COLAB.ano)}</span>` : `<span class="sup">nenhum pagamento${COLAB.ano === "todos" ? "" : " em " + esc(COLAB.ano)}</span>`}</div>
+      <div class="colab-cart-s">${rc.vencido ? `<span class="venc">vencido ${esc(fmtBRL(rc.vencido))}</span>` : rc.aberto ? `<span>a vencer ${esc(fmtBRL(rc.aberto))}</span>` : rc.ultimo ? `<span class="sup">último ${esc(fmtDate(rc.ultimo))}</span>` : ""}</div>
+      ${lanca ? `<button type="button" class="btn sm colab-lancar" onclick="event.stopPropagation(); capColabLancar(${jsArg(f._id)}, ${jsArg(w.k)})" title="Novo lançamento desta carteira para ${esc(f.Title)}">+ Lançar</button>` : ""}</div>`;
+  }).join("");
+  const hist = itens.filter(it => noAno(it) && (!COLAB.cart || colabCarteiraDe(it).k === COLAB.cart)).sort((a, b) => String(ymd(b.Vencimento) || "").localeCompare(String(ymd(a.Vencimento) || "")));
+  const linha = it => { const c = classifyItem(it), w = colabCarteiraDe(it); return `<tr onclick="capColabVerLanc(${jsArg(it._id)})" style="cursor:pointer"><td>${esc(w.n)}</td><td><div class="desc">${esc(it.Title || "—")}</div><div class="sup">${esc([it.Categoria, it.Subcategoria].filter(Boolean).join(" › "))}</div></td><td>${esc(compLabel(itemComp(it)))}</td><td>${esc(fmtDate(it.Vencimento))}</td><td style="text-align:right">${esc(fmtBRL(c.pago ? capValorEfetivo(it) : Number(it.Valor || 0)))}</td><td>${statusPill(c.pago ? "Pago" : c.dias !== null && c.dias < 0 ? "Vencido" : it.Status || "Em aberto")}</td><td>${c.pago && it.DataPagamento ? esc(fmtDate(it.DataPagamento)) + (it.Banco ? ` <span class="sup">${esc(it.Banco)}</span>` : "") : "—"}</td></tr>`; };
+  const banco = colabBancoTxt(f);
+  const html = `<div class="modal-head tcad-head"><div class="tcad-tit"><h2>${esc(f.Title || "—")}</h2><div class="sup">${esc([f.Cargo, f.Departamento || f.Setor].filter(Boolean).join(" · "))}</div></div>${colabSitPill(f)}<button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body tcad colab-card">
+      <div class="obr-sec">Identificação</div>
+      <div class="colab-grid">
+        <div><span class="lbl">Matrícula</span><b>${esc(f.Matricula || "—")}</b></div><div><span class="lbl">Cargo</span><b>${esc(f.Cargo || "—")}</b></div><div><span class="lbl">Centro de Custo</span><b>${esc(f.Departamento || f.Setor || "—")}</b></div>
+        <div><span class="lbl">Admissão</span><b>${esc(fmtDate(f.Admissao))}</b></div><div><span class="lbl">CNPJ (empresa)</span><b>${esc(f.CNPJ || "—")}</b></div><div><span class="lbl">CPF</span><b>${rhPesAtivo() ? esc(pes.CPF || "não cadastrado") : "sem acesso"}</b></div>
+      </div>
+      <div class="obr-sec">Dados Bancários <span class="sup">${rhPesAtivo() ? "do cadastro RH › Funcionários; entram no lançamento" : `ficam na lista restrita "${esc(LISTS.rh_func_pes.displayName)}"`}</span></div>
+      <div class="colab-grid">${rhPesAtivo() ? `<div><span class="lbl">Banco</span><b>${esc(pes.Banco || "—")}</b></div><div><span class="lbl">Agência</span><b>${esc(pes.Agencia || "—")}</b></div><div><span class="lbl">Conta</span><b>${esc(pes.Conta || "—")}</b></div>` : `<div class="full"><span class="sup">Sem acesso aos dados pessoais do RH. O lançamento sai sem a conta preenchida (pode ser digitada).</span></div>`}
+        ${rhPesAtivo() && banco.ok === false ? `<div class="full"><span class="sup venc">Dados bancários não cadastrados — cadastre em RH › Funcionários › ${esc(f.Title)}.</span></div>` : ""}</div>
+      <div class="obr-sec">Carteiras</div>
+      <div class="colab-ano"><span class="sup">clique numa carteira para filtrar o histórico</span><span class="grow"></span><label for="ccAno">Ano</label><select id="ccAno" onchange="capColabAno(this.value)">${anos.map(a => `<option value="${a}" ${COLAB.ano === a ? "selected" : ""}>${a}</option>`).join("")}<option value="todos" ${COLAB.ano === "todos" ? "selected" : ""}>Todos os anos</option></select></div>
+      <div class="colab-carts">${cartHtml}</div>
+      <div class="obr-sec">Histórico de Pagamentos</div>
+      <div class="colab-ano"><span>${COLAB.cart ? esc((CAP_COLAB_CARTEIRAS.find(w => w.k === COLAB.cart) || {}).n) + " · " : ""}${COLAB.ano === "todos" ? "todos os anos" : esc(COLAB.ano)} · ${hist.length} lançamento(s)</span>${COLAB.cart ? `<button type="button" class="btn sm ghost" onclick="capColabCart('')">Todas as carteiras</button>` : ""}</div>
+      ${hist.length ? `<div class="table-wrap"><table class="cap-table colab-hist"><thead><tr><th>Carteira</th><th>Descrição</th><th>Compet.</th><th>Vencimento</th><th style="text-align:right">Valor</th><th>Situação</th><th>Pagamento</th></tr></thead><tbody>${hist.map(linha).join("")}</tbody></table></div>`
+        : `<div class="cap-empty"><h3>Nenhum lançamento${COLAB.cart ? " nesta carteira" : ""}${COLAB.ano === "todos" ? "" : " em " + esc(COLAB.ano)}</h3><p>${lanca ? "Use \"+ Lançar\" na carteira para registrar um pagamento." : "Os pagamentos deste colaborador aparecem aqui quando forem lançados na CAP."}</p></div>`}
+    </div>
+    <div class="modal-foot"><span class="sup" style="margin-right:auto">Total pago no mês ${esc(fmtBRL(r.pagoMes))} · em aberto ${esc(fmtBRL(r.aberto + r.vencido))}</span>${lanca ? `<button class="btn primary" onclick="capColabLancar(${jsArg(f._id)}, '')">+ Lançar Pagamento</button>` : ""}<button class="btn" onclick="closeModal()">Fechar</button></div>`;
+  if (manter) modal.manterRolagem = true;
+  $("modal").className = "modal xl tcad-modal"; modal(html);
+  /* as janelas de cadastro abrem com as seções fechadas (v0.14.34); neste cartão de consulta, Carteiras e Histórico começam abertas
+     na 1ª vez da sessão — depois vale o que a pessoa deixou aberto ou fechado */
+  if (typeof SEC_ABERTAS !== "undefined" && typeof secKey === "function") {
+    COLAB.secFech = COLAB.secFech || new Set();
+    $("modal").querySelectorAll(".obr-sec").forEach(h => {
+      const k = secKey(h);
+      if (/^(Carteiras|Histórico)/.test(h.textContent.trim()) && !COLAB.secFech.has(k)) SEC_ABERTAS.add(k);
+      h.addEventListener("click", ev => { if (ev.target.closest("a,button,input,select,textarea,label")) return; setTimeout(() => { if (h.classList.contains("sec-fechada")) COLAB.secFech.add(k); else COLAB.secFech.delete(k); }, 0); });
+    });
+  }
+};
+window.capColabCart = k => { COLAB.cart = k || ""; if (COLAB.aberto) capColabAbrir(COLAB.aberto, true); };
+window.capColabAno = a => { COLAB.ano = a || "todos"; if (COLAB.aberto) capColabAbrir(COLAB.aberto, true); };
+window.capColabVerLanc = id => { closeModal(); const prev = session.pagAtual; session.pagAtual = "cap.lista"; try { capEdit(id); } finally { if (!$("modalBack").classList.contains("on")) session.pagAtual = prev; } };
+window.capColabLancar = (id, cart) => {
+  const f = (COLAB.funcs || []).find(x => String(x._id) === String(id)); if (!f) return;
+  if (!colabPodeLancar()) { toast("Seu acesso à CAP é só de leitura."); return; }
+  const w = CAP_COLAB_CARTEIRAS.find(x => x.k === cart) || null, hoje = new Date(), comp = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  const cpf = colabCpf(f), cpfFmt = cpf.length === 11 ? cpf.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : "";
+  const pre = { TipoFavorecido: "Funcionário", Fornecedor: f.Title, CNPJ: cpfFmt, CentroCusto: f.Departamento || "", Competencia: comp, TipoLancamento: "Despesa", Status: "Em aberto" };
+  if (w && w.sub) { pre.Categoria = w.cat; pre.Subcategoria = w.sub; pre.Title = `${w.n} ${compLabel(comp)} — ${f.Title}`; } else pre.Title = `Pagamento ${compLabel(comp)} — ${f.Title}`;
+  closeModal();
+  session.pagAtual = "cap.lista";   /* a permissão e a guarda são as da página Lançamentos; paintCAP devolve a página Colaboradores ao fechar */
+  capNew(pre);
+  setTimeout(() => { try { if ($("fTipoFav") && $("fTipoFav").value !== "Funcionário") { $("fTipoFav").value = "Funcionário"; $("fTipoFav").dispatchEvent(new Event("change", { bubbles: true })); } if ($("fCNPJ")) { $("fCNPJ").dataset.colabAuto = cpf || "-"; } if (typeof capFavBancoDoRh === "function") capFavBancoDoRh(false); } catch (e) {} }, 0);
+};
+/* revisão M3: no lançamento aberto pela aba, trocar o funcionário troca também o CPF (vindo do RH) — nunca fica o do anterior */
+{ const fb0 = capFavBancoDoRh;
+  capFavBancoDoRh = async function (forcar) {
+    try {
+      const doc = $("fCNPJ"), forn = $("fForn"), tipo = $("fTipoFav");
+      if (forcar && doc && forn && tipo && tipo.value === "Funcionário" && doc.dataset.colabAuto != null && colabDig(doc.value) === (doc.dataset.colabAuto === "-" ? "" : doc.dataset.colabAuto)) {
+        const nome = forn.value.trim(); let novo = "";
+        if (nome && COLAB.funcs) { const f = COLAB.funcs.find(x => normName(x.Title) === normName(nome)); const c = f ? colabCpf(f) : ""; novo = c.length === 11 ? c.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : ""; }
+        if (colabDig(doc.value) !== colabDig(novo)) { doc.value = novo; doc.dataset.colabAuto = colabDig(novo) || "-"; doc.dispatchEvent(new Event("input", { bubbles: true })); }
+      }
+    } catch (e) {}
+    return fb0.apply(this, arguments);
+  }; window.capFavBancoDoRh = capFavBancoDoRh; }
+
+/* Configuração › Acesso aos sites: passo a mais — quem lança na CAP lê a lista restrita "RH — Funcionários · Dados pessoais" (CPF e conta
+   do colaborador vêm do cadastro; decisão do Rafael de 08/11, 12:12). Só leitura no SharePoint; o módulo do RH no ERP continua pela matriz. */
+{ const p0 = agCfgPintar;
+  agCfgPintar = async function () {
+    const r = await p0.apply(this, arguments);
+    try {
+      const body = $("agCfgBody"); if (!body || body.querySelector(".ag-passo-pes")) return r;
+      const alvo = [...body.querySelectorAll("li")].find(li => /^\s*Sincronizar/.test(li.textContent)); if (!alvo) return r;
+      alvo.insertAdjacentHTML("beforebegin", `<li class="ag-passo-pes"><b>Quem lança na CAP lê os dados pessoais do RH</b> (uma vez): site RH › lista <i>${esc(LISTS.rh_func_pes.displayName)}</i> › Configurações da lista › <i>Permissões para esta lista</i> › <i>Conceder permissões</i> › CAP-ERP › <b>Leitura</b>.
+        <div class="sup">Assim o CPF e a conta bancária do colaborador entram no lançamento direto do cadastro (CAP › Colaboradores e favorecido Funcionário), sem digitação. A pessoa não ganha o módulo do RH no ERP: isso continua pela matriz de Usuários e permissões.</div></li>`);
+    } catch (e) {}
+    return r;
+  }; window.agCfgPintar = agCfgPintar; }
+/* barra de abas: Colaboradores depois de Fornecedores */
+{ const vb0 = capViewsBar;
+  capViewsBar = function () {
+    let h = vb0.apply(this, arguments);
+    if (CAP_STATE.espelhoCC || DIV.on) return h;
+    const btn = `<button class="${CAP_STATE.view === "colab" ? "on" : ""}" onclick="capSetView('colab')" title="Pagamentos internos aos colaboradores: carteiras (salário, férias, 13º, FGTS…) e histórico, ligados ao cadastro do RH">Colaboradores</button>`;
+    const i = h.indexOf("capSetView('forn')"); if (i < 0) return h;
+    const j = h.indexOf("</button>", i); return j < 0 ? h : h.slice(0, j + 9) + btn + h.slice(j + 9);
+  }; window.capViewsBar = capViewsBar; }
+{ const p0 = paintCAP;
+  paintCAP = function () {
+    const body = $("capBody");
+    if (body && CAP_STATE.view === "colab" && !CAP_STATE.espelhoCC && !DIV.on) {
+      if (session.modAtual === "cap" && !pagAba("cap", "colab", v => { CAP_STATE.view = v; })) { body.innerHTML = PAG_SEM; return; }
+      if (CAP_STATE.view === "colab") {
+        const acts = $("capActions"), edita = colabPodeLancar();
+        if (acts) acts.innerHTML = edita ? `<button class="btn" onclick="capImport()">Importar</button>${ehAdm() ? `<button class="btn" onclick="capDedup()" title="Localiza lançamentos importados duas vezes (nome cru da planilha + nome do cadastro)">Duplicadas</button>` : ""}<button class="btn primary" onclick="session.pagAtual='cap.lista'; capNew()" title="Atalho: n">Novo lançamento</button>` : `<span class="sup">Acesso só de leitura</span>`;
+        paintCapColab(body); try { vidPintar(); } catch (e) {} try { if (typeof capRecAviso === "function") capRecAviso(); } catch (e) {} return;
+      }
+    }
+    return p0.apply(this, arguments);
+  }; window.paintCAP = paintCAP; }
+/* a página Colaboradores também volta ao abrir a CAP pelo endereço #/financeiro/contas-a-pagar/colaboradores */
+{ const r0 = route; route = function () { if (/^#\/financeiro\/contas-a-pagar\/colaboradores$/.test(location.hash)) { try { sessionStorage.setItem("erp.cap.view", "colab"); } catch (e) {} CAP_STATE._abrirEm = "colab"; CAP_STATE.view = "colab"; location.replace("#/financeiro/contas-a-pagar"); return; } return r0.apply(this, arguments); }; }
+(function () {
+  const st = document.createElement("style"); st.id = "erp-v01445";
+  st.textContent = `.colab-table td.colab-banco{font-size:12px;color:var(--ink-2);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .colab-table td.colab-banco.ok{color:#1F7A3E}.colab-table td.colab-banco.falta{color:#B3261E}
+  .colab-card .colab-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 18px;margin:0 0 14px}
+  .colab-card .colab-grid>div{display:flex;flex-direction:column;gap:2px}.colab-card .colab-grid .full{grid-column:1/-1}
+  .colab-card .colab-grid .lbl{font-size:11px;font-weight:800;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em}
+  .colab-ano{display:flex;align-items:center;gap:8px;margin:-4px 0 10px;font-size:12.5px;color:var(--ink-2)}.colab-ano select{font:inherit;font-size:12.5px;padding:4px 8px;border:1px solid var(--line);border-radius:var(--radius-sm,4px);background:#fff}
+  .colab-carts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin:0 0 16px}
+  .colab-cart{position:relative;border:1px solid var(--line);border-radius:2px;background:#fff;padding:12px 12px 40px;cursor:pointer;min-height:96px;transition:border-color .15s,background .15s}
+  .colab-cart.vazia{background:#FAFBFC}.colab-cart:hover,.colab-cart:focus-visible{border-color:var(--navy)}.colab-cart.on{border-color:var(--orange);background:#FFF6F1;box-shadow:inset 0 0 0 1px var(--orange)}
+  .colab-cart-t{font-weight:800;color:var(--navy);font-size:13.5px;display:flex;flex-direction:column;gap:2px}.colab-cart-t .sup{font-weight:600}
+  .colab-cart-v{margin-top:8px;font-size:14px}.colab-cart-v b{color:#1F7A3E}.colab-cart-s{margin-top:4px;font-size:12px;color:var(--ink-2)}.colab-cart-s .venc{color:#B3261E;font-weight:700}
+  .colab-cart .colab-lancar{position:absolute;left:12px;bottom:10px}
+  .colab-hist tbody tr:hover td{background:#F4F6F9}
+  @media (max-width:760px){.colab-card .colab-grid{grid-template-columns:1fr 1fr}.colab-carts{grid-template-columns:1fr 1fr}}`;
+  document.head.appendChild(st);
+})();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -48588,6 +48873,7 @@ CONFIG.version = "v0.14.41.7";   /* marca do sistema ERP: quadrados + "ERP | Nov
 CONFIG.version = "v0.14.42";   /* Início v2 (painel executivo, prancha 1A): indicadores do dia por permissão de módulo; "Precisa de você" calculada dos módulos (contas de hoje e vencidas, aprovações, alertas do ponto), sem a Central de Tarefas; "Você estava em", Favoritos e Departamentos compactos */
 CONFIG.version = "v0.14.43";   /* Minhas rotinas em cada departamento (regras no código, feito automático pelos dados do módulo, permissão por página); Início e departamentos se atualizam sozinhos (a cada acesso, ao voltar à aba e a cada 2 min com a página visível), sem o botão Atualizar; tabelas no padrão novo (cabeçalho em letra normal, zebra, 1ª coluna fixa e aviso nas largas); impressos A4 na paleta do Design System; modo foco nas janelas de formulário */
 CONFIG.version = "v0.14.44";   /* menus em lista por padrão; inicial maiúscula em abas, botões, rótulos, cabeçalhos e chips; Fluxo de Caixa com a data na linha dos botões */
+CONFIG.version = "v0.14.45";   /* CAP › Colaboradores: pagamentos internos aos colaboradores do RH, carteiras padrão (salário, férias, 13º, FGTS…) e histórico; página própria cap.colab */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

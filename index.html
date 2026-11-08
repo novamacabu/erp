@@ -48827,6 +48827,50 @@ window.capColabLancar = (id, cart) => {
   @media (max-width:760px){.colab-card .colab-grid{grid-template-columns:1fr 1fr}.colab-carts{grid-template-columns:1fr 1fr}}`;
   document.head.appendChild(st);
 })();
+/* =====================================================================
+   v0.14.46 · Rodada 1, pedido 1 de 08/11, item 3 — MENU DE DEPARTAMENTOS NO TOPO, opção B (escolha do Rafael, 13:00, na tela
+   de design "ERP NMB · Menu de departamentos no topo"):
+   - nomes completos (Diretoria, Financeiro, Contabilidade…) em vez das siglas, a partir de 1280 px; abaixo disso voltam as siglas;
+   - o departamento aberto fica em azul-marinho, negrito, com um sublinhado laranja (sem o fundo azul e sem a cantoneira);
+   - para os nove nomes caberem, de 1280 a 1719 px a busca vira só o ícone (a 1680 px o botão Visualizar Como ganha texto e precisa do espaço) (abre o campo ao clicar ou com Ctrl+K), como já
+     acontecia no celular; o ícone passa a ser um desenho, não o emoji.
+   ===================================================================== */
+renderTopAreas = function () {
+  const el = document.getElementById("topAreas"); if (!el) return;
+  const atual = (location.hash || "").match(/^#\/area\/([^?]*)/);
+  const atualNome = atual ? decodeURIComponent(atual[1]) : "";
+  el.innerHTML = AREAS.filter(a => a.name !== "Sistema").map(a => {
+    const mods = areaMods(a.name);
+    if (!mods.length) return "";
+    const href = `#/area/${encodeURIComponent(a.name)}`;
+    const on = a.name === atualNome ? "on" : "";
+    const nome = a.name === "Saúde & Segurança" ? "SST" : a.name;
+    return `<a href="${href}" class="${on}" title="${esc(a.name + " — " + a.desc)}" aria-label="${esc(a.name)}" ${on ? 'aria-current="page"' : ""}><span class="ar-nome">${esc(nome)}</span><span class="ar-sigla" aria-hidden="true">${esc(AREA_SIGLA[a.name] || a.name)}</span></a>`;
+  }).join("");
+};
+window.renderTopAreas = renderTopAreas;
+(function () {
+  const ico = document.getElementById("topBuscaIco");
+  if (ico) ico.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`;
+  const st = document.createElement("style"); st.id = "erp-v01446";
+  st.textContent = `.topbar .areas{max-width:none;gap:2px}
+  .topbar .areas a{padding:9px 9px;font-weight:700;color:var(--ink-2);border-radius:0;position:relative;line-height:1.2}
+  .topbar .areas a:hover{background:none;color:var(--navy)}
+  .topbar .areas a.on{background:none;color:var(--navy);font-weight:800;box-shadow:inset 0 -3px 0 var(--orange)}
+  .topbar .areas a.on::before{display:none}
+  .topbar .areas a .ar-nome{letter-spacing:0}
+  .top-busca-ico{color:var(--navy)}
+  @media (min-width:1280px){.topbar .areas a .ar-sigla{display:none}#topAreas a{letter-spacing:0}}
+  @media (max-width:1279.98px){.topbar .areas a .ar-nome{display:none}.topbar .areas a{padding:7px 6px;letter-spacing:.06em}}
+  @media (max-width:1400px) and (min-width:1280px){.topbar .areas a{padding:9px 7px;font-size:12.5px}}
+  @media (min-width:1280px) and (max-width:1719.98px){.top-busca input{display:none;position:absolute;right:0;top:42px;width:min(420px,88vw);max-width:none;z-index:61}.top-busca-ico{display:inline-flex;align-items:center;justify-content:center}body.busca-aberta .top-busca input{display:block}.top-busca-res{top:82px}}`;
+  document.head.appendChild(st);
+  try { renderTopAreas(); } catch (e) {}
+  try { if (typeof buscaInit === "function") buscaInit(); } catch (e) {}
+  /* revisão: Esc no campo também fecha o campo aberto pelo ícone (de 1280 a 1719 px e no celular) */
+  const inp = document.getElementById("topBusca");
+  if (inp) inp.addEventListener("keydown", ev => { if (ev.key === "Escape") document.body.classList.remove("busca-aberta"); });
+})();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -48874,6 +48918,7 @@ CONFIG.version = "v0.14.42";   /* Início v2 (painel executivo, prancha 1A): ind
 CONFIG.version = "v0.14.43";   /* Minhas rotinas em cada departamento (regras no código, feito automático pelos dados do módulo, permissão por página); Início e departamentos se atualizam sozinhos (a cada acesso, ao voltar à aba e a cada 2 min com a página visível), sem o botão Atualizar; tabelas no padrão novo (cabeçalho em letra normal, zebra, 1ª coluna fixa e aviso nas largas); impressos A4 na paleta do Design System; modo foco nas janelas de formulário */
 CONFIG.version = "v0.14.44";   /* menus em lista por padrão; inicial maiúscula em abas, botões, rótulos, cabeçalhos e chips; Fluxo de Caixa com a data na linha dos botões */
 CONFIG.version = "v0.14.45";   /* CAP › Colaboradores: pagamentos internos aos colaboradores do RH, carteiras padrão (salário, férias, 13º, FGTS…) e histórico; página própria cap.colab */
+CONFIG.version = "v0.14.46";   /* menu de departamentos no topo (opção B): nomes completos com sublinhado laranja a partir de 1280 px; siglas abaixo; busca como ícone de 1280 a 1600 px */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -48421,6 +48421,127 @@ document.addEventListener("keydown", ev => {
   @media print { .mf-btn, .mf-tag { display: none !important; } }
   `;
   document.head.appendChild(st); }
+/* =====================================================================
+   v0.14.44 · Rodada 1, pedido 1 de 08/11 (11:40) — itens 1, 2 e 4
+   1. Menus e menus internos (departamentos, hubs, Início) abrem em LISTA, não em blocos. O seletor continua existindo; a
+      preferência antiga ("erp.menuVis") é descartada uma vez e a nova fica em "erp.menuVis2".
+   2. Regra da inicial maiúscula (v0.14.41.4) estendida a abas, botões, rótulos de filtro e de campo, cabeçalhos de tabela e
+      chips de filtro — em todo o ERP ("Centro de custo" → "Centro de Custo", "Boletim do dia" → "Boletim do Dia",
+      "+ Saída / depósito" → "+ Saída / Depósito"). Valores (pílulas de situação, etiquetas, dados) ficam como estão.
+   4. Fluxo de Caixa: a data (e o mês, nas outras abas) sai da linha das abas e vai para a linha dos botões, depois de
+      "Modo Demo" — tudo numa linha só.
+   ===================================================================== */
+
+/* ---------- 1. Menus em lista por padrão ---------- */
+ERP_MENU.k = "erp.menuVis2";
+erpMenuVis = function () { let v = null; try { v = localStorage.getItem(ERP_MENU.k); } catch (e) { v = ERP_MENU.v || null; } return v === "cards" ? "cards" : "lista"; };
+window.erpMenuVisSet = v => { ERP_MENU.v = v === "cards" ? "cards" : "lista"; try { localStorage.setItem(ERP_MENU.k, ERP_MENU.v); localStorage.removeItem("erp.menuVis"); } catch (e) {} erpMenusArrumar(); };
+try { localStorage.removeItem("erp.menuVis"); } catch (e) {}   /* a escolha antiga (blocos) não vale mais */
+/* o Início v2 desenha os departamentos como cartões próprios (.ini-deps): seguem a mesma preferência e ganham o seletor */
+{ const a0 = erpMenusArrumar;
+  erpMenusArrumar = function () {
+    const r = a0.apply(this, arguments);
+    const main = $("main"); if (!main) return r;
+    const deps = main.querySelector(".ini-deps"); if (!deps) return r;
+    const vis = erpMenuVis(); deps.classList.toggle("as-list", vis === "lista");
+    const page = deps.closest(".page") || main.firstElementChild;
+    if (page && !page.querySelector(".vis-toggle")) {
+      page.classList.add("tem-vis");
+      page.insertAdjacentHTML("afterbegin", `<div class="vis-toggle" role="group" aria-label="Visualização do menu"><button type="button" data-v="cards" title="Ver em blocos" aria-label="Ver em blocos">${ICO_VIS_CARDS}</button><button type="button" data-v="lista" title="Ver em lista" aria-label="Ver em lista">${ICO_VIS_LISTA}</button></div>`);
+      page.querySelectorAll(".vis-toggle button").forEach(b => b.addEventListener("click", () => erpMenuVisSet(b.dataset.v)));
+    }
+    if (page) page.querySelectorAll(".vis-toggle button").forEach(b => { const on = b.dataset.v === vis; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
+    return r;
+  }; window.erpMenusArrumar = erpMenusArrumar; }
+{ const obs = new MutationObserver(() => { if ($("main") && $("main").querySelector(".ini-deps:not(.as-list), .tiles:not(.as-list)") && erpMenuVis() === "lista") erpMenusArrumar(); });
+  const liga = () => { const m = $("main"); if (m) obs.observe(m, { childList: true, subtree: true }); else setTimeout(liga, 300); }; liga(); }
+
+/* ---------- 2. Inicial maiúscula também em abas, botões, rótulos, cabeçalhos e chips ---------- */
+const TITULO_SEL_X = "button,a.btn,.btn,[role=tab],th,label,legend,.lbl,.chip,.cap-fav-t";
+/* o que é valor ou controle, não rótulo: fica como está */
+const TITULO_NAO_X = ".pill,.badge,.tag,.cap-tag,.st,[data-sem-titulo],.cx-navbtn,.tb-item,.nav-it,.vis-toggle button,.fav-btn,.modal-close,.close,.ag-td,.tile,.kpi .val,.kpi .sub,.sup,.hint,"
+  + ".cons-chip,.lnk,.oc-env-btn,.terc-papel,.ini-row,.ini-row *,.ini-kpi .val,.ini-kpi .sub,.previa-t th,.do-dol-sel button,.adq-cand button,.setup-card label";
+/* texto que é frase (explicação de um checkbox, aviso) ou dado, não rótulo: fica como está */
+function tituloEhFrase(el) {
+  const t = (el.textContent || "").trim();
+  if (/[;,]/.test(t) || t.split(/\s+/).length > 6) return true;
+  return false;
+}
+function tituloAplicarX(el) {
+  if (!el || !el.isConnected || el.matches(TITULO_NAO_X) || el.closest("[data-sem-titulo]")) return;
+  if (el.matches("th") && el.querySelector("input,select")) return;
+  if (el.matches("label") && el.closest(".pill,.tag,.badge")) return;
+  if (el.matches("button,[role=tab],.chip,label,.btn") && tituloEhFrase(el)) return;
+  if (el.matches("th")) { tituloTextoCorrido(el); return; }
+  tituloAplicar(el);
+}
+/* B1/B2 da revisão: extensão de arquivo entre parênteses ("(.xlsx)") fica como está; depois de um símbolo sozinho ("%") o conectivo
+   continua minúsculo ("% da Receita") */
+tituloCaso = function (txt) {
+  let inicio = true;
+  return String(txt).replace(/(\S+)/g, tok => {
+    if (/[@\\/]|\p{L}\.\p{L}|^www\.|^https?:|\.\p{L}{2,5}\)?$/u.test(tok)) { inicio = false; return tok; }
+    const m = tok.match(/^([^\p{L}\p{N}]*)([\p{L}][\p{L}\p{M}'’\-]*)(.*)$/u);
+    if (!m) { inicio = /[—–:(]$/.test(tok); return tok; }
+    const [, pre, pal, pos] = m, abre = /[(“"«]/.test(pre);
+    let out = pal;
+    const minusc = pal === pal.toLowerCase();
+    if (minusc && (inicio || abre || !TITULO_MINUSC.has(pal))) out = pal.charAt(0).toUpperCase() + pal.slice(1);
+    inicio = /[—–:]$/.test(pos) || /^[—–:]$/.test(pos);
+    return pre + out + pos;
+  });
+};
+window.tituloCaso = tituloCaso;
+/* cabeçalho de tabela: o texto pode estar partido em spans (ex.: "Centro de <span class=lblfim>custo</span>"); lê como um título corrido */
+function tituloTextoCorrido(el) {
+  const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: n => { let a = n.parentElement; while (a && a !== el) { if (a.matches(".seta,.sup,.hint,small,button,input,select,.pill,.badge,.tag,[data-sem-titulo]")) return NodeFilter.FILTER_REJECT; a = a.parentElement; } return NodeFilter.FILTER_ACCEPT; } });
+  let n, primeiro = true;
+  while ((n = w.nextNode())) {
+    const v = n.nodeValue; if (!v || !/\p{Ll}/u.test(v)) { if (/\p{L}/u.test(v || "")) primeiro = false; continue; }
+    let novo = tituloCaso(v);
+    if (!primeiro && /^\s*\p{Ll}/u.test(v)) { const w1 = (v.match(/^\s*([\p{L}]+)/u) || [])[1]; if (w1 && TITULO_MINUSC.has(w1)) novo = v.match(/^\s*/)[0] + w1 + novo.slice(v.match(/^\s*/)[0].length + w1.length); }
+    if (novo !== v) n.nodeValue = novo;
+    if (/\p{L}/u.test(v)) primeiro = false;
+  }
+}
+window.tituloAplicarX = tituloAplicarX;
+(function () {
+  const rodar = raiz => { try { if (raiz.matches && raiz.matches(TITULO_SEL_X)) tituloAplicarX(raiz); if (raiz.querySelectorAll) raiz.querySelectorAll(TITULO_SEL_X).forEach(tituloAplicarX); } catch (e) {} };
+  const pend = new Set(); let ag = false;
+  const fila = el => { pend.add(el); if (!ag) { ag = true; queueMicrotask(() => { ag = false; const xs = [...pend]; pend.clear(); xs.forEach(x => { if (x.isConnected) rodar(x); }); }); } };
+  const obs = new MutationObserver(ms => ms.forEach(m => {
+    if (m.type === "characterData") { const p = m.target.parentElement, t = p && p.closest(TITULO_SEL_X); if (t) fila(t); return; }
+    m.addedNodes.forEach(nd => { if (nd.nodeType === 1) fila(nd); else if (nd.nodeType === 3 && nd.parentElement) { const t = nd.parentElement.closest(TITULO_SEL_X); if (t) fila(t); } });
+  }));
+  const ini = () => { rodar(document.body); obs.observe(document.body, { childList: true, subtree: true, characterData: true }); };
+  if (document.body) ini(); else document.addEventListener("DOMContentLoaded", ini);
+})();
+
+/* ---------- 4. Fluxo de Caixa: data na linha dos botões ---------- */
+function cxTopoLinha() {
+  const acts = $("cxActions"), topo = document.querySelector("#cxBody .op-topo"); if (!acts || !topo) return;
+  const grow = topo.querySelector(".grow"); if (!grow) return;
+  const w = document.createElement("span"); w.className = "cx-topo-data";
+  let n = grow.nextSibling; while (n) { const nx = n.nextSibling; if (!(n.nodeType === 1 && n.classList.contains("pill"))) w.appendChild(n); n = nx; }
+  grow.remove(); const pill = topo.querySelector(".pill.fechado"); if (pill) { pill.style.marginLeft = "auto"; }
+  if (w.childNodes.length) acts.appendChild(w);
+}
+window.cxTopoLinha = cxTopoLinha;
+{ const p0 = paintCx; paintCx = function () { const r = p0.apply(this, arguments); try { cxTopoLinha(); } catch (e) {} return r; }; window.paintCx = paintCx; }
+(function () {
+  const st = document.createElement("style"); st.id = "erp-v01444";
+  st.textContent = `#cxActions{align-items:center;flex-wrap:wrap}
+  .cx-topo-data{display:inline-flex;align-items:center;gap:8px;margin-left:4px}
+  .cx-topo-data .cx-datep{margin:0}
+  #cxBody .op-topo{margin-bottom:12px}
+  @media (max-width:760px){.cx-topo-data{width:100%;margin-left:0}}
+  .ini-deps.as-list{display:flex;flex-direction:column;gap:6px}
+  .ini-deps.as-list .ini-dep{display:grid;grid-template-columns:minmax(140px,220px) minmax(0,1fr);align-items:center;column-gap:14px;padding:10px 16px}
+  .ini-deps.as-list .ini-dep span{-webkit-line-clamp:1;white-space:nowrap;text-overflow:ellipsis}
+  .ini-deps.as-list .ini-dep::before,.ini-deps.as-list .ini-dep::after{width:14px;height:14px}
+  @media (max-width:640px){.ini-deps.as-list .ini-dep{grid-template-columns:minmax(0,1fr)}.ini-deps.as-list .ini-dep span{display:none}}`;
+  document.head.appendChild(st);
+})();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -48466,6 +48587,7 @@ CONFIG.version = "v0.14.41.6";   /* Terceiros: filtros numa linha; janela de con
 CONFIG.version = "v0.14.41.7";   /* marca do sistema ERP: quadrados + "ERP | Nova Macabu" no topo, no menu lateral, no ícone do app e na aba */
 CONFIG.version = "v0.14.42";   /* Início v2 (painel executivo, prancha 1A): indicadores do dia por permissão de módulo; "Precisa de você" calculada dos módulos (contas de hoje e vencidas, aprovações, alertas do ponto), sem a Central de Tarefas; "Você estava em", Favoritos e Departamentos compactos */
 CONFIG.version = "v0.14.43";   /* Minhas rotinas em cada departamento (regras no código, feito automático pelos dados do módulo, permissão por página); Início e departamentos se atualizam sozinhos (a cada acesso, ao voltar à aba e a cada 2 min com a página visível), sem o botão Atualizar; tabelas no padrão novo (cabeçalho em letra normal, zebra, 1ª coluna fixa e aviso nas largas); impressos A4 na paleta do Design System; modo foco nas janelas de formulário */
+CONFIG.version = "v0.14.44";   /* menus em lista por padrão; inicial maiúscula em abas, botões, rótulos, cabeçalhos e chips; Fluxo de Caixa com a data na linha dos botões */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

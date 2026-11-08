@@ -5570,7 +5570,7 @@ async function loadCAP(opts) {
   }
   if (!NMB_EST.lista) await nmbEstabsCarregar().catch(() => {});   /* v0.13.0 · 2a */
   if (_troc()) throw divTrocou();
-  const [items] = await Promise.all([SP.items(CAP_STATE.site.id, CAP_STATE.list.id), loadForn(true).catch(() => [])]);
+  const [items] = await Promise.all([SP.items(CAP_STATE.site.id, CAP_STATE.list.id), loadForn(true).then(r => { CAP_STATE.fornErro = ""; return r; }).catch(e => { CAP_STATE.fornErro = String((e && e.message) || e || "erro"); return []; })   /* v0.14.47 (D-A1) */]);
   if (_troc()) throw divTrocou();
   CAP_STATE.items = items.map(it => capCriadorDe(Object.assign({ _id: it.id }, it.fields || {}), it));   /* v0.14.8: quem criou (desfazer a própria importação) */
   if (CAP_STATE.cols && CAP_STATE.cols.has("FornecedorRefId")) CAP_STATE.items.forEach(it => { it.FornecedorRefLookupId = it.FornecedorRefId == null || it.FornecedorRefId === "" ? undefined : it.FornecedorRefId; });   /* v0.13.4: a coluna numérica manda; o lookup antigo (ids de outra lista) é ignorado */
@@ -5584,15 +5584,14 @@ async function loadCAP(opts) {
   });
   if (toMark.length) {
     const siteId = CAP_STATE.site.id, listId = CAP_STATE.list.id;
-    toMark.forEach(it => { it.Status = "Vencido"; });
+    toMark.forEach(it => { it.Status = "Vencido"; it._mod = null; });   /* v0.14.47 (revisão): o $batch renova a marca no servidor */
     /* v0.13.0 (item 9): grava em lote ($batch, 20 por chamada) em vez de um PATCH por fatura; só as que ainda não estavam como Vencida */
-    (async () => { try { const r = await graphBatch(toMark.map(it => ({ method: "PATCH", url: `/sites/${siteId}/lists/${listId}/items/${it._id}/fields`, body: { Status: "Vencido" } }))); const f = (r || []).filter(x => !x || !x.ok); if (f.length) console.warn("auto-vencido: " + f.length + " lançamento(s) não gravado(s)", f.slice(0, 3)); } catch (e) { console.warn("auto-vencido (lote) falhou", e); } })();
-    toast(`${toMark.length} lançamento(s) marcado(s) como Vencido automaticamente.`, 4000);
+    (async () => { try { const r = await graphBatch(toMark.map(it => ({ method: "PATCH", url: `/sites/${siteId}/lists/${listId}/items/${it._id}/fields`, body: { Status: "Vencido" } }))); const f = (r || []).filter(x => !x || !x.ok); if (f.length) { console.warn("auto-vencido: " + f.length + " lançamento(s) não gravado(s)", f.slice(0, 3)); toast(`${toMark.length - f.length} lançamento(s) marcado(s) como Vencido; ${f.length} não puderam ser gravados no SharePoint (sem permissão ou erro) — a tela mostra Vencido até recarregar.`, 8000); } else toast(`${toMark.length} lançamento(s) marcado(s) como Vencido automaticamente.`, 4000); } catch (e) { console.warn("auto-vencido (lote) falhou", e); toast(`Não foi possível marcar ${toMark.length} lançamento(s) como Vencido no SharePoint: ${(e && e.message) || e}`, 8000); } })();   /* v0.14.47 (D-M3): o aviso sai depois do resultado */
   }
   const toBack = CAP_STATE.items.filter(it => { if (it.Status !== "Vencido" || !it.Vencimento) return false; const v = dLocal(it.Vencimento); v.setHours(0,0,0,0); return v >= hj; });
   if (toBack.length) {
     const siteId = CAP_STATE.site.id, listId = CAP_STATE.list.id;
-    toBack.forEach(it => { it.Status = "Em aberto"; });
+    toBack.forEach(it => { it.Status = "Em aberto"; it._mod = null; });   /* v0.14.47 (revisão) */
     (async () => { try { await graphBatch(toBack.map(it => ({ method: "PATCH", url: `/sites/${siteId}/lists/${listId}/items/${it._id}/fields`, body: { Status: "Em aberto" } }))); } catch (e) { console.warn("volta a Em aberto (lote) falhou", e); } })();
   }
   return CAP_STATE.items;
@@ -6285,7 +6284,7 @@ async function capSave(existing) {
   if (fields.Status !== "Pago" && fields.Status !== "Aguardando NF" && !isIsenta(fields) && fields.Vencimento && fields.Vencimento < todayISO()) fields.Status = "Vencido";   /* v0.14.17.2 (D2) */
   const forn = fornByName(fields.Fornecedor);
   if (forn) fields.Fornecedor = forn.Title;
-  if (hasCol("FornecedorRefId")) fields.FornecedorRefLookupId = forn ? Number(forn._id) : null;
+  if (hasCol("FornecedorRefId")) { if (forn) fields.FornecedorRefLookupId = Number(forn._id); else if (FORN_STATE.items.length && !CAP_STATE.fornErro) fields.FornecedorRefLookupId = null; }   /* v0.14.47 (D-A1): sem a lista de Fornecedores lida, a referência gravada fica como está */
   for (const k of Object.keys(fields)) if (k !== "FornecedorRefLookupId" && !hasCol(k)) delete fields[k];
   const btn = $("fSave"); btn.disabled = true; btn.textContent = "Salvando…";
   try {
@@ -7430,7 +7429,7 @@ async function capSave(existing) {
   if (fields.Status !== "Pago" && fields.Status !== "Aguardando NF" && !isIsenta(fields) && fields.Vencimento && fields.Vencimento < todayISO()) fields.Status = "Vencido";   /* v0.14.17.2 (D2) */
   const forn = fornByName(fields.Fornecedor);
   if (forn) fields.Fornecedor = forn.Title;
-  if (hasCol("FornecedorRefId")) fields.FornecedorRefLookupId = forn ? Number(forn._id) : null;
+  if (hasCol("FornecedorRefId")) { if (forn) fields.FornecedorRefLookupId = Number(forn._id); else if (FORN_STATE.items.length && !CAP_STATE.fornErro) fields.FornecedorRefLookupId = null; }   /* v0.14.47 (D-A1): sem a lista de Fornecedores lida, a referência gravada fica como está */
   if (!existing && CAP_STATE.preset && CAP_STATE.preset.ObrigacaoLookupId && hasCol("Obrigacao")) fields.ObrigacaoLookupId = Number(CAP_STATE.preset.ObrigacaoLookupId);
   if (hasCol("Historico")) {   /* v0.13.2 (item 1) */
     if (!existing) fields.Historico = capHistAdd(null, "criada", `${fields.Fornecedor} · ${fmtBRL(fields.Valor)} · vence ${fmtDate(fields.Vencimento)}`);
@@ -16865,7 +16864,7 @@ window.horForm = id => {
     if (mad && horViaMad({ Observacao: fields.Observacao })) fields.Observacao = horObsResto({ Observacao: fields.Observacao }) || null;   /* o "via Madalena" da observação vira o campo */
     if (!x) { fields.VigenciaInicio = horVigencia() || todayISO(); fields.Ordem = HOR_STATE.itens.length + 1; }
     try { if (x) await SP.update(HOR_STATE.site.id, HOR_STATE.list.id, x._id, fields); else await SP.create(HOR_STATE.site.id, HOR_STATE.list.id, fields); }
-    catch (e) { if (("Madalena" in fields || "Linha" in fields) && /(not recognized|não (foi )?reconhec|does not exist|não existe)/i.test(e.message || "") && /madalena|linha/i.test(e.message || "")) return err(`As colunas "Madalena" e "Linha" ainda não existem na lista do SharePoint. ${session.n1 ? "Rode Sistema › Configuração para criá-las." : "Peça a um administrador para rodar a Configuração."}`); throw e; }
+    catch (e) { if (("Madalena" in fields || "Linha" in fields) && /(not recognized|não (foi )?reconhec|does not exist|não existe|não tem a coluna)/i.test(e.message || "") && /madalena|linha/i.test(e.message || "")) return err(`As colunas "Madalena" e "Linha" ainda não existem na lista do SharePoint. ${session.n1 ? "Rode Sistema › Configuração para criá-las." : "Peça a um administrador para rodar a Configuração."}`); throw e; }
     await loadHor(); toast(x ? "Horário atualizado" : "Horário incluído"); paintHor(); return true;
   });
   if (x && podeExcluir("horarios")) document.querySelector("#modal .modal-foot").insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="horExcluir(${jsArg(x._id)})">Excluir</button>`);
@@ -18278,7 +18277,7 @@ function cxBoletimHtml() {
   const porOrigem = new Map(); ent.forEach(x => { const k = cxOrigemEnt(x); if (!porOrigem.has(k)) porOrigem.set(k, new Map()); const m = porOrigem.get(k); m.set(x.Meio || "—", cxN((m.get(x.Meio || "—") || 0) + x.Valor)); });
   const linha = x => `<tr ${edita ? `class="p" onclick="cxMovForm(${jsArg(x._id)})" title="Editar"` : ""}><td>${esc(x.Title || x.Categoria || x.Origem || "")}${x.Grupo ? `<span class="sup"> · ${esc(x.Grupo)}</span>` : ""}</td><td>${esc(x.Tipo === "Transferência" ? `${x.Conta || "—"} → ${x.ContaDestino || "—"}` : x.Conta || "—")}</td><td>${esc(x.Meio || "—")}</td><td class="v">${esc(fmtBRL(x.Valor))}</td></tr>`;
   const kpis = `<div class="cap-kpis cap-kpis-4">
-    <div class="kpi static"><div class="lbl">Saldo anterior</div><div class="val money">${esc(fmtBRL(saldoAnt))}</div><div class="sub">${ancora && f && f.SaldoAnterior != null ? "informado no 1º boletim (âncora)" : "movimento desde o 1º boletim"}</div></div>
+    <div class="kpi static"><div class="lbl">Saldo anterior</div><div class="val money">${esc(fmtBRL(saldoAnt))}</div><div class="sub">${ancora && f && f.SaldoAnterior != null ? "informado no 1º boletim (âncora)" : (typeof cxBaseFechada === "function" && cxBaseFechada(CX.dia) ? "a partir do mês fechado de " + cxMesLabel(cxBaseFechada(CX.dia).c) : "movimento desde o 1º boletim")}</div></div>
     <div class="kpi static pago"><div class="lbl">Entradas</div><div class="val money">${esc(fmtBRL(t.ent))}</div><div class="sub">${ent.length} lançamento(s)</div></div>
     <div class="kpi static venc"><div class="lbl">Saídas (despesas + depósitos)</div><div class="val money">${esc(fmtBRL(t.sai))}</div><div class="sub">${sai.length} lançamento(s)</div></div>
     <div class="kpi static"><div class="lbl">Saldo atual</div><div class="val money">${esc(fmtBRL(saldoAtual))}</div><div class="sub">situação: <b class="cx-st ${cxStCls(st)}">${esc(st)}</b></div></div></div>`;
@@ -32444,7 +32443,7 @@ function drePlanoLinhas(D) {
 function drePlano(D) {
   const adm = !!session.n1 && !vcAtivo() && !DRE.mapaErro, M = DRE.rasc || DRE.mapa || {};
   const q = normName(DRE.planoQ), rows = drePlanoLinhas(D).filter(r => (!q || normName(r.cat + " " + r.sub).includes(q)) && (DRE.planoSo !== "ajustes" || M[r.ch]) && (DRE.planoSo !== "valor" || r.v));
-  const opt = (r) => { const at = M[r.ch] || "", ops = r.nat === "Financeiro" ? DRE_CONTAS.filter(c => ["dfin", "amort"].includes(c.k)) : DRE_CONTAS;
+  const opt = (r) => { const at = M[r.ch] || "", ops = r.nat === "Financeiro" ? DRE_CONTAS.filter(c => ["dfin", "amort"].includes(c.k)) : DRE_CONTAS.filter(c => c.bloco !== "fora");   /* v0.14.47 (R-M1) */
     return `<select class="dre-sel"${DRE.salvando ? " disabled" : ""} onchange="dreMapaMudar(${jsArg(r.ch)}, this.value)" aria-label="Linha da DRE de ${esc(r.cat)} › ${esc(r.sub || "(sem subcategoria)")}"><option value="">Regra: ${esc(DRE_CONTA[r.regra] ? DRE_CONTA[r.regra].n : "—")}</option>${ops.map(c => `<option value="${c.k}" ${at === c.k ? "selected" : ""}>${esc(c.n)}</option>`).join("")}</select>`; };
   const linha = r => { const efet = r.nat === "CAPEX" ? null : (M[r.ch] && DRE_CONTA[M[r.ch]] ? M[r.ch] : r.regra);
     return `<tr${M[r.ch] ? ' class="dre-aj"' : ""}><td>${esc(r.cat)}</td><td>${esc(r.sub || "(sem subcategoria)")}</td><td><span class="sup">${esc(r.nat)}</span></td><td>${r.nat === "CAPEX" ? `<span class="sup">CAPEX — fora da DRE (entra pela depreciação do bem)</span>` : adm ? opt(r) : `${esc(DRE_CONTA[efet].n)}${M[r.ch] ? ' <span class="pill st-aguardando"><i></i>ajuste</span>' : ""}`}</td><td class="r">${r.v ? esc(fmtBRL(r.v)) : '<span class="sup">—</span>'}</td></tr>`; };
@@ -32610,9 +32609,9 @@ window.dreExcel = async () => {
     /* 4. contas do período com a linha da DRE (só para quem vê a CAP) */
     if (cpxVe("cap") && drePagVe("plano")) {
       const w4 = wb.addWorksheet("Contas do período"), per = new Set(D.validos), capPorId = new Map((CAP_STATE.items || []).map(it => [String(it._id), it]));
-      tit(w4, "Contas da CAP no período, com a linha da DRE", `${reg} · contas isentas, CAPEX e ligadas a bens do Imobilizado ficam de fora`);
+      tit(w4, "Contas da CAP e despesas pagas no caixa no período, com a linha da DRE", `${reg} · contas isentas, CAPEX e ligadas a bens do Imobilizado ficam de fora · despesas do caixa marcadas "caixa" em Conferir`);
       cab(w4, ["Mês", "Descrição", "Fornecedor", "Categoria", "Subcategoria", "Natureza", "Linha da DRE", "Motivo", "Conferir", "Valor"]);
-      [...D.B.I.entries()].filter(([, x]) => per.has(x.m)).sort((a, b) => a[1].m.localeCompare(b[1].m) || b[1].v - a[1].v).forEach(([id, x]) => { const it = capPorId.get(id) || {}; const row = w4.addRow([x.m, it.Title || "", it.Fornecedor || "", it.Categoria || "", it.Subcategoria || "", x.nat, DRE_CONTA[x.k] ? DRE_CONTA[x.k].n : x.k, x.motivo || "", x.rev || "", x.v]); row.getCell(10).numFmt = moeda; });
+      [...D.B.I.entries()].filter(([, x]) => per.has(x.m)).sort((a, b) => a[1].m.localeCompare(b[1].m) || b[1].v - a[1].v).forEach(([id, x]) => { const it = capPorId.get(id) || x.it || {}; const row = w4.addRow([x.m, it.Title || "", it.Fornecedor || "", it.Categoria || "", it.Subcategoria || "", x.nat, DRE_CONTA[x.k] ? DRE_CONTA[x.k].n : x.k, x.motivo || "", x.rev || "", x.v]); row.getCell(10).numFmt = moeda; });
       [9, 40, 30, 22, 24, 12, 40, 40, 40, 15].forEach((w, i) => { w4.getColumn(i + 1).width = w; }); w4.views = [{ state: "frozen", ySplit: 4 }]; w4.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: 10 } };
     }
     await xlsxBaixar(wb, `DRE_${D.ref}.xlsx`); toast("Planilha baixada");
@@ -41591,7 +41590,7 @@ async function capCxPreChecar(antes, depois, div) {
 async function capCxSincronizar(it, div, opts) {
   opts = opts || {};
   const ref = capCxRef(it._id, div), quer = capCxDinheiro(it), dica = div ? "" : " — acerte no Fechamento do mês do Fluxo de Caixa";
-  if (!(await cxGarantir(opts.recarregar))) { if (quer && !opts.silencio) capCxAviso(`Gravado na CAP. A saída no Fluxo de Caixa ficou pendente (sem acesso ao caixa ou falta rodar a Configuração)${dica}.`); return false; }
+  if (!(await cxGarantir(opts.recarregar))) { if (quer && !opts.silencio) capCxAviso(`Gravado na CAP. A saída no Fluxo de Caixa ficou pendente (${typeof CX !== "undefined" && CX.demo ? "modo demonstração ligado no Fluxo de Caixa" : "sem acesso ao caixa ou falta rodar a Configuração"})${dica}.`); return false; }
   const rows = CX.mov.filter(m => m.RefCAP === ref), w = quer ? capCxCampos(it, div) : null, pend = [];
   const del = async r => { if (cxDiaTravado(r._d)) { pend.push(r._d); return; } await graph(`/sites/${CX.site.id}/lists/${CX.lists.cx_mov.id}/items/${r._id}`, { method: "DELETE" }); };
   window.__cxDaCap = (window.__cxDaCap || 0) + 1;
@@ -41648,7 +41647,7 @@ const capCxDiv = () => !!(typeof DIV !== "undefined" && DIV.on);
     if (um && its.length === 1) await capCxPreChecar(its[0], Object.assign({}, its[0], { Status: "Excluído" }), div);   /* exclusão avulsa: confere o caixa antes */
     const r = await gr0.apply(this, arguments);
     const okIds = um ? [String(um)] : (() => { const ids = []; ((r && r.responses) || []).forEach(x => { if (x.status >= 200 && x.status < 300) { const q = opts.body.requests.find(q2 => String(q2.id) === String(x.id)); const id = q && capItemDel(q.method, "/" + String(q.url || "").replace(/^\/+/, "")); if (id) ids.push(String(id)); } }); return ids; })();
-    for (const it of its) if (okIds.includes(String(it._id))) await capCxSincronizar({ _id: String(it._id) }, div);
+    let primeiro = !um; for (const it of its) if (okIds.includes(String(it._id))) { await capCxSincronizar({ _id: String(it._id) }, div, { recarregar: primeiro }); primeiro = false; }   /* v0.14.47 (D-M1): no lote o caixa é relido antes da primeira (a avulsa já passou pela pré-checagem) */
     return r;
   };
 }
@@ -48871,6 +48870,372 @@ window.renderTopAreas = renderTopAreas;
   const inp = document.getElementById("topBusca");
   if (inp) inp.addEventListener("keydown", ev => { if (ev.key === "Escape") document.body.classList.remove("busca-aberta"); });
 })();
+/* =====================================================================
+   v0.14.47 · Inspeção ponta a ponta do Financeiro × DRE (pedido de 08/11, 15:06) — correções da leitura em três fatias
+   (CAP → DRE/CAPEX; Fluxo de Caixa e pontes; camada de dados e comunicação com o Graph). O relatório completo está em
+   claude/erp-nmb/inspecao-financeiro-dre-2026-11-08.md. Cada bloco cita o achado (D = dados, F = fluxo, R = DRE/CAPEX).
+   Só o que não depende de decisão do Rafael, mais o que a decisão Q10 (26/10) já cobria: parcelas da Gestão de Dívidas
+   entram na DRE e no CAPEX como linha agregada mensal, pelo resumo gravado em "ERP — Parâmetros".
+   ===================================================================== */
+
+/* ---------- D-B5 / D-B2 · erros do Graph em português: sessão (401) e coluna que falta (400 "Field … is not recognized") ---------- */
+{ const g0 = graph;
+  graph = async function () {
+    try { return await g0.apply(this, arguments); }
+    catch (e) {
+      if (e && !e._v1447) {
+        const m = String(e.message || "");
+        if (e.status === 401) { e.detalhe = m; e.message = "Sessão expirada ou sem autorização no SharePoint. Saia e entre de novo."; }
+        else { const c = m.match(/Field '([^']+)' is not recognized/i); if (c) { e.detalhe = m; e.message = `A lista não tem a coluna «${c[1]}»: um administrador precisa rodar Sistema › Configuração › «Executar tudo na ordem».`; } }
+        e._v1447 = true;
+      }
+      throw e;
+    }
+  };
+  window.graph = graph;
+}
+
+/* ---------- D-A2 · a última gravação não vence em silêncio: antes de gravar um lançamento da CAP, confere se alguém mudou
+   o item desde a leitura (lastModifiedDateTime). Em conflito, nada é gravado e a mensagem diz quem e quando. Depois de
+   gravar, a marca é relida (a próxima gravação do mesmo usuário não acusa conflito consigo mesma). ---------- */
+{ const c0 = capCriadorDe;
+  capCriadorDe = function (it, raw) { const r = c0.apply(this, arguments); try { if (it && raw && raw.lastModifiedDateTime) it._mod = raw.lastModifiedDateTime; } catch (e) {} return r; };
+  window.capCriadorDe = capCriadorDe;
+}
+const CAP_MOD_BUSCAR = async (siteId, listId, itemId) => graph(`/sites/${siteId}/lists/${listId}/items/${itemId}?$select=id,lastModifiedDateTime,lastModifiedBy`);
+function capConflitoTxt(r) {
+  const u = r && r.lastModifiedBy && r.lastModifiedBy.user, q = u ? (u.displayName || u.email || "outra pessoa") : "outra pessoa";
+  const d = r && r.lastModifiedDateTime ? new Date(r.lastModifiedDateTime) : null;
+  const hora = d && !isNaN(d) ? ` às ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} de ${d.toLocaleDateString("pt-BR")}` : "";
+  return `Este lançamento foi alterado por ${q}${hora}, depois que você o abriu. Nada foi gravado: recarregue a tela (F5) e refaça a alteração.`;
+}
+{ const u0 = SP.update;
+  SP.update = async function (siteId, listId, itemId, fields) {
+    const naCap = typeof CAP_STATE !== "undefined" && CAP_STATE.list && listId === CAP_STATE.list.id;
+    const it = naCap ? (CAP_STATE.items || []).find(x => String(x._id) === String(itemId)) : null;
+    /* revisão (D-M2 pelo avesso): com o cadastro/plano fora do ar, nome trocado grava o código vazio (senão, na leitura, o código velho mandaria sobre o nome novo); nome igual deixa o código como está */
+    try {
+      if (it && fields && typeof fields === "object") {
+        const pares = [];
+        if (typeof PC_PARES !== "undefined" && !pcDaLista()) PC_PARES.forEach(([cn, cc, sn, sc]) => { pares.push([cn, cc]); pares.push([sn, sc]); });
+        if (typeof MST_PARES !== "undefined" && typeof mstDaLista === "function" && !mstDaLista()) MST_PARES.forEach(([n, c]) => pares.push([n, c]));
+        const muda = pares.filter(([n, c]) => Object.prototype.hasOwnProperty.call(fields, n) && !Object.prototype.hasOwnProperty.call(fields, c) && normName(String(fields[n] || "")) !== normName(String(it[n] || "")));   /* 2ª revisão: só caixa/espaços diferentes não é troca */
+        if (muda.length) { const cols = await mstColsDe(siteId, listId); muda.forEach(([, c]) => { if (cols.has(c)) fields[c] = null; }); }
+      }
+    } catch (e) {}
+    if (it && it._mod) {
+      let atual = null;
+      try { atual = await CAP_MOD_BUSCAR(siteId, listId, itemId); } catch (e) { atual = null; }   /* sem conseguir conferir, grava como antes (a falha de leitura já teria avisado na tela) */
+      if (atual && atual.lastModifiedDateTime && atual.lastModifiedDateTime !== it._mod) { const er = new Error(capConflitoTxt(atual)); er.conflito = true; er.status = 409; throw er; }
+    }
+    const r = await u0.apply(this, arguments);
+    if (it && it._mod) { try { const dep = await CAP_MOD_BUSCAR(siteId, listId, itemId); if (dep && dep.lastModifiedDateTime) it._mod = dep.lastModifiedDateTime; } catch (e) { it._mod = null; } }   /* sem marca nova: não acusa conflito até a próxima leitura */
+    return r;
+  };
+  window.SP = SP;
+}
+
+/* ---------- D-A1 · Fornecedores que não carregaram: a CAP avisa (faixa) e capSave não apaga a referência ao fornecedor (ajuste em loadCAP e capSave pelo patch) ---------- */
+{ const p0 = paintCAP;
+  paintCAP = function () {
+    const r = p0.apply(this, arguments);
+    try {
+      const body = $("capBody"); if (!body || !CAP_STATE.fornErro || body.querySelector(".cap-forn-erro")) return r;
+      const dv = document.createElement("div"); dv.className = "import-help cap-forn-erro";
+      dv.textContent = `A lista de Fornecedores não carregou (${String(CAP_STATE.fornErro).slice(0, 120)}). A classificação pelo cadastro e os recorrentes ficam de fora até recarregar; o fornecedor dos lançamentos não é alterado.`;
+      body.insertBefore(dv, body.firstChild);
+    } catch (e) {}
+    return r;
+  };
+  window.paintCAP = paintCAP;
+}
+
+/* ---------- D-M2 · código de categoria / centro de custo: sem o cadastro lido (lista lenta, 429, cache vazio) a chave do código
+   fica FORA do PATCH (mantém o que está gravado), em vez de gravar null e apagar o código existente ---------- */
+mstCodsPreencher = async function (siteId, listId, fields) {
+  if (!fields || typeof fields !== "object") return;
+  const pares = MST_PARES.filter(([n, c]) => Object.prototype.hasOwnProperty.call(fields, n) && !Object.prototype.hasOwnProperty.call(fields, c)); if (!pares.length) return;
+  const cols = await mstColsDe(siteId, listId); const ps = pares.filter(([, c]) => cols.has(c)); if (!ps.length) return;
+  if (!mstDaLista()) await mstEsperar();
+  if (!mstDaLista()) { console.warn("v0.14.47 · cadastros mestres não lidos: códigos não gravados (ficam como estão)"); return; }
+  /* com o cadastro lido: nome fora do cadastro grava vazio (o nome vale; a migração religa) */
+  ps.forEach(([n, c]) => { const v = fields[n]; fields[c] = v ? (mstCodPorNome(v) || null) : null; });
+};
+window.mstCodsPreencher = mstCodsPreencher;
+pcCodsPreencher = async function (siteId, listId, fields) {
+  if (!fields || typeof fields !== "object") return;
+  const tem = k => Object.prototype.hasOwnProperty.call(fields, k);
+  const pares = PC_PARES.filter(([cn, cc, sn, sc]) => (tem(cn) && !tem(cc)) || (tem(sn) && !tem(sc))); if (!pares.length) return;
+  const cols = await mstColsDe(siteId, listId); if (!pares.some(([, cc, , sc]) => cols.has(cc) || cols.has(sc))) return;
+  if (!pcDaLista()) await Promise.race([pcCarregar().catch(() => null), new Promise(x => setTimeout(x, 2500))]);
+  if (!pcDaLista()) { console.warn("v0.14.47 · plano de contas não lido: códigos não gravados (ficam como estão)"); return; }
+  pares.forEach(([cn, cc, sn, sc]) => {
+    if (tem(cn) && !tem(cc) && cols.has(cc)) { const c = fields[cn] ? pcCatDe(fields[cn]) : null; fields[cc] = c ? c.cod : null; }
+    if (tem(sn) && !tem(sc) && cols.has(sc)) { const s = fields[sn] ? pcSubDe(tem(cn) ? fields[cn] : "", fields[sn]) : null; fields[sc] = s ? s.cod : null; }
+  });
+};
+window.pcCodsPreencher = pcCodsPreencher;
+
+/* ---------- F-A1 · Importar planilha: a conferência "alguém lançou nesses dias" ignora as saídas geradas pela CAP (pagamentos em
+   dinheiro), como a prévia já fazia — antes, qualquer dia com pagamento em dinheiro travava a importação do mês ---------- */
+window.cxImportGo = async () => {
+  const imp = CX.imp; if (!imp || !cxPodeEditar()) return;
+  const fechados = [...new Set(imp.dias.map(d => d.slice(0, 7)))].filter(cxMesFechado); if (fechados.length) { toast("Mês fechado: " + fechados.map(cxMesLabel).join(", ") + ". Reabra antes de importar."); return; }
+  const b = $("cxImpGo"); if (b) { b.disabled = true; b.textContent = "Importando…"; }
+  try { await loadCx(); } catch (e) { if (b) { b.disabled = false; b.textContent = "Importar"; } toast("Não foi possível conferir o caixa antes de importar: " + e.message, 7000); return; }
+  const jaTem = new Set(CX.mov.filter(x => x.OrigemRegistro !== "CAP").map(x => x._d)); const novos = imp.dias.filter(d => jaTem.has(d));   /* v0.14.47 (F-A1) */
+  if (novos.length) { toast("Alguém lançou nesses dias enquanto a prévia estava aberta: " + novos.map(fmtDate).join(", ") + ". Refaça a prévia.", 7000); CX.imp = null; paintCx(); return; }
+  try { for (const x of imp.mov) { if (x.Grupo && pcDaLista()) { const c = pcCatDe(x.Grupo); if (c) x.Grupo = c.nome; const sb = x.Categoria ? pcSubDe(x.Grupo, x.Categoria) : null; if (sb) x.Categoria = sb.nome; } await pcCodsPreencher(CX.site.id, CX.lists.cx_mov.id, x); } } catch (e) {}
+  const reqs = imp.mov.map(x => ({ method: "POST", url: `/sites/${CX.site.id}/lists/${CX.lists.cx_mov.id}/items`, body: { fields: Object.assign({}, x, { Data: x.Data + "T00:00:00Z" }) } }))
+    .concat(imp.fech.map(x => ({ method: "POST", url: `/sites/${CX.site.id}/lists/${CX.lists.cx_fech.id}/items`, body: { fields: Object.assign({}, x, { Data: x.Data + "T00:00:00Z" }) } })));
+  const log = $("cxImpLog");
+  try {
+    const res = await graphBatch(reqs, (n, t) => { if (log) log.textContent = `Gravando ${n} de ${t}…`; });
+    const falhas = (res || []).map((r, i) => (!r || !r.ok) ? i : -1).filter(i => i >= 0);
+    await loadCx(); if (imp.dias.length) { CX.dia = imp.dias[imp.dias.length - 1]; CX.comp = CX.dia.slice(0, 7); }
+    if (falhas.length) { const dias = [...new Set(falhas.map(i => (reqs[i].body.fields.Data || "").slice(0, 10)))]; CX.imp = null; CX.tab = "movimento"; paintCx(); toast(`${reqs.length - falhas.length} gravado(s), ${falhas.length} falha(s) nos dias ${dias.map(fmtDate).join(", ")} — exclua os lançamentos desses dias e importe de novo.`, 10000); return; }
+    CX.imp = null; toast(`${reqs.length} registro(s) importado(s).`, 6000); CX.tab = "mensal"; paintCx();
+  } catch (e) { if (b) { b.disabled = false; b.textContent = "Importar"; } toast("Erro na importação: " + e.message, 7000); }
+};
+
+/* ---------- F-A2 · boletim gravado sem a composição do caixa (Moedas, VT, PagSeguro…): Diferença fica vazia (não "saldo inteiro");
+   o impresso já tratava, a gravação não. Vale para Salvar, Conferir e Aprovar. ---------- */
+{ const u0 = SP.update, c0 = SP.create;
+  const noFech = listId => typeof CX !== "undefined" && CX.lists && CX.lists.cx_fech && listId === CX.lists.cx_fech.id;
+  const semComp = f => f && typeof f === "object" && Object.prototype.hasOwnProperty.call(f, "Diferenca") && f.Diferenca != null && typeof CX_COMP !== "undefined" && !CX_COMP.some(([k]) => f[k] != null && f[k] !== "");
+  SP.update = async function (siteId, listId, itemId, fields) { if (noFech(listId) && semComp(fields)) fields = Object.assign({}, fields, { Diferenca: null }); return u0.call(this, siteId, listId, itemId, fields); };
+  SP.create = async function (siteId, listId, fields) { if (noFech(listId) && semComp(fields)) fields = Object.assign({}, fields, { Diferenca: null }); return c0.call(this, siteId, listId, fields); };
+  window.SP = SP;
+}
+
+/* ---------- F-M1 · fechar / reabrir o mês relê o caixa antes de gravar SaldoFinal (como o boletim já fazia); o Fechamento avisa
+   quando o mês fechado de onde o saldo parte divergiu depois ---------- */
+{ const m0 = cxGravarMes;
+  cxGravarMes = async function () { await loadCx(); return m0.apply(this, arguments); };
+  window.cxGravarMes = cxGravarMes;
+}
+{ const h0 = cxFechMesHtml;
+  cxFechMesHtml = function () {
+    const h = h0.apply(this, arguments);
+    try {
+      const c = CX.comp, b = typeof cxBaseFechada === "function" ? cxBaseFechada(c + "-01") : null;
+      if (!b || b.c === c) return h;
+      const v = typeof cxMesDivergente === "function" ? cxMesDivergente(b.c) : null; if (!v) return h;
+      return `<div class="import-help">O saldo deste mês parte do fechamento de ${esc(cxMesLabel(b.c))}, cujo movimento mudou depois: saldo final gravado ${esc(fmtBRL(v.gravado))} × recalculado ${esc(fmtBRL(v.atual))}. Reabra e feche ${esc(cxMesLabel(b.c))} de novo para atualizar.</div>` + h;
+    } catch (e) { return h; }
+  };
+  window.cxFechMesHtml = cxFechMesHtml;
+}
+
+/* ---------- F-M5 · falha de leitura do caixa: a tela mostra o aviso e nada de números velhos (antes desenhava os KPIs anteriores, ou R$ 0,00) ---------- */
+{ const p0 = paintCx;
+  paintCx = function () {
+    const r = p0.apply(this, arguments);
+    try {
+      if (!CX.erro) return r;
+      const body = $("cxBody"); if (!body) return r;
+      const topo = body.querySelector(".op-topo");
+      let n = topo ? topo.nextSibling : null;
+      while (n) { const nx = n.nextSibling; if (!(n.nodeType === 1 && n.classList.contains("import-help"))) n.remove(); n = nx; }
+      const dv = document.createElement("div"); dv.className = "cap-empty cx-erro-vazio";
+      dv.innerHTML = `<h3>Sem dados do caixa</h3><p>A leitura do SharePoint falhou; os saldos e boletins não são mostrados para não confundir com dados reais.</p><p><button class="btn primary" onclick="renderCx()">Tentar de novo</button></p>`;
+      body.appendChild(dv);
+    } catch (e) {}
+    return r;
+  };
+  window.paintCx = paintCx;
+}
+
+/* ---------- F-M4 · checklist do Fechamento: saídas geradas pela Gestão de Dívidas (RefCAP "div:") aparecem como informação
+   (a conferência delas é na Gestão de Dívidas, lista restrita) ---------- */
+{ const k0 = cxChkCapDinheiro;
+  cxChkCapDinheiro = function (c) {
+    const h = k0.apply(this, arguments);
+    try {
+      const L = (CX.mov || []).filter(m => m.OrigemRegistro === "CAP" && /^div:/.test(m.RefCAP || "") && m._d && m._d.slice(0, 7) === c);
+      if (!L.length) return h;
+      return h + `<li>– ${L.length} saída(s) do caixa (${esc(fmtBRL(cxSoma(L)))}) vieram de parcelas pagas em dinheiro na Gestão de Dívidas — a conferência delas é feita lá (não entram em "Acertar agora")</li>`;
+    } catch (e) { return h; }
+  };
+  window.cxChkCapDinheiro = cxChkCapDinheiro;
+}
+
+/* ---------- R-A1 (decisão Q10 de 26/10) · parcelas da Gestão de Dívidas na DRE e no CAPEX como linha agregada do mês
+   (resumo gravado em "ERP — Parâmetros" → div_resumo.meses[m].pago): na DRE em "Pagamento de dívidas e parcelamentos",
+   no CAPEX em "Juros e dívidas" (fin). As pagas em dinheiro já são descartadas das despesas do caixa (OrigemRegistro CAP),
+   então não contam duas vezes.
+   R-M5 · bem financiado: a parte própria soma só as faturas PAGAS ligadas ao bem (antes somava as pendentes de todos os meses).
+   R-M6 · "Contas do período" (DRE) recebe também as despesas pagas no caixa, marcadas "caixa". ---------- */
+function divAgregadoMeses() {
+  const r = typeof DIV !== "undefined" && DIV.resumo && DIV.resumo.meses ? DIV.resumo.meses : null; if (!r) return [];
+  return Object.entries(r).map(([m, x]) => [m, Number((x && x.pago) || 0)]).filter(([m, v]) => /^\d{4}-\d{2}$/.test(m) && v > 0);
+}
+const DIV_AGREG_ROT = "Gestão de Dívidas › parcelas pagas no mês (agregado)";
+cpxBase = function () {
+  const ctx = cpxCtx(), regime = CPX.regime, A = new Map(), N = new Map();
+  const ac = m => { if (!A.has(m)) A.set(m, cpxAcc()); return A.get(m); };
+  const add = (o, k, v) => { o[k] = (o[k] || 0) + v; };
+  (CAP_STATE.items || []).concat(cpxCxDespesas()).forEach(it => {   /* v0.14.18: + despesas pagas em dinheiro no caixa */
+    const n = cpxNat(it, ctx); if (!it._cx) N.set(String(it._id), n);
+    if (isIsenta(it)) return;
+    const m = cpxMesConta(it, regime); if (!/^\d{4}-\d{2}$/.test(m)) return;
+    const v = capValorEfetivo(it); if (!v) return;   /* v0.13.2: paga usa o valor pago (juros/desconto) */
+    const a = ac(m);
+    if (n.auto && n.revisar && !it._cx) a.nRev++;
+    if (ctx.linkados.has(String(it._id))) return;   /* v0.12.73 (revisão): conta que compõe um bem do Imobilizado entra pelo bem, não aqui */
+    if (n.nat === "OPEX") { const g = opexGrupo(it.Categoria, it.Subcategoria), cl = String(it.Categoria || "").trim() || "(sem categoria)"; a.opex += v; add(a.grp, g, v); add(a.cat, cl, v); add(a.gc, g + "\u0001" + cl, v); add(a.cc, ccDe(it) || "(sem centro de custo)", v); add(a.forn, it.Fornecedor || "—", v); }
+    else if (n.nat === "CAPEX") a.capexCap += v;
+    else if (n.nat === "Financeiro") a.fin += v;
+    else a.fora += v;
+  });
+  divAgregadoMeses().forEach(([m, v]) => { ac(m).fin += v; });   /* v0.14.47 (R-A1, Q10) */
+  (CPX.cx || []).forEach(x => { if (!x.Data || !cpxCxReceita(x)) return; const m = ymd(x.Data).slice(0, 7), v = cpxCxReceita(x); if (!v) return; const a = ac(m); a.rec += v; add(a.recOrig, x.Tipo === "Entrada" ? (x.Origem || "Outras receitas") : "Ajustes da receita", v); });   /* v0.14.18: ajuste negativo importado da RECEITA reduz a receita */
+  (CPX.pax || []).forEach(x => { if (!x.Data) return; ac(ymd(x.Data).slice(0, 7)).pax += Number(x.Pagantes || 0) + Number(x.Gratuidade || 0); });
+  const bens = (IMOB.itens || []).map(b => ({ b, c: imobCalc(b) }));
+  const capPorId = new Map((CAP_STATE.items || []).map(it => [String(it._id), it]));
+  bens.forEach(({ b, c }) => { if (!/^\d{4}-\d{2}$/.test(c.aq)) return; const a = ac(c.aq); a.capexImob += c.valor;
+    if (CPX_FIN_TERC.includes(b.Financiamento)) {   /* 2ª revisão: parte própria = faturas da CAP ligadas ao bem (entrada, parcelas pagas); o resto sai nas parcelas · v0.14.47 (R-M5): só as pagas */
+      const proprio = imobCapIds(b).reduce((s, id) => { const it = capPorId.get(String(id)); return s + (it && !isIsenta(it) && it.Status === "Pago" ? capValorEfetivo(it) : 0); }, 0);
+      a.capexImobFin += Math.max(0, c.valor - proprio); } });
+  return { A, N, ctx, bens, ac };
+};
+window.cpxBase = cpxBase;
+dreBase = function (regime, mapa) {
+  const ctx = cpxCtx(), A = new Map(), I = new Map();
+  const ac = m => { if (!A.has(m)) A.set(m, dreAcc()); return A.get(m); };
+  const add = (o, k, v) => { o[k] = (o[k] || 0) + v; };
+  (CAP_STATE.items || []).concat(cpxCxDespesas()).forEach(it => {   /* v0.14.18: + despesas pagas em dinheiro no caixa */
+    if (isIsenta(it)) return;
+    const m = cpxMesConta(it, regime); if (!/^\d{4}-\d{2}$/.test(m)) return;
+    const v = capValorEfetivo(it); if (!v) return;   /* v0.13.2: paga usa o valor pago (juros/desconto) */
+    const id = String(it._id); if (ctx.linkados.has(id)) return;   /* compõe um bem do Imobilizado: entra pela depreciação e pelo CAPEX do bem */
+    const n = cpxNat(it, ctx), a = ac(m);
+    if (n.nat === "CAPEX") { a.capexCap += v; return; }
+    const r = dreLinha(it, n.nat, mapa), rev = (n.auto && n.revisar) || r.rev || "";
+    if (!it._cx) { I.set(id, { m, v, nat: n.nat, k: r.k, motivo: r.motivo, ajuste: !!r.ajuste, rev, ch: dreChave(it.Categoria, it.Subcategoria) }); a.nCap++; }   /* v0.14.18: despesa do caixa não abre na CAP */
+    else I.set(id, { m, v, nat: n.nat, k: r.k, motivo: r.motivo, ajuste: !!r.ajuste, rev: rev || "caixa", ch: dreChave(it.Categoria, it.Subcategoria), cx: true, it });   /* v0.14.47 (R-M6): entra na planilha "Contas do período" e nos valores do Plano, não na lista "a conferir" (não abre na CAP) */
+    add(a.L, r.k, v);
+    const lab = `${String(it.Categoria || "").trim() || "(sem categoria)"} › ${String(it.Subcategoria || "").trim() || "(sem subcategoria)"}`;
+    add(a.det[r.k] || (a.det[r.k] = {}), lab, v);
+    if (rev && !it._cx) a.nRev++;
+  });
+  divAgregadoMeses().forEach(([m, v]) => { const a = ac(m); add(a.L, "amort", v); add(a.det.amort || (a.det.amort = {}), DIV_AGREG_ROT, v); });   /* v0.14.47 (R-A1, Q10) */
+  (CPX.cx || []).forEach(x => { if (!x.Data || !cpxCxReceita(x)) return; const m = ymd(x.Data).slice(0, 7), v = cpxCxReceita(x); if (!v) return; const a = ac(m); a.rec += v; add(a.recOrig, x.Tipo === "Entrada" ? (x.Origem || "Outras receitas") : "Ajustes da receita", v); });   /* v0.14.18: ajuste negativo importado da RECEITA reduz a receita */
+  (CPX.pax || []).forEach(x => { if (!x.Data) return; ac(ymd(x.Data).slice(0, 7)).pax += Number(x.Pagantes || 0) + Number(x.Gratuidade || 0); });
+  const bens = (IMOB.itens || []).map(b => ({ b, c: imobCalc(b) }));
+  const capPorId = new Map((CAP_STATE.items || []).map(it => [String(it._id), it]));
+  bens.forEach(({ b, c }) => { if (!/^\d{4}-\d{2}$/.test(c.aq)) return; const a = ac(c.aq); a.capexImob += c.valor;
+    if (CPX_FIN_TERC.includes(b.Financiamento)) { const proprio = imobCapIds(b).reduce((s, id) => { const it = capPorId.get(String(id)); return s + (it && !isIsenta(it) && it.Status === "Pago" ? capValorEfetivo(it) : 0); }, 0); a.capexImobFin += Math.max(0, c.valor - proprio); } });   /* v0.14.47 (R-M5) */
+  return { A, I, bens };
+};
+window.dreBase = dreBase;
+
+/* ---------- R-M3 · lançamento do tipo "Parcela de dívida" vai para "Pagamento de dívidas e parcelamentos" mesmo com categoria
+   Financeiras (antes caía em Despesas financeiras = juros). R-M1 · ajuste do plano para conta OPEX só entre as linhas DENTRO do
+   resultado (um ajuste para "fora do resultado"/"dívidas" era ignorado pelo CAPEX e aceito pela DRE: DRE ≠ CAPEX); o caminho
+   certo para tirar uma conta do resultado é a natureza do gasto. ---------- */
+dreRegra = function (it, nat) {
+  const cat = String(it.Categoria || "").trim(), sub = normName(it.Subcategoria);
+  if (nat === "Fora do resultado") return { k: "fora", motivo: "natureza Fora do resultado" };
+  if (nat === "Financeiro") {
+    if (String(it.TipoLancamento || "") === "Parcela de dívida") return { k: "amort", motivo: "lançamento do tipo Parcela de dívida (principal e encargos)" };   /* v0.14.47 (R-M3) */
+    return cat === "Financeiras" && !/capital de giro/.test(sub) ? { k: "dfin", motivo: `Financeiras › ${it.Subcategoria || "—"}` } : { k: "amort", motivo: cat === "Financeiras" ? "capital de giro: parcela de empréstimo" : "parcela de dívida ou parcelamento (principal e encargos)" };
+  }
+  if (cat === "Impostos e Taxas") {
+    if (/^(icms|iss|pis|cofins)$/.test(sub)) return { k: "ded", motivo: `tributo sobre a receita (${it.Subcategoria})` };
+    if (sub === "darf") {
+      const txt = normName([it.Title, it.Observacoes, it.Fornecedor].filter(Boolean).join(" "));
+      if (/irpj|csll|imposto de renda|contribuicao social/.test(txt)) return { k: "ir", motivo: "DARF de IRPJ/CSLL (pela descrição)", ident: true };
+      if (/\bpis\b|cofins|simples|\bdas\b|cprb/.test(txt)) return { k: "ded", motivo: "DARF de tributo sobre a receita (pela descrição)", ident: true };
+      return { k: "ded", motivo: "DARF sem identificação: tratado como tributo sobre a receita", rev: "DARF sem indicar o tributo na descrição: confira se é PIS/COFINS/Simples (dedução) ou IRPJ/CSLL" };
+    }
+    return { k: "trib", motivo: `Impostos e Taxas › ${it.Subcategoria || "—"}` };
+  }
+  if (/irpj|csll/.test(sub)) return { k: "ir", motivo: "IRPJ/CSLL" };
+  const g = opexGrupo(cat, it.Subcategoria);
+  if (g === "comb" || g === "pneu" || g === "manut") return { k: g, motivo: `grupo ${OPEX_GRUPO[g].n}` };
+  if (g === "pessoal") {
+    if (/pro-labore|pro labore/.test(sub)) return { k: "pesadm", motivo: "pró-labore" };
+    return DRE_CC_ADM.includes(String(it.CentroCusto || "").trim()) ? { k: "pesadm", motivo: `centro de custo ${it.CentroCusto}` } : { k: "pesop", motivo: it.CentroCusto ? `centro de custo ${it.CentroCusto}` : "pessoal sem centro de custo administrativo" };
+  }
+  if (g === "seguro") return { k: "seg", motivo: `grupo ${OPEX_GRUPO.seguro.n}` };
+  if (g === "trib") return { k: "trib", motivo: `grupo ${OPEX_GRUPO.trib.n}` };
+  if (g === "ocup") return { k: "ocup", motivo: `grupo ${OPEX_GRUPO.ocup.n}` };
+  if (g === "adm") return { k: "adm", motivo: `grupo ${OPEX_GRUPO.adm.n}` };
+  return { k: "dout", motivo: cat ? `categoria ${cat}` : "sem categoria", rev: cat && cat !== "Outros" ? "" : "sem categoria do plano de contas" };
+};
+window.dreRegra = dreRegra;
+dreLinha = function (it, nat, mapa) {
+  const r = dreRegra(it, nat);
+  if ((nat !== "OPEX" && nat !== "Financeiro") || r.ident) return r;   /* revisão: DARF identificado pela descrição não segue o ajuste da subcategoria */
+  const k = mapa && mapa[dreChave(it.Categoria, it.Subcategoria)];
+  if (!k || !DRE_CONTA[k] || k === r.k) return r;
+  if (nat === "Financeiro" && !["dfin", "amort"].includes(k)) return r;
+  if (nat === "OPEX" && DRE_CONTA[k].bloco === "fora") return r;   /* v0.14.47 (R-M1): conta OPEX não sai do resultado pelo ajuste — mude a natureza do gasto */
+  return { k, motivo: "plano de contas da DRE (ajuste)", ajuste: true };
+};
+window.dreLinha = dreLinha;
+
+/* ---------- R-A2 / R-M8 / R-B4 · a classificação não disputa com o plano de contas: cpxCarregar espera o plano (até 15 s) e as
+   contas refazem quando ele chega; fonte com erro não fica 5 minutos no cache; as contas do caixa ("Banco", "Cofre"…) são lidas
+   quando o Fluxo não foi aberto nesta sessão (sem elas, depósito ao banco virava despesa) ---------- */
+{ const c0 = cpxCarregar;
+  cpxCarregar = async function (force) {
+    CPX.pcPend = false;
+    try { if (typeof pcCarregar === "function" && !pcDaLista()) { await Promise.race([pcCarregar().catch(() => null), new Promise(r => setTimeout(r, 15000))]); CPX.pcPend = !pcDaLista() && !PC.fonte; } } catch (e) {}   /* revisão: pendente só enquanto a fonte é desconhecida (lista vazia/inexistente/sem acesso não é "a caminho") */
+    try {
+      if (typeof CX !== "undefined" && !CX.demo && (!CX.ready || !(CX.contas || []).length || CX.contas.every(k => /^seed/.test(String(k._id || ""))))) {
+        const r = await cpxLista(LISTS.cx_contas.siteKey, LISTS.cx_contas.displayName, "Title,Tipo,Ordem");
+        if (r && r.itens && r.itens.length && !CX.ready) CX.contas = r.itens.slice().sort((a, b) => Number(a.Ordem || 0) - Number(b.Ordem || 0));   /* v0.14.47 (R-B4): só preenche enquanto o Fluxo não carregou */
+      }
+    } catch (e) {}
+    const r = await c0.apply(this, arguments);
+    try { if (Object.values(CPX.fontes || {}).some(f => f && f.st === "erro")) CPX.t = Date.now() - 5 * 60e3 + 20e3; } catch (e) {}   /* v0.14.47 (R-M8): erro de leitura fica só 20 s no cache (não 5 min como "R$ 0,00"); revisão: não zera, para não reler as 8 listas a cada pintura */
+    return r;
+  };
+  window.cpxCarregar = cpxCarregar;
+}
+{ const d0 = cpxDados, e0 = dreDados;
+  cpxDados = function () { try { if (CPX_MEMO && CPX_MEMO._pc !== (typeof PC !== "undefined" ? PC.itens : null)) CPX_MEMO = null; } catch (e) {} const d = d0.apply(this, arguments); try { if (CPX_MEMO) CPX_MEMO._pc = typeof PC !== "undefined" ? PC.itens : null; } catch (e) {} return d; };
+  dreDados = function () { try { if (DRE_MEMO && DRE_MEMO._pc !== (typeof PC !== "undefined" ? PC.itens : null)) DRE_MEMO = null; } catch (e) {} const d = e0.apply(this, arguments); try { if (DRE_MEMO) DRE_MEMO._pc = typeof PC !== "undefined" ? PC.itens : null; } catch (e) {} return d; };
+  window.cpxDados = cpxDados; window.dreDados = dreDados;
+}
+/* avisos nas telas CAPEX/OPEX e DRE: dívidas agregadas (com a data do resumo), plano de contas vindo do cache do navegador,
+   despesas do caixa sem grupo, plano não lido */
+function cpxAvisosExtra(D, dre) {
+  const a = [];
+  try {
+    const R = typeof DIV !== "undefined" ? DIV.resumo : null, per = new Set((D && D.validos) || []);
+    const tot = divAgregadoMeses().filter(([m]) => per.has(m)).reduce((s, [, v]) => s + v, 0);
+    if (tot > 0) { const dt = R && R.atualizado ? new Date(R.atualizado) : null; a.push(`Parcelas da Gestão de Dívidas: ${fmtBRL(tot)} no período, pelo resumo gravado por um administrador${dt && !isNaN(dt) ? ` em ${dt.toLocaleDateString("pt-BR")}` : ""} (só totais por mês de pagamento${dre ? ", na linha Pagamento de dívidas e parcelamentos" : ", em Juros e dívidas"}). Um administrador atualiza o resumo abrindo a Gestão de Dívidas.`); }
+    else if (!R && CONFIG.capInicio) a.push(`Parcelas da Gestão de Dívidas ainda sem resumo gravado: um administrador precisa abrir a Gestão de Dívidas uma vez para elas entrarem ${dre ? "na DRE" : "no CAPEX"}.`);
+    if (CPX.pcPend) a.push("O plano de contas não respondeu a tempo: a classificação segue as regras por nome até ele carregar (a tela refaz as contas sozinha).");
+    else if (typeof PC !== "undefined" && PC.fonte === "cache") a.push("Plano de contas lido do cache deste navegador (a lista não respondeu): se houve mudança recente no cadastro, recarregue a tela.");
+    const semG = cpxCxDespesas().filter(x => per.has(String(x.Competencia || "")) && !String(x.Categoria || "").trim());
+    if (semG.length) a.push(`${semG.length} despesa(s) paga(s) no caixa sem grupo do plano (${fmtBRL(semG.reduce((s, x) => s + Number(x.Valor || 0), 0))}) caem em "Outras despesas / a classificar": classifique em Fluxo de Caixa › Movimento.`);
+  } catch (e) {}
+  return a;
+}
+{ const a0 = cpxAvisos, b0 = dreAvisos;
+  const junta = (h, extra) => { if (!extra.length) return h; const blocos = extra.map(x => `<div>${esc(x)}</div>`).join(""); return h ? h.replace(/<\/div>\s*$/, blocos + "</div>") : `<div class="cpx-avisos">${blocos}</div>`; };
+  cpxAvisos = function (D) { return junta(a0.apply(this, arguments), cpxAvisosExtra(D, false)); };
+  dreAvisos = function (D) { return junta(b0.apply(this, arguments), cpxAvisosExtra(D, true)); };
+  window.cpxAvisos = cpxAvisos; window.dreAvisos = dreAvisos;
+}
+
+/* ---------- R-M7 · KPI "Pagas no mês" (CAP e Painel): sem transferências entre contas nem contas isentas (N/A) ---------- */
+const capPagaConta = it => !!it && !(typeof capEhTransf === "function" && capEhTransf(it)) && !isIsenta(it);
+{ const k0 = kpiCounts;
+  kpiCounts = function () { const r = k0.apply(this, arguments); try { if (r && r.pagas && Array.isArray(r.pagas.it)) { const it = r.pagas.it.filter(x => capPagaConta(x.it)); r.pagas = { n: it.length, v: it.reduce((s, x) => s + x.v, 0), it }; } } catch (e) {} return r; };
+  window.kpiCounts = kpiCounts;
+}
+{ const p0 = capPainelData;
+  capPainelData = function () { const r = p0.apply(this, arguments); try { if (r && Array.isArray(r.pagasMes)) r.pagasMes = r.pagasMes.filter(capPagaConta); } catch (e) {} return r; };
+  window.capPainelData = capPainelData;
+}
+
+/* revisão (F-M5): ligar o Modo demo limpa o erro de leitura (senão a tela ficaria em "Sem dados do caixa" com a massa demo carregada) */
+{ const t0 = window.cxDemoToggle; if (t0) window.cxDemoToggle = function () { try { if (!CX.demo) CX.erro = ""; } catch (e) {} return t0.apply(this, arguments); }; }   /* 2ª revisão: só ao ligar; ao desligar com a leitura falhando, o aviso continua */
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -48919,6 +49284,7 @@ CONFIG.version = "v0.14.43";   /* Minhas rotinas em cada departamento (regras no
 CONFIG.version = "v0.14.44";   /* menus em lista por padrão; inicial maiúscula em abas, botões, rótulos, cabeçalhos e chips; Fluxo de Caixa com a data na linha dos botões */
 CONFIG.version = "v0.14.45";   /* CAP › Colaboradores: pagamentos internos aos colaboradores do RH, carteiras padrão (salário, férias, 13º, FGTS…) e histórico; página própria cap.colab */
 CONFIG.version = "v0.14.46";   /* menu de departamentos no topo (opção B): nomes completos com sublinhado laranja a partir de 1280 px; siglas abaixo; busca como ícone de 1280 a 1600 px */
+CONFIG.version = "v0.14.47";   /* inspeção ponta a ponta Financeiro × DRE: conflito de gravação na CAP, fornecedores/códigos preservados, importação do caixa, diferença do boletim, fechamento do mês relê, dívidas agregadas na DRE/CAPEX (Q10), DRE = CAPEX, KPIs */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

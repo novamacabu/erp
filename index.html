@@ -2073,6 +2073,11 @@ body.wide .layout:has(.nav.ordenando) .sidebar{width:min(330px,92vw)}
 /* v0.12.19 · seletor de dia melhor para o Fluxo de Caixa */
 .cx-datep{display:inline-flex;align-items:center;gap:6px;padding:3px 6px;border:1px solid var(--line);border-radius:8px;background:var(--white)}
 .cx-datep input[type="date"]{border:0;background:transparent;color:var(--navy);font:inherit;font-weight:700;padding:4px 2px;min-width:140px}
+/* v0.14.48.1 (12/11, Rafael): a data do Fluxo de Caixa fica centralizada no campo; o recuo da esquerda iguala o do ícone do calendário */
+.cx-datep input[type="date"]{text-align:center}
+html.erp-cal .cx-datep input[type="date"]:not(:disabled):not([readonly]){padding-left:32px!important}
+.cx-datep input[type="date"]::-webkit-datetime-edit{display:inline-block;text-align:center}
+.cx-datep input[type="date"]::-webkit-datetime-edit-fields-wrapper{display:inline-block}
 .cx-datep .cx-navbtn{width:28px;height:28px;border:0;background:var(--soft);border-radius:6px;color:var(--navy);cursor:pointer;font-size:12px}
 .cx-datep .cx-navbtn:hover{background:#E7EBF2}
 .cx-datep-rot{color:var(--navy);font-size:13px;font-weight:600;margin:0 2px 0 4px}
@@ -49511,6 +49516,372 @@ window.capCtbImprimirTudo = async () => {
   };
   window.paintCapContab = paintCapContab;
 }
+/* =====================================================================================================================
+   v0.14.49 · CAP › Contabilidade — menu numa linha e PREPARAR PACOTE (pedido do Rafael, 12/11/2026 15:36)
+   · Menu: Mês · Saídas por · Exportar Excel · Baixar Pacote (.zip) · Preparar Pacote. Saem "Imprimir (A4)" e "Imprimir Tudo".
+   · Preparar Pacote: sempre por DATA DE PAGAMENTO (como o extrato). Por banco › dia, com o total do dia; cada lançamento tem
+     "Conferido no extrato" (no dinheiro, "no boletim"), os documentos que vão ou não para a impressão (padrão: Comprovante e NF),
+     "+ Anexar" para o que falta e a DISPENSA de NF/cobrança com motivo (ex.: pagamento de acordo por transferência).
+     Imprimir Pacote = Relatório Geral + roteiro (com a conferência) + só os documentos marcados.
+   · Colunas novas na lista Lançamentos (Configuração › Executar tudo): ConferidoExtrato e DocsDispensados. A escolha da impressão
+     fica no próprio anexo (campo "imp" no JSON de Anexos) e não precisa de coluna. As duas colunas e os anexos continuam livres
+     com o mês fechado na Contabilidade.
+   ===================================================================================================================== */
+LISTS.cap.columns.push(
+  { name: "ConferidoExtrato", displayName: "Conferido no extrato", text: { allowMultipleLines: false, maxLength: 255 }, naoObrig: true },
+  { name: "DocsDispensados",  displayName: "Documentos dispensados (JSON)", text: { allowMultipleLines: true, textType: "plain" }, naoObrig: true }
+);
+CTB_FECH_LIVRES.add("ConferidoExtrato"); CTB_FECH_LIVRES.add("DocsDispensados");
+
+const CTB_IMP_PADRAO = new Set(["Comprovante", "NF"]);
+const CTB_DISP_TIPOS = ["NF", "Boleto"];
+const CTB_DISP_MOTIVOS = ["Pagamento de acordo por transferência", "Pagamento sem nota fiscal (pessoa física)", "Débito automático / tarifa bancária", "Reembolso de despesa", "Adiantamento"];
+const CTB_PREP = { busy: new Set(), filtro: "", up: new Set(), ultErro: "" };
+function ctbConfRaw(it) { const s = String((it && it.ConferidoExtrato) || "").trim(); if (!s) return null; try { const o = JSON.parse(s); return o && typeof o === "object" ? o : { por: s }; } catch (e) { return { por: s }; } }
+function ctbDispDe(it) { try { const o = JSON.parse((it && it.DocsDispensados) || "null"); return o && Array.isArray(o.t) && o.t.filter(t => CTB_DISP_TIPOS.includes(t)).length ? Object.assign({}, o, { t: o.t.filter(t => CTB_DISP_TIPOS.includes(t)) }) : null; } catch (e) { return null; } }
+/* revisão (3): a conferência guarda o retrato do pagamento (valor, dia, banco); se o pagamento mudar ou for desfeito, volta a "conferir" */
+function ctbConfRetrato(it) { return { v: Math.round(capValorEfetivo(it) * 100) / 100, d: it.DataPagamento ? ymd(it.DataPagamento) : "", b: ctbBancoDe(it) }; }
+function ctbConfDe(it) {
+  const c = ctbConfRaw(it); if (!c || !(it.Status === "Pago" && it.DataPagamento)) return null;
+  if (c.v != null || c.d != null) { const r = ctbConfRetrato(it); if (Math.abs(Number(c.v) - r.v) > 0.004 || String(c.d || "") !== r.d || (c.b && c.b !== r.b)) return null; }
+  return c;
+}
+function ctbConfMudou(it) { return !!ctbConfRaw(it) && !ctbConfDe(it) && it.Status === "Pago" && !!it.DataPagamento; }
+/* revisão (9): o padrão da impressão vale para comprovante e NF que dá para imprimir (PDF ou imagem); XML/HEIC ficam fora */
+function ctbImprimivel(a) { const m = String(a.m || "").toLowerCase(); return /\.(pdf|jpe?g|png|webp|gif|bmp)$/i.test(String(a.n || "")) || m === "application/pdf" || /^image\/(jpeg|png|webp|gif|bmp)/.test(m); }
+function ctbImpDe(a) { return typeof a.imp === "boolean" ? a.imp : CTB_IMP_PADRAO.has(a.t || "Outro") && ctbImprimivel(a); }
+function ctbConfJson(it) { return JSON.stringify(Object.assign({ em: new Date().toISOString(), por: ctbQuem() }, ctbConfRetrato(it))); }
+function ctbPrepCols() { return !!(CAP_STATE.cols && CAP_STATE.cols.has("ConferidoExtrato") && CAP_STATE.cols.has("DocsDispensados")); }
+function ctbPrepEdita() { return podeEditar("cap") && !vcAtivo(); }
+function ctbQuem() { return (session.me && (session.me.displayName || session.me.mail)) || "—"; }
+function ctbDispRot(d) { return d.t.map(t => t === "Boleto" ? "cobrança" : "NF").join(" e ") + (d.t.length > 1 ? " dispensadas" : " dispensada"); }
+
+/* ---- 1 · dispensa: o documento dispensado deixa de ser exigido (o comprovante nunca é dispensado) ---- */
+{ const e0 = capDocExige;
+  capDocExige = function (it, t) { if (t !== "Comprovante") { const d = ctbDispDe(it); if (d && d.t.includes(t)) return false; } return e0.apply(this, arguments); };
+  window.capDocExige = capDocExige;
+}
+{ const f0 = capDocsFaltando;
+  capDocsFaltando = function (it) { const r = f0.apply(this, arguments), d = ctbDispDe(it); return d ? r.filter(t => t === "Comprovante" || !d.t.includes(t)) : r; };
+  window.capDocsFaltando = capDocsFaltando;
+}
+{ const s0 = ctbAnexosSt;
+  ctbAnexosSt = function (it) {
+    const r = s0.apply(this, arguments); if (!r) return r;
+    r.txt = String(r.txt || "").replace(/Completo: +e /, "Completo: ");   /* só um documento exigido (ex.: comprovante, com NF e cobrança dispensadas) */
+    const d = ctbDispDe(it); if (d) r.txt += ` · ${ctbDispRot(d)}: ${d.m || "sem motivo"}`;
+    return r;
+  };
+  window.ctbAnexosSt = ctbAnexosSt;
+}
+
+{ const i0 = capDocIco;   /* revisão (14): nas Pendências, o "—" da dispensa diz o motivo */
+  capDocIco = function (it, t) { if (t !== "Comprovante") { const d = ctbDispDe(it); if (d && d.t.includes(t)) return `<span class="doc-st na" title="${esc(docRot(t) + " dispensada: " + (d.m || "—"))}">—</span>`; } return i0.apply(this, arguments); };
+  window.capDocIco = capDocIco;
+}
+
+/* ---- 2 · o que vai para a impressão: durante Imprimir Pacote, capCtbArquivos só devolve os documentos marcados ---- */
+{ const a0 = capCtbArquivos;
+  capCtbArquivos = function (it, info) { const r = a0.apply(this, arguments), m = CAP_STATE._impModo; if (!m) return r; if (m === "nenhum") return []; return r.filter(f => ctbImpDe(f.a)); };
+  window.capCtbArquivos = capCtbArquivos;
+}
+
+{ const c0 = capCtbPdf;   /* revisão (1): na impressão filtrada, o Relatório Geral fala dos documentos anexados no ERP, não do que foi impresso */
+  capCtbPdf = async function (D, C, R) { if (CAP_STATE._impModo) return c0.call(this, D, capCtbConferencia(D, null), null); return c0.apply(this, arguments); };
+  window.capCtbPdf = capCtbPdf;
+}
+/* revisão (4): isentas (N/A) pagas sem documento não têm pasta no pacote, mas saem no extrato — entram no roteiro e na página, sem nº */
+function ctbIsentasPagas(D, ordem) { const ids = new Set(ordem.map(it => String(it._id))); return D.contas.filter(it => capCtbTipo(it) === "isenta" && it.Status === "Pago" && it.DataPagamento && !ids.has(String(it._id))); }
+const ctbDinUlt = arr => arr.sort((a, b) => (/^dinheiro$/i.test(a) ? 1 : 0) - (/^dinheiro$/i.test(b) ? 1 : 0));
+
+/* ---- 3 · roteiro do extrato com a conferência (coluna Extrato) e as dispensas ---- */
+ctbRoteiroPdf = async function (D, ordem, nDocs) {
+  const J = await erpLib("jspdf"); await erpLib("jspdf_autotable");
+  const autoTable = window.autoTable, T = ctbPdfTxt, U = D.U;
+  if (!J || !J.jsPDF || typeof autoTable !== "function") throw new Error("biblioteca de PDF indisponível");
+  const doc = new J.jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true }), W = doc.internal.pageSize.getWidth(), M = 12;
+  const NAVY = [30, 33, 83], MUT = [107, 114, 128];
+  const pagos = ordem.filter(it => it.Status === "Pago" && it.DataPagamento).concat(ctbIsentasPagas(D, ordem)), abertos = ordem.filter(it => !(it.Status === "Pago" && it.DataPagamento));
+  const nConf = pagos.filter(it => ctbConfDe(it)).length, filtrado = !!CAP_STATE._impModo;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...NAVY);
+  doc.text(T("Roteiro de conferência com o extrato bancário"), M, 16);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MUT);
+  doc.text(T(`${ctbPacoteNome()} · ${ctbMesAno(U.comp)} · saídas por ${U.base === "pag" ? "data de pagamento" : "competência"} · ${nConf} de ${pagos.length} conferido(s) no ERP · emitido em ${new Date().toLocaleString("pt-BR")} por ${vcQuemEmite()}`), M, 21.5);
+  doc.text(T(U.base === "pag" ? (filtrado ? "Docs = documentos impressos / anexados no ERP. " : "") + "Cada lançamento tem um nº de ordem; os documentos vêm depois deste roteiro na mesma ordem, com o nº na faixa do topo. Isentas (N/A) pagas sem documento aparecem sem nº. A coluna Extrato traz a data em que o time conferiu a linha no ERP; em branco, confira e marque à mão. O total do dia deve bater com as saídas do dia no extrato."
+    : "Visão por COMPETÊNCIA: o roteiro lista os lançamentos desta competência, pagos em qualquer data — os totais do dia podem não bater com o extrato. Para conferir com o extrato do mês, use Preparar Pacote (sempre por data de pagamento)."), M, 26, { maxWidth: W - 2 * M });
+  let y = 34;
+  const bancos = ctbDinUlt([...new Set(pagos.map(ctbBancoDe))]);
+  const confTx = it => { const c = ctbConfDe(it); return c ? (c.em ? `OK ${fmtDate(c.em)}` : "OK") : ""; };
+  const descTx = it => { const d = ctbDispDe(it); return (it.Title || "—") + (capEhTransf(it) ? " (transferência entre contas)" : /^(cart[aã]o|cheque)/i.test(String(it.FormaPagamento || "")) ? ` (${it.FormaPagamento}: pode sair em outra data)` : "") + (d ? ` · ${ctbDispRot(d)}: ${d.m || "—"}` : "") + (ordem.indexOf(it) < 0 ? " (isenta N/A, sem documento)" : ""); };
+  const docsTx = it => { const n = nDocs.get(String(it._id)) || 0; return filtrado ? `${n}/${anexosDe(it).length}` : String(n); };
+  const linha = it => { const ix = ordem.indexOf(it); return [ix < 0 ? "—" : String(ix + 1), fmtDate(it.DataPagamento || it.Vencimento), T(it.Fornecedor || "—"), T(descTx(it)), T(fmtBRL(capValorEfetivo(it))), docsTx(it), T(confTx(it))]; };
+  const cab = [["Nº", "Pagto.", "Fornecedor", "Descrição", "Valor pago", "Docs", "Extrato"]];
+  const estilo = { styles: { fontSize: 7.4, cellPadding: 1.3, textColor: [27, 34, 48], lineColor: [201, 207, 216], lineWidth: 0.1 }, headStyles: { fillColor: [255, 255, 255], textColor: NAVY, fontStyle: "bold", lineWidth: { bottom: 0.4 }, lineColor: NAVY },
+    columnStyles: { 0: { cellWidth: 9, halign: "right" }, 1: { cellWidth: 17 }, 4: { cellWidth: 24, halign: "right" }, 5: { cellWidth: 10, halign: "center" }, 6: { cellWidth: 17, halign: "center" } }, margin: { left: M, right: M } };
+  bancos.forEach(bn => {
+    const its = pagos.filter(it => ctbBancoDe(it) === bn), body = [];
+    const dias = [...new Set(its.map(it => ymd(it.DataPagamento)))];
+    dias.forEach(dd => { const doDia = its.filter(it => ymd(it.DataPagamento) === dd); doDia.forEach(it => body.push(linha(it)));
+      body.push([{ content: T(`Total do dia ${fmtDate(dd)} · ${doDia.length} lançamento(s)`), colSpan: 4, styles: { fontStyle: "bold", textColor: NAVY } }, { content: T(fmtBRL(doDia.reduce((s, it) => s + capValorEfetivo(it), 0))), styles: { fontStyle: "bold", halign: "right" } }, "", ""]); });
+    if (y > 260) { doc.addPage(); y = 16; }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...NAVY);
+    const tot = its.reduce((s, it) => s + capValorEfetivo(it), 0), nc = its.filter(it => ctbConfDe(it)).length;
+    doc.text(T(/^dinheiro$/i.test(bn) ? `Dinheiro (caixa da matriz) · ${its.length} lançamento(s) · ${fmtBRL(tot)} · ${nc} conferido(s) no boletim — não aparece no extrato` : `${bn} · ${its.length} lançamento(s) · ${fmtBRL(tot)} · ${nc} de ${its.length} conferido(s)`), M, y);
+    autoTable(doc, Object.assign({ startY: y + 2, head: cab, body }, estilo));
+    y = doc.lastAutoTable.finalY + 8;
+  });
+  if (abertos.length) {
+    if (y > 260) { doc.addPage(); y = 16; }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...NAVY);
+    doc.text(T(`Sem pagamento registrado · ${abertos.length} lançamento(s) — não devem aparecer no extrato do mês`), M, y);
+    autoTable(doc, Object.assign({ startY: y + 2, head: [["Nº", "Venc.", "Fornecedor", "Descrição", "Valor", "Docs", "Situação"]], body: abertos.map(it => { const l = linha(it); l[1] = fmtDate(it.Vencimento); l[4] = T(fmtBRL(Number(it.Valor || 0))); l[6] = T(capCtbSit(it)); return l; }) }, estilo));
+  }
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(6.8); doc.setTextColor(...MUT); doc.text(T(`Transportadora Nova Macabu · Roteiro do extrato · ${ctbMesAno(U.comp)} · ERP NMB`), M, 290); doc.text(`Página ${i} de ${n}`, W - M, 290, { align: "right" }); }
+  return doc.output("arraybuffer");
+};
+
+/* ---- 4 · Imprimir Pacote: sempre por data de pagamento; "marcados" = só os documentos marcados; "nenhum" = relatório + roteiro ---- */
+window.ctbPrepImprimir = async (modo) => {
+  if (CAP_STATE._zipando) { toast("Aguarde: o pacote ou a impressão anterior ainda está sendo montado.", 5000); return; }
+  const U = capCtbUI(), base0 = U.base;
+  U.base = "pag"; CAP_STATE._impModo = modo === "nenhum" ? "nenhum" : "marcados";
+  let p; try { p = window.capCtbImprimirTudo(); } finally { U.base = base0; }   /* a impressão copia a escolha na hora da chamada */
+  ctbPrepRepinta();   /* revisão (7): o botão da página vira "Montando…" e recebe o andamento (id ctbTudoBtn) */
+  try { await p; } finally { CAP_STATE._impModo = null; }
+};
+
+/* ---- 5 · gravações (uma por vez por lançamento; conflito de gravação continua valendo) ---- */
+function ctbPrepItem(id) { return (CAP_STATE.items || []).find(x => String(x._id) === String(id)) || null; }
+async function ctbPrepGravar(it, fields, okMsg) {
+  const k = String(it._id); if (CTB_PREP.busy.has(k)) { toast("Aguarde: este lançamento ainda está sendo gravado."); return false; }
+  CTB_PREP.busy.add(k);
+  try { await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, fields); Object.keys(fields).forEach(f => { it[f] = fields[f] == null ? undefined : fields[f]; }); CAP_STATE.rev = (CAP_STATE.rev || 0) + 1; if (okMsg) toast(okMsg); return true; }
+  catch (e) { CTB_PREP.ultErro = String((e && e.message) || e); toast((e && e.conflito ? "" : "Não foi possível gravar: ") + CTB_PREP.ultErro, 8000); return false; }
+  finally { CTB_PREP.busy.delete(k); }
+}
+function ctbPrepPode(precisaCols) {
+  if (!ctbPrepEdita()) { toast("Seu acesso à CAP é só de leitura."); return false; }
+  if (precisaCols && !ctbPrepCols()) { toast("Falta criar as colunas da preparação: Sistema › Configuração › Executar tudo.", 7000); return false; }
+  return true;
+}
+/* revisão (8): repinta guardando a rolagem das tabelas (celular) e o foco */
+const ctbPrepRepinta = () => {
+  if (!(CAP_STATE.view === "contab" && $("capBody") && capCtbUI().prep)) return;
+  const sl = [...document.querySelectorAll("#capBody .ctbp-card .table-wrap")].map(w => w.scrollLeft), y = window.scrollY, ae = document.activeElement, k = ae && ae.dataset ? ae.dataset.k : null;
+  paintCAP();
+  document.querySelectorAll("#capBody .ctbp-card .table-wrap").forEach((w, i) => { if (sl[i]) w.scrollLeft = sl[i]; });
+  try { if (Math.abs(window.scrollY - y) > 2) window.scrollTo({ top: y }); } catch (e) {}
+  if (k) { const el = document.querySelector(`#capBody [data-k="${CSS.escape(k)}"]`); if (el) { try { el.focus({ preventScroll: true }); } catch (e) {} } }
+};
+window.ctbPrepConf = async (id, on) => {
+  const it = ctbPrepItem(id); if (!it || !ctbPrepPode(true)) { ctbPrepRepinta(); return; }
+  await ctbPrepGravar(it, { ConferidoExtrato: on ? ctbConfJson(it) : null });
+  ctbPrepRepinta();
+};
+window.ctbPrepConfDia = async (ids) => {
+  if (!ctbPrepPode(true)) return;
+  const its = String(ids || "").split(",").map(ctbPrepItem).filter(it => it && !ctbConfDe(it)); let ok = 0, falhou = null;
+  for (const it of its) { if (await ctbPrepGravar(it, { ConferidoExtrato: ctbConfJson(it) })) ok++; else { falhou = it; break; } }
+  if (falhou) toast(`${ok} de ${its.length} conferido(s). Não gravou: ${falhou.Fornecedor || falhou.Title || "lançamento"} — ${CTB_PREP.ultErro}`, 10000);   /* revisão (6) */
+  else if (ok) toast(`${ok} lançamento(s) conferido(s)`);
+  ctbPrepRepinta();
+};
+window.ctbPrepImp = async (id, aid) => {
+  const it = ctbPrepItem(id); if (!it || !ctbPrepPode(false)) return;
+  const anx = anexosDe(it), a = anx.find(x => x.id === aid); if (!a) return;
+  a.imp = !ctbImpDe(a);
+  await ctbPrepGravar(it, { Anexos: JSON.stringify(anx) });
+  ctbPrepRepinta();
+};
+window.ctbPrepVer = (id, aid) => { const it = ctbPrepItem(id), a = it && anexosDe(it).find(x => x.id === aid); if (a) docVer(a, `${docRot(a.t || "Outro")} · ${it.Fornecedor || ""}`); };
+async function ctbPrepAnexar(inp) {
+  const it = ctbPrepItem(inp.dataset.id), tipo = inp.dataset.tipo, files = [...inp.files]; inp.value = "";
+  if (!it || !files.length || !ctbPrepPode(false)) return;
+  const k = String(it._id); if (CTB_PREP.busy.has(k)) { toast("Aguarde: este lançamento ainda está sendo gravado."); return; }
+  CTB_PREP.busy.add(k); CTB_PREP.up.add(k); ctbPrepRepinta();
+  try { await capDocEnviar(it, tipo, files, "__ctbPrepSemTela", () => "", () => {}); }
+  finally { CTB_PREP.busy.delete(k); CTB_PREP.up.delete(k); ctbPrepRepinta(); }
+}
+window.ctbPrepDispensa = (id) => {
+  const it = ctbPrepItem(id); if (!it) return;
+  const d = ctbDispDe(it), pode = ctbPrepEdita() && ctbPrepCols();
+  const tipos = CTB_DISP_TIPOS.filter(t => (d && d.t.includes(t)) || ((CAP_DOC_EXIGE[capTipoDoc(it)] || CAP_DOC_EXIGE.desp).includes(t)));
+  if (!tipos.length) { toast("Este tipo de lançamento não exige NF nem cobrança."); return; }
+  $("modal").className = "modal";
+  modal(`<div class="modal-head"><h2>Dispensar Documentos</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <p class="hint" style="margin:0 0 12px"><b>${esc(it.Fornecedor || "—")}</b> · ${esc(it.Title || "")} · ${esc(fmtBRL(capValorEfetivo(it)))}${it.DataPagamento ? ` · pago em ${esc(fmtDate(it.DataPagamento))}` : ""}<br>Use quando o pagamento não tem NF ou cobrança (ex.: transferência de um acordo). O comprovante continua exigido.</p>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin:0 0 12px">${tipos.map(t => `<label class="chk"><input type="checkbox" class="ctbDispT" value="${t}" ${d && d.t.includes(t) ? "checked" : ""} ${pode ? "" : "disabled"}> ${t === "Boleto" ? "Cobrança / guia" : "Nota fiscal (NF)"} não se aplica</label>`).join("")}</div>
+      <div class="field"><label for="ctbDispM">Motivo</label><input id="ctbDispM" list="ctbDispML" maxlength="160" value="${esc((d && d.m) || "")}" placeholder="Ex.: Pagamento de acordo por transferência" ${pode ? "" : "disabled"}><datalist id="ctbDispML">${CTB_DISP_MOTIVOS.map(m => `<option value="${esc(m)}">`).join("")}</datalist></div>
+      ${d && d.por ? `<p class="sup" style="margin:8px 0 0">Dispensado por ${esc(d.por)}${d.em ? " em " + esc(new Date(d.em).toLocaleString("pt-BR")) : ""}.</p>` : ""}
+      ${pode ? "" : `<p class="sup" style="margin:8px 0 0">${!ctbPrepEdita() ? "Seu acesso à CAP é só de leitura." : CAP_STATE.cols ? "Falta criar as colunas da preparação: Sistema › Configuração › Executar tudo." : "Não foi possível conferir as colunas da lista Lançamentos agora; recarregue a CAP."}</p>`}
+      <div class="err-msg" id="ctbDispErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>
+    </div>
+    <div class="modal-foot">${d && pode ? `<button class="btn" style="margin-right:auto" onclick="ctbPrepDispSalvar(${jsArg(id)}, true)">Retirar a Dispensa</button>` : ""}<button class="btn" onclick="closeModal()">Cancelar</button>${pode ? `<button class="btn primary" onclick="ctbPrepDispSalvar(${jsArg(id)})">Salvar</button>` : ""}</div>`);
+};
+window.ctbPrepDispSalvar = async (id, retirar) => {
+  const it = ctbPrepItem(id); if (!it || !ctbPrepPode(true)) return;
+  const err = m => { const e = $("ctbDispErr"); if (e) { e.style.display = "block"; e.textContent = m; } };
+  let v = null;
+  if (!retirar) {
+    const t = [...document.querySelectorAll(".ctbDispT:checked")].map(x => x.value), m = String(($("ctbDispM") || {}).value || "").trim();
+    if (!t.length) { err("Marque o que não se aplica (NF e/ou cobrança) ou use Retirar a Dispensa."); return; }
+    if (m.length < 5) { err("Escreva o motivo da dispensa (o contador vê esse texto no roteiro)."); return; }
+    v = JSON.stringify({ t, m, por: ctbQuem(), em: new Date().toISOString() });
+  }
+  if (await ctbPrepGravar(it, { DocsDispensados: v }, retirar ? "Dispensa retirada" : "Dispensa gravada")) { closeModal(); CAP_STATE._pendMemo = null; }
+  if (CAP_STATE.view === "contab" && $("capBody")) paintCAP();
+};
+window.ctbPrepAbrir = () => { const U = capCtbUI(); U.prep = true; CTB_PREP.filtro = ""; paintCAP(); try { window.scrollTo({ top: 0 }); } catch (e) {} };
+window.ctbPrepSair = () => { capCtbUI().prep = false; paintCAP(); };
+window.ctbPrepFiltro = v => { CTB_PREP.filtro = v; paintCAP(); };
+
+/* ---- 6 · a página ---- */
+function ctbPrepHtml() {
+  const U = capCtbUI(), Up = Object.assign({}, U, { base: "pag" }), D = capCtbDados(Up), edita = ctbPrepEdita(), cols = ctbPrepCols();
+  const contas = []; D.pac.pastas.forEach(p => p.contas.forEach(it => contas.push(it)));
+  const ordem = ctbOrdemExtrato(contas), num = new Map(ordem.map((it, i) => [String(it._id), i + 1]));
+  const comps = []; const atual = capCompOf(new Date()); for (let i = -14; i <= 1; i++) comps.push(capCompAdd(atual, i));
+  if (!comps.includes(U.comp)) comps.push(U.comp); comps.sort().reverse();
+  const pago = it => it.Status === "Pago" && !!it.DataPagamento, din = it => /^dinheiro$/i.test(ctbBancoDe(it));
+  const isentas = ctbIsentasPagas(D, ordem), pagos = ordem.filter(pago).concat(isentas), abertos = ordem.filter(it => !pago(it));
+  const noBanco = pagos.filter(it => !din(it)), noCaixa = pagos.filter(din);
+  const falta = it => capDocsFaltando(it).length > 0;
+  const docsAll = ordem.concat(isentas).flatMap(it => anexosDe(it)), nImp = docsAll.filter(ctbImpDe).length;
+  const F = CTB_PREP.filtro, passa = it => !F || (F === "conf" ? pago(it) && !ctbConfDe(it) : F === "falta" ? falta(it) : true);
+  const kp = (lbl, val, sub, cls) => `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(val)}</div><div class="sub">${esc(sub)}</div></div>`;
+  const nConfB = noBanco.filter(ctbConfDe).length, nConfC = noCaixa.filter(ctbConfDe).length, nFalta = ordem.filter(falta).length;
+  const fech = typeof ctbFechMes === "function" && ctbFechMes(U.comp);
+  const chip = (it, a) => { const on = ctbImpDe(a), nm = a.n || "";
+    return `<span class="ctbp-doc ${on ? "on" : "off"}"><button type="button" class="ctbp-imp" data-k="i:${esc(String(it._id))}:${esc(String(a.id))}" ${edita ? `onclick="ctbPrepImp(${jsArg(it._id)}, ${jsArg(a.id)})"` : "disabled"} title="${on ? "Vai para a impressão — clique para tirar" : "Fora da impressão — clique para incluir"} · ${esc(nm)}" aria-pressed="${on}"><span class="ctbp-box" aria-hidden="true">${on ? "✓" : ""}</span>${esc(docRot(a.t || "Outro"))}</button><button type="button" class="ctbp-ver" onclick="ctbPrepVer(${jsArg(it._id)}, ${jsArg(a.id)})" title="Abrir ${esc(nm)}" aria-label="Abrir ${esc(nm)}">↗</button></span>`; };
+  const upl = (it, t, rot, cls) => edita ? `<label class="ctbp-add ${cls || ""}" title="Anexar ${esc(docRot(t))}">${esc(rot)}<input type="file" class="ctbp-file" data-k="f:${esc(String(it._id))}:${esc(t)}" data-id="${esc(String(it._id))}" data-tipo="${esc(t)}" accept=".pdf,.jpg,.jpeg,.png,.webp,.xml,.heic" multiple></label>` : "";
+  const docsCel = it => {
+    const fl = capDocsFaltando(it), d = ctbDispDe(it), k = String(it._id);
+    if (CTB_PREP.up.has(k)) return `<span class="sup">Enviando o arquivo…</span>`;
+    const pode = edita && cols, exigeBase = CTB_DISP_TIPOS.some(t => (CAP_DOC_EXIGE[capTipoDoc(it)] || CAP_DOC_EXIGE.desp).includes(t)) && capCtbTipo(it) === "desp";
+    return `<div class="ctbp-docs">${anexosDe(it).map(a => chip(it, a)).join("")}
+      ${fl.map(t => upl(it, t, "+ " + docRot(t), "falta")).join("")}
+      ${d ? `<button type="button" class="ctbp-disp" onclick="ctbPrepDispensa(${jsArg(k)})" title="${esc(d.m || "")}">${esc(ctbDispRot(d))}</button>` : ""}
+      ${!d && exigeBase && fl.some(t => t !== "Comprovante") && pode ? `<button type="button" class="ctbp-lnk" onclick="ctbPrepDispensa(${jsArg(k)})">Dispensar</button>` : ""}
+      ${capCtbTipo(it) === "isenta" && !anexosDe(it).length ? `<span class="sup">Isenta (N/A): não exige documento</span>` : ""}
+      ${upl(it, "Outro", "+ Outro", "")}</div>`;
+  };
+  const confCel = it => { const c = ctbConfDe(it), mud = ctbConfMudou(it), dis = !edita || !cols ? "disabled" : "";
+    return `<label class="chk ctbp-conf" title="${c ? `Conferido por ${esc(c.por || "—")}${c.em ? " em " + esc(new Date(c.em).toLocaleString("pt-BR")) : ""}` : din(it) ? "Marque ao conferir no boletim do Fluxo de Caixa" : "Marque ao conferir esta linha no extrato do banco"}"><input type="checkbox" data-k="c:${esc(String(it._id))}" ${c ? "checked" : ""} ${dis} onchange="ctbPrepConf(${jsArg(it._id)}, this.checked)"><span>${c ? `${c.em ? esc(fmtDate(c.em)) : "OK"}<small>${esc(String(c.por || "").split(" ")[0])}</small>` : mud ? `Conferir de novo<small class="ctbp-mud">o pagamento mudou</small>` : "Conferir"}</span></label>`; };
+  const linha = it => `<tr class="${ctbConfDe(it) ? "ok" : ""}"><td class="right sup">${num.get(String(it._id)) || "—"}</td><td class="nw">${it.DataPagamento ? esc(fmtDate(it.DataPagamento)) : "—"}</td>
+      <td><div class="desc"><button type="button" class="ctb-lnk" onclick="capEdit(${jsArg(it._id)})" title="Abrir o lançamento">${esc(it.Fornecedor || "—")}</button></div><div class="sup">${esc(it.Title || "")}${capEhTransf(it) ? " · transferência entre contas" : ""}</div></td>
+      <td class="right nw money">${esc(fmtBRL(capValorEfetivo(it)))}</td><td>${docsCel(it)}</td><td class="nw">${pago(it) ? confCel(it) : `<span class="sup">${esc(capCtbSit(it))}</span>`}</td></tr>`;
+  const cabDe = col => `<thead><tr><th class="r" style="width:40px">Nº</th><th>Pagamento</th><th>Fornecedor / Descrição</th><th class="r">Valor Pago</th><th>Documentos <span class="sup">(✓ vai para a impressão)</span></th><th>${col}</th></tr></thead>`, cab = cabDe("Extrato");
+  const bancos = ctbDinUlt([...new Set(pagos.map(ctbBancoDe))]);
+  const cardBanco = bn => {
+    const its = pagos.filter(it => ctbBancoDe(it) === bn), dinh = /^dinheiro$/i.test(bn), nc = its.filter(ctbConfDe).length, tot = its.reduce((s, it) => s + capValorEfetivo(it), 0);
+    const dias = [...new Set(its.map(it => ymd(it.DataPagamento)))]; let rows = "";
+    dias.forEach(dd => { const doDia = its.filter(it => ymd(it.DataPagamento) === dd), vis = doDia.filter(passa); if (!vis.length) return;
+      const faltam = doDia.filter(it => !ctbConfDe(it));
+      rows += vis.map(linha).join("") + `<tr class="ctbp-dia"><td></td><td colspan="2"><b>Total do dia ${esc(fmtDate(dd))}</b> <span class="sup">· ${doDia.length} lançamento(s)${faltam.length ? ` · ${faltam.length} a conferir` : " · todos conferidos"}</span></td><td class="right nw money"><b>${esc(fmtBRL(doDia.reduce((s, it) => s + capValorEfetivo(it), 0)))}</b></td><td colspan="2" style="text-align:right">${faltam.length && edita && cols ? `<button type="button" class="btn sm ghost" onclick="ctbPrepConfDia(${jsArg(faltam.map(it => it._id).join(","))})">Marcar o dia como conferido</button>` : ""}</td></tr>`; });
+    if (!rows) return "";
+    return `<div class="cap-card ctbp-card"><div class="cap-card-h"><h3>${esc(dinh ? "Dinheiro (Caixa da Matriz)" : bn)}</h3><span class="cap-card-s">${its.length} lançamento(s) · ${esc(fmtBRL(tot))} · <b>${nc} de ${its.length}</b> conferido(s)${dinh ? " no boletim do Fluxo de Caixa (não aparece no extrato)" : " no extrato"}</span></div>
+      <div class="table-wrap"><table class="cap-table ctbp-t">${dinh ? cabDe("Boletim") : cab}<tbody>${rows}</tbody></table></div></div>`;
+  };
+  const abVis = abertos.filter(passa);
+  const cardAbertos = abVis.length ? `<div class="cap-card ctbp-card"><div class="cap-card-h"><h3>Sem Pagamento Registrado</h3><span class="cap-card-s">${abertos.length} lançamento(s) — não devem aparecer no extrato do mês</span></div><div class="table-wrap"><table class="cap-table ctbp-t">${cab}<tbody>${abVis.map(linha).join("")}</tbody></table></div></div>` : "";
+  const corpo = bancos.map(cardBanco).join("") + cardAbertos;
+  const fChip = (v, l, n) => `<button type="button" class="${F === v ? "on" : ""}" aria-pressed="${F === v}" onclick="ctbPrepFiltro('${v}')">${esc(l)}${n != null ? ` <span class="n">${n}</span>` : ""}</button>`;
+  const zip = !!CAP_STATE._zipando;
+  return `${capViewsBar()}
+    <div class="ctb-bar ctb-bar1 ctbp-bar">
+      <div class="row"><button type="button" class="btn sm ghost" onclick="ctbPrepSair()">← Contabilidade</button><span class="lbl">Mês</span><select id="ctbPrepComp" class="lanc-in lanc-sel ctb-sel" ${zip ? "disabled" : ""} onchange="capCtbSet('comp', this.value)">${comps.map(c => `<option value="${esc(c)}" ${c === U.comp ? "selected" : ""}>${esc(compLabel(c))} · ${esc(ctbMes(c))}</option>`).join("")}</select><span class="sup">saídas por data de pagamento, como no extrato</span></div>
+      <div class="row acts"><button class="btn" ${zip || !ordem.length ? "disabled" : ""} onclick="ctbPrepImprimir('nenhum')" title="Relatório Geral e roteiro de conferência, sem os documentos">Imprimir Relatório e Roteiro</button><button class="btn primary" id="ctbTudoBtn" ${zip || !ordem.length ? "disabled" : ""} onclick="ctbPrepImprimir('marcados')" title="Relatório Geral, roteiro e só os documentos marcados, na ordem do extrato">${zip ? "Montando…" : `Imprimir Pacote (${nImp} documento${nImp === 1 ? "" : "s"})`}</button></div>
+    </div>
+    ${!cols ? `<div class="import-help ctbp-aviso">${CAP_STATE.cols ? "Para marcar a conferência com o extrato e dispensar NF/cobrança, falta criar duas colunas na lista Lançamentos: <b>Sistema › Configuração › Executar tudo</b> (uma vez só). A escolha dos documentos da impressão e o + Anexar já funcionam." : "Não foi possível conferir as colunas da lista Lançamentos agora; a conferência e a dispensa ficam travadas até recarregar a CAP."}</div>` : ""}
+    ${(D.avisos || []).map(a => `<div class="ctb-alerta ctbp-aviso">${esc(a)}</div>`).join("")}
+    ${!edita ? `<div class="import-help ctbp-aviso">Seu acesso à CAP é só de leitura: dá para ver a preparação e imprimir, mas não marcar nem anexar.</div>` : ""}
+    ${fech ? `<div class="import-help ctbp-aviso">${esc(compLabel(U.comp))} está fechado na Contabilidade. A conferência, os documentos e as dispensas continuam livres.</div>` : ""}
+    <div class="cap-kpis cap-kpis-5 ctbp-kpis">
+      ${kp("Conferidos no extrato", `${nConfB} de ${noBanco.length}`, noBanco.length ? `${fmtBRL(ctbSoma(noBanco.filter(ctbConfDe)))} de ${fmtBRL(ctbSoma(noBanco))}` : "nenhum pagamento por banco no mês", nConfB === noBanco.length && noBanco.length ? "pago" : "")}
+      ${noCaixa.length ? kp("Dinheiro no boletim", `${nConfC} de ${noCaixa.length}`, fmtBRL(ctbSoma(noCaixa))) : ""}
+      ${kp("Falta documento", String(nFalta), nFalta ? "anexe ou dispense (NF/cobrança)" : "todos completos", nFalta ? "venc" : "pago")}
+      ${kp("Vão para a impressão", `${nImp} de ${docsAll.length}`, "documento(s) marcados ✓")}
+    </div>
+    <div class="ctbp-filtros seg-tabs">${fChip("", "Todos", ordem.length)}${fChip("conf", "A conferir", pagos.filter(it => !ctbConfDe(it)).length)}${fChip("falta", "Falta documento", nFalta)}</div>
+    <p class="hint ctbp-dica">Prepare ao longo do mês: confira cada linha no extrato e marque <b>Conferir</b>; clique num documento para tirá-lo ou incluí-lo na impressão (o padrão é comprovante e NF); <b>+ Anexar</b> envia o que falta; <b>Dispensar</b> serve para o pagamento sem NF ou cobrança (ex.: transferência de um acordo). O Nº é o mesmo do roteiro e da faixa nos documentos impressos.</p>
+    ${corpo || `<div class="cap-card"><p class="cap-muted">${ordem.length ? "Nada neste filtro." : `Nenhum pagamento registrado em ${esc(ctbMesAno(U.comp))}.`}</p></div>`}`;
+}
+
+/* ---- 7 · menu da Contabilidade numa linha + a página ---- */
+{ const p0 = paintCapContab;
+  paintCapContab = function (body) {
+    const U = capCtbUI(), naDiv = typeof DIV !== "undefined" && DIV.on;   /* revisão (2): o Preparar Pacote é da CAP; nas Dívidas fica de fora */
+    if (U.prep && !naDiv) {
+      if (typeof OBR_STATE !== "undefined" && !OBR_STATE.items.length && !CAP_STATE._obrTried) { CAP_STATE._obrTried = true; loadObr().then(() => { if (CAP_STATE.view === "contab" && !CAP_STATE._zipando) paintCAP(); }).catch(() => {}); }
+      body.innerHTML = ctbPrepHtml();
+      if (!body._ctbPrepWire) { body._ctbPrepWire = true; body.addEventListener("change", e => { const t = e.target; if (t && t.classList && t.classList.contains("ctbp-file") && capCtbUI().prep) ctbPrepAnexar(t); }); }
+      try { capCtbCarregarCx(); } catch (e) {}
+      return;
+    }
+    const r = p0.apply(this, arguments);
+    try {
+      const bar = body.querySelector(".ctb-bar"), acts = bar && bar.querySelector(".row.acts"), r1 = bar && bar.querySelector(".row:not(.acts)");
+      if (bar && acts && r1 && !bar.classList.contains("ctb-bar1") && !naDiv) {
+        acts.querySelectorAll("button").forEach(b => { if (b.id === "ctbTudoBtn" || /capCtbImprimir\(\)/.test(b.getAttribute("onclick") || "")) b.remove(); });
+        const z = $("ctbZipBtn"); if (z) z.classList.remove("primary");
+        const pb = document.createElement("button"); pb.type = "button"; pb.className = "btn primary"; pb.id = "ctbPrepBtn"; pb.textContent = "Preparar Pacote";
+        pb.title = "Conferir com o extrato, completar comprovantes e escolher o que vai para a impressão — ao longo do mês"; pb.disabled = !!CAP_STATE._zipando; pb.onclick = () => window.ctbPrepAbrir();
+        acts.appendChild(pb); bar.classList.add("ctb-bar1");
+      }
+    } catch (e) {}
+    return r;
+  };
+  window.paintCapContab = paintCapContab;
+}
+
+/* revisão (11): sair da aba Contabilidade fecha a preparação */
+{ const s0 = window.capSetView; window.capSetView = function (v) { if (v !== "contab") { try { capCtbUI().prep = false; } catch (e) {} } return s0.apply(this, arguments); }; }
+{ const pc = paintCAP; paintCAP = function () { if (CAP_STATE.view !== "contab") { try { if (CAP_STATE.ctb) CAP_STATE.ctb.prep = false; } catch (e) {} } return pc.apply(this, arguments); }; window.paintCAP = paintCAP; }
+
+/* ---- 8 · no formulário do lançamento: aviso da dispensa ---- */
+{ const w0 = capWireForm;
+  capWireForm = function (isNew) {
+    const r = w0.apply(this, arguments);
+    try { const it = CAP_STATE.editing, d = !isNew && it ? ctbDispDe(it) : null, dc = $("capDocs");
+      if (d && dc && !$("ctbDispNota")) dc.insertAdjacentHTML("afterend", `<p class="hint" id="ctbDispNota" style="margin:6px 0 0">${esc(ctbDispRot(d)[0].toUpperCase() + ctbDispRot(d).slice(1))} por ${esc(d.por || "—")}${d.em ? " em " + esc(fmtDate(d.em)) : ""}: ${esc(d.m || "—")}. Para mudar: Contabilidade › Preparar Pacote.</p>`); } catch (e) {}
+    return r;
+  };
+  window.capWireForm = capWireForm;
+}
+
+(function () {
+  const st = document.createElement("style"); st.id = "erp-v01449";
+  st.textContent = `.ctb-bar.ctb-bar1{flex-wrap:nowrap}.ctb-bar.ctb-bar1 .row{flex-wrap:nowrap}.ctb-bar.ctb-bar1 .row.acts{margin-left:auto;width:auto}
+  .ctb-bar.ctb-bar1 .btn{white-space:nowrap}
+  @media (max-width:1180px){.ctb-bar.ctb-bar1,.ctb-bar.ctb-bar1 .row{flex-wrap:wrap}.ctb-bar.ctb-bar1 .row.acts{margin-left:0}}
+  .ctbp-aviso{margin:0 0 12px;padding:10px 14px;border-radius:var(--radius);font-size:13px}
+  .ctbp-kpis{margin-bottom:12px}
+  .ctbp-filtros{display:inline-flex;margin:0 0 8px}.ctbp-filtros .n{font-weight:700;margin-left:4px;opacity:.75}
+  .ctbp-dica{margin:4px 0 14px;font-size:12.5px;color:var(--ink-3);max-width:1100px}
+  .ctbp-t th,.ctbp-t td{text-align:left;vertical-align:middle}.ctbp-t th.r,.ctbp-t td.right{text-align:right}.ctbp-t tr.ok td{background:#F4FAF6}
+  .ctbp-t tr.ctbp-dia td{background:#F5F7FA;border-top:1px solid var(--line);font-size:12.5px;color:var(--navy)}
+  .ctbp-docs{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .ctbp-doc{display:inline-flex;align-items:stretch;border:1px solid var(--navy);border-radius:6px;overflow:hidden;font-size:12px}
+  .ctbp-doc.off{border-style:dashed;border-color:#B6BDC8}
+  .ctbp-doc .ctbp-imp{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border:0;background:#EEF1F8;color:var(--navy);font:inherit;font-weight:600;cursor:pointer}
+  .ctbp-doc.off .ctbp-imp{background:#fff;color:#7A828E;text-decoration:line-through}
+  .ctbp-doc .ctbp-imp:disabled{cursor:default}
+  .ctbp-box{display:inline-grid;place-items:center;width:13px;height:13px;border:1.5px solid currentColor;border-radius:3px;font-size:10px;line-height:1}
+  .ctbp-doc .ctbp-ver{border:0;border-left:1px solid #D5DAE2;background:#fff;color:var(--ink-2);padding:0 7px;cursor:pointer;font-size:12px}
+  .ctbp-doc .ctbp-ver:hover{color:var(--navy);background:#F3F5F9}
+  .ctbp-add{display:inline-flex;align-items:center;padding:3px 8px;border:1px dashed #B6BDC8;border-radius:6px;font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer;background:#fff}
+  .ctbp-add:hover{border-color:var(--navy);color:var(--navy)}
+  .ctbp-add{position:relative}.ctbp-add input[type=file]{position:absolute;inset:0;width:1px;height:1px;opacity:0;overflow:hidden}.ctbp-add:focus-within{outline:2px solid var(--navy);outline-offset:1px}
+  .ctbp-conf input{width:18px;height:18px}.ctbp-mud{color:#B3271E!important}
+  .ctbp-add.falta{border:1px solid #E3A08F;background:#FDF1EE;color:#B3271E}
+  .ctbp-disp{padding:3px 8px;border:1px solid #D5DAE2;border-radius:6px;background:#F5F6F8;color:var(--ink-2);font-size:12px;cursor:pointer}
+  .ctbp-lnk{border:0;background:none;padding:0 2px;color:var(--navy);font-size:12px;text-decoration:underline;cursor:pointer}
+  .ctbp-conf{white-space:nowrap}.ctbp-conf span{display:inline-flex;flex-direction:column;line-height:1.15;font-weight:600}.ctbp-conf small{font-weight:400;color:var(--ink-3);font-size:11px}
+  @media print{.ctbp-bar,.ctbp-filtros,.ctbp-dica{display:none!important}}`;
+  document.head.appendChild(st);
+})();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -49561,6 +49932,8 @@ CONFIG.version = "v0.14.45";   /* CAP › Colaboradores: pagamentos internos aos
 CONFIG.version = "v0.14.46";   /* menu de departamentos no topo (opção B): nomes completos com sublinhado laranja a partir de 1280 px; siglas abaixo; busca como ícone de 1280 a 1600 px */
 CONFIG.version = "v0.14.47";   /* inspeção ponta a ponta Financeiro × DRE: conflito de gravação na CAP, fornecedores/códigos preservados, importação do caixa, diferença do boletim, fechamento do mês relê, dívidas agregadas na DRE/CAPEX (Q10), DRE = CAPEX, KPIs */
 CONFIG.version = "v0.14.48";   /* fechamento da CAP: Imprimir Tudo (relatório + roteiro do extrato + documentos), lançamento de colaborador com cadastro interno e campos do RH, sem Nº da NF nos lançamentos novos */
+CONFIG.version = "v0.14.48.1";   /* Fluxo de Caixa: data do boletim centralizada no campo */
+CONFIG.version = "v0.14.49";   /* Contabilidade: menu numa linha e Preparar Pacote (conferência com o extrato, documentos da impressão, + Anexar, dispensa de NF/cobrança com motivo) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

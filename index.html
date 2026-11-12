@@ -49236,6 +49236,281 @@ const capPagaConta = it => !!it && !(typeof capEhTransf === "function" && capEhT
 
 /* revisão (F-M5): ligar o Modo demo limpa o erro de leitura (senão a tela ficaria em "Sem dados do caixa" com a massa demo carregada) */
 { const t0 = window.cxDemoToggle; if (t0) window.cxDemoToggle = function () { try { if (!CX.demo) CX.erro = ""; } catch (e) {} return t0.apply(this, arguments); }; }   /* 2ª revisão: só ao ligar; ao desligar com a leitura falhando, o aviso continua */
+/* =====================================================================
+   v0.14.48 · Fechamento da CAP (pedido do Rafael de 12/11, 11:51)
+   1. Contabilidade › "Imprimir Tudo": um PDF só com o Relatório Geral, o Roteiro de conferência com o extrato bancário e,
+      em seguida, cada documento de cada lançamento (Comprovante, NF, Cobrança/Guia, outros), na ordem do roteiro
+      (banco › data do pagamento), com uma faixa de identificação em cada página — para a pasta física do contador e a
+      conferência com o extrato. O pacote .zip, o Excel e o A4 continuam disponíveis.
+   2. CAP › Colaboradores / lançamento de Funcionário: CPF de colaborador do RH aparece como "Colaborador do RH — cadastro
+      interno válido" (não "sem cadastro"); centro de custo, estabelecimento (CNPJ da empresa no RH), categoria e
+      subcategoria vêm preenchidos quando vazios; "Nº do parcelamento" some para Funcionário.
+   3. "Nº da NF" sai dos lançamentos novos (e da edição/pagamento quando está vazio). O número já gravado continua visível.
+   Decisões de 12/11: conflito de gravação continua só recusando; "Vencido" automático continua na leitura da CAP.
+   ===================================================================== */
+
+/* ---------- 3 · Nº da NF ---------- */
+function capNfEsconder(id, sempre) {
+  const el = $(id); if (!el) return;
+  const fld = el.closest(".field"); if (!fld) return;
+  const st = $("fSt"), aguarda = id === "fNF" && st && st.value === "Aguardando NF";   /* revisão: "Aguardando NF" sai desse status ao digitar o número — o campo fica */
+  fld.style.display = !aguarda && (sempre || !String(el.value || "").trim()) ? "none" : "";
+}
+{ const p0 = window.capPagar;
+  if (p0) window.capPagar = function () { const r = p0.apply(this, arguments); try { capNfEsconder("pgNF", false); } catch (e) {} return r; };
+}
+
+/* ---------- 2 · lançamento de Funcionário ---------- */
+const COLAB_FORM = { seq: 0 };
+function colabPorCpfOuNome(cpf, nome) {
+  const fs = COLAB.funcs || [], d = colabDig(cpf), n = normName(nome || "");
+  let f = d.length === 11 ? fs.find(x => colabCpf(x) === d) : null;
+  let por = f ? "cpf" : "";
+  if (!f && n) { const m = fs.filter(x => normName(x.Title) === n); if (m.length === 1) { f = m[0]; por = "nome"; } }
+  return f ? { f, por } : null;
+}
+function colabEstabOpcao(f) {
+  const sel = $("fEstab"), d = colabDig(f && f.CNPJ); if (!sel || d.length !== 14) return "";
+  const o = [...sel.options].find(x => colabDig(x.value) === d); return o ? o.value : "";
+}
+function colabMarcaAuto(el, txt) {
+  if (!el) return; el.classList.add("sug-campo"); el.title = txt;
+  const fld = el.closest(".field"); if (!fld) return;
+  let h = fld.querySelector(".hint.colab-auto"); if (!h) { h = document.createElement("div"); h.className = "hint colab-auto"; fld.appendChild(h); }
+  h.textContent = txt;
+  const limpa = () => { el.classList.remove("sug-campo"); const x = fld.querySelector(".hint.colab-auto"); if (x) x.remove(); el.removeEventListener("change", limpa); el.removeEventListener("input", limpa); };
+  setTimeout(() => { el.addEventListener("change", limpa); el.addEventListener("input", limpa); }, 0);
+}
+async function colabFormChecar(isNew) {
+  const tipo = $("fTipoFav"), doc = $("fCNPJ"), forn = $("fForn"), hint = $("fCNPJHint");
+  const parc = $("fNumParc"), parcFld = parc && parc.closest(".field");
+  const ehFunc = !!(tipo && tipo.value === "Funcionário");
+  if (parcFld) parcFld.style.display = ehFunc && !String(parc.value || "").trim() ? "none" : "";
+  if (!ehFunc) {   /* revisão: saiu de Funcionário — o que o RH preencheu sozinho (e não foi mexido) volta a vazio */
+    document.querySelectorAll("#modal .sug-campo").forEach(el => { const fld = el.closest(".field"), h = fld && fld.querySelector(".hint.colab-auto"); if (!h) return; if (el.id === "fCat") { el.value = ""; el.dispatchEvent(new Event("change", { bubbles: true })); const sb = $("fSub"); if (sb && sb.value === "Salários") sb.value = ""; } else if (el.id !== "fEstab") el.value = ""; el.classList.remove("sug-campo"); h.remove(); });
+    return;
+  }
+  if (!doc || !hint) return;
+  const seq = ++COLAB_FORM.seq;
+  try { if (!COLAB_FORM.prom) COLAB_FORM.prom = colabFuncsLer(false).finally(() => { COLAB_FORM.prom = null; }); await COLAB_FORM.prom; } catch (e) {}   /* chamadas simultâneas (tipo + CPF) esperam a mesma leitura */
+  if (seq !== COLAB_FORM.seq || !$("fCNPJ")) return;
+  const d = colabDig(doc.value), achou = colabPorCpfOuNome(doc.value, forn ? forn.value : "");
+  if (typeof fornByDoc === "function" && d && fornByDoc(doc.value)) return;   /* há cadastro em Terceiros com esse documento: vale a mensagem de sempre */
+  const nomeDig = forn ? normName(forn.value) : "";
+  if (achou && achou.por === "cpf" && nomeDig && nomeDig !== normName(achou.f.Title)) {   /* revisão: CPF de um colaborador com o nome de outro — avisa e não preenche nada */
+    hint.textContent = `Atenção: este CPF é de ${achou.f.Title} no RH, mas o favorecido é ${forn.value.trim()} — confira o colaborador.`; hint.className = "hint warn"; return;
+  }
+  if (achou && (achou.por === "cpf" || !d)) {
+    const f = achou.f;
+    hint.textContent = `Colaborador do RH — cadastro interno válido · ${f.Title}${f.Matricula ? ` · mat. ${f.Matricula}` : ""}${f.Situacao && f.Situacao !== "Ativo" ? ` · ${f.Situacao}` : ""}`;
+    hint.className = f.Situacao === "Desligado" ? "hint warn" : "hint ok";
+    if (!isNew) return;   /* edição: não preenche nada sozinho */
+    if (forn && !forn.value.trim()) { forn.value = f.Title; forn.dispatchEvent(new Event("change", { bubbles: true })); }
+    const cc = $("fCC");
+    if (cc && !cc.value.trim() && (f.Departamento || f.Setor)) { cc.value = f.Departamento || f.Setor; cc.dispatchEvent(new Event("input", { bubbles: true })); colabMarcaAuto(cc, "Do cadastro do colaborador no RH (troque se for outro centro de custo)"); }
+    const est = $("fEstab"), ov = colabEstabOpcao(f);
+    if (est && ov && est.value !== ov && !est.dataset.colabTocado) { est.value = ov; colabMarcaAuto(est, "CNPJ da empresa do colaborador no RH"); }
+    const cat = $("fCat"), sub = $("fSub");
+    if (cat && !cat.value && [...cat.options].some(o => o.value === "Pessoal")) {
+      cat.value = "Pessoal"; cat.dispatchEvent(new Event("change", { bubbles: true }));
+      if (sub && !sub.value.trim()) sub.value = "Salários";
+      colabMarcaAuto(cat, "Pagamento de colaborador: Pessoal › Salários (troque se for outra carteira: férias, 13º, FGTS…)");
+    }
+    const tl = $("fTipoL"); if (tl && !tl.value) tl.value = "Despesa";
+  } else if (d.length === 11 && docValido(d)) {
+    hint.textContent = !(COLAB.funcs || []).length ? "CPF válido · sem leitura de RH › Funcionários para conferir o colaborador."
+      : !colabCpfsConhecidos().size ? "CPF válido · sem acesso aos CPFs do RH (lista restrita) para conferir o colaborador."
+      : "CPF válido, mas não está em RH › Funcionários — confira o colaborador (ou cadastre no RH).";
+    hint.className = "hint warn";
+  }
+}
+{ const w0 = capWireForm;
+  capWireForm = function (isNew) {
+    const r = w0.apply(this, arguments);
+    try {
+      capNfEsconder("fNF", !!isNew);
+      { const st = $("fSt"); if (st) st.addEventListener("change", () => capNfEsconder("fNF", !!isNew)); }
+      const run = () => { colabFormChecar(!!isNew).catch(() => {}); };
+      ["fTipoFav", "fForn"].forEach(id => { const el = $(id); if (el) el.addEventListener("change", run); });
+      const doc = $("fCNPJ"); if (doc) { doc.addEventListener("input", run); doc.addEventListener("blur", () => setTimeout(run, 0)); }
+      const est = $("fEstab"); if (est) est.addEventListener("change", () => { est.dataset.colabTocado = "1"; });
+      setTimeout(run, 0);
+    } catch (e) {}
+    return r;
+  };
+  window.capWireForm = capWireForm;
+}
+
+/* ---------- 1 · Imprimir Tudo (Relatório Geral + roteiro do extrato + documentos) ---------- */
+ERP_LIBS.pdflib = { url: "https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js", global: "PDFLib" };
+const CTB_DOC_ORDEM = ["Comprovante", "NF", "Boleto"];   /* pedido do Rafael: comprovante, NF, guia/cobrança; depois os demais */
+function ctbBancoDe(it) { return String(it.Banco || "").trim() || (it.FormaPagamento === "Dinheiro" ? "Dinheiro" : "Sem banco informado"); }
+/* ordem do roteiro e da pasta física: pagos por banco › data do pagamento › fornecedor; depois os não pagos por vencimento */
+function ctbOrdemExtrato(contas) {
+  const pago = it => it.Status === "Pago" && !!it.DataPagamento;
+  const din = b => /^dinheiro$/i.test(b) ? 1 : 0;
+  const a = contas.filter(pago).sort((x, y) => din(ctbBancoDe(x)) - din(ctbBancoDe(y)) || ctbBancoDe(x).localeCompare(ctbBancoDe(y), "pt-BR") || ymd(x.DataPagamento).localeCompare(ymd(y.DataPagamento)) || String(x.Fornecedor || "").localeCompare(String(y.Fornecedor || ""), "pt-BR") || capValorEfetivo(x) - capValorEfetivo(y));
+  const b = contas.filter(it => !pago(it)).sort((x, y) => String(x.Vencimento ? ymd(x.Vencimento) : "9").localeCompare(String(y.Vencimento ? ymd(y.Vencimento) : "9")) || String(x.Fornecedor || "").localeCompare(String(y.Fornecedor || ""), "pt-BR"));
+  return a.concat(b);
+}
+async function ctbRoteiroPdf(D, ordem, nDocs) {
+  const J = await erpLib("jspdf"); await erpLib("jspdf_autotable");
+  const autoTable = window.autoTable, T = ctbPdfTxt, U = D.U;
+  if (!J || !J.jsPDF || typeof autoTable !== "function") throw new Error("biblioteca de PDF indisponível");
+  const doc = new J.jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true }), W = doc.internal.pageSize.getWidth(), M = 12;
+  const NAVY = [30, 33, 83], MUT = [107, 114, 128];
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...NAVY);
+  doc.text(T("Roteiro de conferência com o extrato bancário"), M, 16);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MUT);
+  doc.text(T(`${ctbPacoteNome()} · ${ctbMesAno(U.comp)} · saídas por ${U.base === "pag" ? "data de pagamento" : "competência"} · emitido em ${new Date().toLocaleString("pt-BR")} por ${vcQuemEmite()}`), M, 21.5);
+  doc.text(T(U.base === "pag" ? "Cada lançamento tem um nº de ordem; os documentos vêm depois deste roteiro na mesma ordem, com o nº na faixa do topo. Confira cada linha no extrato do banco e marque a coluna Extrato. O total do dia deve bater com as saídas do dia no extrato."
+    : "Visão por COMPETÊNCIA: o roteiro lista os lançamentos desta competência, pagos em qualquer data — os totais do dia podem não bater com o extrato. Para conferir com o extrato do mês, imprima com \"Saídas por: Data de pagamento\"."), M, 26, { maxWidth: W - 2 * M });
+  let y = 34;
+  const pagos = ordem.filter(it => it.Status === "Pago" && it.DataPagamento), abertos = ordem.filter(it => !(it.Status === "Pago" && it.DataPagamento));
+  const bancos = [...new Set(pagos.map(ctbBancoDe))];
+  const linha = it => [String(ordem.indexOf(it) + 1), fmtDate(it.DataPagamento || it.Vencimento), T(it.Fornecedor || "—"), T((it.Title || "—") + (capEhTransf(it) ? " (transferência entre contas)" : /^(cart[aã]o|cheque)/i.test(String(it.FormaPagamento || "")) ? ` (${it.FormaPagamento}: pode sair em outra data)` : "")), T(fmtBRL(capValorEfetivo(it))), String(nDocs.get(String(it._id)) || 0), ""];
+  const cab = [["Nº", "Pagto.", "Fornecedor", "Descrição", "Valor pago", "Docs", "Extrato"]];
+  const estilo = { styles: { fontSize: 7.4, cellPadding: 1.3, textColor: [27, 34, 48], lineColor: [201, 207, 216], lineWidth: 0.1 }, headStyles: { fillColor: [255, 255, 255], textColor: NAVY, fontStyle: "bold", lineWidth: { bottom: 0.4 }, lineColor: NAVY },
+    columnStyles: { 0: { cellWidth: 9, halign: "right" }, 1: { cellWidth: 17 }, 4: { cellWidth: 24, halign: "right" }, 5: { cellWidth: 10, halign: "center" }, 6: { cellWidth: 15, halign: "center" } }, margin: { left: M, right: M } };
+  bancos.forEach(bn => {
+    const its = pagos.filter(it => ctbBancoDe(it) === bn), body = [];
+    const dias = [...new Set(its.map(it => ymd(it.DataPagamento)))];
+    dias.forEach(dd => { const doDia = its.filter(it => ymd(it.DataPagamento) === dd); doDia.forEach(it => body.push(linha(it)));
+      body.push([{ content: T(`Total do dia ${fmtDate(dd)} · ${doDia.length} lançamento(s)`), colSpan: 4, styles: { fontStyle: "bold", textColor: NAVY } }, { content: T(fmtBRL(doDia.reduce((s, it) => s + capValorEfetivo(it), 0))), styles: { fontStyle: "bold", halign: "right" } }, "", ""]); });
+    if (y > 260) { doc.addPage(); y = 16; }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...NAVY);
+    const tot = its.reduce((s, it) => s + capValorEfetivo(it), 0);
+    doc.text(T(/^dinheiro$/i.test(bn) ? `Dinheiro (caixa da matriz) · ${its.length} lançamento(s) · ${fmtBRL(tot)} — não aparece no extrato; confira no boletim do Fluxo de Caixa` : `${bn} · ${its.length} lançamento(s) · ${fmtBRL(tot)}`), M, y);
+    autoTable(doc, Object.assign({ startY: y + 2, head: cab, body }, estilo));
+    y = doc.lastAutoTable.finalY + 8;
+  });
+  if (abertos.length) {
+    if (y > 260) { doc.addPage(); y = 16; }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...NAVY);
+    doc.text(T(`Sem pagamento registrado · ${abertos.length} lançamento(s) — não devem aparecer no extrato do mês`), M, y);
+    autoTable(doc, Object.assign({ startY: y + 2, head: [["Nº", "Venc.", "Fornecedor", "Descrição", "Valor", "Docs", "Situação"]], body: abertos.map(it => { const l = linha(it); l[1] = fmtDate(it.Vencimento); l[4] = T(fmtBRL(Number(it.Valor || 0))); l[6] = T(capCtbSit(it)); return l; }) }, estilo));
+  }
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(6.8); doc.setTextColor(...MUT); doc.text(T(`Transportadora Nova Macabu · Roteiro do extrato · ${ctbMesAno(U.comp)} · ERP NMB`), M, 290); doc.text(`Página ${i} de ${n}`, W - M, 290, { align: "right" }); }
+  return doc.output("arraybuffer");
+}
+async function ctbFalhasPdf(lista, U) {
+  const J = await erpLib("jspdf"); await erpLib("jspdf_autotable"); const T = ctbPdfTxt;
+  const doc = new J.jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(179, 39, 30); doc.text(T(`Documentos que não entraram na impressão (${lista.length})`), 12, 16);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(107, 114, 128); doc.text(T("Imprima estes à parte (abrem no lançamento, na CAP) ou baixe o pacote .zip da Contabilidade."), 12, 21.5);
+  window.autoTable(doc, { startY: 26, head: [["Nº", "Fornecedor", "Documento", "Motivo"]], body: lista.map(x => [String(x.n), T(x.forn), T(x.doc), T(x.motivo)]), styles: { fontSize: 7.6, cellPadding: 1.3 }, headStyles: { fillColor: [255, 255, 255], textColor: [30, 33, 83], fontStyle: "bold" }, margin: { left: 12, right: 12 } });
+  return doc.output("arraybuffer");
+}
+function ctbImgParaPng(blob, tipo) {   /* o navegador aplica a orientação da foto (EXIF) ao desenhar; fotos grandes são reduzidas a 2400 px */
+  return new Promise((ok, falha) => { const url = URL.createObjectURL(blob), im = new Image();
+    im.onload = () => { try { const k = Math.min(1, 2400 / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement("canvas"); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k); const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); c.toBlob(b => { URL.revokeObjectURL(url); b ? ok(b) : falha(new Error("imagem não convertida")); }, tipo || "image/png", 0.9); } catch (e) { URL.revokeObjectURL(url); falha(e); } };
+    im.onerror = () => { URL.revokeObjectURL(url); falha(new Error("formato de imagem não suportado pelo navegador")); }; im.src = url; });
+}
+function ctbTxtPdfLib(font, s) {   /* só o que a fonte padrão do PDF escreve (WinAnsi) */
+  let t = ctbPdfTxt(s).replace(/›/g, ">");
+  try { font.encodeText(t); return t; } catch (e) { return t.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\x20-\x7E]/g, "-"); }
+}
+window.capCtbImprimirTudo = async () => {
+  if (CAP_STATE._zipando) { toast("Aguarde: o pacote ou a impressão anterior ainda está sendo montado.", 5000); return; }
+  const U0 = Object.assign({}, capCtbUI());
+  const rot = t => { const b = $("ctbTudoBtn"); if (b) { b.textContent = t; b.disabled = true; } };
+  let janela = null; try { janela = window.open("", "_blank"); if (janela) janela.document.write("<p style='font:14px sans-serif;padding:24px'>Montando o PDF com o relatório e os documentos… esta aba recebe o arquivo quando ficar pronto.</p>"); } catch (e) { janela = null; }
+  CAP_STATE._zipando = true;
+  try {
+    rot("Preparando…");
+    const PL = await erpLib("pdflib"); if (!PL || !PL.PDFDocument) throw new Error("biblioteca de PDF (pdf-lib) indisponível");   /* revisão: antes de baixar os documentos */
+    rot("Relendo as contas…");
+    try { await loadCAP({ soLeitura: true }); } catch (e) { console.warn("imprimir tudo: releitura da CAP falhou", e); }
+    if (typeof OBR_STATE !== "undefined" && !OBR_STATE.items.length) { try { await loadObr(); } catch (e) {} }
+    if (capCtbVeCaixa() && typeof CX !== "undefined" && !CX.ready) { try { await loadCx(); } catch (e) {} }
+    const D = capCtbDados(U0);
+    if (!D.contas.length) { toast(`Nenhum lançamento em ${ctbMesAno(U0.comp)}.`, 5000); if (janela) janela.close(); return; }
+    const contas = []; D.pac.pastas.forEach(p => p.contas.forEach(it => contas.push(it)));
+    const ordem = ctbOrdemExtrato(contas), nDocs = new Map(), fila = [];
+    ordem.forEach((it, i) => {
+      const arqs = capCtbArquivos(it, D.pac.daConta.get(String(it._id)) || { pasta: "", rot: "" });
+      const pos = t => { const k = CTB_DOC_ORDEM.indexOf(t); return k < 0 ? 9 : k; };
+      arqs.sort((a, b) => pos(a.tipo) - pos(b.tipo)).forEach((f, j) => fila.push(Object.assign({ it, n: i + 1, ord: i * 100 + j }, f)));
+      nDocs.set(String(it._id), arqs.length);
+    });
+    const total = fila.length, R = new Map(D.contas.map(it => [String(it._id), { ok: [], falhas: [] }])), baixados = [];
+    let feitos = 0; rot(total ? `Baixando documentos 0/${total}…` : "Gerando o relatório…");
+    const fila2 = fila.slice();
+    const trab = async () => { while (fila2.length) { const t = fila2.shift(), r = R.get(String(t.it._id));
+      try { const f = await docBaixar(t.a); baixados.push(Object.assign({ blob: f.blob, mime: String(f.mime || f.blob.type || "").split(";")[0], nome: f.nome || t.a.n || "" }, t)); if (r) r.ok.push(t.base); }
+      catch (e) { if (r) r.falhas.push({ pasta: t.pasta, arq: t.base, erro: (e && e.message) || String(e) }); baixados.push(Object.assign({ erro: (e && e.message) || String(e) }, t)); }
+      feitos++; rot(`Baixando documentos ${feitos}/${total}…`); } };
+    await Promise.all([trab(), trab(), trab()]);
+    baixados.sort((a, b) => a.ord - b.ord);
+    rot("Montando o PDF…");
+    const out = await PL.PDFDocument.create(), font = await out.embedFont(PL.StandardFonts.Helvetica), bold = await out.embedFont(PL.StandardFonts.HelveticaBold);
+    const anexar = async bytes => { const src = await PL.PDFDocument.load(bytes, { ignoreEncryption: true }); if (src.isEncrypted) { const e = new Error("protegido"); e.protegido = true; throw e; } const pgs = await out.copyPages(src, src.getPageIndices()); pgs.forEach(p => out.addPage(p)); return pgs; };
+    /* revisão (bloqueio): PDF protegido (senha do dono, comum em comprovante de banco) é desenhado pelo leitor de PDF do navegador, página a página; com senha de abertura, vai para a lista do que não entrou */
+    const anexarComoImagem = async bytes => { const lib = await pontoPdfLib(), pdf = await lib.getDocument({ data: new Uint8Array(bytes) }).promise, pgs = [];
+      for (let i = 1; i <= pdf.numPages; i++) { const p = await pdf.getPage(i), vp = p.getViewport({ scale: 2 }), c = document.createElement("canvas"); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+        const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); await p.render({ canvasContext: x, viewport: vp }).promise;
+        const jb = await new Promise(r => c.toBlob(r, "image/jpeg", 0.9)), img = await out.embedJpg(await jb.arrayBuffer()), w = vp.width / 2, h = vp.height / 2, pg = out.addPage([w, h]);
+        pg.drawImage(img, { x: 0, y: 0, width: w, height: h }); pgs.push(pg); }
+      return pgs; };
+    const C = capCtbConferencia(D, R);
+    await anexar(await (await capCtbPdf(D, C, R)).arrayBuffer());
+    await anexar(await ctbRoteiroPdf(D, ordem, nDocs));
+    const falhas = [];
+    const faixa = (pg, t) => { const { width, height } = pg.getSize(), rot = (((pg.getRotation().angle || 0) % 360) + 360) % 360, sz = 7;
+      const Wd = rot % 180 ? height : width, Hd = rot % 180 ? width : height;   /* revisão: página girada (/Rotate) — a faixa fica no topo do que se vê */
+      const P = (u, v) => rot === 90 ? [Hd - v, u] : rot === 180 ? [width - u, height - v] : rot === 270 ? [v, Wd - u] : [u, v];
+      let t2 = ctbTxtPdfLib(font, t); while (t2.length > 20 && bold.widthOfTextAtSize(t2, sz) > Wd - 34) t2 = t2.slice(0, -2);
+      const w = Math.min(Wd - 24, bold.widthOfTextAtSize(t2, sz) + 10), [rx, ry] = P(12, Hd - 17), [tx, ty] = P(17, Hd - 13), ang = PL.degrees(rot);
+      pg.drawRectangle({ x: rx, y: ry, width: w, height: 12, rotate: ang, color: PL.rgb(1, 1, 1), borderColor: PL.rgb(0.118, 0.129, 0.325), borderWidth: 0.6, opacity: 0.92 });
+      pg.drawText(t2, { x: tx, y: ty, size: sz, font: bold, rotate: ang, color: PL.rgb(0.118, 0.129, 0.325) }); };
+    for (const b of baixados) {
+      const it = b.it, fz = String(it.Fornecedor || "—"), rotulo = `Nº ${b.n} · ${ctbBancoDe(it)}${it.DataPagamento ? " · pago " + fmtDate(it.DataPagamento) : " · vence " + fmtDate(it.Vencimento)} · ${fz.length > 42 ? fz.slice(0, 41) + "…" : fz} · ${fmtBRL(capValorEfetivo(it))} · ${docRot(b.tipo)}`;
+      const nm = b.nome || (b.a && b.a.n) || "", reg = motivo => falhas.push({ n: b.n, forn: it.Fornecedor || "—", doc: `${docRot(b.tipo)}${nm ? " (" + nm + ")" : ""}`, motivo });
+      if (b.erro) { reg("não baixou: " + b.erro); continue; }
+      const ext = docExt(b.nome), mime = b.mime;
+      try {
+        if (mime === "application/pdf" || ext === ".pdf") { const by = await b.blob.arrayBuffer(); let pgs;
+          try { pgs = await anexar(by); } catch (e) { if (!e.protegido) throw e; try { pgs = await anexarComoImagem(by); } catch (e2) { reg(/password|senha/i.test(String((e2 && (e2.name || e2.message)) || "")) ? "PDF com senha de abertura (abra no lançamento e imprima à parte)" : "PDF protegido que não pôde ser lido"); continue; } }
+          pgs.forEach(p => faixa(p, rotulo)); }
+        else if (/^image\//.test(mime) || /\.(jpe?g|png|webp|gif|bmp)$/.test(ext)) {
+          let img; const bytes = await b.blob.arrayBuffer();   /* eslint: bytes usado no PNG */
+          if (mime === "image/jpeg" || /\.jpe?g$/.test(ext)) img = await out.embedJpg(await (await ctbImgParaPng(b.blob, "image/jpeg")).arrayBuffer());   /* revisão: foto de celular na orientação certa */
+          else if (mime === "image/png" || ext === ".png") img = await out.embedPng(bytes);
+          else img = await out.embedPng(await (await ctbImgParaPng(b.blob)).arrayBuffer());
+          const A4 = [595.28, 841.89], pais = img.width > img.height, [pw, ph] = pais ? [A4[1], A4[0]] : A4, pg = out.addPage([pw, ph]);
+          const esc = Math.min((pw - 48) / img.width, (ph - 72) / img.height, 1.5), w = img.width * esc, h = img.height * esc;
+          pg.drawImage(img, { x: (pw - w) / 2, y: (ph - 30 - h) / 2, width: w, height: h }); faixa(pg, rotulo);
+        } else reg(`formato ${ext || mime || "desconhecido"} não imprimível (abra no lançamento)`);
+      } catch (e) { reg("arquivo não pôde ser lido como PDF/imagem: " + ((e && e.message) || e)); }
+    }
+    if (falhas.length) await anexar(await ctbFalhasPdf(falhas, U0));
+    out.setTitle(ctbPdfTxt(`${ctbNomeRel(U0)} + documentos`)); out.setCreator("ERP NMB");
+    const blob = new Blob([await out.save()], { type: "application/pdf" }), nome = `${ctbNomeRel(U0)} + documentos.pdf`;
+    const url = URL.createObjectURL(blob);
+    if (janela && !janela.closed) { try { janela.location.href = url; } catch (e) { capBaixarBlob(blob, nome); } } else capBaixarBlob(blob, nome);
+    setTimeout(() => URL.revokeObjectURL(url), 10 * 60e3);
+    const nOk = baixados.filter(x => !x.erro).length - falhas.filter(x => !/^não baixou/.test(x.motivo)).length;
+    toast(`PDF pronto: Relatório Geral + roteiro do extrato + ${nOk} documento(s) de ${ordem.length} lançamento(s)${falhas.length ? ` · ${falhas.length} documento(s) não entraram (lista na última página)` : ""}. Imprima pela aba que abriu${janela ? "" : " (o arquivo foi baixado)"}.`, 10000);
+  } catch (e) { toast("Não foi possível montar a impressão: " + e.message, 8000); try { if (janela && !janela.closed) janela.close(); } catch (e2) {} }
+  finally { CAP_STATE._zipando = false; if (CAP_STATE.view === "contab" && $("capBody")) paintCAP(); }
+};
+{ const p0 = paintCapContab;
+  paintCapContab = function (body) {
+    const r = p0.apply(this, arguments);
+    try {
+      const acts = document.querySelector("#capBody .ctb-bar .acts"); if (!acts || $("ctbTudoBtn")) return r;
+      const imp = [...acts.querySelectorAll("button")].find(b => /capCtbImprimir\(\)/.test(b.getAttribute("onclick") || ""));
+      const b = document.createElement("button"); b.className = "btn"; b.id = "ctbTudoBtn"; b.type = "button";
+      b.title = "Um PDF só: Relatório Geral, roteiro de conferência com o extrato e cada documento (comprovante, NF, cobrança/guia) dos lançamentos, na ordem do extrato";
+      b.textContent = CAP_STATE._zipando ? "Montando…" : "Imprimir Tudo (Relatório + Documentos)"; b.disabled = !!CAP_STATE._zipando;
+      b.onclick = () => window.capCtbImprimirTudo();
+      if (imp) imp.after(b); else acts.prepend(b);
+    } catch (e) {}
+    return r;
+  };
+  window.paintCapContab = paintCapContab;
+}
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -49285,6 +49560,7 @@ CONFIG.version = "v0.14.44";   /* menus em lista por padrão; inicial maiúscula
 CONFIG.version = "v0.14.45";   /* CAP › Colaboradores: pagamentos internos aos colaboradores do RH, carteiras padrão (salário, férias, 13º, FGTS…) e histórico; página própria cap.colab */
 CONFIG.version = "v0.14.46";   /* menu de departamentos no topo (opção B): nomes completos com sublinhado laranja a partir de 1280 px; siglas abaixo; busca como ícone de 1280 a 1600 px */
 CONFIG.version = "v0.14.47";   /* inspeção ponta a ponta Financeiro × DRE: conflito de gravação na CAP, fornecedores/códigos preservados, importação do caixa, diferença do boletim, fechamento do mês relê, dívidas agregadas na DRE/CAPEX (Q10), DRE = CAPEX, KPIs */
+CONFIG.version = "v0.14.48";   /* fechamento da CAP: Imprimir Tudo (relatório + roteiro do extrato + documentos), lançamento de colaborador com cadastro interno e campos do RH, sem Nº da NF nos lançamentos novos */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -51451,6 +51451,186 @@ window.paxBancoRelatorio = async () => {
   finally { const b2 = $("paxBRel"); if (b2) { b2.disabled = false; b2.textContent = "Exportar Relatório"; } }
 };
 { const h0 = paxBancoHtml; paxBancoHtml = function () { return h0.apply(this, arguments).replace('<input type="search" id="paxBQ"', '<button type="button" class="btn" id="paxBRel" onclick="paxBancoRelatorio()" title="Excel no padrão da empresa com as viagens que estão na tela (respeita os filtros e a ordem)">Exportar Relatório</button><input type="search" id="paxBQ"'); }; }
+/* ==========================================================================================
+   v0.14.59 (13/11/2026) · Estatística de Passageiros — aba "Alertas" (informe executivo; pedido das 15:10)
+   Compara o mês escolhido com o mês anterior que tem dados e aponta: mês em queda, linhas em queda, horários em queda,
+   horários com ocupação baixa e horários que rodavam e estão sem lançamento. A medida é a MÉDIA DE PASSAGEIROS POR VIAGEM
+   (pagantes + gratuidades), para um mês ainda em andamento poder ser comparado com um mês fechado.
+   Sensibilidade: queda a partir de 5%, 10% (padrão) ou 20%; o dobro do limite vira "Crítico". Só leitura: nada é gravado.
+   Projeção (15:14): no Dia a Dia, os dias que faltam do mês; no Mês a Mês, o fechamento do mês em andamento e o mês seguinte —
+   pela média do mesmo dia da semana nas últimas 8 semanas com lançamento (feriado conta como domingo). Liga/desliga em "Projeção".
+   Selo de mês e ano também nos gráficos Por Horário e Dia a Dia (15:16). Revisão de ponta a ponta (15:12): variação sobre o mês anterior
+   nos indicadores da Análise e mês em andamento sinalizado como parcial.
+   ========================================================================================== */
+PAX_UI.alLim = 0.10;
+const PAX_AL_MIN_LINHA = 5, PAX_AL_MIN_HORA = 4, PAX_AL_OCUP = 0.30;
+function paxAlEst(its) { const o = { v: 0, p: 0, l: 0, dias: new Set() }; its.forEach(x => { o.v++; o.p += Number(x.Pagantes || 0) + Number(x.Gratuidade || 0); o.l += Number(x.Lugares || PAX_LUGARES); o.dias.add(x.Data); }); o.med = o.v ? o.p / o.v : 0; o.ocup = o.l ? o.p / o.l : 0; o.pd = o.dias.size ? o.p / o.dias.size : 0; return o; }
+function paxAlertas(mes, lim) {
+  mes = mes || PAX_STATE.mes; lim = lim || PAX_UI.alLim;
+  const doMes = m => PAX_STATE.itens.filter(x => x.Data.slice(0, 7) === m), ref = doMes(mes), meses = [...new Set(PAX_STATE.itens.map(x => x.Data.slice(0, 7)))].sort();
+  const base = meses.filter(m => m < mes).pop() || "", ant = base ? doMes(base) : [], anoAnt = `${Number(mes.slice(0, 4)) - 1}${mes.slice(4)}`, aa = meses.includes(anoAnt) ? doMes(anoAnt) : [];
+  const R = { mes, base, anoAnt: aa.length ? anoAnt : "", lim, ref: paxAlEst(ref), ant: paxAlEst(ant), itens: [], semDados: !ref.length, semBase: !ant.length };
+  if (R.semDados || R.semBase) return R;
+  const sev = v => (v <= -2 * lim ? "crit" : "aten"), grupo = (arr, kf) => { const m = new Map(); arr.forEach(x => { const k = kf(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); }); return m; };
+  const poe = (tipo, o) => R.itens.push(Object.assign({ tipo }, o));
+  /* mês */
+  const vm = R.ant.pd ? R.ref.pd / R.ant.pd - 1 : 0; if (vm <= -lim) poe("mes", { sev: sev(vm), onde: tituloCaso(`${mesLabel(mes)} × ${mesLabel(base)}`), det: "Passageiros por dia de operação", atual: R.ref.pd, antes: R.ant.pd, v: vm, menos: Math.round((R.ant.pd - R.ref.pd) * R.ref.dias.size), viagens: R.ref.v });
+  if (aa.length) { const A = paxAlEst(aa), va = A.pd ? R.ref.pd / A.pd - 1 : 0; if (va <= -lim) poe("mes", { sev: sev(va), onde: tituloCaso(`${mesLabel(mes)} × ${mesLabel(anoAnt)}`), det: "Passageiros por dia de operação (mesmo mês do ano anterior)", atual: R.ref.pd, antes: A.pd, v: va, menos: Math.round((A.pd - R.ref.pd) * R.ref.dias.size), viagens: R.ref.v }); }
+  /* linhas (serviços) */
+  const gR = grupo(ref, x => x.Servico), gA = grupo(ant, x => x.Servico);
+  gR.forEach((its, s) => { const a = paxAlEst(its), b = paxAlEst(gA.get(s) || []); if (a.v < PAX_AL_MIN_LINHA || b.v < PAX_AL_MIN_LINHA) return; const v = a.med / b.med - 1; if (v <= -lim) poe("linha", { sev: sev(v), onde: paxLoteServRot(s), serv: s, det: "Média de passageiros por viagem", atual: a.med, antes: b.med, v, menos: Math.round((b.med - a.med) * a.v), viagens: a.v }); });
+  /* horários */
+  const kh = x => `${x.Servico}|${paxHoraPura(x)}|${(x.Sentido || "Ida") === "Volta" ? "Volta" : "Ida"}`, hR = grupo(ref, kh), hA = grupo(ant, kh);
+  hR.forEach((its, k) => { const [s, h, se] = k.split("|"), a = paxAlEst(its), b = paxAlEst(hA.get(k) || []), rot = `${paxLoteServRot(s)} · ${h}${s === "Fretamento" ? " (F)" : ""} · ${se}`, cx = { serv: s, hora: its[0].Horario, sent: se };
+    if (a.v >= PAX_AL_MIN_HORA && b.v >= PAX_AL_MIN_HORA) { const v = a.med / b.med - 1; if (v <= -lim) poe("hora", Object.assign({ sev: sev(v), onde: rot, det: "Média de passageiros por viagem", atual: a.med, antes: b.med, v, menos: Math.round((b.med - a.med) * a.v), viagens: a.v }, cx)); }
+    if (a.v >= PAX_AL_MIN_HORA && a.ocup < PAX_AL_OCUP) poe("ocup", Object.assign({ sev: a.ocup < PAX_AL_OCUP / 2 ? "crit" : "aten", onde: rot, det: "Ocupação média do horário no mês", atual: a.ocup, antes: b.v ? b.ocup : null, v: b.v && b.ocup ? a.ocup / b.ocup - 1 : null, menos: null, viagens: a.v, med: a.med }, cx)); });
+  if (R.ref.dias.size >= 7) hA.forEach((its, k) => { if (hR.has(k) || its.length < 8) return; const [s, h, se] = k.split("|"), b = paxAlEst(its); poe("sem", { sev: "info", onde: `${paxLoteServRot(s)} · ${h}${s === "Fretamento" ? " (F)" : ""} · ${se}`, det: `Rodou ${b.v} vez(es) em ${mesLabel(base)} e não tem lançamento em ${mesLabel(mes)}`, atual: null, antes: b.med, v: null, menos: null, viagens: 0, serv: s, hora: its[0].Horario, sent: se }); });
+  const ordS = { crit: 0, aten: 1, info: 2 }; R.itens.sort((a, b) => ordS[a.sev] - ordS[b.sev] || (a.v == null ? 0 : a.v) - (b.v == null ? 0 : b.v));
+  return R;
+}
+function paxAlN(R) { return R.itens.filter(i => i.sev !== "info").length; }
+window.paxAlLim = v => { PAX_UI.alLim = v; paintPax(); };
+window.paxAlVer = i => { const a = (PAX_UI._al || { itens: [] }).itens[i]; if (!a) return; PAX_UI.linhaFilt = a.serv ? paxLinhaDoServ(a.serv) : ""; PAX_UI.horaFilt = a.hora || ""; PAX_UI.sentidoFilt = a.sent || ""; PAX_UI.diaTipo = ""; PAX_STATE.tab = "horario"; paintPax(); try { window.scrollTo({ top: 0 }); } catch (e) {} };
+function paxAlHtml() {
+  const R = PAX_UI._al = paxAlertas(), pct = v => (v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(1).replace(".", ",")}%`), num = (v, d) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 }));
+  const lim = `<div class="pax-filtros pax-fcentro"><div class="pax-chips"><span class="rot">Avisar Queda a Partir de</span>${[0.05, 0.10, 0.20].map(v => `<button type="button" class="chip ${Math.abs(PAX_UI.alLim - v) < 1e-9 ? "on" : ""}" onclick="paxAlLim(${v})">${v * 100}%</button>`).join("")}</div></div>`;
+  if (R.semDados) return `${lim}<div class="cap-empty"><h3>Sem viagens em ${esc(mesLabel(R.mes))}</h3><p>Escolha um mês com lançamentos para ver os alertas.</p></div>`;
+  if (R.semBase) return `${lim}<div class="cap-empty"><h3>Ainda não há mês anterior para comparar</h3><p>${esc(mesLabel(R.mes))} é o primeiro mês com dados. Os alertas aparecem quando houver um mês anterior gravado.</p></div>`;
+  const crit = R.itens.filter(i => i.sev === "crit").length, aten = R.itens.filter(i => i.sev === "aten").length, vm = R.ant.pd ? R.ref.pd / R.ant.pd - 1 : 0, vmed = R.ant.med ? R.ref.med / R.ant.med - 1 : 0;
+  const k = (l, v, s, cls) => `<div class="kpi ${cls || ""}"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`;
+  const kpis = `<div class="cap-kpis pax-al-k">${k("Alertas Críticos", crit, `Queda de ${R.lim * 200}% ou mais`, crit ? "al-crit" : "")}${k("Alertas de Atenção", aten, `Queda de ${R.lim * 100}% a ${R.lim * 200}%`, aten ? "al-aten" : "")}${k("Passageiros por Dia", num(R.ref.pd), `${pct(vm)} sobre ${esc(mesLabel(R.base))} (${num(R.ant.pd)})`, vm <= -R.lim ? "al-aten" : "")}${k("Média por Viagem", num(R.ref.med, 1), `${pct(vmed)} sobre ${esc(mesLabel(R.base))} (${num(R.ant.med, 1)})`, vmed <= -R.lim ? "al-aten" : "")}${k("Viagens no Mês", num(R.ref.v), `${R.ref.dias.size} dia(s) com lançamento`)}</div>`;
+  const selo = s => `<span class="al-selo ${s}">${{ crit: "Crítico", aten: "Atenção", info: "Conferir" }[s]}</span>`;
+  const SEC = [["mes", "Mês em Queda", "Movimento geral do mês abaixo do período de comparação.", "Conferir se todos os dias foram lançados; avaliar feriados, clima, obras e concorrência no período."],
+    ["linha", "Linhas em Queda", "Média de passageiros por viagem da linha abaixo do mês anterior.", "Investigar a linha inteira: tarifa, pontualidade, quebras, reclamações do SAC e mudanças de horário."],
+    ["hora", "Horários em Queda", "Horários que perderam passageiros por viagem em relação ao mês anterior.", "Ouvir motoristas e agência sobre o horário; conferir atrasos, lotação do horário vizinho e demanda de empresas e escolas."],
+    ["ocup", "Ocupação Baixa", `Horários com menos de ${PAX_AL_OCUP * 100}% dos lugares ocupados em média no mês.`, "Avaliar ajuste de horário, junção com horário vizinho ou ação comercial antes de cortar a viagem."],
+    ["sem", "Sem Lançamento no Mês", "Horários que rodavam no mês anterior e não têm nenhuma viagem lançada neste mês.", "Confirmar se o horário deixou de rodar ou se falta lançar/importar a estatística."]];
+  const secoes = SEC.map(([t, tit, sub, acao]) => { const its = R.itens.map((a, i) => [a, i]).filter(([a]) => a.tipo === t); if (!its.length) return "";
+    const fm = a => (t === "ocup" ? [a.atual == null ? "—" : Math.round(a.atual * 100) + "%", a.antes == null ? "—" : Math.round(a.antes * 100) + "%"] : t === "mes" ? [num(a.atual), num(a.antes)] : [num(a.atual, 1), num(a.antes, 1)]);
+    return `<div class="cap-card pax-al-sec"><div class="cap-card-h"><h3>${tit}</h3><span class="cap-card-s">${its.length} · ${esc(sub)}</span></div>
+      <div class="table-wrap"><table class="cap-table pax-t al-t"><thead><tr><th>Gravidade</th><th class="esq">Onde</th><th>${t === "ocup" ? "Ocupação Atual" : t === "mes" ? "Atual (por Dia)" : "Média Atual"}</th><th>${esc(mesLabelCurto(R.base))}</th><th>Variação</th><th>${t === "ocup" ? "Média por Viagem" : "Passageiros a Menos"}</th><th>Viagens</th><th></th></tr></thead><tbody>
+      ${its.map(([a, i]) => { const [x, y] = fm(a); return `<tr class="al-${a.sev}"><td>${selo(a.sev)}</td><td class="esq"><b>${esc(a.onde)}</b><div class="sup">${esc(a.det)}</div></td><td><b>${x}</b></td><td>${t === "mes" && /ano anterior/.test(a.det) ? num(a.antes) : y}</td><td class="${a.v != null && a.v < 0 ? "al-neg" : ""}"><b>${pct(a.v)}</b></td><td>${t === "ocup" ? num(a.med, 1) : a.menos == null ? "—" : num(a.menos)}</td><td>${a.viagens || "—"}</td><td>${a.serv && t !== "sem" ? `<button type="button" class="btn mini" onclick="paxAlVer(${i})">Ver na Análise</button>` : ""}</td></tr>`; }).join("")}
+      </tbody></table></div><p class="hint al-acao"><b>O que investigar:</b> ${esc(acao)}</p></div>`; }).join("");
+  const nada = !R.itens.length ? `<div class="cap-empty al-ok"><h3>Nenhum alerta em ${esc(mesLabel(R.mes))}</h3><p>Nenhuma linha, horário ou o mês caiu ${R.lim * 100}% ou mais em relação a ${esc(mesLabel(R.base))}, e não há horário com ocupação abaixo de ${PAX_AL_OCUP * 100}%.</p></div>` : "";
+  return `${lim}<div class="pax-al-cab"><div><h2 class="pax-sec" style="margin:0">Informe Executivo <span class="sup">${esc(mesLabel(R.mes))} comparado a ${esc(mesLabel(R.base))}${R.anoAnt ? ` e a ${esc(mesLabel(R.anoAnt))}` : ""}</span></h2></div><span class="grow"></span><button type="button" class="btn" id="paxAlXls" onclick="paxAlExcel()">Exportar Informe</button></div>
+    ${kpis}${nada}${secoes}<p class="hint">Como é calculado: a comparação usa a <b>média de passageiros por viagem</b> (pagantes + gratuidades), para um mês em andamento poder ser comparado com um mês fechado; o mês inteiro usa passageiros por dia com lançamento. Linhas entram com pelo menos ${PAX_AL_MIN_LINHA} viagens em cada mês e horários com pelo menos ${PAX_AL_MIN_HORA}. "Passageiros a menos" é a queda por viagem multiplicada pelas viagens do mês. Os filtros da Análise não valem aqui.</p>`;
+}
+window.paxAlExcel = async () => {
+  const R = PAX_UI._al || paxAlertas(); if (!R.itens.length) { toast("Nenhum alerta para exportar."); return; }
+  try { const { wb } = await xlsxNovo(), NAVY = "FF0F1E3A", ORANGE = "FFD6421F", fill = c => ({ type: "pattern", pattern: "solid", fgColor: { argb: c } }), logo = await ctbLogoPng().catch(() => null), logoId = logo ? wb.addImage({ base64: logo.url, extension: "png" }) : null;
+    const cols = ["Gravidade", "Tipo", "Onde", "O que Mede", "Atual", "Antes", "Variação", "Passageiros a Menos", "Viagens", "O que Investigar"], N = cols.length, mes = mesLabel(R.mes), Mes = mes.charAt(0).toUpperCase() + mes.slice(1);
+    const ws = wb.addWorksheet("Alertas", { views: [{ state: "frozen", ySplit: 5, showGridLines: false }], properties: { tabColor: { argb: ORANGE } }, pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "5:5", horizontalCentered: true, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.2, footer: 0.25 } } });
+    ws.getRow(1).height = 32; ws.getRow(2).height = 20; ws.getRow(3).height = 4; ws.getRow(4).height = 8; if (logoId != null) ws.addImage(logoId, { tl: { col: 0.08, row: 0.12 }, ext: { width: Math.min(150, Math.round(52 * logo.w / Math.max(logo.h, 1))), height: 52 } });
+    ws.mergeCells(1, 3, 1, N); const t = ws.getCell(1, 3); t.value = `Estatística de Passageiros · Informe Executivo · ${Mes}`; t.font = { bold: true, size: 16, color: { argb: NAVY } }; t.alignment = { vertical: "middle", horizontal: "left" };
+    ws.mergeCells(2, 3, 2, N); const s = ws.getCell(2, 3); s.value = `Comparado a ${mesLabel(R.base)} · queda a partir de ${R.lim * 100}% · ${R.itens.length} apontamento(s)`; s.font = { size: 10, color: { argb: "FF5B6068" } }; s.alignment = { vertical: "middle", horizontal: "left" };
+    for (let i = 1; i <= N; i++) ws.getCell(3, i).fill = fill(ORANGE);
+    const hr = ws.getRow(5); cols.forEach((c, i) => { const cel = hr.getCell(i + 1); cel.value = c; cel.font = { bold: true, size: 11, color: { argb: "FFFFFFFF" } }; cel.fill = fill(NAVY); cel.alignment = { vertical: "middle", horizontal: "center" }; });
+    ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5, column: N } };
+    const TIPO = { mes: "Mês em Queda", linha: "Linha em Queda", hora: "Horário em Queda", ocup: "Ocupação Baixa", sem: "Sem Lançamento" }, ACAO = { mes: "Conferir lançamentos do mês; avaliar feriados, clima, obras e concorrência.", linha: "Investigar tarifa, pontualidade, quebras, SAC e mudanças de horário.", hora: "Ouvir motoristas e agência; conferir atrasos e o horário vizinho.", ocup: "Avaliar ajuste, junção com horário vizinho ou ação comercial.", sem: "Confirmar se deixou de rodar ou se falta lançar." }, COR = { crit: "FFFDECEA", aten: "FFFFF4E0", info: "FFF4F6FA" };
+    R.itens.forEach(a => { const oc = a.tipo === "ocup", r = ws.addRow([{ crit: "Crítico", aten: "Atenção", info: "Conferir" }[a.sev], TIPO[a.tipo], a.onde, a.det, a.atual, a.antes, a.v, a.menos, a.viagens || null, ACAO[a.tipo]]); r.height = 20;
+      r.eachCell({ includeEmpty: true }, (c, cn) => { c.font = { size: 11, bold: cn === 1 || cn === 3 || cn === 7, color: { argb: "FF1B2230" } }; c.alignment = { vertical: "middle", horizontal: cn === 3 || cn === 4 || cn === 10 ? "left" : "center", wrapText: false }; c.border = { bottom: { style: "hair", color: { argb: "FFD5DAE1" } } }; if (cn === 1) c.fill = fill(COR[a.sev]); });
+      r.getCell(5).numFmt = oc ? "0%" : a.tipo === "mes" ? "#,##0" : "0.0"; r.getCell(6).numFmt = r.getCell(5).numFmt; r.getCell(7).numFmt = "0%"; r.getCell(8).numFmt = "#,##0"; });
+    ws.headerFooter = { oddFooter: `&L&8Transportadora Nova Macabu · gerado pelo ERP em ${new Date().toLocaleString("pt-BR")}&R&8Página &P de &N` };
+    paxXlsAjusta(ws, 5); await xlsxBaixar(wb, `Informe de Passageiros - ${Mes}.xlsx`); toast(`Informe gerado: ${R.itens.length} apontamento(s).`);
+  } catch (e) { toast("Não foi possível gerar o informe: " + e.message, 7000); }
+};
+{ const t0 = window.paxTab; window.paxTab = function (t) { if (t !== "alertas") return t0.apply(this, arguments); const r = t0.call(this, "horario"); if (PAX_STATE.tab === "horario") { PAX_STATE.tab = "alertas"; paintPax(); } return r; }; }
+{ const p0 = paintPax;
+  paintPax = function () {
+    const body = $("paxBody"), al = PAX_STATE.tab === "alertas" && PAX_STATE.ready && body;
+    let r;
+    if (al) { PAX_STATE.tab = "horario"; try { r = p0.apply(this, arguments); } finally { PAX_STATE.tab = "alertas"; }
+      try { const topo = body.querySelector(".op-topo"), ma = document.getElementById("paxMAB"); if (window.Chart) body.querySelectorAll("canvas").forEach(c => { const ch = Chart.getChart(c); if (ch) ch.destroy(); }); [...body.children].forEach(e => { if (e !== topo) e.remove(); });
+        const d = document.createElement("div"); d.className = "pax-al"; d.innerHTML = `<div class="pax-flut pax-al-ma">${ma ? ma.outerHTML : paxMesAnoHtml()}</div>${paxAlHtml()}`; body.appendChild(d); if (typeof paxTitulos === "function") paxTitulos(); } catch (e) { console.warn("pax alertas", e); } }
+    else r = p0.apply(this, arguments);
+    try { const seg = body && body.querySelector(".op-topo .seg-tabs");
+      if (seg && PAX_STATE.ready && !seg.querySelector(".al-tab")) { const n = paxAlN(paxAlertas()), h = [...seg.querySelectorAll("button")].find(b => /Histórico/.test(b.textContent)) || seg.querySelector("button");
+        if (h) h.insertAdjacentHTML("afterend", `<button role="tab" class="al-tab" onclick="paxTab('alertas')" data-sem-titulo>Alertas${n ? ` <span class="al-n">${n}</span>` : ""}</button>`); }
+      if (seg && al) seg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.classList.contains("al-tab")));
+    } catch (e) {}
+    return r;
+  };
+  window.paintPax = paintPax; }
+(function () { const st = document.createElement("style"); st.id = "erp-v01459";
+  st.textContent = `.al-tab .al-n{display:inline-block;min-width:18px;padding:1px 6px;margin-left:4px;border-radius:999px;background:#C0392B;color:#fff;font-size:11px;font-weight:800;line-height:1.4}
+  .pax-al-ma{position:static}.pax-al-ma .pax-ma{margin:0;padding-bottom:2px;border-bottom:0}
+  .pax-al-cab{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:4px 0 12px}
+  .pax-al-k .kpi.al-crit .val{color:#B3271E}.pax-al-k .kpi.al-aten .val{color:#B7791F}.pax-al-k .kpi.al-crit{border-top:3px solid #C0392B}.pax-al-k .kpi.al-aten{border-top:3px solid #B7791F}
+  .al-t th,.al-t td{text-align:center}.al-t th.esq,.al-t td.esq{text-align:left}.al-t td.al-neg{color:#B3271E}
+  .al-selo{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .al-selo.crit{background:#FDECEA;color:#B3271E}.al-selo.aten{background:#FFF4E0;color:#8A5A0B}.al-selo.info{background:#EEF1F5;color:var(--ink-2)}
+  .al-t tr.al-crit td:first-child{box-shadow:inset 3px 0 0 #C0392B}.al-t tr.al-aten td:first-child{box-shadow:inset 3px 0 0 #B7791F}
+  .pax-al-sec .al-acao{margin:10px 0 0}.pax-al .al-ok h3{color:#197A46}`;
+  document.head.appendChild(st); })();
+
+/* ---- projeção ---- */
+PAX_UI.proj = true;
+window.paxProjSet = v => { PAX_UI.proj = !!v; paintPax(); };
+function paxIsoMais(iso, n) { const x = dLocal(iso); x.setDate(x.getDate() + n); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; }
+function paxProjBase() {   /* média de pagantes e gratuidades por dia da semana, nas últimas 8 semanas com lançamento, com os filtros da tela */
+  const porDia = new Map(); paxFiltra(PAX_STATE.itens).forEach(x => { const o = porDia.get(x.Data) || { p: 0, g: 0 }; o.p += Number(x.Pagantes || 0); o.g += Number(x.Gratuidade || 0); porDia.set(x.Data, o); });
+  const datas = [...porDia.keys()].sort(); if (datas.length < 7) return null; const ult = datas[datas.length - 1], ini = paxIsoMais(ult, -55), b = Array.from({ length: 7 }, () => ({ p: 0, g: 0, n: 0 }));
+  const dw = d => (feriadoNome(d) ? 0 : dLocal(d).getDay());
+  datas.forEach(d => { if (d < ini) return; const o = porDia.get(d), k = b[dw(d)]; k.p += o.p; k.g += o.g; k.n++; });
+  return { ult, dia: d => { const k = b[dw(d)]; return k.n ? { p: k.p / k.n, g: k.g / k.n } : { p: 0, g: 0 }; }, temDia: d => porDia.has(d) };
+}
+function paxProjMes(B, mes, desde) { let t = 0; diasDoMes(mes).forEach(d => { if (desde && d <= desde) return; const o = B.dia(d); t += o.p + o.g; }); return Math.round(t); }
+function paxMesMais(m, n) { let [y, mm] = m.split("-").map(Number); mm += n; while (mm > 12) { mm -= 12; y++; } return `${y}-${String(mm).padStart(2, "0")}`; }
+function paxProjLegenda(c) { try { const lg = c.options.plugins.legend; if (!lg || !lg.labels || !lg.labels.generateLabels || lg.labels._proj) return; const g0 = lg.labels.generateLabels; lg.labels._proj = true;
+    lg.labels.generateLabels = ch => g0(ch).map((it, i) => (ch.data.datasets[i] && ch.data.datasets[i]._proj ? Object.assign(it, { fillStyle: "rgba(30,33,83,.22)", strokeStyle: "#7C8DB0", lineWidth: 1 }) : it)); } catch (e) {} }
+{ const d0 = paxChartDias;
+  paxChartDias = paxComCtx("dias", function (its) { const r = d0.apply(this, arguments);
+    try { PAX_UI._projDias = false; if (!PAX_UI.proj || !window.Chart) return r; const c = Chart.getChart("paxChartDias"), B = c && paxProjBase(); if (!B || B.ult.slice(0, 7) !== PAX_STATE.mes) return r;
+      const dias = diasDoMes(PAX_STATE.mes), iu = dias.indexOf(B.ult); if (iu < 0 || iu >= dias.length - 1) return r; const linha = paxHorModo() === "line";
+      const data = dias.map((d, i) => { if (i < iu) return null; if (i === iu) return linha ? c.data.datasets.reduce((s, ds) => s + (Number(ds.data[i]) || 0), 0) : null; const o = B.dia(d); return Math.round(o.p + o.g); });
+      const n = v => (v == null ? "" : "≈ " + Number(v).toLocaleString("pt-BR")), dl = { display: x => x.dataIndex > iu && !!x.dataset.data[x.dataIndex], anchor: "end", align: linha ? "top" : "end", offset: 2, clamp: true, formatter: n, font: { size: 10, weight: 600, style: "italic" }, color: "#6B7689" };
+      c.data.datasets.push(linha ? { type: "line", _proj: true, label: "Projeção", data, borderColor: "#7C8DB0", backgroundColor: "#FFFFFF", borderWidth: 1.5, borderDash: [5, 4], tension: .2, pointRadius: 3.5, pointBorderWidth: 1.5, pointBackgroundColor: "#FFFFFF", pointBorderColor: "#7C8DB0", datalabels: dl }
+        : { _proj: true, label: "Projeção", data, backgroundColor: "rgba(30,33,83,.16)", borderColor: "#7C8DB0", borderWidth: 1, borderDash: [4, 3], stack: "p", datalabels: dl });
+      paxProjLegenda(c); c.update("none"); PAX_UI._projDias = true;
+    } catch (e) { console.warn("pax proj dias", e); }
+    return r; }); }
+{ const c0 = paxPainelCharts;
+  paxPainelCharts = paxComCtx("mes", function () { const r = c0.apply(this, arguments);
+    try { PAX_UI._projMes = null; if (!PAX_UI.proj || !window.Chart) return r; const c = Chart.getChart("paxChartMes"), B = c && paxProjBase(); if (!B) return r;
+      const { meses } = paxPainelDados(); if (!meses.length) return r; const um = meses[meses.length - 1], dm = diasDoMes(um.k), parcial = B.ult < dm[dm.length - 1] && um.k === B.ult.slice(0, 7);
+      const linha = paxHorModo() === "line", iu = meses.length - 1, real = (um.pag || 0) + (um.grat || 0), resto = parcial ? paxProjMes(B, um.k, B.ult) : 0, prox = paxMesMais(um.k, 1), tp = paxProjMes(B, prox);
+      c.data.labels.push(mesLabelCurto(prox)); c.data.datasets.forEach(ds => { ds.data.push(null); ["backgroundColor", "pointBackgroundColor", "pointBorderColor"].forEach(k => { if (Array.isArray(ds[k])) ds[k].push(ds[k][ds[k].length - 1]); }); });
+      const data = c.data.labels.map((_, i) => (i < iu ? null : i === iu ? (linha ? real + resto : (parcial ? resto : null)) : tp)); if (linha && iu > 0) { const a = meses[iu - 1]; data[iu - 1] = (a.pag || 0) + (a.grat || 0); } if (linha && !parcial) data[iu] = real;
+      const n = v => "≈ " + Number(v).toLocaleString("pt-BR"), dl = { display: x => x.dataIndex >= iu && !!x.dataset.data[x.dataIndex] && !(linha && !parcial && x.dataIndex === iu), anchor: "end", align: linha ? "top" : "end", offset: 2, clamp: true, formatter: (v, x) => (x.dataIndex === iu && !linha ? n(real + resto) : n(v)), font: { size: 11, weight: 700, style: "italic" }, color: "#6B7689" };
+      c.data.datasets.forEach(ds => { if (!linha && !ds.stack) ds.stack = "p"; }); if (!linha) { c.options.scales.x.stacked = true; c.options.scales.y.stacked = true; }
+      c.data.datasets.push(linha ? { type: "line", _proj: true, label: "Projeção", data, borderColor: "#7C8DB0", backgroundColor: "#FFFFFF", borderWidth: 1.5, borderDash: [5, 4], tension: .2, pointRadius: 4, pointBorderWidth: 1.5, pointBackgroundColor: "#FFFFFF", pointBorderColor: "#7C8DB0", spanGaps: false, datalabels: dl }
+        : { _proj: true, label: "Projeção", data, backgroundColor: "rgba(30,33,83,.16)", borderColor: "#7C8DB0", borderWidth: 1, stack: "p", datalabels: dl });
+      paxProjLegenda(c); c.update("none"); PAX_UI._projMes = { parcial, mes: um.k, real, total: real + resto, prox, tprox: tp };
+    } catch (e) { console.warn("pax proj mes", e); }
+    return r; }); }
+/* ---- selo de mês e ano nos gráficos do mês; chip da projeção; variação nos indicadores ---- */
+{ const p0 = paintPax;
+  paintPax = function () { const r = p0.apply(this, arguments);
+    try { const body = $("paxBody"); if (!body || !/^\d{4}-\d{2}$/.test(PAX_STATE.mes || "")) return r; const nm = MESES_NOME[Number(PAX_STATE.mes.slice(5, 7)) - 1] || "", selo = `<span class="pax-cal-mes pax-g-mes" data-sem-titulo>${esc(nm.charAt(0).toUpperCase() + nm.slice(1))} <b>${esc(PAX_STATE.mes.slice(0, 4))}</b></span>`;
+      ["paxChartHoras", "paxChartDias"].forEach(id => { const cv = document.getElementById(id), h = cv && cv.closest(".cap-card") && cv.closest(".cap-card").querySelector(".cap-card-h"); if (h && !h.querySelector(".pax-cal-mes")) { if (!h.querySelector(".grow")) h.insertAdjacentHTML("beforeend", `<span class="grow"></span>`); h.insertAdjacentHTML("beforeend", selo); } });
+      /* subtítulos e chip da projeção */
+      const nota = " · Projeção: Média do Mesmo Dia da Semana nas Últimas 8 Semanas";
+      const sd = document.querySelector("#paxBody .cap-card:has(#paxChartDias) .cap-card-s"); if (sd && PAX_UI._projDias && !/Projeção/.test(sd.textContent)) sd.textContent += nota;
+      const sm = document.querySelector("#paxBody .cap-card:has(#paxChartMes) .cap-card-s"), pm = PAX_UI._projMes; if (sm && pm && !/Projeção/.test(sm.textContent)) sm.textContent += (pm.parcial ? ` · ${tituloCaso(mesLabel(pm.mes))} em Andamento: Fecha em ≈ ${pm.total.toLocaleString("pt-BR")}` : "") + ` · ${tituloCaso(mesLabel(pm.prox))}: ≈ ${pm.tprox.toLocaleString("pt-BR")}` + nota;
+      const linhaG = [...body.querySelectorAll(".pax-fcentro .pax-chips")].find(e => /Gráfico/i.test((e.querySelector(".rot") || {}).textContent || "")); if (linhaG && !linhaG.parentNode.querySelector(".pax-proj-c")) linhaG.insertAdjacentHTML("afterend", `<div class="pax-chips pax-proj-c"><span class="rot">Projeção</span><button type="button" class="chip ${PAX_UI.proj ? "on" : ""}" aria-pressed="${!!PAX_UI.proj}" onclick="paxProjSet(true)">Mostrar</button><button type="button" class="chip ${PAX_UI.proj ? "" : "on"}" aria-pressed="${!PAX_UI.proj}" onclick="paxProjSet(false)">Ocultar</button></div>`);
+      /* indicadores da Análise: variação sobre o mês anterior com dados (passageiros por dia e média por viagem), com os filtros da tela */
+      const kp = body.querySelector(".cap-kpis:not(.pax-al-k)"); if (kp && !kp.hidden && PAX_STATE.tab !== "hist" && !kp.querySelector(".pax-kvar") && !kp.previousElementSibling?.matches?.("h2.pax-sec")) {
+        const todos = paxFiltra(PAX_STATE.itens), meses = [...new Set(todos.map(x => x.Data.slice(0, 7)))].sort(), base = meses.filter(m => m < PAX_STATE.mes).pop();
+        if (base) { const a = paxAlEst(todos.filter(x => x.Data.slice(0, 7) === PAX_STATE.mes)), b = paxAlEst(todos.filter(x => x.Data.slice(0, 7) === base)), ks = kp.querySelectorAll(".kpi");
+          const v = (x, y) => { if (!x || !y) return ""; const p = (x / y - 1) * 100; return `<div class="pax-kvar ${p <= -0.05 ? "down" : p >= 0.05 ? "up" : ""}" data-sem-titulo>${p >= 0 ? "▲ +" : "▼ −"}${Math.abs(p).toFixed(1).replace(".", ",")}% `; };
+          const fim = t => `<span>${esc(t)} sobre ${esc(mesLabelCurto(base))}</span></div>`;
+          if (a.v && b.v && ks[0]) ks[0].insertAdjacentHTML("beforeend", v(a.pd, b.pd) + fim("por dia"));
+          if (a.v && b.v && ks[2]) { const ma = a.v ? todos.filter(x => x.Data.slice(0, 7) === PAX_STATE.mes).reduce((s, x) => s + Number(x.Pagantes || 0), 0) / a.v : 0, mb = todos.filter(x => x.Data.slice(0, 7) === base).reduce((s, x) => s + Number(x.Pagantes || 0), 0) / b.v; ks[2].insertAdjacentHTML("beforeend", v(ma, mb) + fim("")); }
+          if (a.v && b.v && ks[3]) ks[3].insertAdjacentHTML("beforeend", v(a.ocup, b.ocup) + fim("")); } }
+    } catch (e) { console.warn("pax selo/proj", e); }
+    return r; };
+  window.paintPax = paintPax; }
+(function () { const st = document.createElement("style"); st.id = "erp-v01459b";
+  st.textContent = `.pax-g-mes{font-size:16px;margin-left:12px;flex:0 0 auto}.cap-card-h:has(.pax-g-mes){display:flex;flex-wrap:nowrap;align-items:center;gap:6px 10px}.cap-card-h:has(.pax-g-mes) .grow{display:none}.cap-card-h:has(.pax-g-mes) h3,.cap-card-h:has(.pax-g-mes) .pax-seg{flex:0 0 auto}.cap-card-h:has(.pax-g-mes) .cap-card-s{flex:1 1 auto;min-width:0}
+  @media (max-width:760px){.cap-card-h:has(.pax-g-mes){flex-wrap:wrap}}
+  .pax-kvar{margin-top:6px;font-size:12.5px;font-weight:800;color:var(--ink-2)}.pax-kvar span{font-weight:500;color:var(--ink-3)}.pax-kvar.down{color:#B3271E}.pax-kvar.up{color:#197A46}
+  .pax-proj-c{margin-left:14px}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -51514,6 +51694,7 @@ CONFIG.version = "v0.14.55";   /* Passageiros: Fretamento volta a ser um filtro 
 CONFIG.version = "v0.14.56";   /* Passageiros › Banco de Dados: edição na célula; Data, Dia, Linha e Serviço em colunas separadas; sem Origem */
 CONFIG.version = "v0.14.57";   /* Passageiros: aba Histórico (indicadores e tabelas de todos os meses saem da Análise); mês e ano no canto do Calendário */
 CONFIG.version = "v0.14.58";   /* Passageiros: relatório em Excel do Banco de Dados (padrão da empresa, colunas ajustadas ao conteúdo); Mês a Mês com a opção Total; tabela centralizada */
+CONFIG.version = "v0.14.59";   /* Passageiros: aba Alertas (informe executivo de quedas por mês, linha e horário) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

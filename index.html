@@ -51118,6 +51118,149 @@ paxServRot = function (s) { return s; };
   const p0 = paintPax; paintPax = function () { const r = p0.apply(this, arguments); sobe(); return r; }; window.paintPax = paintPax; }
 /* o bloco flutuante fica por trás do menu lateral e do seu fundo escuro (12:34) */
 (function () { const st = document.createElement("style"); st.id = "erp-v01455"; st.textContent = `.pax-flut{z-index:15}`; document.head.appendChild(st); })();
+/* ==========================================================================================
+   v0.14.56 (13/11/2026) · Estatística de Passageiros › Banco de Dados — pedido das 14:18
+   Tabela editável na própria célula, como numa planilha: clique (ou digite com a célula em foco) para editar; Enter grava e desce,
+   Tab grava e vai para o lado, Esc desiste, setas andam pelas células. Cada célula é gravada na hora.
+   Colunas: Data e Dia da semana separados; Linha e Serviço separados; sem a coluna Origem.
+   Filtro e ordenação por coluna (clique no título), como numa lista do SharePoint (pedido das 14:19).
+   ========================================================================================== */
+const PAX_BK = ["Data", "Servico", "Horario", "Sentido", "Pagantes", "Gratuidade", "Lugares"];
+function paxLinhaNum(s) { return s === "Fretamento" ? "1001" : (String(paxLinhaDoServ(s) || "—").replace(/\s*\(F\)$/, "")); }
+function paxBancoTxt(x, k) {
+  if (k === "Data") return fmtDate(x.Data); if (k === "Servico") return x.Servico || ""; if (k === "Horario") return x.Horario || ""; if (k === "Sentido") return x.Sentido || "Ida";
+  if (k === "Pagantes") return Number(x.Pagantes || 0).toLocaleString("pt-BR"); if (k === "Gratuidade") return String(Number(x.Gratuidade || 0)); if (k === "Lugares") return String(Number(x.Lugares || PAX_LUGARES)); return "";
+}
+function paxBancoRow(x, edita, marcada) {
+  const tr = paxTrechos(x), trTx = Object.entries(tr).filter(([k, v]) => v && !/gratuid/i.test(k)).map(([k]) => k).join(" · "), fds = fimDeSemanaOuFeriado(x.Data);   /* só os nomes dos trechos: os números já estão em Pagantes e Gratuid. (14:23) */
+  const c = (k, cls) => `<td class="${edita ? "pb-c " : ""}${cls || ""}" data-k="${k}" ${edita ? 'tabindex="0"' : ""}>${esc(paxBancoTxt(x, k))}</td>`;
+  return `<tr data-id="${esc(x._id)}" class="${marcada ? "on" : ""}"><td>${edita ? `<input type="checkbox" aria-label="Selecionar" ${marcada ? "checked" : ""} onchange="paxBancoSel(${jsArg(x._id)}, this.checked)">` : ""}</td>${c("Data", "nw")}<td class="nw pb-dia${fds ? " pax-fds-txt" : ""}" data-a="dia">${DIAS_SEMANA[dLocal(x.Data).getDay()]}</td><td class="nw pb-lin" data-a="linha"><b>${esc(paxLinhaNum(x.Servico))}</b></td>${c("Servico", "nw")}${c("Horario", "nw pb-h")}${c("Sentido")}${c("Pagantes", "n")}${c("Gratuidade", "n")}${c("Lugares", "n")}<td class="sup pb-tr">${esc(trTx)}</td></tr>`;
+}
+paxBancoHtml = function () {
+  const edita = podeEditar("pax"), exclui = typeof podeExcluir === "function" ? podeExcluir("pax") : false, its = paxBancoLista(), sel = PAX_UI.bSel, n = [...sel].filter(id => its.some(x => x._id === id)).length;
+  const lote = edita ? `<div class="pax-lote ${n ? "on" : ""}"><b>${n}</b> selecionada(s)<span class="grow"></span>
+      <button type="button" class="btn sm" ${n ? "" : "disabled"} onclick="paxBancoLote('Sentido','Ida')">Passar para Ida</button><button type="button" class="btn sm" ${n ? "" : "disabled"} onclick="paxBancoLote('Sentido','Volta')">Passar para Volta</button>
+      <select class="lanc-in lanc-sel pax-lote-sel" ${n ? "" : "disabled"} onchange="if (this.value) paxBancoLote('Servico', this.value); this.value=''" aria-label="Mudar o serviço das selecionadas"><option value="">Mudar o Serviço…</option>${PAX_SERVICOS.map(s => `<option value="${esc(s)}">${esc(s)} · linha ${esc(paxLinhaNum(s))}</option>`).join("")}</select>
+      ${exclui ? `<button type="button" class="btn sm" ${n ? "" : "disabled"} onclick="paxBancoExcluir()">Excluir Selecionadas</button>` : ""}</div>` : "";
+  return `<div class="cap-card"><div class="cap-card-h"><h3>Banco de Dados</h3><span class="cap-card-s">${its.length} viagem(ns) gravada(s) em ${esc(mesLabel(PAX_STATE.mes))}${paxFiltroAtivo() || paxBColAtivo() ? " · no filtro" : ""} · é daqui que saem os gráficos</span>${paxBColAtivo() ? `<button type="button" class="btn sm pb-limpa" onclick="paxBFiltroLimpa()">Limpar Filtros das Colunas</button>` : ""}<span class="grow"></span><input type="search" id="paxBQ" class="lanc-in" style="max-width:240px" placeholder="Buscar dia, horário, serviço…" value="${esc(PAX_UI.bQ || "")}" oninput="PAX_UI.bQ = this.value; paxBancoPinta()"></div>
+    ${lote}<div class="table-wrap pax-banco"><table class="cap-table pax-t pb-t"><thead><tr><th style="width:34px">${edita ? `<input type="checkbox" aria-label="Selecionar todas" ${its.length && n === its.length ? "checked" : ""} onchange="paxBancoSelTodas(this.checked)">` : ""}</th>${[["Data", "Data"], ["Dia", "Dia"], ["Linha", "Linha"], ["Servico", "Serviço"], ["Horario", "Horário"], ["Sentido", "Sentido"], ["Pagantes", "Pagantes", "n"], ["Gratuidade", "Gratuid.", "n"], ["Lugares", "Lugares", "n"]].map(([k, l, c]) => paxBTh(k, l, c)).join("")}<th>Trechos</th></tr></thead><tbody>${its.map(x => paxBancoRow(x, edita, sel.has(x._id))).join("") || `<tr><td colspan="11" class="cap-muted" style="padding:18px">Nenhuma viagem neste mês com esse filtro.</td></tr>`}</tbody></table></div>
+    <p class="hint">${edita ? "<b>Edite direto na célula</b>, como numa planilha: clique na célula (ou digite com ela em foco), <b>Enter</b> grava e desce, <b>Tab</b> grava e vai para o lado, <b>Esc</b> desiste; as setas andam pelas células. Cada célula é gravada na hora. Dia e Linha se ajustam sozinhos pela Data e pelo Serviço. Para mudar várias de uma vez, marque as linhas e use os botões acima. <b>Filtrar e ordenar:</b> clique no título da coluna e escolha os valores, como numa lista do SharePoint." : "Seu acesso é só de leitura."}</p></div>`;
+};
+function paxBItem(td) { const tr = td.closest("tr[data-id]"); return tr ? PAX_STATE.itens.find(i => i._id === tr.dataset.id) : null; }
+function paxBViz(td, dir) {   /* célula vizinha: "dir"/"esq" na linha, "cima"/"baixo" na coluna */
+  const tr = td.closest("tr"); if (!tr) return null;
+  if (dir === "dir" || dir === "esq") { const cs = [...tr.querySelectorAll("td.pb-c")], i = cs.indexOf(td); return cs[i + (dir === "dir" ? 1 : -1)] || null; }
+  let o = tr; do { o = dir === "baixo" ? o.nextElementSibling : o.previousElementSibling; } while (o && !o.dataset.id); return o ? o.querySelector(`td.pb-c[data-k="${td.dataset.k}"]`) : null;
+}
+function paxBAtualizaLinha(tr, x) { tr.querySelectorAll("td.pb-c").forEach(td => { if (!td.classList.contains("ed")) td.textContent = paxBancoTxt(x, td.dataset.k); });
+  const d = tr.querySelector('[data-a="dia"]'); if (d) { d.textContent = DIAS_SEMANA[dLocal(x.Data).getDay()]; d.classList.toggle("pax-fds-txt", !!fimDeSemanaOuFeriado(x.Data)); }
+  const l = tr.querySelector('[data-a="linha"]'); if (l) l.innerHTML = `<b>${esc(paxLinhaNum(x.Servico))}</b>`; }
+function paxBEdita(td, inicial) {
+  if (!td || td.classList.contains("ed") || td.classList.contains("sv") || !podeEditar("pax")) return; const x = paxBItem(td), k = td.dataset.k; if (!x) return;
+  let el;
+  if (k === "Servico" || k === "Sentido") { el = document.createElement("select"); (k === "Servico" ? PAX_SERVICOS : ["Ida", "Volta"]).forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; el.appendChild(o); }); el.value = k === "Servico" ? x.Servico : (x.Sentido || "Ida"); }
+  else { el = document.createElement("input"); if (k === "Data") { el.type = "date"; el.value = x.Data; } else if (k === "Horario") { el.type = "text"; el.maxLength = 5; el.placeholder = "05:20"; el.value = paxHoraPura(x); } else { el.type = "text"; el.inputMode = "numeric"; el.value = String(Number(x[k] != null ? x[k] : (k === "Lugares" ? PAX_LUGARES : 0))); }
+    if (inicial != null && k !== "Data") el.value = inicial; }
+  el.setAttribute("aria-label", td.closest("table").querySelectorAll("thead th")[td.cellIndex].textContent.trim());
+  td.classList.add("ed"); td.textContent = ""; td.appendChild(el); el.focus(); if (el.select && inicial == null) { try { el.select(); } catch (e) {} }
+  let feito = false;
+  const fim = (grava, mover) => { if (feito) return; feito = true; const v = el.value; td.classList.remove("ed"); td.textContent = paxBancoTxt(x, k);
+    const alvo = mover ? paxBViz(td, mover) : null; (alvo || td).focus({ preventScroll: false }); if (grava) paxBGrava(td, x, k, v); };
+  el.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); fim(true, e.shiftKey ? "cima" : "baixo"); } else if (e.key === "Tab") { e.preventDefault(); fim(true, e.shiftKey ? "esq" : "dir"); } else if (e.key === "Escape") { e.preventDefault(); fim(false); } e.stopPropagation(); });
+  el.addEventListener("blur", () => fim(true));
+  if (el.tagName === "SELECT") el.addEventListener("change", () => fim(true));
+}
+async function paxBGrava(td, x, k, bruto) {
+  const v = String(bruto == null ? "" : bruto).trim(), erro = m => { toast(m, 6000); td.classList.add("er"); setTimeout(() => td.classList.remove("er"), 1600); };
+  const pura = paxHoraPura(x), atual = { Data: x.Data, Servico: x.Servico, Horario: pura, Sentido: x.Sentido || "Ida" }, f = {};
+  if (k === "Data") { if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return erro("Data inválida."); if (v === x.Data) return; f.Data = v; }
+  else if (k === "Horario") { let h = v.replace(/\s*\(F\)$/i, "").replace(/^(\d{1,2})[h.:,]?(\d{2})$/, (m, a, b) => `${a.padStart(2, "0")}:${b}`); if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(h)) return erro("Horário no formato HH:MM (ex.: 05:20)."); if (h === pura) return; f.Horario = h; }
+  else if (k === "Servico") { if (!PAX_SERVICOS.includes(v)) return; if (v === x.Servico) return; f.Servico = v; }
+  else if (k === "Sentido") { if (v !== "Ida" && v !== "Volta") return; if (v === atual.Sentido) return; f.Sentido = v; }
+  else { const n = Number(v.replace(/\./g, "")); if (v === "" || !Number.isInteger(n) || n < 0) return erro("Use um número inteiro (zero ou mais)."); if (n === Number(x[k] != null ? x[k] : (k === "Lugares" ? PAX_LUGARES : 0))) return; f[k] = n; }
+  if (k === "Data" || k === "Horario" || k === "Servico" || k === "Sentido") { const novo = Object.assign({}, atual, f); f.Title = paxChave(novo);
+    if (PAX_STATE.itens.some(i => i._id !== x._id && paxChave({ Data: i.Data, Servico: i.Servico, Horario: paxHoraPura(i), Sentido: i.Sentido || "Ida" }) === f.Title)) return erro("Já existe outra viagem com esse dia, serviço, horário e sentido — a célula ficou como estava."); }
+  td.classList.add("sv"); if (k !== "Horario" && k !== "Data") td.textContent = k === "Pagantes" ? Number(f[k]).toLocaleString("pt-BR") : String(f[k]);
+  try { await SP.update(PAX_STATE.site.id, PAX_STATE.list.id, x._id, f); }
+  catch (e) { td.classList.remove("sv"); if (!td.classList.contains("ed")) td.textContent = paxBancoTxt(x, k); return erro("Não foi possível gravar: " + e.message); }
+  td.classList.remove("sv");
+  const mesAntes = x.Data.slice(0, 7); Object.assign(x, f); if (f.Horario != null || f.Servico != null) { x.Horario = f.Horario != null ? f.Horario : pura; x._hora = null; paxMarcaF(x); }
+  PAX_UI._loteVelho = true;
+  if (!td.isConnected) return;
+  if (x.Data.slice(0, 7) !== mesAntes) { toast(`Viagem movida para ${mesLabel(x.Data.slice(0, 7))}.`, 5000); paxBancoPinta(); return; }
+  paxBAtualizaLinha(td.closest("tr"), x); td.classList.add("ok"); setTimeout(() => td.classList.remove("ok"), 1200);
+}
+document.addEventListener("click", e => { const td = e.target.closest && e.target.closest(".pax-banco td.pb-c"); if (td && !td.classList.contains("ed")) paxBEdita(td); });
+document.addEventListener("keydown", e => { const td = e.target; if (!td || !td.matches || !td.matches(".pax-banco td.pb-c") || td.classList.contains("ed")) return;
+  const mv = { ArrowDown: "baixo", ArrowUp: "cima", ArrowRight: "dir", ArrowLeft: "esq" }[e.key];
+  if (mv) { const a = paxBViz(td, mv); if (a) { e.preventDefault(); a.focus(); } return; }
+  if (e.key === "Enter" || e.key === "F2" || e.key === " ") { e.preventDefault(); paxBEdita(td); return; }
+  if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { const k = td.dataset.k; if (k === "Servico" || k === "Sentido" || k === "Data") { paxBEdita(td); return; } e.preventDefault(); paxBEdita(td, e.key); } });
+(function () { const st = document.createElement("style"); st.id = "erp-v01456";
+  st.textContent = `.pb-t td.pb-c{cursor:cell;position:relative;transition:background .2s}.pb-t td.pb-c:hover{background:#F1F5FB}
+  .pb-t td.pb-c:focus{outline:2px solid var(--navy);outline-offset:-2px;background:#fff}
+  .pb-t td.pb-c.ed{padding:2px!important;background:#fff}.pb-t td.pb-c.ed input,.pb-t td.pb-c.ed select{width:100%;min-width:74px;height:34px;border:0;outline:2px solid var(--orange);border-radius:4px;font:inherit;text-align:center;background:#fff;color:var(--ink);padding:0 6px;box-sizing:border-box}
+  .pb-t td.pb-c.ed input[type=date]{min-width:136px}.pb-t td.pb-c.ed select{min-width:118px}
+  .pb-t td.pb-c.sv{color:var(--ink-3);font-style:italic}.pb-t td.pb-c.ok{background:#E3F4EA}.pb-t td.pb-c.er{background:#FDECEA}
+  .pb-t td.pb-h{font-weight:800}.pb-t td.pb-dia{text-transform:uppercase;font-size:12px;color:var(--ink-2)}.pb-t td.pb-dia.pax-fds-txt{color:#A33B00}`;
+  document.head.appendChild(st); })();
+
+/* ---- filtro e ordenação por coluna ---- */
+PAX_UI.bF = {}; PAX_UI.bOrd = null;
+const PAX_BNUM = ["Pagantes", "Gratuidade", "Lugares"];
+function paxBVal(x, k) { return k === "Dia" ? DIAS_SEMANA[dLocal(x.Data).getDay()] : k === "Linha" ? paxLinhaNum(x.Servico) : k === "Data" ? x.Data : k === "Sentido" ? (x.Sentido || "Ida") : PAX_BNUM.includes(k) ? String(Number(x[k] != null ? x[k] : (k === "Lugares" ? PAX_LUGARES : 0))) : String(x[k] || ""); }
+function paxBValRot(k, v) { return k === "Data" ? `${fmtDate(v)} · ${DIAS_SEMANA[dLocal(v).getDay()]}` : v; }
+function paxBColAtivo() { return Object.keys(PAX_UI.bF).some(k => PAX_UI.bF[k] && PAX_UI.bF[k].size) || !!PAX_UI.bOrd; }
+function paxBTh(k, l, cls) { const f = PAX_UI.bF[k] && PAX_UI.bF[k].size, o = PAX_UI.bOrd && PAX_UI.bOrd.k === k ? PAX_UI.bOrd.d : 0;
+  return `<th class="${cls || ""}" data-sem-titulo><button type="button" class="pb-fh${f || o ? " on" : ""}" onclick="paxBFiltroAbre('${k}', this)" aria-haspopup="true" title="Filtrar e ordenar por ${esc(l)}">${esc(l)}<span class="pb-fi">${o ? (o > 0 ? "↑" : "↓") : ""}${f ? "●" : "▾"}</span></button></th>`; }
+{ const l0 = paxBancoLista;
+  paxBancoLista = function (semCol) {
+    let its = l0.apply(this, []);
+    Object.keys(PAX_UI.bF).forEach(k => { const s = PAX_UI.bF[k]; if (!s || !s.size || k === semCol) return; its = its.filter(x => s.has(paxBVal(x, k))); });
+    const o = PAX_UI.bOrd; if (o) { const num = PAX_BNUM.includes(o.k), DS = o.k === "Dia" ? DIAS_SEMANA : null;
+      const v = x => { const t = paxBVal(x, o.k); return num ? Number(t) : DS ? DS.indexOf(t) : t; };
+      its = its.map((x, i) => [x, i]).sort((a, b) => { const va = v(a[0]), vb = v(b[0]); return (va < vb ? -1 : va > vb ? 1 : 0) * o.d || a[1] - b[1]; }).map(p => p[0]); }
+    return its;
+  };
+}
+function paxBFiltroFecha() { const p = document.getElementById("pbPop"); if (p) p.remove(); }
+window.paxBFiltroLimpa = () => { PAX_UI.bF = {}; PAX_UI.bOrd = null; PAX_UI.bSel.clear(); paxBFiltroFecha(); paxBancoPinta(); };
+window.paxBFiltroAbre = (k, btn) => {
+  const ja = document.getElementById("pbPop"); if (ja && ja.dataset.k === k) { paxBFiltroFecha(); return; } paxBFiltroFecha();
+  const base = paxBancoLista(k), cont = new Map(); base.forEach(x => { const v = paxBVal(x, k); cont.set(v, (cont.get(v) || 0) + 1); });
+  const num = PAX_BNUM.includes(k), vals = [...cont.keys()].sort((a, b) => num ? Number(a) - Number(b) : k === "Dia" ? DIAS_SEMANA.indexOf(a) - DIAS_SEMANA.indexOf(b) : a.localeCompare(b));
+  const at = PAX_UI.bF[k] && PAX_UI.bF[k].size ? PAX_UI.bF[k] : null, o = PAX_UI.bOrd && PAX_UI.bOrd.k === k ? PAX_UI.bOrd.d : 0;
+  const p = document.createElement("div"); p.id = "pbPop"; p.className = "pb-pop"; p.dataset.k = k; p.setAttribute("role", "dialog"); p.setAttribute("aria-label", "Filtrar e ordenar a coluna");
+  p.innerHTML = `<div class="pb-pop-o"><button type="button" class="chip ${o > 0 ? "on" : ""}" data-o="1">${num ? "Menor → Maior" : k === "Data" || k === "Horario" ? "Mais Cedo Primeiro" : "A → Z"}</button><button type="button" class="chip ${o < 0 ? "on" : ""}" data-o="-1">${num ? "Maior → Menor" : k === "Data" || k === "Horario" ? "Mais Tarde Primeiro" : "Z → A"}</button></div>
+    ${vals.length > 8 ? `<input type="search" class="lanc-in pb-pop-q" placeholder="Procurar valor…" aria-label="Procurar valor">` : ""}
+    <div class="pb-pop-a"><button type="button" class="ctb-lnk" data-a="todos">Marcar Todos</button><button type="button" class="ctb-lnk" data-a="nenhum">Desmarcar Todos</button></div>
+    <div class="pb-pop-l">${vals.map(v => `<label data-v="${esc(v)}"><input type="checkbox" value="${esc(v)}" ${!at || at.has(v) ? "checked" : ""}><span>${esc(paxBValRot(k, v) || "(vazio)")}</span><i>${cont.get(v)}</i></label>`).join("") || `<p class="hint">Sem valores.</p>`}</div>
+    <div class="pb-pop-f"><button type="button" class="btn sm" data-a="limpar">Limpar esta Coluna</button><button type="button" class="btn sm primary" data-a="ok">Aplicar</button></div>`;
+  document.body.appendChild(p);
+  const r = btn.getBoundingClientRect(), w = 280; p.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + window.scrollX - 8)) + "px"; p.style.top = (r.bottom + window.scrollY + 6) + "px";
+  const cbs = () => [...p.querySelectorAll(".pb-pop-l input")];
+  const aplica = () => { const m = cbs().filter(c => c.checked).map(c => c.value); if (!m.length) { toast("Marque ao menos um valor (ou use Limpar esta Coluna)."); return; } if (m.length === vals.length) delete PAX_UI.bF[k]; else PAX_UI.bF[k] = new Set(m); PAX_UI.bSel.clear(); paxBFiltroFecha(); paxBancoPinta(); };
+  p.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.o) { const d = Number(b.dataset.o); PAX_UI.bOrd = PAX_UI.bOrd && PAX_UI.bOrd.k === k && PAX_UI.bOrd.d === d ? null : { k, d }; paxBFiltroFecha(); paxBancoPinta(); return; }
+    const a = b.dataset.a; if (a === "todos" || a === "nenhum") cbs().forEach(c => { if (c.closest("label").style.display !== "none") c.checked = a === "todos"; });
+    else if (a === "limpar") { delete PAX_UI.bF[k]; if (PAX_UI.bOrd && PAX_UI.bOrd.k === k) PAX_UI.bOrd = null; PAX_UI.bSel.clear(); paxBFiltroFecha(); paxBancoPinta(); }
+    else if (a === "ok") aplica(); });
+  const q = p.querySelector(".pb-pop-q"); if (q) { q.addEventListener("input", () => { const t = normName(q.value); p.querySelectorAll(".pb-pop-l label").forEach(l => { l.style.display = !t || normName(l.textContent).includes(t) ? "" : "none"; }); }); }
+  p.addEventListener("keydown", e => { if (e.key === "Escape") { paxBFiltroFecha(); btn.focus(); } else if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); aplica(); } });
+  (q || p.querySelector("button")).focus();
+};
+document.addEventListener("mousedown", e => { const p = document.getElementById("pbPop"); if (p && !p.contains(e.target) && !(e.target.closest && e.target.closest(".pb-fh"))) paxBFiltroFecha(); });
+{ const t0 = window.paxTab; window.paxTab = function () { paxBFiltroFecha(); return t0.apply(this, arguments); }; }
+{ const r0 = MOD_RESET.pax; MOD_RESET.pax = function () { PAX_UI.bF = {}; PAX_UI.bOrd = null; paxBFiltroFecha(); return r0.apply(this, arguments); }; }
+(function () { const st = document.createElement("style"); st.id = "erp-v01456b";
+  st.textContent = `.pb-t th .pb-fh{display:inline-flex;align-items:center;gap:5px;border:0;background:none;font:inherit;font-weight:inherit;color:inherit;cursor:pointer;padding:4px 6px;border-radius:6px;letter-spacing:inherit;text-transform:inherit;white-space:nowrap}
+  .pb-t th .pb-fh:hover{background:#E9EEF6}.pb-t th .pb-fh.on{background:var(--navy);color:#fff}.pb-t th .pb-fi{font-size:10px;opacity:.75}
+  .pb-pop{position:absolute;z-index:18;width:280px;background:var(--surface);border:1px solid #C9D0D8;border-radius:10px;box-shadow:0 14px 34px rgba(16,24,40,.2);padding:10px;display:flex;flex-direction:column;gap:8px;font-size:13.5px}
+  .pb-pop-o{display:flex;gap:6px;flex-wrap:wrap}.pb-pop-a{display:flex;gap:14px;font-size:12.5px}.pb-pop .pb-pop-q{height:34px}
+  .pb-pop-l{max-height:250px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:4px}
+  .pb-pop-l label{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;cursor:pointer}.pb-pop-l label:hover{background:#F1F5FB}.pb-pop-l label span{flex:1}.pb-pop-l label i{font-style:normal;font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .pb-pop-f{display:flex;justify-content:space-between;gap:8px}.pb-limpa{margin-left:10px}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -51178,6 +51321,7 @@ CONFIG.version = "v0.14.52";   /* Estatística de Passageiros numa página só: 
 CONFIG.version = "v0.14.53";   /* Passageiros: horários (F) dentro da linha 1001; sentido pela seção IDA/VOLTA da planilha, com correção do que já foi gravado; Barras/Linhas por gráfico; por horário com pagantes × gratuidades; aba Banco de Dados; aba Lançamentos (o dia inteiro numa folha); Excel no padrão da empresa; abre no mês atual */
 CONFIG.version = "v0.14.54";   /* Passageiros: filtros em seção flutuante e código de cores (linha, sentido, tipo de dia, horário) */
 CONFIG.version = "v0.14.55";   /* Passageiros: Fretamento volta a ser um filtro próprio, separado da 1001 · Direto */
+CONFIG.version = "v0.14.56";   /* Passageiros › Banco de Dados: edição na célula; Data, Dia, Linha e Serviço em colunas separadas; sem Origem */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

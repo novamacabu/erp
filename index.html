@@ -50513,6 +50513,530 @@ window.paintPax = paintPax;
   @media (max-width:760px){.cap-bar.pax-tr{grid-template-columns:minmax(110px,1fr) 1fr 40px 60px}}`;
   document.head.appendChild(st);
 })();
+/* =====================================================================================================================
+   v0.14.53 · Estatística de Passageiros — divergências da importação (Rafael, 13/11/2026 11:46) e Barras/Linhas por gráfico
+   1 · Horários "(F)" da aba Direto (fretamento para firmas: 05:20, 05:30, 05:35, 17:15, 17:30) continuam gravados como
+       "Fretamento", mas passam a aparecer DENTRO da linha 1001 · Direto, com o horário marcado "(F)". A linha 9000 some
+       dos filtros. Nada é regravado.
+   2 · Sentido pela SEÇÃO da planilha (faixas IDA / VOLTA), não mais pelo rótulo do trecho — o rótulo vem copiado errado em
+       alguns horários (ex.: Direto 18:30 e 17:30 (F), que estão na VOLTA com o rótulo "CM X MC"). A prévia da importação
+       mostra as viagens já gravadas com o sentido trocado e tem um botão para corrigir.
+   3 · Cada gráfico volta a ter o seu Barras/Linhas; o "Gráfico" do topo muda todos de uma vez.
+   ===================================================================================================================== */
+/* ---- 1 · (F) dentro da linha 1001 ---- */
+Object.assign(PAX_SERVICO_INFO.Fretamento, { linha: "1001", desc: "Macaé x Conceição", rot: "Macaé x Conceição - Direto (F · fretamento)", sentidoIda: "CM x MC", sentidoVolta: "MC x CM" });
+function paxMarcaF(x) { if (x && x.Servico === "Fretamento" && x._hora == null) { x._hora = x.Horario; x.Horario = `${x.Horario} (F)`; } return x; }
+{ const l0 = loadPax; loadPax = async function () { const r = await l0.apply(this, arguments); try { PAX_STATE.itens.forEach(paxMarcaF); } catch (e) {} return r; }; window.loadPax = loadPax; }
+{ const f0 = window.paxForm;   /* o formulário edita o horário gravado (sem a marca) */
+  window.paxForm = function (id) { const x = id ? PAX_STATE.itens.find(i => i._id === String(id)) : null, h = x && x._hora != null ? x.Horario : null; if (h != null) x.Horario = x._hora; try { return f0.apply(this, arguments); } finally { if (h != null) x.Horario = h; } };
+}
+
+/* ---- 2 · sentido pela seção IDA / VOLTA da planilha ---- */
+const PAX_SEC_RE = /^\s*(ida|volta)\s*$/i;
+paxLerAba = function (mat) {
+  const cab = mat[1] || []; const cols = []; for (let c = 1; c < cab.length; c++) { const v = cab[c]; const d = v instanceof Date ? v.getDate() : Number(v); if (d >= 1 && d <= 31 && Number.isInteger(d)) cols.push({ c, d }); }
+  const dow = (mat[0] || []).slice(1).map(x => normName(x)).filter(Boolean);
+  const viagens = [], ignorados = new Set(); let cur = null, sec = "";
+  for (let r = 2; r < mat.length; r++) {
+    const row = mat[r] || [], a = row[0];
+    const marca = row.find(c => typeof c === "string" && PAX_SEC_RE.test(c)); if (marca) { sec = /ida/i.test(marca) ? "Ida" : "Volta"; cur = null; continue; }
+    const h = a != null && a !== "" ? paxHoraCel(a) : null;
+    if (h) { cur = { hora: h.hora, fret: h.fret, segs: {}, grat: cols.map(() => 0), tot: null, sec }; Object.defineProperty(cur.segs, "__sec", { value: sec, enumerable: false }); viagens.push(cur); continue; }
+    if (!cur) continue;
+    const lbl = String(a == null ? "" : a).trim(); if (!lbl) continue;
+    const vals = cols.map(({ c }) => { const v = row[c]; return typeof v === "number" ? v : (v != null && String(v).trim() !== "" && !isNaN(Number(v)) ? Number(v) : 0); });
+    if (/^total/i.test(lbl)) { cur.tot = vals; cur = null; continue; }
+    if (/gratuid/i.test(lbl)) { cur.grat = cur.grat.map((g, i) => g + vals[i]); continue; }
+    const k = lbl.replace(/\s+/g, " ").toUpperCase();
+    if (!PAX_TRECHO_RE.test(k)) { ignorados.add(lbl); continue; }
+    cur.segs[k] = (cur.segs[k] || cols.map(() => 0)).map((x, i) => x + vals[i]);
+  }
+  return { cols, dow, viagens: viagens.filter(v => v.tot || Object.keys(v.segs).length), ignorados: [...ignorados] };
+};
+/* bloco sem nenhum valor (aba vazia) não conta como "trechos nos dois sentidos" */
+{ const s0 = paxSentido; paxSentido = function (segs) { if (segs && segs.__sec) return segs.__sec; if (segs && !Object.values(segs).some(arr => (arr || []).some(v => v))) return "Ida"; return s0.apply(this, arguments); }; }
+/* a importação: na linha de Madalena a seção da planilha também vale antes do quadro de horários; e a prévia aponta o que já foi gravado com o sentido trocado */
+{ const m0 = paxMontarImport;
+  paxMontarImport = function (wb, mes, arquivo) {
+    const tem = h => ({ has: () => false });   /* neutraliza o quadro fixo de Madalena só quando a aba tem seção (o paxSentido devolve a seção) */
+    const I = m0.apply(this, arguments);
+    try {
+      /* Madalena: m0 usa o quadro de horários antes do paxSentido; refaz o sentido pela seção quando ela existe */
+      const secDe = new Map();
+      for (const nome of wb.nomes) { if (paxServicoDaAba(nome) !== "Madalena") continue; let L; try { L = paxLerAba(wb.aba(nome)); } catch (e) { continue; } L.viagens.forEach(v => { if (v.sec) secDe.set(v.hora, secDe.has(v.hora) && secDe.get(v.hora) !== v.sec ? "" : v.sec); }); }
+      if (secDe.size) { const novo = new Map();
+        I.regs.forEach(f => { if (f.Servico === "Madalena" && secDe.get(f.Horario) && f.Sentido !== secDe.get(f.Horario)) { f.Sentido = secDe.get(f.Horario); f.Title = paxChave(f); }
+          const o = novo.get(f.Title); if (o) { o.Pagantes += f.Pagantes; o.Gratuidade += f.Gratuidade; const t = JSON.parse(o.Trechos); Object.entries(JSON.parse(f.Trechos)).forEach(([k, v]) => { t[k] = (t[k] || 0) + Number(v || 0); }); o.Trechos = JSON.stringify(t); } else novo.set(f.Title, f); });
+        I.regs = [...novo.values()]; }
+      /* o que já está gravado no mês com o outro sentido (mesma data, serviço e horário) */
+      const doMes = PAX_STATE.itens.filter(x => x.Data.slice(0, 7) === mes), porTitulo = new Map(doMes.map(x => [x.Title, x]));
+      I.sentCorr = [];
+      I.regs.forEach(f => { if (porTitulo.has(f.Title)) return; const outro = f.Sentido === "Ida" ? "Volta" : "Ida", ex = porTitulo.get(paxChave(Object.assign({}, f, { Sentido: outro })));
+        if (ex && !I.regs.some(g => g.Title === ex.Title)) I.sentCorr.push({ id: ex._id, de: outro, para: f.Sentido, f }); });
+      const ids = new Set(I.sentCorr.map(c => c.f.Title)); I.regs = I.regs.filter(f => !ids.has(f.Title));   /* não cria de novo: corrige o que existe */
+      I.jaExistem = I.regs.filter(f => porTitulo.has(f.Title)).length;
+    } catch (e) { console.warn("pax import sentido", e); }
+    return I;
+  };
+}
+{ const p0 = paxImportPrevHtml;
+  paxImportPrevHtml = function (imp) {
+    let h = p0.apply(this, arguments); const c = imp.sentCorr || [];
+    if (c.length) { const res = new Map(); c.forEach(x => { const k = `${x.f.Servico === "Fretamento" ? "Direto (F)" : x.f.Servico} ${x.f.Horario}: ${x.de} → ${x.para}`; res.set(k, (res.get(k) || 0) + 1); });
+      h += `<div class="import-help" id="impSentBox" style="margin-top:12px"><b>${c.length} viagem(ns) já gravada(s) com o sentido diferente da seção da planilha</b> (o rótulo do trecho estava trocado): ${esc([...res.entries()].map(([k, n]) => `${k} (${n} dia(s))`).join("; "))}.<div class="actions" style="margin-top:8px"><button class="btn" id="impSentGo" onclick="paxCorrigirSentido()">Corrigir o Sentido de ${c.length} Viagem(ns)</button></div></div>`; }
+    return h;
+  };
+}
+window.paxCorrigirSentido = async () => {
+  const imp = PAX_STATE.imp, c = (imp && imp.sentCorr) || []; if (!c.length) return;
+  if (!podeEditar("pax")) { toast("Seu acesso é só de leitura."); return; }
+  if (!confirm(`Corrigir o sentido de ${c.length} viagem(ns) já gravada(s) em ${mesLabel(imp.mes)}? Os passageiros não mudam; só o sentido (Ida/Volta).`)) return;
+  const b = $("impSentGo"); if (b) { b.disabled = true; b.textContent = "Corrigindo…"; }
+  const base = `/sites/${PAX_STATE.site.id}/lists/${PAX_STATE.list.id}/items`;
+  let ok = 0, falha = 0;
+  try { const res = await graphBatch(c.map(x => ({ method: "PATCH", url: `${base}/${x.id}/fields`, body: { Sentido: x.para, Title: x.f.Title } }))); res.forEach(r => { if (r && r.ok) ok++; else falha++; }); }
+  catch (e) { toast("Não foi possível corrigir: " + e.message, 8000); if (b) { b.disabled = false; b.textContent = `Corrigir o Sentido de ${c.length} Viagem(ns)`; } return; }
+  try { await loadPax(); } catch (e) {}
+  toast(`${ok} viagem(ns) com o sentido corrigido${falha ? ` · ${falha} falha(s)` : ""}`, 7000);
+  PAX_STATE.imp = paxMontarImport(imp.wb, imp.mes, imp.arquivo); const pv = $("impPrev"); if (pv) { pv.innerHTML = paxImportPrevHtml(PAX_STATE.imp); paxImportGo(); }
+};
+
+/* ---- 2b · por horário com uma linha só: pagantes × gratuidades e o total, como no dia a dia (Rafael, 11:50) ---- */
+{ const h0 = paxHorChart;
+  paxHorChart = function (its) {
+    const r = h0.apply(this, arguments);
+    try { if (paxHorModo() === "off") return r;
+      const linhas = [...new Set(its.map(x => paxLinhaDoServ(x.Servico) || "—"))]; if (linhas.length !== 1) return r;
+      const media = paxMedida() === "media", linha = paxHorModo() === "line";
+      ["Ida", "Volta"].forEach(sent => { const el = $("paxChartHor" + sent); if (!el) return;
+        const f = its.filter(x => (x.Sentido || "Ida") === sent), horas = [...new Set(f.map(x => x.Horario))].sort();
+        const val = (h, k) => { const v = f.filter(x => x.Horario === h), t = v.reduce((s, x) => s + Number(x[k] || 0), 0); return media ? Math.round(10 * t / v.length) / 10 : t; };
+        const cfg = paxCfgPagGrat({ labels: horas, pag: horas.map(h => val(h, "Pagantes")), grat: horas.map(h => val(h, "Gratuidade")), linha });
+        cfg.options.scales.x.title = { display: true, text: "Horário de saída", color: PAX_CH.cor, font: { size: 11.5, weight: 600 } }; cfg.options.scales.x.ticks.maxRotation = 50;
+        paxNovoChart(el, cfg); });
+    } catch (e) { console.warn("chart pax hor pg", e); }
+    return r;
+  };
+}
+
+/* ---- 3 · Barras/Linhas por gráfico ---- */
+PAX_UI.modoG = {};
+{ const h0 = paxHorModo; paxHorModo = function () { const g = h0.apply(this, arguments); if (g === "off") return g; const k = PAX_UI._ctx; return (k && PAX_UI.modoG[k]) || g; }; }
+{ const s0 = window.paxHorModoSet; window.paxHorModoSet = function (m) { PAX_UI.modoG = {}; return s0.apply(this, arguments); }; }
+window.paxModoSet = (k, m) => { PAX_UI.modoG[k] = m; paintPax(); };
+function paxComCtx(k, fn) { return function () { const a = PAX_UI._ctx; PAX_UI._ctx = k; try { return fn.apply(this, arguments); } finally { PAX_UI._ctx = a; } }; }
+paxHorChart = paxComCtx("horas", paxHorChart); paxChartDias = paxComCtx("dias", paxChartDias); paxPainelCharts = paxComCtx("mes", paxPainelCharts);
+{ const p0 = paintPax;
+  paintPax = function () {
+    const r = p0.apply(this, arguments);
+    try { [["paxChartHoras", "horas"], ["paxChartHorIda", "horas"], ["paxChartHorVolta", "horas"], ["paxChartDias", "dias"], ["paxChartMes", "mes"]].forEach(([id, k]) => {
+      const cv = $(id), h = cv && cv.closest(".cap-card") && cv.closest(".cap-card").querySelector(".cap-card-h"); if (!h || h.querySelector(".pax-seg")) return;
+      const a = PAX_UI._ctx; PAX_UI._ctx = k; const m = paxHorModo(); PAX_UI._ctx = a;
+      h.insertAdjacentHTML("beforeend", `<span class="grow"></span><span class="seg-tabs pax-seg" role="group" aria-label="Tipo de gráfico">${[["bar", "Barras"], ["line", "Linhas"]].map(([v, l]) => `<button type="button" class="${m === v ? "on" : ""}" aria-pressed="${m === v}" onclick="paxModoSet('${k}', '${v}')">${l}</button>`).join("")}</span>`); });
+    } catch (e) {}
+    return r;
+  };
+  window.paintPax = paintPax;
+}
+
+/* ---- 4 · aba Banco de Dados: as viagens gravadas, para conferir e corrigir (Rafael, 11:51) ---- */
+PAX_UI.bSel = new Set(); PAX_UI.bQ = "";
+window.paxTab = t => { PAX_STATE.tab = ["importar", "banco"].includes(t) ? t : "horario"; if (t !== "banco") PAX_UI.bSel.clear(); paintPax(); };
+function paxServRot(s) { return s === "Fretamento" ? "Direto (F)" : s; }
+function paxBancoLista() { const q = normName(PAX_UI.bQ || ""); return paxFiltra(paxDoMes()).filter(x => !q || normName(`${fmtDate(x.Data)} ${x.Horario} ${paxServRot(x.Servico)} ${x.Sentido || ""} ${x.Observacoes || ""}`).includes(q)).sort((a, b) => a.Data.localeCompare(b.Data) || a.Horario.localeCompare(b.Horario) || (a.Sentido || "").localeCompare(b.Sentido || "")); }
+function paxBancoHtml() {
+  const edita = podeEditar("pax"), exclui = typeof podeExcluir === "function" ? podeExcluir("pax") : false, its = paxBancoLista(), sel = PAX_UI.bSel, n = [...sel].filter(id => its.some(x => x._id === id)).length;
+  const linhas = its.map(x => { const tr = paxTrechos(x), trTx = Object.entries(tr).filter(([k, v]) => v && !/gratuid/i.test(k)).map(([k, v]) => `${k} ${v}`).join(" · ");
+    return `<tr class="${sel.has(x._id) ? "on" : ""}"><td>${edita ? `<input type="checkbox" aria-label="Selecionar" ${sel.has(x._id) ? "checked" : ""} onchange="paxBancoSel(${jsArg(x._id)}, this.checked)">` : ""}</td><td class="nw">${esc(fmtDate(x.Data))} <span class="sup${fimDeSemanaOuFeriado(x.Data) ? " pax-fds-txt" : ""}">${DIAS_SEMANA[dLocal(x.Data).getDay()]}</span></td><td class="nw"><b>${esc(paxLinhaDoServ(x.Servico))}</b> <span class="sup">${esc(paxServRot(x.Servico))}</span></td><td class="nw"><b>${esc(x.Horario)}</b></td><td>${esc(x.Sentido || "Ida")}</td><td class="n">${Number(x.Pagantes || 0).toLocaleString("pt-BR")}</td><td class="n">${Number(x.Gratuidade || 0)}</td><td class="n">${Number(x.Lugares || PAX_LUGARES)}</td><td class="sup">${esc(trTx)}</td><td class="sup">${esc(x.Origem || "")}</td><td class="nw">${edita ? `<button type="button" class="btn mini" onclick="paxForm(${jsArg(x._id)})">Editar</button>` : ""}</td></tr>`; }).join("");
+  const lote = edita ? `<div class="pax-lote ${n ? "on" : ""}"><b>${n}</b> selecionada(s)<span class="grow"></span>
+      <button type="button" class="btn sm" ${n ? "" : "disabled"} onclick="paxBancoLote('Sentido','Ida')">Passar para Ida</button><button type="button" class="btn sm" ${n ? "" : "disabled"} onclick="paxBancoLote('Sentido','Volta')">Passar para Volta</button>
+      <select class="lanc-in lanc-sel pax-lote-sel" ${n ? "" : "disabled"} onchange="if (this.value) paxBancoLote('Servico', this.value); this.value=''" aria-label="Mudar o serviço das selecionadas"><option value="">Mudar o Serviço…</option>${PAX_SERVICOS.map(s => `<option value="${esc(s)}">${esc(paxServRot(s))} · linha ${esc(paxLinhaDoServ(s))}</option>`).join("")}</select>
+      ${exclui ? `<button type="button" class="btn sm" ${n ? "" : "disabled"} onclick="paxBancoExcluir()">Excluir Selecionadas</button>` : ""}</div>` : "";
+  return `<div class="cap-card"><div class="cap-card-h"><h3>Banco de Dados</h3><span class="cap-card-s">${its.length} viagem(ns) gravada(s) em ${esc(mesLabel(PAX_STATE.mes))}${paxFiltroAtivo() ? " · no filtro" : ""} · é daqui que saem os gráficos</span><span class="grow"></span><input type="search" id="paxBQ" class="lanc-in" style="max-width:240px" placeholder="Buscar dia, horário, serviço…" value="${esc(PAX_UI.bQ || "")}" oninput="PAX_UI.bQ = this.value; paxBancoPinta()"></div>
+    ${lote}<div class="table-wrap pax-banco"><table class="cap-table pax-t"><thead><tr><th style="width:34px">${edita ? `<input type="checkbox" aria-label="Selecionar todas" ${its.length && n === its.length ? "checked" : ""} onchange="paxBancoSelTodas(this.checked)">` : ""}</th><th>Data</th><th>Linha / Serviço</th><th>Horário</th><th>Sentido</th><th class="n">Pagantes</th><th class="n">Gratuid.</th><th class="n">Lugares</th><th>Trechos</th><th>Origem</th><th></th></tr></thead><tbody>${linhas || `<tr><td colspan="11" class="cap-muted" style="padding:18px">Nenhuma viagem neste mês com esse filtro.</td></tr>`}</tbody></table></div>
+    <p class="hint"><b>Editar</b> abre a viagem para corrigir data, serviço, horário, sentido, pagantes, gratuidades e trechos. Para corrigir várias de uma vez (ex.: um horário que entrou com o sentido trocado), filtre pelo horário, marque as linhas e use os botões acima. "Direto (F)" são os horários de fretamento da aba Direto.</p></div>`;
+}
+window.paxBancoPinta = () => { const c = $("paxBancoBox"); if (!c) return; const pos = $("paxBQ") ? $("paxBQ").selectionStart : null, foco = document.activeElement && document.activeElement.id === "paxBQ", w = c.querySelector(".pax-banco"), st = w ? w.scrollTop : 0;
+  c.innerHTML = paxBancoHtml(); const w2 = c.querySelector(".pax-banco"); if (w2) w2.scrollTop = st; if (foco && $("paxBQ")) { $("paxBQ").focus(); try { $("paxBQ").setSelectionRange(pos, pos); } catch (e) {} } };
+window.paxBancoSel = (id, on) => { if (on) PAX_UI.bSel.add(id); else PAX_UI.bSel.delete(id); paxBancoPinta(); };
+window.paxBancoSelTodas = on => { const its = paxBancoLista(); if (on) its.forEach(x => PAX_UI.bSel.add(x._id)); else PAX_UI.bSel.clear(); paxBancoPinta(); };
+function paxBancoSelecionadas() { const its = paxBancoLista(); return its.filter(x => PAX_UI.bSel.has(x._id)); }
+window.paxBancoLote = async (campo, valor) => {
+  if (!podeEditar("pax")) { toast("Seu acesso é só de leitura."); return; }
+  const its = paxBancoSelecionadas().filter(x => (campo === "Sentido" ? (x.Sentido || "Ida") : x.Servico) !== valor); if (!its.length) { toast("As viagens selecionadas já estão assim."); return; }
+  const chave = (x, extra) => paxChave(Object.assign({ Data: x.Data, Servico: x.Servico, Horario: x._hora != null ? x._hora : x.Horario, Sentido: x.Sentido || "Ida" }, extra));
+  const titulos = new Set(PAX_STATE.itens.map(x => x.Title)), muda = [], bate = [];
+  its.forEach(x => { const t = chave(x, { [campo]: valor }); if (titulos.has(t) || muda.some(m => m.t === t)) bate.push(x); else muda.push({ x, t }); });
+  if (!muda.length) { toast(`Nenhuma alterada: já existe viagem gravada com o mesmo dia, serviço, horário e sentido (${bate.length}).`, 8000); return; }
+  if (!confirm(`Mudar ${campo === "Sentido" ? "o sentido" : "o serviço"} de ${muda.length} viagem(ns) para ${campo === "Servico" ? paxServRot(valor) : valor}?${bate.length ? `\n${bate.length} ficam como estão, porque já existe outra viagem igual com esse valor.` : ""}`)) return;
+  const base = `/sites/${PAX_STATE.site.id}/lists/${PAX_STATE.list.id}/items`; let ok = 0, falha = 0;
+  try { const res = await graphBatch(muda.map(m => ({ method: "PATCH", url: `${base}/${m.x._id}/fields`, body: { [campo]: valor, Title: m.t } }))); res.forEach(r => { if (r && r.ok) ok++; else falha++; }); }
+  catch (e) { toast("Não foi possível gravar: " + e.message, 8000); return; }
+  try { await loadPax(); } catch (e) {}
+  PAX_UI.bSel.clear(); paintPax(); toast(`${ok} viagem(ns) alterada(s)${falha ? ` · ${falha} falha(s)` : ""}${bate.length ? ` · ${bate.length} mantida(s)` : ""}`, 7000);
+};
+window.paxBancoExcluir = async () => {
+  const its = paxBancoSelecionadas(); if (!its.length) return;
+  if (!confirm(`Excluir ${its.length} viagem(ns) selecionada(s) de ${mesLabel(PAX_STATE.mes)}? Não dá para desfazer.`)) return;
+  const base = `/sites/${PAX_STATE.site.id}/lists/${PAX_STATE.list.id}/items`; let ok = 0, falha = 0;
+  try { const res = await graphBatch(its.map(x => ({ method: "DELETE", url: `${base}/${x._id}` }))); res.forEach(r => { if (r && r.ok) ok++; else falha++; }); }
+  catch (e) { toast("Não foi possível excluir: " + e.message, 8000); return; }
+  try { await loadPax(); } catch (e) {}
+  PAX_UI.bSel.clear(); paintPax(); toast(`${ok} viagem(ns) excluída(s)${falha ? ` · ${falha} falha(s)` : ""}`, 7000);
+};
+{ const p0 = paintPax;
+  paintPax = function () {
+    const body = $("paxBody");
+    if (body && PAX_STATE.ready && PAX_STATE.tab === "banco") {
+      const edita = podeEditar("pax"), doMes = paxDoMes(), meses = [...new Set(PAX_STATE.itens.map(x => x.Data.slice(0, 7)))].sort().reverse();
+      const acts = $("paxActions"); if (acts) acts.innerHTML = `<button class="btn pax-exp" onclick="paxExportar()">Exportar Excel</button>` + (edita ? `<button class="btn" onclick="paxTab('importar')">Importar planilha</button><button class="btn primary" onclick="paxForm()">Lançar viagem</button>` : "");
+      const tabs = `<div class="seg-tabs" role="tablist">${[["horario", "Análise"], ["banco", "Banco de Dados"]].concat(edita ? [["importar", "Importar"]] : []).map(([k, l]) => `<button role="tab" class="${k === "banco" ? "on" : ""}" onclick="paxTab('${k}')">${l}</button>`).join("")}</div>`;
+      body.innerHTML = `<div class="op-topo">${mesAnoPicker("paxMA", PAX_STATE.mes, meses)}<span class="grow"></span>${tabs}</div>${paxFiltrosHtml(doMes)}<div id="paxBancoBox">${paxBancoHtml()}</div>`;
+      mesAnoPickerWire("paxMA", v => { PAX_STATE.mes = v; PAX_UI.bSel.clear(); paintPax(); });
+      return;
+    }
+    const r = p0.apply(this, arguments);
+    try { const seg = document.querySelector("#paxBody .op-topo .seg-tabs"), topo = document.querySelector("#paxBody .op-topo");
+      const bt = `<button role="tab" onclick="paxTab('banco')">Banco de Dados</button>`;
+      if (seg && !/Banco de Dados/.test(seg.textContent)) { const imp = [...seg.querySelectorAll("button")].find(b => /Importar/i.test(b.textContent)); if (imp) imp.insertAdjacentHTML("beforebegin", bt); else seg.insertAdjacentHTML("beforeend", bt); }
+      else if (!seg && topo && PAX_STATE.ready) topo.insertAdjacentHTML("beforeend", `<div class="seg-tabs" role="tablist"><button role="tab" class="on" onclick="paxTab('horario')">Análise</button>${bt}</div>`);
+    } catch (e) {}
+    return r;
+  };
+  window.paintPax = paintPax;
+}
+(function () {
+  const st = document.createElement("style"); st.id = "erp-v01453";
+  st.textContent = `.pax-seg{flex:0 0 auto}.pax-seg button{padding:4px 10px;font-size:12.5px}
+  .pax-banco{max-height:640px;overflow:auto}.pax-banco thead th{position:sticky;top:0;background:var(--surface);z-index:1}.pax-banco tr.on td{background:#EEF2FA}
+  .pax-lote{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px;margin:0 0 10px;border:1px solid var(--line);border-radius:var(--radius);background:#F7F9FC;font-size:13px}.pax-lote.on{border-color:var(--navy)}
+  .pax-lote-sel{width:auto!important;min-width:190px;height:32px;padding:2px 28px 2px 10px}`;
+  document.head.appendChild(st);
+})();
+
+/* ---- 5 · a página abre sempre no mês atual (Rafael, 13/11 12:05) ---- */
+{ const l0 = loadPax; loadPax = async function () { if (!PAX_STATE.mes) PAX_STATE.mes = todayISO().slice(0, 7); return l0.apply(this, arguments); }; window.loadPax = loadPax; }
+{ const r0 = MOD_RESET.pax; MOD_RESET.pax = function () { const r = r0.apply(this, arguments); PAX_STATE.mes = todayISO().slice(0, 7); PAX_UI.lote = null; return r; }; }
+
+/* ---- 6 · aba Lançamentos: o dia inteiro numa folha (Rafael, 13/11 12:03) ----
+   Escolhe o dia; a folha traz a grade de horários daquele tipo de dia (tirada das viagens já gravadas nos dias parecidos mais próximos)
+   com o que já está gravado no dia. Digita-se pagantes e gratuidades e grava-se tudo de uma vez: linha nova é criada, linha alterada é atualizada. */
+const PAX_LOTE_SERV = [["Parador", "1000 · Paradora"], ["Direto", "1001 · Direto"], ["Fretamento", "1001 · Direto (F)"], ["Madalena", "2000 · Sta. Maria Madalena"]];
+function paxLoteServRot(s) { return (PAX_LOTE_SERV.find(x => x[0] === s) || [s, s])[1]; }
+function paxHoraPura(x) { return x._hora != null ? x._hora : String(x.Horario || "").replace(/\s*\(F\)$/, ""); }
+function paxLoteMontar(data) {
+  const tipo = paxTipoDia(data), mapa = new Map(), k = (s, h, se) => `${s}|${h}|${se}`;
+  const datas = [...new Set(PAX_STATE.itens.map(x => x.Data).filter(d => d && d !== data && paxTipoDia(d) === tipo))];
+  const dist = d => Math.abs(dLocal(d) - dLocal(data)); datas.sort((a, b) => dist(a) - dist(b));
+  const viz = new Set(datas.slice(0, 4));
+  PAX_STATE.itens.forEach(x => { if (!viz.has(x.Data)) return; const h = paxHoraPura(x), se = x.Sentido || "Ida", kk = k(x.Servico, h, se); if (!mapa.has(kk)) mapa.set(kk, { serv: x.Servico, hora: h, sent: se, pag: "", grat: "", id: null, p0: null, g0: null }); });
+  PAX_STATE.itens.forEach(x => { if (x.Data !== data) return; const h = paxHoraPura(x), se = x.Sentido || "Ida", p = Number(x.Pagantes || 0), g = Number(x.Gratuidade || 0);
+    mapa.set(k(x.Servico, h, se), { serv: x.Servico, hora: h, sent: se, pag: String(p), grat: String(g), id: x._id, p0: p, g0: g }); });
+  const ord = s => { const i = PAX_LOTE_SERV.findIndex(x => x[0] === s); return i < 0 ? 9 : i; };
+  const linhas = [...mapa.values()].sort((a, b) => ord(a.serv) - ord(b.serv) || (a.sent === b.sent ? 0 : a.sent === "Ida" ? -1 : 1) || a.hora.localeCompare(b.hora));
+  return { data, linhas, extra: 0, viz: viz.size };
+}
+function paxLoteNum(v) { const s = String(v == null ? "" : v).trim(); if (s === "") return null; const n = Number(s); return Number.isInteger(n) && n >= 0 ? n : NaN; }
+function paxLoteSt(l) {   /* "" vazio · novo · igual · alt · erro */
+  const p = paxLoteNum(l.pag), g = paxLoteNum(l.grat);
+  if (Number.isNaN(p) || Number.isNaN(g)) return "erro";
+  if (l.livre && (p != null || g != null) && !/^\d{2}:\d{2}$/.test(l.hora || "")) return "erro";
+  if (p == null && g == null) return l.id ? "igual" : "";
+  if (!l.id) return "novo";
+  return (p == null ? l.p0 : p) === l.p0 && (g == null ? l.g0 : g) === l.g0 ? "igual" : "alt";
+}
+function paxLoteTot() { const L = PAX_UI.lote, t = { n: 0, p: 0, g: 0, novo: 0, alt: 0, erro: 0 }; if (!L) return t;
+  L.linhas.forEach(l => { const st = paxLoteSt(l); if (st === "erro") { t.erro++; return; } if (!st) return; const p = paxLoteNum(l.pag), g = paxLoteNum(l.grat); t.n++; t.p += p == null ? (l.p0 || 0) : p; t.g += g == null ? (l.g0 || 0) : g; if (st === "novo") t.novo++; if (st === "alt") t.alt++; }); return t; }
+function paxLoteSujo() { const t = paxLoteTot(); return !!(t.novo || t.alt); }
+function paxLoteRodape() {
+  const t = paxLoteTot(), el = $("paxLoteTots"); if (!el) return;
+  const c = (l, v, forte) => `<div class="lanc-tot${forte ? " forte" : ""}"><div class="l">${l}</div><div class="v">${v}</div></div>`;
+  el.innerHTML = c("Viagens Preenchidas", t.n) + c("Pagantes", t.p.toLocaleString("pt-BR")) + c("Gratuidades", t.g.toLocaleString("pt-BR")) + c("Total de Passageiros", (t.p + t.g).toLocaleString("pt-BR"), true);
+  const b = $("paxLoteGo"); if (b) { b.disabled = !(t.novo || t.alt) || !!t.erro; b.textContent = t.erro ? `Corrija ${t.erro} linha(s)` : t.novo || t.alt ? `Gravar ${t.novo + t.alt} Viagem(ns)` : "Nada a Gravar"; }
+  const r = $("paxLoteRes"); if (r) r.textContent = t.novo || t.alt ? `${t.novo} nova(s) · ${t.alt} alterada(s)` : "";
+  PAX_UI.lote.linhas.forEach((l, i) => { const st = paxLoteSt(l), row = document.querySelector(`#paxLoteGrid [data-i="${i}"]`); if (!row) return;
+    const tt = row.querySelector(".pl-tot"), p = paxLoteNum(l.pag), g = paxLoteNum(l.grat); if (tt) tt.textContent = st && st !== "erro" ? String((p == null ? l.p0 || 0 : p) + (g == null ? l.g0 || 0 : g)) : "—";
+    const ch = row.querySelector(".pl-st"); if (ch) { ch.className = "pl-st " + (st || "vz"); ch.textContent = { novo: "Nova", alt: "Alterada", igual: "Gravada", erro: "Confira" }[st] || ""; } });
+}
+function paxLoteHtml() {
+  const L = PAX_UI.lote, d = dLocal(L.data), fer = feriadoNome(L.data), tipo = { util: "Dia Útil", sab: "Sábado", dom: fer ? "Feriado" : "Domingo" }[paxTipoDia(L.data)] || "";
+  const optS = v => PAX_LOTE_SERV.map(([k, r]) => `<option value="${k}" ${k === v ? "selected" : ""}>${esc(r)}</option>`).join("");
+  let grupo = "";
+  const rows = L.linhas.map((l, i) => {
+    let cab = "";
+    if (!l.livre) { const gk = `${l.serv}|${l.sent}`; if (gk !== grupo) { grupo = gk; cab = `<div class="pl-grupo"><b>${esc(paxLoteServRot(l.serv))}</b> · ${esc(l.sent)}</div>`; } }
+    else if (grupo !== "livre") { grupo = "livre"; cab = `<div class="pl-grupo"><b>Outras Viagens</b> · fora da grade do dia</div>`; }
+    const fixo = l.livre
+      ? `<div class="lanc-cell"><select class="lanc-in lanc-sel" data-k="serv" aria-label="Linha">${optS(l.serv)}</select></div><div class="lanc-cell"><input class="lanc-in" data-k="hora" value="${esc(l.hora)}" placeholder="05:20" maxlength="5" aria-label="Horário"></div><div class="lanc-cell"><select class="lanc-in lanc-sel" data-k="sent" aria-label="Sentido"><option ${l.sent !== "Volta" ? "selected" : ""}>Ida</option><option ${l.sent === "Volta" ? "selected" : ""}>Volta</option></select></div>`
+      : `<div class="lanc-cell pl-fixo">${esc(paxLoteServRot(l.serv))}</div><div class="lanc-cell pl-fixo pl-hora">${esc(l.hora)}${l.serv === "Fretamento" ? " (F)" : ""}</div><div class="lanc-cell pl-fixo">${esc(l.sent)}</div>`;
+    return `${cab}<div class="lanc-row pl-row" data-i="${i}">${fixo}
+      <div class="lanc-cell"><input class="lanc-in num" inputmode="numeric" data-k="pag" value="${esc(l.pag)}" aria-label="Pagantes ${esc(l.hora)}"></div>
+      <div class="lanc-cell"><input class="lanc-in num" inputmode="numeric" data-k="grat" value="${esc(l.grat)}" aria-label="Gratuidades ${esc(l.hora)}"></div>
+      <div class="lanc-calc pl-tot">—</div><div class="lanc-cell"><span class="pl-st vz"></span></div>
+      <div class="lanc-cell">${l.livre ? `<button type="button" class="lanc-x" onclick="paxLoteTira(${i})" title="Remover esta linha" aria-label="Remover">×</button>` : ""}</div></div>`;
+  }).join("");
+  return `<div class="lanc-ed pax-lanc">
+    <div class="lanc-card"><div class="lanc-card-h"><h3>Lançamento do Dia</h3><span class="row" style="gap:8px"><button class="btn" onclick="paxExcelMes()" title="Excel no padrão da empresa com as viagens gravadas do mês deste dia">Exportar Excel do Mês</button></span></div>
+      <div class="pl-dia"><button class="btn" onclick="paxLoteDia(-1)" aria-label="Dia anterior">‹ Dia Anterior</button>
+        <input type="date" class="lanc-in" id="paxLoteData" value="${esc(L.data)}" onchange="paxLoteDia(0, this.value)" aria-label="Dia do lançamento">
+        <button class="btn" onclick="paxLoteDia(1)" aria-label="Próximo dia">Próximo Dia ›</button>
+        <span class="pl-dow"><b>${esc(DIAS_SEMANA[d.getDay()])}</b> · ${esc(tipo)}${fer ? ` (${esc(fer)})` : ""}</span></div>
+      <p class="hint" style="margin:10px 0 0">${L.linhas.some(l => !l.livre) ? `A grade abaixo traz os horários que rodam em dia parecido (${esc(tipo.toLowerCase())}) e o que já está gravado neste dia. Preencha pagantes e gratuidades; linha em branco não é gravada. <b>Enter</b> desce para a linha de baixo.` : "Ainda não há viagens gravadas em dias parecidos para montar a grade: use “Adicionar Viagem” ou importe uma planilha primeiro."}</p></div>
+    <div class="lanc-card"><div class="lanc-card-h"><h3>Viagens</h3><span class="cap-card-s" id="paxLoteRes"></span></div>
+      <div class="lanc-grid" id="paxLoteGrid"><div class="lanc-row lanc-head pl-row"><div>Linha</div><div>Horário</div><div>Sentido</div><div class="r">Pagantes</div><div class="r">Gratuidades</div><div class="r">Total</div><div></div><div></div></div>${rows}</div>
+      <button type="button" class="lanc-add" onclick="paxLoteAdd()">+ Adicionar Viagem (horário fora da grade)</button></div>
+    <div class="lanc-tots eq" id="paxLoteTots"></div>
+    <div class="pl-acoes"><button class="btn" onclick="paxLoteDia(0, PAX_UI.lote.data, true)">Desfazer o que Digitei</button><button class="btn primary" id="paxLoteGo" onclick="paxLoteSalvar()">Gravar</button></div></div>`;
+}
+function paxLoteWire() {
+  const gridEl = $("paxLoteGrid"); if (!gridEl) return;
+  const pega = e => { const el = e.target, row = el.closest("[data-i]"); if (!row || !el.dataset.k) return null; return { el, l: PAX_UI.lote.linhas[Number(row.dataset.i)], row }; };
+  gridEl.addEventListener("input", e => { const o = pega(e); if (!o || !o.l) return; o.l[o.el.dataset.k] = o.el.value.trim(); paxLoteRodape(); });
+  gridEl.addEventListener("change", e => { const o = pega(e); if (!o || !o.l) return; o.l[o.el.dataset.k] = o.el.value.trim(); paxLoteRodape(); });
+  gridEl.addEventListener("keydown", e => { if (e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp") return; const o = pega(e); if (!o || o.el.tagName !== "INPUT") return;
+    const todos = [...gridEl.querySelectorAll(`input[data-k="${o.el.dataset.k}"]`)], i = todos.indexOf(o.el), nx = todos[i + (e.key === "ArrowUp" ? -1 : 1)]; if (nx) { e.preventDefault(); nx.focus(); nx.select(); } });
+  paxLoteRodape();
+}
+window.paxLoteDia = (passo, valor, forcar) => {
+  let d = valor || PAX_UI.lote.data; if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+  if (passo) { const x = dLocal(d); x.setDate(x.getDate() + passo); d = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; }
+  const troca = () => { PAX_UI.lote = paxLoteMontar(d); PAX_STATE.mes = d.slice(0, 7); paintPax(); };
+  if (paxLoteSujo() && !confirm(forcar ? "Desfazer o que foi digitado e voltar ao que está gravado?" : "Há viagens digitadas e ainda não gravadas neste dia. Trocar de dia sem gravar?")) { const i = $("paxLoteData"); if (i) i.value = PAX_UI.lote.data; return; }
+  troca();
+};
+window.paxLoteAdd = () => { PAX_UI.lote.linhas.push({ serv: "Parador", hora: "", sent: "Ida", pag: "", grat: "", id: null, p0: null, g0: null, livre: true }); paintPax(); const ins = document.querySelectorAll('#paxLoteGrid input[data-k="hora"]'); if (ins.length) ins[ins.length - 1].focus(); };
+window.paxLoteTira = i => { PAX_UI.lote.linhas.splice(i, 1); paintPax(); };
+window.paxLoteSalvar = async () => {
+  if (!podeEditar("pax")) { toast("Seu acesso à Estatística de Passageiros é só de leitura."); return; }
+  const L = PAX_UI.lote, cria = [], muda = [], chaves = new Set(PAX_STATE.itens.map(x => `${x.Data}|${x.Servico}|${paxHoraPura(x)}|${x.Sentido || "Ida"}`));
+  for (const l of L.linhas) { const st = paxLoteSt(l); if (st === "erro") { toast("Há linha com valor inválido (use números inteiros e horário HH:MM)."); return; }
+    const p = paxLoteNum(l.pag), g = paxLoteNum(l.grat);
+    if (st === "novo") { const f = { Data: L.data, Servico: l.serv, Horario: l.hora, Sentido: l.sent, Pagantes: p || 0, Gratuidade: g || 0, Lugares: PAX_LUGARES, Origem: "Manual" }; f.Title = paxChave(f);
+      if (chaves.has(f.Title)) { toast(`Já existe viagem gravada para ${paxLoteServRot(l.serv)} ${l.hora} ${l.sent} neste dia — altere a linha da grade.`, 7000); return; } chaves.add(f.Title); cria.push(f); }
+    else if (st === "alt") muda.push({ id: l.id, f: { Pagantes: p == null ? l.p0 : p, Gratuidade: g == null ? l.g0 : g } }); }
+  if (!cria.length && !muda.length) { toast("Nada a gravar."); return; }
+  if (!confirm(`Gravar em ${fmtDate(L.data)}: ${cria.length} viagem(ns) nova(s)${muda.length ? ` e ${muda.length} alterada(s)` : ""}?`)) return;
+  const b = $("paxLoteGo"); if (b) b.disabled = true; let ok = 0, falha = 0, n = 0; const tot = cria.length + muda.length;
+  for (const f of cria) { try { await SP.create(PAX_STATE.site.id, PAX_STATE.list.id, f); ok++; } catch (e) { falha++; } n++; if (b) b.textContent = `Gravando ${n} de ${tot}…`; }
+  for (const m of muda) { try { await SP.update(PAX_STATE.site.id, PAX_STATE.list.id, m.id, m.f); ok++; } catch (e) { falha++; } n++; if (b) b.textContent = `Gravando ${n} de ${tot}…`; }
+  try { await loadPax(); } catch (e) { toast("Gravado, mas a lista não foi recarregada: " + e.message, 7000); }
+  /* o que falhou continua digitado: remonta a folha e devolve os valores das linhas que não entraram */
+  const antes = L.linhas; PAX_UI.lote = paxLoteMontar(L.data);
+  if (falha) antes.forEach(l => { if (!paxLoteSt(l)) return; const at = PAX_UI.lote.linhas.find(x => x.serv === l.serv && x.hora === l.hora && x.sent === l.sent); if (!at) PAX_UI.lote.linhas.push(Object.assign({}, l, { livre: true })); else if (!at.id || l.id) { if (l.pag !== "") at.pag = l.pag; if (l.grat !== "") at.grat = l.grat; } });
+  paintPax(); toast(falha ? `${ok} viagem(ns) gravada(s) · ${falha} falharam e continuam na folha: tente gravar de novo` : `${ok} viagem(ns) gravada(s) em ${fmtDate(L.data)}`, falha ? 9000 : 5000);
+};
+{ const t0 = window.paxTab; window.paxTab = function (t) { if (PAX_STATE.tab === "lancar" && t !== "lancar" && PAX_UI.lote && paxLoteSujo() && !confirm("Há viagens digitadas e ainda não gravadas. Sair da folha sem gravar?")) return; if (t === "lancar") { PAX_STATE.tab = "lancar"; PAX_UI.bSel.clear(); paintPax(); return; } return t0.apply(this, arguments); }; }
+{ const p0 = paintPax;
+  paintPax = function () {
+    const body = $("paxBody"), edita = PAX_STATE.ready && podeEditar("pax");
+    if (body && edita && PAX_STATE.tab === "lancar") {
+      if (!PAX_UI.lote) { const hoje = todayISO(); PAX_UI.lote = paxLoteMontar(hoje.slice(0, 7) === PAX_STATE.mes ? hoje : PAX_STATE.mes + "-01"); }
+      const acts = $("paxActions"); if (acts) acts.innerHTML = `<button class="btn pax-exp" onclick="paxExportar()">Exportar Excel</button><button class="btn" onclick="paxTab('importar')">Importar planilha</button><button class="btn primary" onclick="paxForm()">Lançar viagem</button>`;
+      const tabs = `<div class="seg-tabs" role="tablist">${[["horario", "Análise"], ["lancar", "Lançamentos"], ["banco", "Banco de Dados"], ["importar", "Importar"]].map(([k, l]) => `<button role="tab" class="${k === "lancar" ? "on" : ""}" onclick="paxTab('${k}')">${l}</button>`).join("")}</div>`;
+      body.innerHTML = `<div class="op-topo"><span class="grow"></span>${tabs}</div>${paxLoteHtml()}`; paxLoteWire(); return;
+    }
+    if (PAX_STATE.tab === "lancar") PAX_STATE.tab = "horario";
+    const r = p0.apply(this, arguments);
+    try { const seg = document.querySelector("#paxBody .op-topo .seg-tabs"); if (edita && seg && !/Lançamentos/.test(seg.textContent)) { const an = seg.querySelector("button"); if (an) an.insertAdjacentHTML("afterend", `<button role="tab" onclick="paxTab('lancar')">Lançamentos</button>`); } } catch (e) {}
+    return r;
+  };
+  window.paintPax = paintPax;
+}
+/* o lançamento um a um, feito com a folha aberta, entra na folha */
+{ const f0 = window.paxForm; window.paxForm = function () { if (PAX_STATE.tab === "lancar" && PAX_UI.lote && paxLoteSujo()) { toast("Grave (ou desfaça) a folha do dia antes de lançar uma viagem avulsa."); return; } const r = f0.apply(this, arguments); PAX_UI._loteVelho = true; return r; }; }
+{ const p0 = paintPax; paintPax = function () { if (PAX_UI._loteVelho && PAX_UI.lote && !paxLoteSujo()) { PAX_UI.lote = paxLoteMontar(PAX_UI.lote.data); } PAX_UI._loteVelho = false; return p0.apply(this, arguments); }; window.paintPax = paintPax; }
+
+/* ---- 7 · Excel no padrão da empresa (logo, azul-marinho e laranja, pronto para imprimir) ---- */
+window.paxExcelMes = async () => { const mes = (PAX_UI.lote && PAX_STATE.tab === "lancar" ? PAX_UI.lote.data.slice(0, 7) : PAX_STATE.mes);
+  const its = PAX_STATE.itens.filter(x => x.Data.slice(0, 7) === mes).sort((a, b) => a.Data.localeCompare(b.Data) || paxHoraPura(a).localeCompare(paxHoraPura(b)));
+  if (!its.length) { toast(`Nenhuma viagem gravada em ${mesLabel(mes)}.`); return; }
+  try { toast("Gerando o Excel…"); await paxExcel(its, mes, mesLabel(mes)); } catch (e) { toast("Não foi possível gerar o Excel: " + e.message, 7000); } };
+paxExcel = async function (its, rot, titulo) {
+  const { wb } = await xlsxNovo();
+  const NAVY = "FF0F1E3A", ORANGE = "FFD6421F", LINHA = "FFD5DAE1", CINZA = "FF5B6068", ZEBRA = "FFF4F6FA", TXT = "FF1B2230", SUAVE = "FFE6EAF1", BRANCO = "FFFFFFFF";
+  const logo = await ctbLogoPng().catch(() => null), logoId = logo ? wb.addImage({ base64: logo.url, extension: "png" }) : null;
+  const fill = c => ({ type: "pattern", pattern: "solid", fgColor: { argb: c } }), meio = h => ({ vertical: "middle", horizontal: h || "center", wrapText: true });
+  const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"], n = v => Number(v || 0), tt = x => n(x.Pagantes) + n(x.Gratuidade), lug = x => n(x.Lugares || PAX_LUGARES);
+  const ordS = s => { const i = PAX_LOTE_SERV.findIndex(x => x[0] === s); return i < 0 ? 9 : i; }, ordSe = s => s === "Volta" ? 1 : 0;
+  const geradoEm = `Transportadora Nova Macabu · gerado pelo ERP em ${new Date().toLocaleString("pt-BR")}`;
+  /* folha no padrão: logo + título + faixa laranja + cabeçalho azul-marinho na linha 5 */
+  const folha = (nome, cols, sub, o) => { o = o || {};
+    const ws = wb.addWorksheet(nome, { views: [{ state: "frozen", ySplit: 5, xSplit: o.xSplit || 0, showGridLines: false }], properties: { tabColor: { argb: o.cor || NAVY } },
+      pageSetup: { paperSize: 9, orientation: o.retrato ? "portrait" : "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "5:5", horizontalCentered: true, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.2, footer: 0.25 } } });
+    const N = cols.length; cols.forEach((c, i) => { ws.getColumn(i + 1).width = c.w || 13; });
+    ws.getRow(1).height = 32; ws.getRow(2).height = 20; ws.getRow(3).height = 4; ws.getRow(4).height = 8;
+    let c0 = 1, larg = 0; while (c0 < N && larg < 24) { larg += cols[c0 - 1].w || 13; c0++; }   /* o título começa depois da largura do logo */
+    if (logoId != null) ws.addImage(logoId, { tl: { col: 0.08, row: 0.12 }, ext: { width: Math.min(150, Math.round(52 * logo.w / Math.max(logo.h, 1))), height: 52 } });
+    ws.mergeCells(1, c0, 1, N); const t = ws.getCell(1, c0); t.value = `Estatística de Passageiros · ${titulo}`; t.font = { bold: true, size: 16, color: { argb: NAVY } }; t.alignment = { vertical: "middle", horizontal: "left" };
+    ws.mergeCells(2, c0, 2, N); const s = ws.getCell(2, c0); s.value = sub; s.font = { size: 10, color: { argb: CINZA } }; s.alignment = { vertical: "middle", horizontal: "left" };
+    for (let i = 1; i <= N; i++) ws.getCell(3, i).fill = fill(ORANGE);
+    const hr = ws.getRow(5); hr.height = o.altCab || 30;
+    cols.forEach((c, i) => { const cel = hr.getCell(i + 1); cel.value = c.h; cel.font = { bold: true, size: c.fonte || 11, color: { argb: BRANCO } }; cel.fill = fill(c.dest ? ORANGE : NAVY); cel.alignment = meio(); cel.border = { right: { style: "hair", color: { argb: "FF3A4A6B" } } }; });
+    if (!o.semFiltro) ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5, column: N } };
+    ws.headerFooter = { oddFooter: `&L&8${geradoEm}&R&8Página &P de &N` };
+    ws._cols = cols; ws._z = 0; return ws; };
+  const linha = (ws, vals, o) => { o = o || {}; const r = ws.addRow(vals); r.height = o.alt || 20; const z = !o.total && !o.grupo && (ws._z++ % 2 === 1);
+    ws._cols.forEach((c, i) => { const cel = r.getCell(i + 1);
+      cel.font = { size: c.fonte || 11, bold: !!(o.total || o.grupo || c.forte), color: { argb: o.grupo ? NAVY : TXT } };
+      cel.alignment = { vertical: "middle", horizontal: c.esq ? "left" : "center" }; if (c.fmt) cel.numFmt = c.fmt;
+      cel.border = o.total ? { top: { style: "medium", color: { argb: NAVY } }, bottom: { style: "thin", color: { argb: NAVY } } } : { bottom: { style: "hair", color: { argb: LINHA } }, right: { style: "hair", color: { argb: LINHA } } };
+      if (o.total || o.grupo) cel.fill = fill(SUAVE); else if (c.dest) cel.fill = fill("FFFDF1EC"); else if (z) cel.fill = fill(ZEBRA); });
+    if (o.grupo) ws._z = 0; return r; };
+  const INT = "#,##0", PCT = "0%", DEC = "0.0";
+  const soma = arr => arr.reduce((a, x) => { a.v++; a.p += n(x.Pagantes); a.g += n(x.Gratuidade); a.l += lug(x); return a; }, { v: 0, p: 0, g: 0, l: 0 });
+  const grupo = (arr, kf) => { const m = new Map(); arr.forEach(x => { const k = kf(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); }); return m; };
+  const metr = a => [a.v, a.p, a.g, a.p + a.g, a.v ? (a.p + a.g) / a.v : null, a.l ? (a.p + a.g) / a.l : null];
+  const cMetr = [{ h: "Viagens", w: 11, fmt: INT }, { h: "Pagantes", w: 12, fmt: INT }, { h: "Gratuidades", w: 13, fmt: INT }, { h: "Total de Passageiros", w: 14, fmt: INT, forte: true }, { h: "Média por Viagem", w: 12, fmt: DEC }, { h: "Ocupação", w: 11, fmt: PCT }];
+  const meses = [...new Set(its.map(x => x.Data.slice(0, 7)))].sort(), umMes = meses.length === 1, T = soma(its);
+  const periodo = umMes ? mesLabel(meses[0]) : `${mesLabel(meses[0])} a ${mesLabel(meses[meses.length - 1])}`;
+
+  /* 1 · Resumo: por linha e sentido, e mês a mês */
+  const w1 = folha("Resumo", [{ h: "Linha", w: 28, esq: true, forte: true }, { h: "Sentido", w: 12 }].concat(cMetr), `Resumo por linha e sentido · ${periodo}`, { semFiltro: true });
+  const porLS = grupo(its, x => `${ordS(x.Servico)}|${x.Servico}|${ordSe(x.Sentido)}|${x.Sentido || "Ida"}`);
+  [...porLS.keys()].sort().forEach(k => { const [, s, , se] = k.split("|"); linha(w1, [paxLoteServRot(s), se].concat(metr(soma(porLS.get(k))))); });
+  linha(w1, ["Total", ""].concat(metr(T)), { total: true });
+  if (!umMes) { w1.addRow([]); const h = linha(w1, ["Mês", ""].concat(cMetr.map(c => c.h)), { grupo: true }); h.eachCell(c => { c.fill = fill(NAVY); c.font = { bold: true, size: 11, color: { argb: BRANCO } }; c.numFmt = "@"; });
+    const pm = grupo(its, x => x.Data.slice(0, 7)); meses.forEach(m => linha(w1, [mesLabel(m), ""].concat(metr(soma(pm.get(m)))))); linha(w1, ["Total", ""].concat(metr(T)), { total: true }); }
+
+  /* 2 · Mapa do mês (igual à planilha da estatística): horário × dia */
+  if (umMes) { const dias = diasDoMes(meses[0]);
+    const cols = [{ h: "Linha", w: 20, esq: true, fonte: 10 }, { h: "Horário", w: 10, forte: true, fonte: 10 }, { h: "Sentido", w: 8, fonte: 10 }].concat(dias.map(d => ({ h: `${Number(d.slice(8))}\n${DIAS[dLocal(d).getDay()]}`, w: 5.4, fmt: INT, fonte: 9, dest: paxTipoDia(d) === "dom" })), [{ h: "Total", w: 9, fmt: INT, forte: true, fonte: 10 }]);
+    const w2 = folha("Mapa do Mês", cols, `Total de passageiros (pagantes + gratuidades) por horário e por dia · domingos e feriados em laranja · ${periodo}`, { xSplit: 3, altCab: 34, semFiltro: true, cor: ORANGE });
+    const porH = grupo(its, x => `${ordS(x.Servico)}|${x.Servico}|${ordSe(x.Sentido)}|${x.Sentido || "Ida"}|${paxHoraPura(x)}`), totDia = dias.map(() => 0); let gAnt = "", sub = null, subNome = "";
+    const fecha = () => { if (sub) linha(w2, [`Subtotal · ${subNome}`, "", ""].concat(sub.map(v => v || null), [sub.reduce((a, b) => a + b, 0)]), { grupo: true }); };
+    [...porH.keys()].sort().forEach(k => { const [, s, , se, h] = k.split("|"), gk = `${s}|${se}`; if (gk !== gAnt) { fecha(); gAnt = gk; sub = dias.map(() => 0); subNome = `${paxLoteServRot(s)} · ${se}`; }
+      const pd = {}; porH.get(k).forEach(x => { pd[x.Data] = (pd[x.Data] || 0) + tt(x); }); const vals = dias.map((d, i) => { const v = pd[d] || 0; sub[i] += v; totDia[i] += v; return v || null; });
+      linha(w2, [paxLoteServRot(s), h + (s === "Fretamento" ? " (F)" : ""), se].concat(vals, [vals.reduce((a, b) => a + (b || 0), 0)]), { alt: 18 }); });
+    fecha(); linha(w2, ["Total do Dia", "", ""].concat(totDia.map(v => v || null), [totDia.reduce((a, b) => a + b, 0)]), { total: true }); }
+
+  /* 3 · Por horário */
+  const w3 = folha("Por Horário", [{ h: "Linha", w: 26, esq: true }, { h: "Horário", w: 11, forte: true }, { h: "Sentido", w: 11 }].concat(cMetr), `Cada horário no período · ${periodo}`);
+  const porHor = grupo(its, x => `${ordS(x.Servico)}|${x.Servico}|${ordSe(x.Sentido)}|${x.Sentido || "Ida"}|${paxHoraPura(x)}`);
+  [...porHor.keys()].sort().forEach(k => { const [, s, , se, h] = k.split("|"); linha(w3, [paxLoteServRot(s), h + (s === "Fretamento" ? " (F)" : ""), se].concat(metr(soma(porHor.get(k))))); });
+  linha(w3, ["Total", "", ""].concat(metr(T)), { total: true });
+
+  /* 4 · Por dia */
+  const w4 = folha("Por Dia", [{ h: "Data", w: 13, fmt: "dd/mm/yyyy" }, { h: "Dia", w: 11 }].concat(cMetr), `Movimento de cada dia · ${periodo}`, { retrato: true });
+  const porD = grupo(its, x => x.Data); [...porD.keys()].sort().forEach(d => { const dt = dLocal(d); linha(w4, [new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12)), DIAS[dt.getDay()] + (feriadoNome(d) ? " (feriado)" : "")].concat(metr(soma(porD.get(d))))); });
+  linha(w4, ["Total", ""].concat(metr(T)), { total: true });
+
+  /* 5 · Viagens: uma linha por viagem, com os trechos */
+  const trechos = []; its.forEach(x => Object.keys(paxTrechos(x)).forEach(k => { if (!/gratuid/i.test(k) && !trechos.includes(k)) trechos.push(k); }));
+  const c5 = [{ h: "Data", w: 13, fmt: "dd/mm/yyyy" }, { h: "Dia", w: 8 }, { h: "Linha", w: 24, esq: true }, { h: "Horário", w: 11, forte: true }, { h: "Sentido", w: 10 }, { h: "Pagantes", w: 11, fmt: INT }, { h: "Gratuidades", w: 13, fmt: INT }, { h: "Total", w: 10, fmt: INT, forte: true }, { h: "Lugares", w: 10, fmt: INT }, { h: "Ocupação", w: 11, fmt: PCT }]
+    .concat(trechos.map(k => ({ h: k, w: Math.min(18, Math.max(10, k.length + 3)), fmt: INT, fonte: 10 })), [{ h: "Origem", w: 13 }, { h: "Observações", w: 32, esq: true }]);
+  const w5 = folha("Viagens", c5, `Uma linha por viagem gravada · ${periodo}`);
+  its.forEach(x => { const dt = dLocal(x.Data), t = paxTrechos(x), l = lug(x);
+    linha(w5, [new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12)), DIAS[dt.getDay()], paxLoteServRot(x.Servico), paxHoraPura(x) + (x.Servico === "Fretamento" ? " (F)" : ""), x.Sentido || "Ida", n(x.Pagantes), n(x.Gratuidade), tt(x), l || null, l ? tt(x) / l : null]
+      .concat(trechos.map(k => { const v = Number(t[k]); return t[k] == null || t[k] === "" || !Number.isFinite(v) || !v ? null : v; }), [x.Origem || "", x.Observacoes || ""]), { alt: 18 }); });
+  wb.views = [{ activeTab: 0 }];
+  await xlsxBaixar(wb, `Estatística de Passageiros - ${rot === "todos" ? "Todos os Dados" : titulo}.xlsx`);
+  toast(`Excel gerado: ${its.length} viagem(ns).`);
+};
+(function () {
+  const st = document.createElement("style"); st.id = "erp-v01453b";
+  st.textContent = `.pax-lanc .pl-row{grid-template-columns:minmax(150px,1.5fr) minmax(84px,.6fr) minmax(84px,.6fr) minmax(90px,.8fr) minmax(90px,.8fr) 70px 84px 36px}
+  .pax-lanc .lanc-row:not(.lanc-head){padding:5px 8px}.pax-lanc .lanc-in{height:36px}.pax-lanc .lanc-calc{height:36px}
+  .pax-lanc .pl-fixo{font-size:14px;color:var(--ink-2);padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pax-lanc .pl-hora{font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums}
+  .pax-lanc .pl-grupo{margin:10px 2px 2px;font-size:12.5px;color:var(--ink-2);padding-left:8px;border-left:3px solid var(--orange,#D6421F)}.pax-lanc .pl-grupo b{color:var(--navy)}
+  .pax-lanc .pl-dia{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.pax-lanc .pl-dia .lanc-in{width:170px;text-align:center}.pax-lanc .pl-dow{font-size:14px;color:var(--ink-2)}
+  .pax-lanc .pl-st{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:999px;white-space:nowrap}.pax-lanc .pl-st.vz{display:none}
+  .pax-lanc .pl-st.novo{background:#E7F4EC;color:#197A46}.pax-lanc .pl-st.alt{background:#FDF1EC;color:#B3401F}.pax-lanc .pl-st.igual{background:#EEF1F5;color:var(--ink-2)}.pax-lanc .pl-st.erro{background:#FDECEA;color:#B3271E}
+  .pax-lanc .pl-acoes{position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:10px;padding:12px 0;background:linear-gradient(to top,var(--bg,#F3F5F8) 70%,transparent);z-index:2}
+  .pax-lanc .lanc-tot .v{font-size:20px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums;margin-top:4px}
+  @media (max-width:760px){.pax-lanc .pl-row{grid-template-columns:1.3fr .7fr .7fr .8fr .8fr;row-gap:4px}.pax-lanc .pl-row>:nth-child(n+6){display:none}.pax-lanc .lanc-head{font-size:10px}}`;
+  document.head.appendChild(st);
+})();
+
+/* ---- 8 · Mês e Ano em botões, numa linha centralizada (Rafael, 13/11 12:06) ---- */
+window.paxMes = m => { if (!/^\d{4}-\d{2}$/.test(m) || m === PAX_STATE.mes) return; PAX_STATE.mes = m; if (PAX_UI.bSel) PAX_UI.bSel.clear(); paintPax(); };
+function paxMesAnoHtml() {
+  const y = PAX_STATE.mes.slice(0, 4), mm = PAX_STATE.mes.slice(5, 7), com = new Set(PAX_STATE.itens.map(x => x.Data.slice(0, 7)));
+  const anos = [...new Set([String(new Date().getFullYear()), y].concat([...com].map(x => x.slice(0, 4))))].sort();
+  const N = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  return `<div class="pax-ma" id="paxMAB" role="group" aria-label="Mês e ano"><span class="rot">Ano</span>${anos.map(a => `<button type="button" class="chip ${a === y ? "on" : ""}" aria-pressed="${a === y}" onclick="paxMes('${a}-${mm}')">${a}</button>`).join("")}
+    <span class="rot sep">Mês</span>${N.map((n, i) => { const k = `${y}-${String(i + 1).padStart(2, "0")}`; return `<button type="button" class="chip ${k === PAX_STATE.mes ? "on" : ""} ${com.has(k) ? "" : "vz"}" aria-pressed="${k === PAX_STATE.mes}" title="${esc(mesLabel(k))}${com.has(k) ? "" : " · sem viagens gravadas"}" onclick="paxMes('${k}')">${n}</button>`; }).join("")}</div>`;
+}
+{ const p0 = paintPax;
+  paintPax = function () {
+    const r = p0.apply(this, arguments);
+    try { const pk = document.querySelector("#paxBody #paxMA"), topo = document.querySelector("#paxBody .op-topo");
+      if (pk && topo && PAX_STATE.mes) { pk.remove(); topo.insertAdjacentHTML("afterend", paxMesAnoHtml()); const on = document.querySelector("#paxMAB .chip.on:last-of-type"); } } catch (e) {}
+    return r;
+  };
+  window.paintPax = paintPax;
+}
+(function () { const st = document.createElement("style"); st.id = "erp-v01453c";
+  st.textContent = `.pax-ma{display:flex;flex-wrap:nowrap;justify-content:center;align-items:center;gap:6px;margin:0 0 14px;overflow-x:auto;padding:2px 2px 4px}
+  .pax-ma .rot{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-right:2px;flex:0 0 auto}.pax-ma .rot.sep{margin-left:14px}
+  .pax-ma .chip{flex:0 0 auto}.pax-ma .chip.vz:not(.on){opacity:.55}
+  @media (max-width:900px){.pax-ma{justify-content:flex-start}}`;
+  document.head.appendChild(st); })();
+
+/* ---- 9 · um gráfico só por horário: Ida e Volta lado a lado, com o sentido destacado no eixo (Rafael, 13/11 12:07) ---- */
+paxHorPlano = function (its) {
+  if (PAX_UI.horaFilt) return [];
+  if (!its.length) return [];
+  const med = paxMedida() === "media" ? "Média de Pagantes por Viagem" : "Total de Passageiros no Mês", uma = new Set(its.map(x => paxLinhaDoServ(x.Servico) || "—")).size === 1;
+  return [{ id: "paxChartHoras", tipo: "horas", sent: "", tit: "Passageiros por Horário", sub: `${mesLabel(PAX_STATE.mes)} · ${med} · Horário de Saída, Ida à Esquerda e Volta à Direita${uma ? "" : " · Uma Cor por Linha"}` }];
+};
+const PAX_PLUG_SENT = { id: "paxSentidoFaixa",
+  beforeDatasetsDraw(ch) { const o = ch.options.plugins.paxSent, x = ch.scales.x, a = ch.chartArea; if (!o || !x || !o.nV || !o.nI) return; const w = (x.right - x.left) / (o.nI + o.nV), xm = x.left + w * o.nI, c = ch.ctx;
+    c.save(); c.fillStyle = "rgba(241,97,47,.055)"; c.fillRect(xm, a.top, a.right - xm, a.bottom - a.top); c.strokeStyle = "rgba(15,30,58,.35)"; c.setLineDash([4, 4]); c.lineWidth = 1; c.beginPath(); c.moveTo(xm, a.top); c.lineTo(xm, x.bottom + 22); c.stroke(); c.restore(); },
+  afterDraw(ch) { const o = ch.options.plugins.paxSent, x = ch.scales.x; if (!o || !x) return; const n = o.nI + o.nV; if (!n) return; const w = (x.right - x.left) / n, c = ch.ctx, y = x.bottom + 5, g = ch.canvas.id === "erpChartBig" ? 15 : 12.5;
+    const faixa = (i0, k, txt, cor) => { if (!k) return; const x0 = x.left + w * i0 + 6, x1 = x.left + w * (i0 + k) - 6; c.save(); c.strokeStyle = cor; c.lineWidth = 2.5; c.beginPath(); c.moveTo(x0, y); c.lineTo(x1, y); c.stroke();
+      c.fillStyle = cor; c.font = `800 ${g}px Inter, system-ui, sans-serif`; c.textAlign = "center"; c.textBaseline = "top"; c.fillText(x1 - x0 < 150 ? txt.split(" · ")[0] : txt, (x0 + x1) / 2, y + 5); c.restore(); };
+    faixa(0, o.nI, "IDA · Sentido Macaé", o.corI); faixa(o.nI, o.nV, "VOLTA · Sentido Conceição", o.corV); } };
+{ const h0 = paxHorChart;
+  paxHorChart = function (its) {
+    const r = h0.apply(this, arguments);
+    try { const el = $("paxChartHoras"); if (!el || paxHorModo() === "off") return r;
+      const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim(), nav = css("--navy") || "#0B1628", lar = css("--orange-ink") || "#C94314";
+      const media = paxMedida() === "media", linha = paxHorModo() === "line", sentDe = x => (x.Sentido || "Ida") === "Volta" ? "Volta" : "Ida";
+      const hI = [...new Set(its.filter(x => sentDe(x) === "Ida").map(x => x.Horario))].sort(), hV = [...new Set(its.filter(x => sentDe(x) === "Volta").map(x => x.Horario))].sort();
+      const pts = hI.map(h => ({ h, s: "Ida" })).concat(hV.map(h => ({ h, s: "Volta" }))), labels = pts.map(p => p.h), volta = pts.map(p => p.s === "Volta");
+      const linhas = [...new Set(its.map(x => paxLinhaDoServ(x.Servico) || "—"))].sort();
+      const doPt = (p, l) => its.filter(x => x.Horario === p.h && sentDe(x) === p.s && (l == null || (paxLinhaDoServ(x.Servico) || "—") === l));
+      const val = (v, k) => { if (!v.length) return null; const t = v.reduce((s, x) => s + Number(x[k] || 0), 0); return media ? Math.round(10 * t / v.length) / 10 : t; };
+      let cfg;
+      if (linhas.length === 1) { cfg = paxCfgPagGrat({ labels, pag: pts.map(p => val(doPt(p), "Pagantes")), grat: pts.map(p => val(doPt(p), "Gratuidade")), linha, fds: volta }); }
+      else { const fmt = v => v == null ? "" : (Number.isInteger(v) ? v.toLocaleString("pt-BR") : v.toFixed(1).replace(".", ","));
+        const ds = linhas.map(l => { const data = pts.map(p => { const v = doPt(p, l); if (!v.length) return null; const t = media ? v.reduce((s, x) => s + Number(x.Pagantes || 0), 0) / v.length : v.reduce((s, x) => s + paxTotal(x), 0); return Math.round(t * 10) / 10; });
+          const cor = PAX_CORES_LINHA[l] || "#55616E"; return linha ? { type: "line", label: "Linha " + paxLinhaRot(l), data, borderColor: cor, backgroundColor: cor, tension: .25, spanGaps: false } : { label: "Linha " + paxLinhaRot(l), data, backgroundColor: cor, skipNull: true, maxBarThickness: 46 }; });
+        cfg = { type: linha ? "line" : "bar", data: { labels, datasets: ds }, plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [],
+          options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false }, layout: { padding: { top: 8 } },
+            plugins: { legend: { display: true, position: "bottom", labels: { boxWidth: 12, color: PAX_CH.cor, font: { size: PAX_CH.eixo, weight: 600 } } },
+              datalabels: { erpKeep: true, display: ctx => ctx.dataset.data[ctx.dataIndex] != null && (pts.length * linhas.length <= 40 || ctx.chart.canvas.id !== "paxChartHoras"), anchor: "end", align: linha ? "top" : "end", offset: 2, clamp: true, formatter: fmt, font: { size: 11, weight: 800 }, color: ctx => ctx.dataset.borderColor || ctx.dataset.backgroundColor } },
+            scales: { x: { offset: true, grid: { display: false }, ticks: { autoSkip: false, maxRotation: 50, font: { size: PAX_CH.eixo - 1, weight: 600 } } }, y: { beginAtZero: true, grace: "18%", ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade } } } } }; }
+      const o = cfg.options; o.scales.x.ticks.maxRotation = 50; o.scales.x.ticks.color = c => (volta[c.index] ? lar : nav); o.scales.x.ticks.font = { size: PAX_CH.eixo - 1, weight: 700 };
+      o.layout = Object.assign({}, o.layout, { padding: Object.assign({}, (o.layout || {}).padding, { bottom: 30 }) });
+      o.plugins.paxSent = { nI: hI.length, nV: hV.length, corI: nav, corV: lar };
+      o.plugins.tooltip = Object.assign({}, o.plugins.tooltip, { callbacks: Object.assign({}, (o.plugins.tooltip || {}).callbacks, { title: t => (t[0] ? `${pts[t[0].dataIndex].h} · ${pts[t[0].dataIndex].s}` : "") }) });
+      if (o.plugins.legend) o.plugins.legend = Object.assign({}, o.plugins.legend, { labels: Object.assign({}, o.plugins.legend.labels, { padding: 14 }) });
+      if (o.plugins.legend) o.plugins.legend.position = "top";
+      if (linha && hI.length && hV.length) cfg.data.datasets.forEach(d => { d.segment = { borderColor: c => (c.p0DataIndex === hI.length - 1 ? "transparent" : undefined) }; });   /* a linha não liga a Ida à Volta */
+      cfg.plugins = (cfg.plugins || []).concat([PAX_PLUG_SENT]);
+      paxNovoChart(el, cfg); const c = Chart.getChart(el); if (c && linhas.length > 1) { paxLinhaFina(c); c.update("none"); }
+    } catch (e) { console.warn("chart pax horas", e); }
+    return r;
+  };
+  paxHorChart = paxComCtx("horas", paxHorChart);
+}
+{ const g0 = paxHorGrafHtml; paxHorGrafHtml = function () { return g0.apply(this, arguments).replace(/height:250px"><canvas id="paxChartHoras"/, 'height:300px"><canvas id="paxChartHoras"'); }; }
+
+/* ---- 10 · iniciais maiúsculas também nos subtítulos dos cartões, nos indicadores e nos textos dos gráficos do módulo (Rafael, 13/11 12:07) ----
+   Trecho curto (até 7 palavras) vira título; frase de instrução só ganha a primeira maiúscula. */
+function paxTitSub(txt) { return String(txt).split(" · ").map(seg => { const s = seg.trim(); if (!s) return seg; return s.split(/\s+/).length <= 7 && !/[.;]$/.test(s) ? tituloCaso(s) : s.charAt(0).toUpperCase() + s.slice(1); }).join(" · "); }
+function paxTitulos() {
+  try { document.querySelectorAll("#paxBody .cap-card-s, #paxBody .kpi .sub, #paxBody .kpi .lbl, #paxBody .pax-chips .rot, #paxBody .pax-ma .rot, #paxBody .pl-grupo, #paxBody .pl-dow").forEach(el => {
+      if (el.children.length) { el.childNodes.forEach(n => { if (n.nodeType === 3 && /\p{Ll}/u.test(n.nodeValue)) { const v = paxTitSub(n.nodeValue.replace(/^\s+|\s+$/g, m => m)); if (v !== n.nodeValue) n.nodeValue = n.nodeValue.match(/^\s*/)[0] + v.trim() + n.nodeValue.match(/\s*$/)[0]; } }); return; }
+      const v = paxTitSub(el.textContent); if (v !== el.textContent) el.textContent = v; });
+    if (window.Chart) document.querySelectorAll("#paxBody canvas").forEach(cv => { const c = Chart.getChart(cv); if (!c) return; let mudou = false;
+      Object.values(c.options.scales || {}).forEach(sc => { if (sc && sc.title && typeof sc.title.text === "string") { const v = tituloCaso(sc.title.text); if (v !== sc.title.text) { sc.title.text = v; mudou = true; } } });
+      c.data.datasets.forEach(d => { if (typeof d.label === "string") { const v = tituloCaso(d.label); if (v !== d.label) { d.label = v; mudou = true; } } });
+      if (mudou) c.update("none"); });
+  } catch (e) {}
+}
+{ const p0 = paintPax; paintPax = function () { const r = p0.apply(this, arguments); paxTitulos(); try { requestAnimationFrame(paxTitulos); } catch (e) {} return r; }; window.paintPax = paintPax; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -50570,6 +51094,7 @@ CONFIG.version = "v0.14.50";   /* Fluxo de Caixa espelhando a planilha: composi�
 CONFIG.version = "v0.14.51";   /* Estatística de Passageiros: filtros (linha, sentido, tipo de dia, horário) em todas as visões; gráfico por horário com eixo limpo; evolução de um horário; Painel mês a mês e ano a ano */
 CONFIG.version = "v0.14.51.1";   /* ícone da aba do navegador sem fundo branco (SVG que acompanha o tema claro/escuro) */
 CONFIG.version = "v0.14.52";   /* Estatística de Passageiros numa página só: filtros centralizados, horários em botões, calendário, trechos por extenso e histórico juntos; rótulos de dados completos */
+CONFIG.version = "v0.14.53";   /* Passageiros: horários (F) dentro da linha 1001; sentido pela seção IDA/VOLTA da planilha, com correção do que já foi gravado; Barras/Linhas por gráfico; por horário com pagantes × gratuidades; aba Banco de Dados; aba Lançamentos (o dia inteiro numa folha); Excel no padrão da empresa; abre no mês atual */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

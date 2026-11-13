@@ -4593,10 +4593,18 @@ async function loadProfile() {
   }
   if (session.n1) session.roles.add("admin");   /* "admin" = Administrador (as telas antigas ainda perguntam por ele) */
   document.body.classList.toggle("erp-adm", !!session.n1); /* v0.12.12: links e caminhos do SharePoint só para administradores */
-  try {
-    const blob = await graph("/me/photo/$value");
-    if (blob instanceof Blob && blob.size) document.getElementById("avatar").innerHTML = `<img src="${URL.createObjectURL(blob)}" alt="">`;
-  } catch (_) { /* sem foto: mantém iniciais */ }
+  /* v0.14.49.1 (13/11): a foto é enfeite e não segura a entrada. Antes o ERP esperava por ela; com o Graph devolvendo 502 na foto,
+     as novas tentativas deixavam todo mundo em "carregando…" por minutos. Agora vai em segundo plano, uma tentativa só, 15 s no máximo. */
+  (async () => {
+    try {
+      const token = await getToken(); if (!token) return;
+      const ac = typeof AbortController === "function" ? new AbortController() : null, t = ac ? setTimeout(() => ac.abort(), 15000) : null;
+      let res; try { res = await fetch(GRAPH + "/me/photo/$value", { headers: { Authorization: `Bearer ${token}` }, signal: ac ? ac.signal : undefined }); } finally { if (t) clearTimeout(t); }
+      if (!res.ok) return;
+      const blob = await res.blob();
+      if (blob && blob.size) document.getElementById("avatar").innerHTML = `<img src="${URL.createObjectURL(blob)}" alt="">`;
+    } catch (_) { /* sem foto: mantém iniciais */ }
+  })();
 }
 
 function roleLabel() {
@@ -49934,6 +49942,7 @@ CONFIG.version = "v0.14.47";   /* inspeção ponta a ponta Financeiro × DRE: co
 CONFIG.version = "v0.14.48";   /* fechamento da CAP: Imprimir Tudo (relatório + roteiro do extrato + documentos), lançamento de colaborador com cadastro interno e campos do RH, sem Nº da NF nos lançamentos novos */
 CONFIG.version = "v0.14.48.1";   /* Fluxo de Caixa: data do boletim centralizada no campo */
 CONFIG.version = "v0.14.49";   /* Contabilidade: menu numa linha e Preparar Pacote (conferência com o extrato, documentos da impressão, + Anexar, dispensa de NF/cobrança com motivo) */
+CONFIG.version = "v0.14.49.1";   /* entrada não espera mais a foto do perfil (Graph devolvendo 502 travava todos em "carregando…") */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

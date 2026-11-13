@@ -51354,6 +51354,103 @@ window.addEventListener("beforeunload", () => { try { if (PAX_STATE.tab === "lan
   st.textContent = `.pax-lanc .pl-rasc{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:10px 14px;border:1px solid #F1D9A6;border-left:4px solid #B7791F;background:#FFF8E8;border-radius:var(--radius);font-size:13.5px;color:#5B4A1E}
   .pax-lanc .pl-rasc-o{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}`;
   document.head.appendChild(st); })();
+/* v0.14.58 · [marcador interno: v0.14.57.1 (13/11/2026 14:55)] · Passageiros › Banco de Dados: títulos e texto da tabela centralizados (o ícone do filtro não desloca o título)
+   Mês a Mês (14:57): opção "Total" (uma série só, com o total de passageiros de cada mês) ao lado de "Pagantes × Gratuidades".
+   Excel (15:02): botão "Exportar Relatório" no Banco de Dados — o que está na tela (com os filtros), no padrão da empresa; e todo Excel do módulo
+   passa a sair com as colunas ajustadas ao conteúdo: sem quebra de texto, sem "####" e sem dado cortado. */
+(function () { const st = document.createElement("style"); st.id = "erp-v014571";
+  st.textContent = `.pb-t th,.pb-t td,.pb-t th.n,.pb-t td.n{text-align:center!important}
+  .pb-t th .pb-fh{position:relative;justify-content:center;padding:4px 18px}.pb-t th .pb-fi{position:absolute;right:4px;top:50%;transform:translateY(-50%)}`;
+  document.head.appendChild(st); })();
+
+window.paxMesSerie = t => { PAX_UI.mesTotal = !!t; paintPax(); };
+{ const c0 = paxPainelCharts;
+  paxPainelCharts = paxComCtx("mes", function () {
+    const r = c0.apply(this, arguments);
+    try { const el = $("paxChartMes"); if (el && PAX_UI.mesTotal && window.Chart) { const { meses } = paxPainelDados(), linha = paxHorModo() === "line", css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim(), nav = css("--navy") || "#0B1628";
+        const data = meses.map(m => (m.pag || 0) + (m.grat || 0)), n = v => (v == null ? "" : Number(v).toLocaleString("pt-BR"));
+        const ds = linha ? { type: "line", label: "Total de Passageiros", data, borderColor: nav, backgroundColor: nav, borderWidth: 1.5, tension: .25, pointRadius: 5, pointHoverRadius: 6.5, pointBorderWidth: 1.5, pointBackgroundColor: nav, pointBorderColor: "#FFFFFF" } : { label: "Total de Passageiros", data, backgroundColor: nav, maxBarThickness: 90 };
+        paxNovoChart(el, { type: linha ? "line" : "bar", data: { labels: meses.map(m => mesLabelCurto(m.k)), datasets: [ds] }, plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [],
+          options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false }, layout: { padding: { top: 8 } },
+            plugins: { legend: { display: true, position: "bottom", labels: { usePointStyle: true, pointStyle: "rectRounded", boxWidth: 12, boxHeight: 12, color: PAX_CH.cor, font: { size: PAX_CH.eixo, weight: 600 } } },
+              datalabels: { erpKeep: true, display: c => c.dataset.data[c.dataIndex] != null, anchor: "end", align: linha ? "top" : "end", offset: 3, clamp: true, formatter: n, font: { size: 11.5, weight: 800 }, color: "#1E2153" } },
+            scales: { x: { offset: true, grid: { display: false }, ticks: { autoSkip: false, maxRotation: 0, font: { size: PAX_CH.eixo - 1, weight: 600 }, color: PAX_CH.cor } }, y: { beginAtZero: true, grace: "22%", ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade } } } } }); } } catch (e) { console.warn("chart pax mes total", e); }
+    return r;
+  });
+}
+{ const p0 = paintPax;
+  paintPax = function () { const r = p0.apply(this, arguments);
+    try { const cv = $("paxChartMes"), card = cv && cv.closest(".cap-card"), h = card && card.querySelector(".cap-card-h"); if (h && !h.querySelector(".pax-segT")) { const t = !!PAX_UI.mesTotal;
+        const html = `<span class="seg-tabs pax-seg pax-segT" role="group" aria-label="Série do gráfico">${[[0, "Pagantes × Gratuidades"], [1, "Total"]].map(([v, l]) => `<button type="button" class="${t === !!v ? "on" : ""}" aria-pressed="${t === !!v}" onclick="paxMesSerie(${v})">${l}</button>`).join("")}</span>`;
+        const seg = h.querySelector(".pax-seg"); if (seg) seg.insertAdjacentHTML("afterend", html); else h.insertAdjacentHTML("beforeend", `<span class="grow"></span>${html}`);
+        const sub = h.querySelector(".cap-card-s"); if (sub && t) sub.textContent = sub.textContent.replace(/^Pagantes e Gratuidades/i, "Total de Passageiros"); } } catch (e) {}
+    return r; };
+  window.paintPax = paintPax; }
+(function () { const st = document.createElement("style"); st.id = "erp-v014571b"; st.textContent = `.pax-segT{margin-left:8px}`; document.head.appendChild(st); })();
+
+/* ---- Excel: colunas ajustadas ao conteúdo (vale para o relatório e para o "Exportar Excel" do módulo) ---- */
+function paxXlsTexto(c) { const v = c.value; if (v == null || v === "") return ""; const f = c.numFmt || "";
+  if (v instanceof Date) return "00/00/0000"; if (typeof v === "number") { if (/%/.test(f)) return Math.round(v * 100) + "%"; if (/0\.0/.test(f)) return v.toFixed(1); return Math.round(v).toLocaleString("pt-BR"); }
+  if (typeof v === "object") return String(v.result != null ? v.result : (v.richText ? v.richText.map(t => t.text).join("") : (v.text || ""))); return String(v); }
+function paxXlsAjusta(ws, cab) {   /* cab = linha do cabeçalho; as linhas acima (título mesclado) não entram na conta */
+  const N = ws.columnCount, larg = new Array(N + 1).fill(0);
+  ws.eachRow({ includeEmpty: false }, (row, rn) => { if (rn < cab) return; row.eachCell({ includeEmpty: false }, (c, cn) => { if (c.isMerged && c.master !== c) return; const t = paxXlsTexto(c); if (!t) return;
+      const fs = (c.font && c.font.size) || 11, neg = c.font && c.font.bold ? 1.12 : 1, linhas = t.split("\n"), w = Math.max(...linhas.map(l => l.length)) * (fs / 11) * neg * 1.18 + (rn === cab && ws.autoFilter ? 4.5 : 2.6);
+      if (w > larg[cn]) larg[cn] = w; const al = Object.assign({}, c.alignment || {}); al.wrapText = linhas.length > 1; al.shrinkToFit = false; c.alignment = al; }); });
+  for (let i = 1; i <= N; i++) ws.getColumn(i).width = Math.min(120, Math.max(larg[i] || 0, 5.2));
+  /* o título e o subtítulo (mesclados) têm de caber na largura total */
+  [1, 2].forEach(rn => { const row = ws.getRow(rn); let c0 = 0, txt = "", fs = 11; row.eachCell({ includeEmpty: false }, (c, cn) => { if (!c0 && c.value) { c0 = cn; txt = String(c.value); fs = (c.font && c.font.size) || 11; } }); if (!c0) return;
+    let tot = 0; for (let i = c0; i <= N; i++) tot += ws.getColumn(i).width; const prec = txt.length * (fs / 11) * 1.22 + 2; if (prec > tot) ws.getColumn(N).width += prec - tot; });
+  const hr = ws.getRow(cab); let duas = false; hr.eachCell(c => { if (String(c.value || "").includes("\n")) duas = true; }); hr.height = duas ? 34 : 26;
+}
+{ const b0 = xlsxBaixar; xlsxBaixar = async function (wb, nome) { if (PAX_UI._xlsAjusta) { try { wb.worksheets.forEach(ws => paxXlsAjusta(ws, 5)); } catch (e) { console.warn("xls ajusta", e); } } return b0.apply(this, arguments); }; }
+{ const e0 = paxExcel; paxExcel = async function () { PAX_UI._xlsAjusta = true; try { return await e0.apply(this, arguments); } finally { PAX_UI._xlsAjusta = false; } }; }
+
+/* ---- relatório em Excel do Banco de Dados: exatamente o que está na tela ---- */
+window.paxBancoRelatorio = async () => {
+  const its = paxBancoLista(); if (!its.length) { toast("Nenhuma viagem na tela para exportar."); return; }
+  const bt = $("paxBRel"); if (bt) { bt.disabled = true; bt.textContent = "Gerando…"; }
+  try {
+    const { wb } = await xlsxNovo();
+    const NAVY = "FF0F1E3A", ORANGE = "FFD6421F", LINHA = "FFD5DAE1", CINZA = "FF5B6068", ZEBRA = "FFF4F6FA", TXT = "FF1B2230", SUAVE = "FFE6EAF1", BRANCO = "FFFFFFFF";
+    const logo = await ctbLogoPng().catch(() => null), logoId = logo ? wb.addImage({ base64: logo.url, extension: "png" }) : null, fill = c => ({ type: "pattern", pattern: "solid", fgColor: { argb: c } });
+    const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"], n = v => Number(v || 0), mes = mesLabel(PAX_STATE.mes), Mes = mes.charAt(0).toUpperCase() + mes.slice(1);
+    const filtros = []; if (paxFiltroAtivo()) filtros.push(paxFiltroTxt()); Object.keys(PAX_UI.bF).forEach(k => { const s = PAX_UI.bF[k]; if (s && s.size) filtros.push(`${{ Servico: "serviço", Horario: "horário", Gratuidade: "gratuidades" }[k] || k.toLowerCase()}: ${[...s].map(v => paxBValRot(k, v).split(" · ")[0]).join(", ")}`); }); if (PAX_UI.bQ) filtros.push(`busca "${PAX_UI.bQ}"`);
+    const geradoEm = `Transportadora Nova Macabu · gerado pelo ERP em ${new Date().toLocaleString("pt-BR")}`;
+    const folha = (nome, cols, sub, cor) => { const ws = wb.addWorksheet(nome, { views: [{ state: "frozen", ySplit: 5, showGridLines: false }], properties: { tabColor: { argb: cor || NAVY } },
+        pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "5:5", horizontalCentered: true, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.2, footer: 0.25 } } });
+      const N = cols.length; ws.getRow(1).height = 32; ws.getRow(2).height = 20; ws.getRow(3).height = 4; ws.getRow(4).height = 8;
+      if (logoId != null) ws.addImage(logoId, { tl: { col: 0.08, row: 0.12 }, ext: { width: Math.min(150, Math.round(52 * logo.w / Math.max(logo.h, 1))), height: 52 } });
+      ws.mergeCells(1, 3, 1, N); const t = ws.getCell(1, 3); t.value = `Estatística de Passageiros · ${Mes}`; t.font = { bold: true, size: 16, color: { argb: NAVY } }; t.alignment = { vertical: "middle", horizontal: "left" };
+      ws.mergeCells(2, 3, 2, N); const s = ws.getCell(2, 3); s.value = sub; s.font = { size: 10, color: { argb: CINZA } }; s.alignment = { vertical: "middle", horizontal: "left" };
+      for (let i = 1; i <= N; i++) ws.getCell(3, i).fill = fill(ORANGE);
+      const hr = ws.getRow(5); hr.height = 26; cols.forEach((c, i) => { const cel = hr.getCell(i + 1); cel.value = c.h; cel.font = { bold: true, size: 11, color: { argb: BRANCO } }; cel.fill = fill(NAVY); cel.alignment = { vertical: "middle", horizontal: "center" }; cel.border = { right: { style: "hair", color: { argb: "FF3A4A6B" } } }; });
+      ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5, column: N } };
+      ws.headerFooter = { oddFooter: `&L&8${geradoEm}&R&8Página &P de &N` }; ws._cols = cols; ws._z = 0; return ws; };
+    const linha = (ws, vals, total) => { const r = ws.addRow(vals); r.height = 20; const z = !total && (ws._z++ % 2 === 1);
+      ws._cols.forEach((c, i) => { const cel = r.getCell(i + 1); cel.font = { size: 11, bold: !!(total || c.forte), color: { argb: TXT } }; cel.alignment = { vertical: "middle", horizontal: c.esq ? "left" : "center", wrapText: false }; if (c.fmt) cel.numFmt = c.fmt;
+        cel.border = total ? { top: { style: "medium", color: { argb: NAVY } }, bottom: { style: "thin", color: { argb: NAVY } } } : { bottom: { style: "hair", color: { argb: LINHA } }, right: { style: "hair", color: { argb: LINHA } } };
+        if (total) cel.fill = fill(SUAVE); else if (z) cel.fill = fill(ZEBRA); }); return r; };
+    const INT = "#,##0", PCT = "0%", DEC = "0.0";
+    /* 1 · Viagens (a tabela da tela) */
+    const w1 = folha("Relatório", [{ h: "Data", fmt: "dd/mm/yyyy" }, { h: "Dia" }, { h: "Linha", forte: true }, { h: "Serviço" }, { h: "Horário", forte: true }, { h: "Sentido" }, { h: "Pagantes", fmt: INT }, { h: "Gratuidades", fmt: INT }, { h: "Total", fmt: INT, forte: true }, { h: "Lugares", fmt: INT }, { h: "Ocupação", fmt: PCT }, { h: "Trechos", esq: true }],
+      `Relatório de viagens · ${its.length.toLocaleString("pt-BR")} viagem(ns)${filtros.length ? " · filtro: " + filtros.join(" · ") : " · sem filtro"}`);
+    const T = { p: 0, g: 0, l: 0 };
+    its.forEach(x => { const dt = dLocal(x.Data), p = n(x.Pagantes), g = n(x.Gratuidade), l = n(x.Lugares || PAX_LUGARES); T.p += p; T.g += g; T.l += l;
+      linha(w1, [new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12)), DIAS[dt.getDay()], paxLinhaNum(x.Servico), x.Servico || "", x.Horario || "", x.Sentido || "Ida", p, g, p + g, l || null, l ? (p + g) / l : null, Object.entries(paxTrechos(x)).filter(([k, v]) => v && !/gratuid/i.test(k)).map(([k]) => k).join(" · ")]); });
+    linha(w1, ["Total", "", "", "", "", `${its.length.toLocaleString("pt-BR")} viagem(ns)`, T.p, T.g, T.p + T.g, T.l || null, T.l ? (T.p + T.g) / T.l : null, ""], true);
+    /* 2 · Resumo por serviço e sentido */
+    const w2 = folha("Resumo", [{ h: "Linha", forte: true }, { h: "Serviço", esq: true, forte: true }, { h: "Sentido" }, { h: "Viagens", fmt: INT }, { h: "Pagantes", fmt: INT }, { h: "Gratuidades", fmt: INT }, { h: "Total de Passageiros", fmt: INT, forte: true }, { h: "Média por Viagem", fmt: DEC }, { h: "Ocupação", fmt: PCT }], `Resumo por serviço e sentido das viagens do relatório${filtros.length ? " · filtro: " + filtros.join(" · ") : ""}`, ORANGE);
+    const ord = s => { const i = PAX_LOTE_SERV.findIndex(v => v[0] === s); return i < 0 ? 9 : i; }, gr = new Map();
+    its.forEach(x => { const k = `${ord(x.Servico)}|${x.Servico}|${(x.Sentido || "Ida") === "Volta" ? 1 : 0}`; const o = gr.get(k) || { v: 0, p: 0, g: 0, l: 0 }; o.v++; o.p += n(x.Pagantes); o.g += n(x.Gratuidade); o.l += n(x.Lugares || PAX_LUGARES); gr.set(k, o); });
+    [...gr.keys()].sort().forEach(k => { const [, s, se] = k.split("|"), o = gr.get(k); linha(w2, [paxLinhaNum(s), s, se === "1" ? "Volta" : "Ida", o.v, o.p, o.g, o.p + o.g, o.v ? (o.p + o.g) / o.v : null, o.l ? (o.p + o.g) / o.l : null]); });
+    linha(w2, ["Total", "", "", its.length, T.p, T.g, T.p + T.g, its.length ? (T.p + T.g) / its.length : null, T.l ? (T.p + T.g) / T.l : null], true);
+    [w1, w2].forEach(ws => paxXlsAjusta(ws, 5)); wb.views = [{ activeTab: 0 }];
+    await xlsxBaixar(wb, `Relatório de Passageiros - ${Mes}.xlsx`); toast(`Relatório gerado: ${its.length} viagem(ns).`);
+  } catch (e) { toast("Não foi possível gerar o relatório: " + e.message, 7000); }
+  finally { const b2 = $("paxBRel"); if (b2) { b2.disabled = false; b2.textContent = "Exportar Relatório"; } }
+};
+{ const h0 = paxBancoHtml; paxBancoHtml = function () { return h0.apply(this, arguments).replace('<input type="search" id="paxBQ"', '<button type="button" class="btn" id="paxBRel" onclick="paxBancoRelatorio()" title="Excel no padrão da empresa com as viagens que estão na tela (respeita os filtros e a ordem)">Exportar Relatório</button><input type="search" id="paxBQ"'); }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -51416,6 +51513,7 @@ CONFIG.version = "v0.14.54";   /* Passageiros: filtros em seção flutuante e c�
 CONFIG.version = "v0.14.55";   /* Passageiros: Fretamento volta a ser um filtro próprio, separado da 1001 · Direto */
 CONFIG.version = "v0.14.56";   /* Passageiros › Banco de Dados: edição na célula; Data, Dia, Linha e Serviço em colunas separadas; sem Origem */
 CONFIG.version = "v0.14.57";   /* Passageiros: aba Histórico (indicadores e tabelas de todos os meses saem da Análise); mês e ano no canto do Calendário */
+CONFIG.version = "v0.14.58";   /* Passageiros: relatório em Excel do Banco de Dados (padrão da empresa, colunas ajustadas ao conteúdo); Mês a Mês com a opção Total; tabela centralizada */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

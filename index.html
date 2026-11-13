@@ -51631,6 +51631,304 @@ function paxProjLegenda(c) { try { const lg = c.options.plugins.legend; if (!lg 
   .pax-kvar{margin-top:6px;font-size:12.5px;font-weight:800;color:var(--ink-2)}.pax-kvar span{font-weight:500;color:var(--ink-3)}.pax-kvar.down{color:#B3271E}.pax-kvar.up{color:#197A46}
   .pax-proj-c{margin-left:14px}`;
   document.head.appendChild(st); })();
+/* ==========================================================================================
+   v0.14.60 (13/11/2026) · Contas a Pagar — pedido das 16:30
+   OBRIGAÇÕES
+   1 · Ao abrir uma obrigação, as seções "Parcelas" e "Documentos da Obrigação" já vêm expandidas.
+   2 · Publicação automática das parcelas: ao abrir a CAP ou as Obrigações, quem pode lançar na CAP cria sozinho os lançamentos das
+       parcelas ainda sem lançamento, já vinculados à obrigação. Regras (decisão do Rafael, 13/11 16:40):
+       · só do MÊS ATUAL em diante — as parcelas vencidas em meses anteriores continuam apenas como "Atenção";
+       · obrigação parcelada: todas as parcelas que faltam, até o fim; recorrente/anual: mês atual e o seguinte;
+       · só obrigações geridas na CAP (não as de Dívidas), ativas e com valor de parcela cadastrado;
+       · se existe lançamento do mesmo fornecedor no mesmo mês ainda sem vínculo, NÃO cria (evita duplicar): fica para vincular.
+   FUNCIONÁRIOS (antiga aba Colaboradores)
+   1 · O nome da aba e os textos passam a "Funcionários".
+   2 · Lançamento em lote por comprovantes: envia-se um lote de PDFs (comprovantes de transferência); o ERP lê favorecido, CPF, valor,
+       data e competência, mostra a prévia para conferir e, ao confirmar, cria o lançamento já pago (ou dá baixa no que estava em
+       aberto) com o PDF anexado como Comprovante. Na folha do funcionário, cada lançamento mostra o comprovante.
+   3 · Colunas: sai "Pago no Mês" e "Último Pagamento"; entram Salário, FGTS, INSS e 13º Salário com a situação do MÊS ATUAL
+       (Pago / Pendente / —) e "Vencido" vira um aviso de pendência vencida antes do mês atual.
+   Nenhuma lista ou coluna nova.
+   ========================================================================================== */
+
+/* ---------- Obrigações 1 · seções abertas ---------- */
+{ const o0 = window.obrAbrir; const OBR_SEC_FECH = new Set();
+  window.obrAbrir = function () { const r = o0.apply(this, arguments);
+    try { if (typeof SEC_ABERTAS !== "undefined" && typeof secKey === "function") $("modal").querySelectorAll(".obr-sec").forEach(h => { const t = h.textContent.trim(); if (!/^(Parcelas|Documentos da obriga)/i.test(t)) return; const k = secKey(h);
+        if (!OBR_SEC_FECH.has(k)) SEC_ABERTAS.add(k);
+        if (!h.dataset.obrAb) { h.dataset.obrAb = "1"; h.addEventListener("click", ev => { if (ev.target.closest("a,button,input,select,textarea,label")) return; setTimeout(() => { if (h.classList.contains("sec-fechada")) OBR_SEC_FECH.add(k); else OBR_SEC_FECH.delete(k); }, 0); }); } }); } catch (e) {}
+    return r; }; }
+
+/* ---------- Obrigações 2 · publicação automática das parcelas ---------- */
+const OBR_AUTO = { rodando: false, em: 0, ultimo: null, MAX: 150, INTERVALO: 15 * 60000, feitas: new Set() };
+function obrAutoPlano() {
+  const D = obrCalcular(), hojeC = todayISO().slice(0, 7), prox = capCompAdd(hojeC, 1), criar = [], pend = [];
+  for (const o of D.obrs) {
+    if (o.Status === "Encerrada" || (o.ModuloDestino || "CAP") !== "CAP") continue;
+    const R = D.res.get(String(o._id)); if (!R || !R.lista) continue; const vp = Number(o.ValorParcela) || 0, parcelada = R.modo === "parcelas";
+    for (const r of R.lista) {
+      if (r.contas && r.contas.length) continue; if (r.st !== "prevista" && r.st !== "naolanc") continue; if (!r.venc || !r.comp) continue;
+      const mv = String(r.venc).slice(0, 7); if (mv < hojeC && r.comp < hojeC) continue;               /* meses anteriores: não cria */
+      if (!parcelada && (mv > prox || r.comp > prox)) continue;                                            /* recorrente: mês atual e o seguinte */
+      if (!(vp > 0)) { pend.push({ o, r, por: "sem valor de parcela cadastrado" }); continue; }
+      const livres = CAP_STATE.items.filter(it => !D.link.has(String(it._id)) && !capCancelada(it) && obrMesmoForn(o, it) && (itemComp(it) === r.comp || (it.Vencimento && ymd(it.Vencimento).slice(0, 7) === mv)));
+      if (livres.length) { pend.push({ o, r, por: `já existe lançamento do fornecedor em ${compLabel(r.comp)} sem vínculo (${livres[0].Title || "sem descrição"}) — vincule na obrigação` }); continue; }
+      if (OBR_AUTO.feitas.has(`${o._id}|${r.k || r.comp}`)) continue;                                      /* já criada nesta sessão (mesmo que a releitura da CAP falhe) */
+      criar.push({ o, r, R });
+    }
+  }
+  return { criar, pend };
+}
+function obrAutoCampos(o, r, R) {
+  const f = fornByName(o.FornecedorTexto);
+  const fields = { Title: `${o.Title}${r.k ? ` ${r.k}/${R.N}` : ` ${compLabel(r.comp)}`}`, Fornecedor: f ? f.Title : (o.FornecedorTexto || ""), Vencimento: r.venc, Competencia: r.comp,
+    Valor: Number(o.ValorParcela) || 0, Status: r.venc < todayISO() ? "Vencido" : "Em aberto", Parcela: r.k ? `${r.k}/${R.N}` : null, Categoria: o.Categoria || null, Subcategoria: o.Subcategoria || null,
+    Banco: o.Banco || null, FormaPagamento: o.Forma || null, Estabelecimento: o.Estabelecimento || null, CentroCusto: o.CentroCusto || null, NumParcelamento: o.NumParcelamento || null,
+    Observacoes: `Gerada automaticamente da obrigação "${o.Title}"`, TipoLancamento: typeof obrEhDivida === "function" && obrEhDivida(o) ? "Parcela de dívida" : ((f && TIPOS_LANC.includes(f.TipoLancPadrao) && f.TipoLancPadrao) || "Despesa"), ObrigacaoLookupId: Number(o._id) };
+  if (f) { fields.FornecedorRefLookupId = Number(f._id); if (f.CNPJ) fields.CNPJ = f.CNPJ; }
+  if (hasCol("Historico")) fields.Historico = capHistAdd(null, "criada (automática da obrigação)", `${fields.Fornecedor} · ${fmtBRL(fields.Valor)} · vence ${fmtDate(fields.Vencimento)}`);
+  for (const k of Object.keys(fields)) { const col = k === "FornecedorRefLookupId" ? "FornecedorRefId" : k.endsWith("LookupId") ? k.slice(0, -8) : k; if (fields[k] === null || !hasCol(col)) delete fields[k]; }
+  return fields;
+}
+function obrAutoPode() {
+  try { if (typeof DIV !== "undefined" && DIV.on) return false; if (typeof vcAtivo === "function" && vcAtivo()) return false; if (session.configMode) return false;
+    if (!CAP_STATE.site || !CAP_STATE.list || !CAP_STATE.cols || !CAP_STATE.cols.has("Obrigacao")) return false;   /* sem a coluna do vínculo a parcela seria criada de novo a cada vez */
+    const prev = session.pagAtual; session.pagAtual = "cap.lista"; let ok = false; try { ok = !!podeEditar("cap"); } finally { session.pagAtual = prev; } return ok; } catch (e) { return false; }
+}
+async function obrAutoRodar(forcar) {
+  if (OBR_AUTO.rodando || (!forcar && Date.now() - OBR_AUTO.em < OBR_AUTO.INTERVALO) || !obrAutoPode()) return null;
+  OBR_AUTO.rodando = true; OBR_AUTO.em = Date.now(); const res = { criadas: 0, falhas: 0, pend: 0, titulos: [] };
+  try {
+    if (!OBR_STATE.items.length) await loadObr();
+    if (!OBR_STATE.items.length) return res;
+    if (!obrAutoPlano().criar.length) { res.pend = obrAutoPlano().pend.length; OBR_AUTO.ultimo = res; return res; }
+    await loadCAP({ soLeitura: true });                       /* relê a CAP na hora: outra pessoa pode ter acabado de lançar */
+    if (!obrAutoPode()) return res;
+    const P = obrAutoPlano(), fila = P.criar.slice(0, OBR_AUTO.MAX); res.pend = P.pend.length;
+    const prevP = session.pagAtual, prevM = session.modAtual; session.pagAtual = "cap.lista"; session.modAtual = "cap";
+    try { for (const x of fila) { try { const f = obrAutoCampos(x.o, x.r, x.R); await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, f); OBR_AUTO.feitas.add(`${x.o._id}|${x.r.k || x.r.comp}`); res.criadas++; res.titulos.push(f.Title); } catch (e) { res.falhas++; console.warn("obr auto", x.o.Title, e); } } }
+    finally { session.pagAtual = prevP; session.modAtual = prevM; }
+    if (res.criadas) { try { await loadCAP({ soLeitura: !$("capBody") }); } catch (e) {} try { OBR_CACHE = null; } catch (e) {} try { obrRepintar(); } catch (e) {}
+      toast(`${res.criadas} parcela(s) de obrigações lançada(s) automaticamente na CAP (do mês atual em diante)${res.falhas ? ` · ${res.falhas} falha(s)` : ""}.`, 9000); }
+    if (P.criar.length > fila.length) OBR_AUTO.em = 0;   /* passou do limite por rodada: continua na próxima abertura da página */
+    OBR_AUTO.ultimo = res; return res;
+  } catch (e) { console.warn("obr auto", e); return res; }
+  finally { OBR_AUTO.rodando = false; }
+}
+window.obrAutoRodar = obrAutoRodar;
+{ const r0 = renderObr; renderObr = async function () { const r = await r0.apply(this, arguments); try { setTimeout(() => obrAutoRodar(), 400); } catch (e) {} return r; }; window.renderObr = renderObr; }
+{ const r0 = renderCAP; renderCAP = async function () { const r = await r0.apply(this, arguments); try { setTimeout(() => obrAutoRodar(), 800); } catch (e) {} return r; }; window.renderCAP = renderCAP; }
+/* aviso na página de Obrigações: o que o automático fez e o que ficou para a pessoa */
+{ const p0 = paintObr; paintObr = function () { const r = p0.apply(this, arguments);
+    try { const b = $("obrBody"), u = OBR_AUTO.ultimo; if (b && obrAutoPode() && !b.querySelector(".obr-auto")) { const P = obrAutoPlano(), n = P.pend.length;
+        const kp = b.querySelector(".cap-kpis"); if (kp) kp.insertAdjacentHTML("afterend", `<div class="obr-auto import-help"><b>Parcelas publicadas automaticamente:</b> do mês atual em diante, as parcelas sem lançamento entram sozinhas na CAP, já vinculadas (parceladas até o fim; recorrentes no mês atual e no seguinte). ${u && u.criadas ? `Nesta sessão: <b>${u.criadas}</b> lançada(s). ` : ""}${n ? `<b>${n}</b> ficaram para você: ${esc(P.pend.slice(0, 3).map(x => `${x.o.Title} (${x.por})`).join("; "))}${n > 3 ? "…" : ""}` : "Nenhuma pendente de ação."} As vencidas de meses anteriores não são criadas.</div>`); } } catch (e) {}
+    return r; }; window.paintObr = paintObr; }
+
+/* ---------- Funcionários 1 · o nome ---------- */
+{ const i = PAG_DEF.cap.findIndex(p => p.k === "colab"); if (i >= 0) PAG_DEF.cap[i].n = "Funcionários"; }
+function colabRenomear(root) {
+  if (!root) return; const tr = s => s.replace(/Colaboradores/g, "Funcionários").replace(/colaboradores/g, "funcionários").replace(/Colaborador\(es\)/g, "Funcionário(s)").replace(/colaborador\(es\)/g, "funcionário(s)").replace(/Colaborador/g, "Funcionário").replace(/colaborador/g, "funcionário");
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) { if (/olaborador/.test(n.nodeValue)) n.nodeValue = tr(n.nodeValue); }
+  root.querySelectorAll("[placeholder],[title]").forEach(e => { ["placeholder", "title"].forEach(a => { const v = e.getAttribute(a); if (v && /olaborador/.test(v)) e.setAttribute(a, tr(v)); }); });
+}
+
+/* ---------- Funcionários 3 · situação do mês atual por carteira ---------- */
+const COLAB_FLAGS = [["sal", "Salário"], ["fgts", "FGTS"], ["inss", "INSS"], ["dec", "13º Salário"]];
+function colabMesK() { return todayISO().slice(0, 7); }
+function colabNoMes(it, mesK) { const v = it.Vencimento ? ymd(it.Vencimento).slice(0, 7) : "", p = it.DataPagamento ? ymd(it.DataPagamento).slice(0, 7) : ""; if (v || p) return v === mesK || p === mesK; return (itemComp(it) || "") === mesK; }
+function colabFlags(itens) {
+  const mesK = colabMesK(), ini = mesK + "-01", o = {};
+  COLAB_FLAGS.forEach(([k]) => { const xs = itens.filter(it => colabCarteiraDe(it).k === k && colabNoMes(it, mesK) && !isIsenta(it)); o[k] = !xs.length ? "" : xs.every(it => classifyItem(it).pago) ? "pago" : "pend"; });
+  o.venc = itens.filter(it => { const c = classifyItem(it); return !c.pago && !c.isenta && it.Vencimento && ymd(it.Vencimento) < ini; }).length;
+  return o;
+}
+function colabFlagHtml(st) { return st === "pago" ? `<span class="pill st-pago cf"><i></i>Pago</span>` : st === "pend" ? `<span class="pill st-aguardando cf"><i></i>Pendente</span>` : `<span class="sup" title="Sem lançamento desta carteira no mês atual">—</span>`; }
+function colabTabela(body) {
+  const t = body.querySelector("table.colab-table"); if (!t || t.dataset.v60) return; t.dataset.v60 = "1";
+  const hs = [...t.querySelectorAll("thead th")]; if (hs.length < 10) return;
+  hs[8].remove(); hs[5].remove(); hs[4].insertAdjacentHTML("afterend", COLAB_FLAGS.map(([, n]) => `<th class="cf-h">${n}</th>`).join("")); hs[7].textContent = "Vencido"; hs[7].classList.add("cf-h"); hs[7].style.textAlign = "center"; hs[7].title = "Pendência vencida antes do mês atual";
+  t.querySelectorAll("tbody tr").forEach(tr => { const f = (COLAB.funcs || []).find(x => String(x._id) === String(tr.dataset.id)), tds = [...tr.children]; if (!f || tds.length < 10) return;
+    const fl = colabFlags(colabItensDe(f)); tds[8].remove(); tds[5].remove();
+    tds[4].insertAdjacentHTML("afterend", COLAB_FLAGS.map(([k]) => `<td class="cf-c" data-cart="${k}">${colabFlagHtml(fl[k])}</td>`).join(""));
+    tds[7].className = "cf-c"; tds[7].style.textAlign = "center"; tds[7].innerHTML = fl.venc ? `<span class="pill st-vencido cf" title="${fl.venc} lançamento(s) vencido(s) antes do mês atual"><i></i>Vencido</span>` : `<span class="sup">—</span>`; });
+  const mes = MESES_NOME[Number(colabMesK().slice(5, 7)) - 1] || "";
+  t.closest(".table-wrap").insertAdjacentHTML("beforebegin", `<div class="hint cf-nota" style="margin:0 0 6px">Salário, FGTS, INSS e 13º mostram a situação de <b>${esc(mes)} de ${colabMesK().slice(0, 4)}</b>: lançamentos com vencimento ou pagamento neste mês — <b>Pago</b>, <b>Pendente</b> ou — (sem lançamento). <b>Vencido</b> avisa pendência vencida antes deste mês.</div>`);
+  const pe = body.querySelector(".cap-foot .pago"); if (pe) pe.remove();
+}
+{ const pc = paintCAP;
+  paintCAP = function () { const r = pc.apply(this, arguments);
+    try { const body = $("capBody"); if (body) { body.querySelectorAll(".cap-views button").forEach(b => { if (/Colaboradores/.test(b.textContent)) colabRenomear(b); });
+        if (CAP_STATE.view === "colab") { colabTabela(body); colabRenomear(body);
+          const fl = body.querySelector(".filters"); if (fl && colabPodeLancar() && !fl.querySelector(".cl-lote")) fl.insertAdjacentHTML("beforeend", `<button type="button" class="btn primary cl-lote" onclick="colabLote()" title="Envie os PDFs dos comprovantes de pagamento: o ERP lê, mostra a prévia e lança todos de uma vez">Lançar Comprovantes em Lote</button>`); } } } catch (e) { console.warn("colab v60", e); }
+    return r; };
+  window.paintCAP = paintCAP; }
+/* folha do funcionário: nome novo e a coluna do comprovante em cada lançamento */
+{ const a0 = window.capColabAbrir;
+  window.capColabAbrir = function () { const r = a0.apply(this, arguments);
+    try { const m = $("modal"); colabRenomear(m); const t = m.querySelector("table.colab-hist"); if (t && !t.dataset.v60) { t.dataset.v60 = "1"; t.querySelector("thead tr").insertAdjacentHTML("beforeend", "<th>Comprovante</th>");
+        t.querySelectorAll("tbody tr").forEach(tr => { const mm = (tr.getAttribute("onclick") || "").match(/capColabVerLanc\((?:decodeURIComponent\()?['"]([^'"]+)['"]/); let id = mm ? mm[1] : ""; try { id = decodeURIComponent(id); } catch (e) {}
+          const it = CAP_STATE.items.find(x => String(x._id) === String(id)), an = it ? anexosDe(it) : [], comp = an.filter(a => a.t === "Comprovante"), lista = comp.length ? comp : an;
+          tr.insertAdjacentHTML("beforeend", `<td class="cl-anx">${lista.map(a => `<button type="button" class="btn mini" title="${esc(a.n || a.t)}" onclick="event.stopPropagation(); docVerJson(${jsArg(JSON.stringify(a))}, ${jsArg((it && it.Title) || "Comprovante")})">📎 ${esc(a.t === "Comprovante" ? "Comprovante" : a.t)}</button>`).join(" ") || `<span class="sup">—</span>`}</td>`); }); } } catch (e) { console.warn("colab folha", e); }
+    return r; }; }
+
+/* ---------- Funcionários 2 · lançamento em lote pelos comprovantes (PDF) ---------- */
+const CL = { linhas: [], lendo: false, gravando: false };
+const CL_MESES = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 };
+function clNum(s) { const n = Number(String(s || "").replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")); return Number.isFinite(n) ? n : 0; }
+function clIso(s) { const m = String(s || "").match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? `${m[3]}-${m[2]}-${m[1]}` : ""; }
+function clCarteira(txt) { const t = normName(txt);
+  if (/\b13|decimo|gratificacao natalina/.test(t)) return "dec"; if (/rescis|homolog/.test(t)) return "resc"; if (/ferias/.test(t)) return "fer"; if (/adiant|vale\b(?! transp)/.test(t)) return "adi";
+  if (/hora(s)? extra/.test(t)) return "hex"; if (/vale transp|\bvt\b/.test(t)) return "vt"; if (/fgts/.test(t)) return "fgts"; if (/inss/.test(t)) return "inss"; if (/salario|folha|pagamento de sal/.test(t)) return "sal"; return ""; }
+function clCompetencia(hist, nomeArq, dataPg, cart) {
+  const acha = s => { const t = normName(s); let m = t.match(/\b(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s*(?:de\s*|\/\s*)?((?:20)?\d{2})\b/); if (m) return `${m[2].length === 2 ? "20" + m[2] : m[2]}-${String(CL_MESES[m[1]]).padStart(2, "0")}`;
+    m = t.match(/\b(0?[1-9]|1[0-2])\s*\/\s*(20\d{2})\b/); return m ? `${m[2]}-${m[1].padStart(2, "0")}` : ""; };
+  const c = acha(hist) || acha(String(nomeArq || "").replace(/[_-]+/g, " ")); if (c) return c;
+  if (!dataPg) return ""; const base = dataPg.slice(0, 7); return cart === "sal" && Number(dataPg.slice(8, 10)) <= 10 ? capCompAdd(base, -1) : base;   /* salário pago até o dia 10 é do mês anterior */
+}
+/* texto do PDF → campos. Lê o comprovante de transferência do Santander (Favorecido · Conta destino · Data · Valor · CPF · Finalidade · Histórico)
+   e, em outros layouts, tenta o essencial (valor, data, CPF); o que não achar fica para a pessoa preencher na prévia */
+function clExtrair(pages, nomeArq) {
+  const linhas = []; pages.forEach(pg => { const its = pg.items.filter(i => String(i.str || "").trim()).slice().sort((a, b) => a.y - b.y || a.x - b.x); let cur = null;
+    its.forEach(i => { if (!cur || Math.abs(i.y - cur.y) > 3) { cur = { y: i.y, its: [] }; linhas.push(cur); } cur.its.push(i); }); });
+  linhas.forEach(l => { l.its.sort((a, b) => a.x - b.x); l.txt = l.its.map(i => i.str.trim()).join(" ").replace(/\s+/g, " ").trim(); });
+  const tudo = linhas.map(l => l.txt).join("\n"), o = { nome: "", cpf: "", valor: 0, data: "", finalidade: "", historico: "", banco: "", forma: "", aut: "", ok: false };
+  const ih = linhas.findIndex(l => /favorecido/i.test(l.txt) && /valor/i.test(l.txt));
+  if (ih >= 0) { const h = linhas[ih], xi = (re) => { const it = h.its.find(i => re.test(i.str)); return it ? it.x : null; }, x1 = xi(/institui|banco|conta destino|ag[êe]ncia/i);
+    const v = linhas.slice(ih + 1, ih + 4).find(l => /\d{2}\/\d{2}\/\d{4}/.test(l.txt) && /\d,\d{2}\b/.test(l.txt));
+    if (v) { o.nome = (x1 != null ? v.its.filter(i => i.x < x1 - 4).map(i => i.str.trim()).join(" ") : (v.txt.match(/^([^\d]+?)\s+\d/) || [])[1] || "").replace(/\s+/g, " ").trim();
+      o.data = clIso(v.txt); const ms = v.txt.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g); if (ms) o.valor = clNum(ms[ms.length - 1]); } }
+  if (!o.nome) { const m = tudo.match(/(?:favorecido|recebedor|destinat[áa]rio|nome do favorecido)\s*:?\s*\n?\s*([A-ZÀ-Ú][A-ZÀ-Ú .'-]{4,60})/i); if (m) o.nome = m[1].replace(/\s+/g, " ").trim(); }
+  if (!o.valor) { const m = tudo.match(/valor[^\d\n]{0,25}(\d{1,3}(?:\.\d{3})*,\d{2})/i) || tudo.match(/R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/); if (m) o.valor = clNum(m[1]); }
+  if (!o.data) { const m = tudo.match(/data[^\d\n]{0,30}(\d{2}\/\d{2}\/\d{4})/i) || tudo.match(/(\d{2}\/\d{2}\/\d{4})/); if (m) o.data = clIso(m[1]); }
+  const mc = tudo.match(/\b(\d{3}\.\d{3}\.\d{3}-\d{2})\b/); if (mc) o.cpf = mc[1];
+  const ifin = linhas.findIndex(l => /finalidade/i.test(l.txt));
+  if (ifin >= 0 && linhas[ifin + 1]) { const h = linhas[ifin], hx = (h.its.find(i => /hist[óo]rico/i.test(i.str)) || {}).x, v = linhas[ifin + 1];
+    if (hx != null) { o.finalidade = v.its.filter(i => i.x < hx - 4).map(i => i.str.trim()).join(" ").trim(); o.historico = v.its.filter(i => i.x >= hx - 4).map(i => i.str.trim()).join(" ").trim(); } else o.finalidade = v.txt; }
+  const ma = tudo.match(/autentica[çc][ãa]o[^\n]*\n\s*([0-9A-F]{12,})/i); if (ma) o.aut = ma[1];
+  o.banco = /santander/i.test(tudo) ? "Santander" : /bradesco/i.test(tudo) ? "Bradesco" : /banco do brasil/i.test(tudo) ? "Banco do Brasil" : /pagbank|pagseguro/i.test(tudo) ? "PagBank" : "";
+  o.forma = /\bpix\b/i.test(tudo) ? "PIX" : /\bted\b|transfer[êe]ncia/i.test(tudo) ? "TED" : "";
+  o.cart = clCarteira(`${nomeArq} ${o.finalidade} ${o.historico}`) || (/sal[áa]rio/i.test(o.finalidade) ? "sal" : "");
+  o.comp = clCompetencia(o.historico, nomeArq, o.data, o.cart); o.ok = !!(o.valor && o.data); return o;
+}
+function clAcharFunc(o) {
+  const fs = (COLAB.funcs || []).filter(f => f.Situacao !== "Desligado"), cpf = colabDig(o.cpf);
+  if (cpf.length === 11) { const f = (COLAB.funcs || []).find(x => colabCpf(x) === cpf); if (f) return { f, como: "CPF" }; }
+  const alvo = normName(o.nome); if (!alvo) return { f: null, como: "" };
+  let c = fs.filter(f => normName(f.Title) === alvo); if (c.length === 1) return { f: c[0], como: "nome" };
+  const tk = s => normName(s).split(" ").filter(w => w.length > 2), ta = tk(o.nome);
+  c = fs.filter(f => { const tf = tk(f.Title); return ta.length >= 2 && (ta.every(w => tf.includes(w)) || tf.every(w => ta.includes(w))); });
+  return c.length === 1 ? { f: c[0], como: "nome parecido" } : { f: null, como: c.length > 1 ? "mais de um funcionário com esse nome" : "" };
+}
+/* o que será feito com a linha: criar, dar baixa num lançamento em aberto, ou pular por já estar lançado */
+function clAcao(l) {
+  const f = (COLAB.funcs || []).find(x => String(x._id) === String(l.funcId)), w = CAP_COLAB_CARTEIRAS.find(x => x.k === l.cart);
+  if (!f) return { k: "falta", txt: "Escolha o funcionário" }; if (!w || !w.sub) return { k: "falta", txt: "Escolha a carteira" };
+  if (!(l.valor > 0)) return { k: "falta", txt: "Informe o valor" }; if (!/^\d{4}-\d{2}-\d{2}$/.test(l.data || "")) return { k: "falta", txt: "Informe a data do pagamento" }; if (!/^\d{4}-\d{2}$/.test(l.comp || "")) return { k: "falta", txt: "Informe a competência" };
+  const itens = colabItensDe(f), igual = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;
+  const ja = itens.find(it => classifyItem(it).pago && igual(capValorEfetivo(it), l.valor) && it.DataPagamento && ymd(it.DataPagamento) === l.data);
+  if (ja) return { k: "ja", it: ja, txt: `Já lançado: ${ja.Title || "lançamento pago"} — será pulado` };
+  if (CL.linhas.some(x => x !== l && x.sel && CL.linhas.indexOf(x) < CL.linhas.indexOf(l) && String(x.funcId) === String(l.funcId) && x.data === l.data && igual(x.valor, l.valor) && x.cart === l.cart)) return { k: "ja", txt: "Repetido neste lote — será pulado" };
+  const ab = itens.filter(it => { const c = classifyItem(it); return !c.pago && !c.isenta && colabCarteiraDe(it).k === l.cart && (itemComp(it) || "") === l.comp; });
+  const alvo = ab.find(it => igual(it.Valor, l.valor)) || (ab.length === 1 ? ab[0] : null);
+  if (alvo) return { k: "baixa", it: alvo, txt: `Dar baixa em: ${alvo.Title || "lançamento em aberto"}${igual(alvo.Valor, l.valor) ? "" : ` (valor lançado ${fmtBRL(alvo.Valor)})`} e anexar o comprovante` };
+  return { k: "criar", txt: "Criar lançamento pago e anexar o comprovante" };
+}
+function clCamposNovos(l, f, w) {
+  const cpf = colabDig(l.cpf) || colabCpf(f), cpfFmt = cpf.length === 11 ? cpf.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : "";
+  const fields = { Title: `${w.n} ${compLabel(l.comp)} — ${f.Title}`, Fornecedor: f.Title, TipoFavorecido: "Funcionário", CNPJ: cpfFmt || null, Categoria: w.cat, Subcategoria: w.sub, CentroCusto: f.Departamento || null, Competencia: l.comp,
+    Vencimento: l.data, Valor: l.valor, Status: "Pago", DataPagamento: l.data, ValorPago: l.valor, Banco: BANCOS.includes(l.banco) ? l.banco : null, FormaPagamento: FORMAS.includes(l.forma) ? l.forma : null, TipoLancamento: "Despesa",
+    Observacoes: `Lançado em lote pelo comprovante "${l.arq}"${l.aut ? ` · autenticação ${l.aut}` : ""}` };
+  if (hasCol("Historico")) fields.Historico = capHistAdd(null, "criada (lote de comprovantes)", `${f.Title} · ${fmtBRL(l.valor)} · pago em ${fmtDate(l.data)}`);
+  for (const k of Object.keys(fields)) if (fields[k] === null || !hasCol(k)) delete fields[k];
+  return fields;
+}
+function clPreviaHtml() {
+  const fs = (COLAB.funcs || []).slice().sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR")), carts = CAP_COLAB_CARTEIRAS.filter(w => w.sub);
+  const linhas = CL.linhas.map((l, i) => { const a = clAcao(l); l._a = a; const marca = a.k === "criar" || a.k === "baixa";
+    return `<tr data-i="${i}" class="cl-${a.k}"><td><input type="checkbox" class="cl-sel" ${marca && l.sel ? "checked" : ""} ${marca ? "" : "disabled"} aria-label="Lançar este comprovante"></td>
+      <td class="cl-arq"><button type="button" class="ctb-lnk" onclick="clVerPdf(${i})" title="Abrir o PDF">${esc(l.arq)}</button>${l.lido ? `<div class="sup">${esc([l.nome, l.cpfMasc, l.finalidade, l.historico].filter(Boolean).join(" · ") || "comprovante sem texto reconhecível")}</div>` : `<div class="sup venc">${esc(l.erro || "não foi possível ler este PDF — preencha os campos")}</div>`}</td>
+      <td><select class="lanc-in lanc-sel cl-f" data-k="funcId" aria-label="Funcionário"><option value="">— escolher —</option>${fs.map(f => `<option value="${esc(f._id)}" ${String(f._id) === String(l.funcId) ? "selected" : ""}>${esc(f.Title)}${f.Situacao === "Desligado" ? " (desligado)" : ""}</option>`).join("")}</select>${l.como ? `<div class="sup">reconhecido pelo ${esc(l.como)}</div>` : l.funcId ? "" : `<div class="sup venc">${esc(l.comoFalha || "não reconhecido")}</div>`}</td>
+      <td><select class="lanc-in lanc-sel cl-f" data-k="cart" aria-label="Carteira"><option value="">— escolher —</option>${carts.map(w => `<option value="${w.k}" ${w.k === l.cart ? "selected" : ""}>${esc(w.n)}</option>`).join("")}</select></td>
+      <td><input type="month" class="lanc-in cl-f" data-k="comp" value="${esc(l.comp || "")}" aria-label="Competência"></td>
+      <td><input type="date" class="lanc-in cl-f" data-k="data" value="${esc(l.data || "")}" aria-label="Data do pagamento"></td>
+      <td><input type="text" inputmode="decimal" class="lanc-in num cl-f" data-k="valor" value="${l.valor ? l.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : ""}" aria-label="Valor"></td>
+      <td class="cl-acao"><span class="cl-tag ${a.k}">${{ criar: "Criar", baixa: "Dar baixa", ja: "Pular", falta: "Falta dado" }[a.k]}</span><div class="sup">${esc(a.txt)}</div></td></tr>`; }).join("");
+  const sel = CL.linhas.filter(l => l.sel && l._a && (l._a.k === "criar" || l._a.k === "baixa")), tot = sel.reduce((s, l) => s + l.valor, 0), n = k => CL.linhas.filter(l => l._a && l._a.k === k).length;
+  return `<div class="pm-resumo"><span><b>${CL.linhas.length}</b> comprovante(s)</span><span><b>${n("criar")}</b> a criar</span><span><b>${n("baixa")}</b> a dar baixa</span><span><b>${n("ja")}</b> já lançado(s)</span><span><b>${n("falta")}</b> com dado faltando</span><span>Total marcado <b>${esc(fmtBRL(tot))}</b></span></div>
+    <div class="import-preview cl-prev"><table><thead><tr><th></th><th>Arquivo</th><th>Funcionário</th><th>Carteira</th><th>Competência</th><th>Pagamento</th><th style="text-align:right">Valor</th><th>O que será feito</th></tr></thead><tbody>${linhas}</tbody></table></div>`;
+}
+function clPinta() { const el = $("clPrev"); if (!el) return; const st = el.querySelector(".cl-prev") ? el.querySelector(".cl-prev").scrollTop : 0; el.innerHTML = CL.linhas.length ? clPreviaHtml() : `<p class="hint" style="margin:0">Nenhum arquivo ainda. Escolha os PDFs dos comprovantes (pode marcar vários de uma vez) ou arraste-os para cá.</p>`;
+  const p2 = el.querySelector(".cl-prev"); if (p2) p2.scrollTop = st; const n = CL.linhas.filter(l => l.sel && l._a && (l._a.k === "criar" || l._a.k === "baixa")).length, b = $("clGo"); if (b) { b.disabled = !n || CL.lendo || CL.gravando; b.textContent = CL.lendo ? "Lendo os PDFs…" : n ? `Lançar ${n} Comprovante(s)` : "Nada a Lançar"; } }
+window.clVerPdf = i => { const l = CL.linhas[i]; if (!l || !l.file) return; try { const u = URL.createObjectURL(l.file); window.open(u, "_blank", "noopener"); setTimeout(() => URL.revokeObjectURL(u), 60000); } catch (e) {} };
+async function clAdicionar(files) {
+  const pdfs = [...files].filter(f => /\.pdf$/i.test(f.name) || f.type === "application/pdf"); if (!pdfs.length) { toast("Escolha arquivos PDF."); return; }
+  if (pdfs.length < files.length) toast(`${files.length - pdfs.length} arquivo(s) ignorado(s): só PDF.`, 5000);
+  CL.lendo = true; clPinta(); const st = $("clStatus");
+  for (let i = 0; i < pdfs.length; i++) { const file = pdfs[i]; if (CL.linhas.some(l => l.arq === file.name && l.file.size === file.size)) continue;
+    if (st) st.textContent = `Lendo ${i + 1} de ${pdfs.length}: ${file.name}`;
+    const l = { arq: file.name, file, sel: true, lido: false, funcId: "", cart: "", comp: "", data: "", valor: 0, nome: "", cpf: "", cpfMasc: "", finalidade: "", historico: "", banco: "", forma: "", aut: "", como: "", comoFalha: "" };
+    try { const o = clExtrair(await pontoLerPdf(file), file.name); Object.assign(l, { lido: true, nome: o.nome, cpf: o.cpf, cpfMasc: o.cpf ? `CPF ***.${colabDig(o.cpf).slice(3, 6)}.***-**` : "", valor: o.valor, data: o.data, finalidade: o.finalidade, historico: o.historico, banco: o.banco, forma: o.forma, aut: o.aut, cart: o.cart, comp: o.comp });
+      const a = clAcharFunc(o); if (a.f) { l.funcId = String(a.f._id); l.como = a.como; } else l.comoFalha = a.como || (o.nome ? `"${o.nome}" não está no cadastro do RH` : "favorecido não identificado no PDF"); }
+    catch (e) { l.erro = "não foi possível ler este PDF (" + (e.message || e) + ") — preencha os campos"; }
+    CL.linhas.push(l); }
+  CL.lendo = false; if (st) st.textContent = ""; clPinta();
+}
+window.colabLote = async () => {
+  if (!colabPodeLancar()) { toast("Seu acesso à CAP é só de leitura."); return; }
+  if (!COLAB.funcs) await colabFuncsLer();
+  CL.linhas = []; CL.lendo = false; CL.gravando = false;
+  $("modal").className = "modal xl cl-modal";
+  modal(`<div class="modal-head"><h2>Lançar Comprovantes em Lote</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body"><p class="lead" style="margin:0 0 10px">Envie os PDFs dos comprovantes de pagamento aos funcionários. O ERP lê cada um, mostra a prévia abaixo e só grava depois que você confirmar. Cada lançamento fica <b>pago</b>, com o PDF anexado como Comprovante.</p>
+      <div class="cl-drop" id="clDrop"><input type="file" id="clArq" accept="application/pdf,.pdf" multiple hidden><button type="button" class="btn" onclick="document.getElementById('clArq').click()">Escolher os PDFs…</button><span class="sup">ou arraste os arquivos para cá · vários de uma vez</span><span class="grow"></span><span class="sup" id="clStatus"></span></div>
+      <div id="clPrev" style="margin-top:12px"></div>
+      <p class="hint" style="margin:10px 0 0">Confira funcionário, carteira, competência, data e valor — todos podem ser corrigidos aqui. Se já existe um lançamento em aberto da mesma carteira e competência, o ERP dá baixa nele em vez de criar outro; comprovante já lançado (mesmo funcionário, valor e data) é pulado.${rhPesAtivo() ? "" : " Sem acesso aos dados pessoais do RH, o funcionário é reconhecido só pelo nome."}</p>
+      <div class="imp-log" id="clLog" style="display:none"></div></div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" id="clGo" disabled onclick="clGravar()">Nada a Lançar</button></div>`);
+  const inp = $("clArq"), dz = $("clDrop"), prev = $("clPrev");
+  inp.addEventListener("change", () => { const fs = [...inp.files]; inp.value = ""; if (fs.length) clAdicionar(fs); });
+  ["dragenter", "dragover"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("on"); })); ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("on"); }));
+  dz.addEventListener("drop", e => { const fs = [...(e.dataTransfer ? e.dataTransfer.files : [])]; if (fs.length) clAdicionar(fs); });
+  prev.addEventListener("change", e => { const tr = e.target.closest("tr[data-i]"); if (!tr) return; const l = CL.linhas[Number(tr.dataset.i)]; if (!l) return;
+    if (e.target.classList.contains("cl-sel")) l.sel = e.target.checked; else if (e.target.dataset.k) { const k = e.target.dataset.k, v = e.target.value; if (k === "valor") l.valor = clNum(v); else l[k] = v; if (k === "funcId") { l.como = ""; l.comoFalha = ""; } l.sel = true; }
+    clPinta(); });
+  clPinta();
+};
+window.clGravar = async () => {
+  if (CL.gravando || CL.lendo || !colabPodeLancar()) return;
+  const fila = CL.linhas.filter(l => l.sel && l._a && (l._a.k === "criar" || l._a.k === "baixa")); if (!fila.length) return;
+  const tot = fila.reduce((s, l) => s + l.valor, 0);
+  if (!confirm(`Lançar ${fila.length} comprovante(s), no total de ${fmtBRL(tot)}? ${fila.filter(l => l._a.k === "criar").length} lançamento(s) novo(s) pago(s) e ${fila.filter(l => l._a.k === "baixa").length} baixa(s). Cada um fica com o PDF anexado.`)) return;
+  CL.gravando = true; const b = $("clGo"), log = $("clLog"), msgs = []; if (b) b.disabled = true; let ok = 0, falha = 0, semAnexo = 0;
+  const prevP = session.pagAtual, prevM = session.modAtual; session.pagAtual = "cap.lista"; session.modAtual = "cap";
+  try { let drive = null; try { drive = await docDrive(); } catch (e) {}
+    for (let i = 0; i < fila.length; i++) { const l = fila[i], a = clAcao(l); if (b) b.textContent = `Lançando ${i + 1} de ${fila.length}…`;
+      if (a.k !== "criar" && a.k !== "baixa") { msgs.push(`${l.arq}: pulado (${a.txt})`); continue; }
+      const f = COLAB.funcs.find(x => String(x._id) === String(l.funcId)), w = CAP_COLAB_CARTEIRAS.find(x => x.k === l.cart); let it = null;
+      try {
+        if (a.k === "criar") { const fields = clCamposNovos(l, f, w), cr = await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, fields); it = Object.assign({ _id: String(cr.id) }, fields); CAP_STATE.items.push(it); }
+        else { const up = { Status: "Pago", DataPagamento: l.data, ValorPago: l.valor }; if (BANCOS.includes(l.banco)) up.Banco = l.banco; if (FORMAS.includes(l.forma) && !a.it.FormaPagamento) up.FormaPagamento = l.forma;
+          if (hasCol("Historico")) up.Historico = capHistAdd(a.it, "paga (lote de comprovantes)", `${fmtBRL(l.valor)} em ${fmtDate(l.data)} · ${l.arq}`);
+          for (const k of Object.keys(up)) if (!hasCol(k)) delete up[k]; await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, a.it._id, up); Object.assign(a.it, up); it = a.it; }
+        ok++; l.sel = false; l.feito = true;
+        try { const meta = await capEnviarUm(it, "Comprovante", l.file, null, drive), anx = anexosDe(it); anx.push(meta); await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, it._id, { Anexos: JSON.stringify(anx) }); it.Anexos = JSON.stringify(anx); }
+        catch (e) { semAnexo++; msgs.push(`${l.arq}: lançado, mas o PDF não foi anexado (${e.message || e}) — abra o lançamento e anexe`); }
+      } catch (e) { falha++; msgs.push(`${l.arq}: não foi lançado (${e.message || e})`); }
+    }
+  } finally { session.pagAtual = prevP; session.modAtual = prevM; CL.gravando = false; }
+  try { await loadCAP({ soLeitura: true }); } catch (e) {}
+  CAP_STATE.rev = (CAP_STATE.rev || 0) + 1;
+  if (falha || semAnexo) { clPinta(); if (log) { log.style.display = "block"; log.innerHTML = msgs.map(m => `<div class="err">${esc(m)}</div>`).join(""); } toast(`${ok} lançado(s)${falha ? ` · ${falha} falharam` : ""}${semAnexo ? ` · ${semAnexo} sem o PDF anexado` : ""} — veja a lista`, 9000); try { paintCAP(); } catch (e) {} if (!$("clPrev")) return; return; }
+  closeModal(); toast(`${ok} comprovante(s) lançado(s) e anexado(s).`, 7000); try { paintCAP(); } catch (e) {}
+};
+(function () { const st = document.createElement("style"); st.id = "erp-v01460";
+  st.textContent = `.colab-table th.cf-h,.colab-table td.cf-c{text-align:center;white-space:nowrap}.colab-table .pill.cf{font-size:11.5px;padding:2px 9px}
+  .cl-drop{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:14px;border:1.5px dashed #C9D0D8;border-radius:10px;background:#FBFCFD}.cl-drop.on{border-color:var(--navy);background:#F1F5FB}
+  #modal.cl-modal,.modal.xl.cl-modal{width:96vw!important;max-width:1380px!important}.cl-prev{max-height:46vh;overflow:auto}.cl-prev table{width:100%;min-width:1120px}.cl-prev td{vertical-align:top}.cl-prev .lanc-in{height:34px;min-width:0;width:100%}.cl-prev select[data-k=funcId]{min-width:170px}.cl-prev select[data-k=cart]{min-width:130px}.cl-prev input[data-k=comp],.cl-prev input[data-k=data]{min-width:138px}.cl-prev input[data-k=valor]{min-width:96px;text-align:right}
+  .cl-prev .cl-arq{min-width:220px;max-width:300px;overflow-wrap:anywhere;word-break:normal}.cl-prev .cl-acao{min-width:200px}.cl-prev tr.cl-ja td,.cl-prev tr.cl-falta td{background:#FAFAFB}
+  .cl-tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:999px}.cl-tag.criar{background:#E7F4EC;color:#197A46}.cl-tag.baixa{background:#E6EEF9;color:#1F4E8C}.cl-tag.ja{background:#EEF1F5;color:var(--ink-2)}.cl-tag.falta{background:#FDECEA;color:#B3271E}
+  .obr-auto{margin:0 0 14px}.colab-hist td.cl-anx{white-space:nowrap}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -51695,6 +51993,7 @@ CONFIG.version = "v0.14.56";   /* Passageiros › Banco de Dados: edição na c�
 CONFIG.version = "v0.14.57";   /* Passageiros: aba Histórico (indicadores e tabelas de todos os meses saem da Análise); mês e ano no canto do Calendário */
 CONFIG.version = "v0.14.58";   /* Passageiros: relatório em Excel do Banco de Dados (padrão da empresa, colunas ajustadas ao conteúdo); Mês a Mês com a opção Total; tabela centralizada */
 CONFIG.version = "v0.14.59";   /* Passageiros: aba Alertas (informe executivo de quedas por mês, linha e horário) */
+CONFIG.version = "v0.14.60";   /* CAP: parcelas das obrigações publicadas automaticamente (mês atual em diante); obrigação abre com Parcelas e Documentos expandidos; aba Funcionários com situação do mês por carteira e lançamento em lote por comprovantes (PDF) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

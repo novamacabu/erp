@@ -51261,6 +51261,99 @@ document.addEventListener("mousedown", e => { const p = document.getElementById(
   .pb-pop-l label{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;cursor:pointer}.pb-pop-l label:hover{background:#F1F5FB}.pb-pop-l label span{flex:1}.pb-pop-l label i{font-style:normal;font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
   .pb-pop-f{display:flex;justify-content:space-between;gap:8px}.pb-limpa{margin-left:10px}`;
   document.head.appendChild(st); })();
+/* ==========================================================================================
+   v0.14.57 (13/11/2026) · Estatística de Passageiros — pedido das 14:30
+   Calendário: mês e ano selecionados em destaque no canto superior direito do cartão (ex.: "Outubro 2026").
+   Histórico (14:33): os indicadores e as tabelas de todos os meses saem da Análise (que trata de um mês) e ficam na aba própria
+   "Histórico", junto dos gráficos Mês a Mês e Ano a Ano. Na Análise esses dois gráficos continuam depois do Dia a Dia.
+   Lançamentos (14:45): rascunho do dia — "Salvar Rascunho" guarda o que foi digitado (neste navegador) sem gravar na lista;
+   ao trocar de dia ou de aba com digitação pendente, o rascunho é guardado sozinho, sem a pergunta "sair sem gravar?".
+   ========================================================================================== */
+{ const p0 = paintPax;
+  paintPax = function () { const r = p0.apply(this, arguments);
+    try { const h = document.querySelector("#paxCal .cap-card-h"); if (h && !h.querySelector(".pax-cal-mes") && /^\d{4}-\d{2}$/.test(PAX_STATE.mes)) { const n = MESES_NOME[Number(PAX_STATE.mes.slice(5, 7)) - 1] || "";
+        h.insertAdjacentHTML("beforeend", `<span class="grow"></span><span class="pax-cal-mes" data-sem-titulo>${esc(n.charAt(0).toUpperCase() + n.slice(1))} <b>${esc(PAX_STATE.mes.slice(0, 4))}</b></span>`); } } catch (e) {}
+    return r; };
+  window.paintPax = paintPax; }
+(function () { const st = document.createElement("style"); st.id = "erp-v01457";
+  st.textContent = `#paxCal .cap-card-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px}#paxCal .cap-card-h .grow{flex:1 1 auto}
+  .pax-cal-mes{margin-left:auto;font-size:18px;font-weight:800;color:var(--navy);letter-spacing:-.01em;white-space:nowrap;padding:2px 12px;border-left:3px solid var(--orange)}.pax-cal-mes b{color:var(--orange-ink,#C94314);font-weight:800}`;
+  document.head.appendChild(st); })();
+
+/* ---- aba Histórico ---- */
+{ const t0 = window.paxTab; window.paxTab = function (t) { if (t !== "hist") return t0.apply(this, arguments); const r = t0.call(this, "horario"); if (PAX_STATE.tab === "horario") { PAX_STATE.tab = "hist"; paintPax(); } return r; }; }
+{ const p0 = paintPax;
+  paintPax = function () {
+    const hist = PAX_STATE.tab === "hist"; if (hist) PAX_STATE.tab = "horario";
+    let r; try { r = p0.apply(this, arguments); } finally { if (hist) PAX_STATE.tab = "hist"; }
+    try { const body = document.getElementById("paxBody"); if (!body) return r;
+      const seg = body.querySelector(".op-topo .seg-tabs");
+      if (seg && PAX_STATE.ready && !/Histórico/.test(seg.textContent)) { const an = seg.querySelector("button"); if (an) an.insertAdjacentHTML("afterend", `<button role="tab" onclick="paxTab('hist')">Histórico</button>`); }
+      if (seg && hist) seg.querySelectorAll("button").forEach(b => b.classList.toggle("on", /Histórico/.test(b.textContent)));
+      const h2 = body.querySelector("h2.pax-sec"); if (!h2) return r;
+      const doHist = [h2]; for (let e = h2.nextElementSibling; e; e = e.nextElementSibling) doHist.push(e);
+      const cards = ["paxChartMes", "paxChartAnoMes"].map(id => { const c = document.getElementById(id); return c && c.closest(".cap-card"); }).filter(Boolean);
+      if (!hist) { doHist.forEach(e => { e.hidden = true; }); return r; }
+      const fica = new Set(doHist.concat(cards)); [...body.children].forEach(e => { if (e.matches(".op-topo, .pax-flut, .pax-flut-sen") || fica.has(e)) return; e.hidden = true; });
+      const kp = doHist.find(e => e.matches(".cap-kpis")) || h2; let ant = kp; cards.forEach(c => { ant.insertAdjacentElement("afterend", c); ant = c; const ch = window.Chart && Chart.getChart(c.querySelector("canvas")); if (ch) ch.resize(); });
+      const det = body.querySelector("details.pax-det"); if (det) { det.open = true; det.classList.add("pax-det-fixo"); }
+      const ma = document.getElementById("paxMAB"); if (ma) ma.hidden = true;   /* o histórico é de todos os meses */
+      const sp = h2.querySelector(".sup"); if (sp && !/todos os anos/.test(sp.textContent)) sp.textContent = sp.textContent.replace(/^todos os meses importados/i, "Todos os Meses Importados");
+    } catch (e) {}
+    return r;
+  };
+  window.paintPax = paintPax; }
+(function () { const st = document.createElement("style"); st.id = "erp-v01457b";
+  st.textContent = `#paxBody [hidden]{display:none!important}.pax-det-fixo>summary{display:none}.pax-flut .pax-fbar:first-child{margin-top:0}`;
+  document.head.appendChild(st); })();
+/* rótulos "Gráfico", "Medida" e "Tabela" (e os dos filtros) alinhados ao centro dos botões (14:35) */
+(function () { const st = document.createElement("style"); st.id = "erp-v01457c"; st.textContent = `#paxBody .pax-chips{align-items:center}#paxBody .pax-chips .rot{align-self:center;margin-top:0!important;margin-bottom:0!important;line-height:1;padding-top:0;padding-bottom:0}`; document.head.appendChild(st); })();
+/* segundo clique num filtro já ligado desfaz a escolha e volta para Todas / Ambos / Todos (14:41) */
+{ const f0 = window.paxFiltro; window.paxFiltro = function (k, v) { const at = { linha: PAX_UI.linhaFilt, sentido: PAX_UI.sentidoFilt, tipo: PAX_UI.diaTipo, hora: PAX_UI.horaFilt }[k]; if (v && at != null && String(at) === String(v)) v = ""; return f0.call(this, k, v); }; }
+
+/* ---- rascunho da folha do dia (fica neste navegador, por usuário; nada vai para a lista até "Gravar") ---- */
+function paxRascChave() { const m = session.me || {}; return "erp_nmb_pax_rascunhos_" + String(m.id || m.mail || m.userPrincipalName || "u"); }
+function paxRascLer() { try { const o = JSON.parse(localStorage.getItem(paxRascChave()) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
+function paxRascGravar(o) { try { localStorage.setItem(paxRascChave(), JSON.stringify(o)); return true; } catch (e) { return false; } }
+function paxRascTira(data) { const o = paxRascLer(); if (o[data]) { delete o[data]; paxRascGravar(o); } }
+function paxRascSalva(quieto) {
+  const L = PAX_UI.lote; if (!L) return false;
+  const linhas = L.linhas.filter(l => { const st = paxLoteSt(l); return st === "novo" || st === "alt" || (st === "erro" && (l.pag !== "" || l.grat !== "")); }).map(l => ({ serv: l.serv, hora: l.hora, sent: l.sent, pag: l.pag, grat: l.grat, livre: !!l.livre }));
+  const o = paxRascLer(); if (!linhas.length) { if (o[L.data]) { delete o[L.data]; paxRascGravar(o); } L.rasc = null; if (!quieto) toast("Nada digitado para guardar."); return false; }
+  o[L.data] = { em: new Date().toISOString(), linhas }; const ok = paxRascGravar(o); if (ok) L.rasc = o[L.data].em;
+  if (!quieto || !ok) toast(ok ? `Rascunho de ${fmtDate(L.data)} guardado neste navegador (${linhas.length} viagem(ns)). Ainda não está gravado na lista.` : "Não foi possível guardar o rascunho neste navegador.", 6000); return ok;
+}
+{ const m0 = paxLoteMontar;
+  paxLoteMontar = function (data) { const L = m0.apply(this, arguments), r = paxRascLer()[data];
+    if (r && Array.isArray(r.linhas) && r.linhas.length) { r.linhas.forEach(d => { const at = L.linhas.find(x => x.serv === d.serv && x.hora === d.hora && x.sent === d.sent); if (at) { at.pag = d.pag; at.grat = d.grat; } else L.linhas.push({ serv: d.serv, hora: d.hora, sent: d.sent, pag: d.pag, grat: d.grat, id: null, p0: null, g0: null, livre: true }); }); L.rasc = r.em; }
+    return L; }; }
+window.paxRascSalvar = () => { if (paxRascSalva(false)) paintPax(); };
+window.paxLoteDia = (passo, valor, forcar) => {
+  const L = PAX_UI.lote; let d = valor || (L && L.data); if (!/^\d{4}-\d{2}-\d{2}$/.test(d || "")) return;
+  if (forcar) { if (!paxLoteSujo() && !(L && L.rasc)) { toast("Nada digitado para desfazer."); return; } if (!confirm("Desfazer o que foi digitado (e o rascunho deste dia) e voltar ao que está gravado?")) return; paxRascTira(d); PAX_UI.lote = paxLoteMontar(d); paintPax(); return; }
+  if (passo) { const x = dLocal(d); x.setDate(x.getDate() + passo); d = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; }
+  if (L && d !== L.data && paxLoteSujo() && paxRascSalva(true)) toast(`Rascunho de ${fmtDate(L.data)} guardado. Ele volta quando você abrir esse dia.`, 5000);
+  PAX_UI.lote = paxLoteMontar(d); PAX_STATE.mes = d.slice(0, 7); paintPax();
+};
+{ const t0 = window.paxTab; window.paxTab = function (t) {
+    if (PAX_STATE.tab === "lancar" && t !== "lancar" && PAX_UI.lote) { PAX_UI._loteDia = PAX_UI.lote.data; if (paxLoteSujo()) { if (paxRascSalva(true)) toast(`Rascunho de ${fmtDate(PAX_UI.lote.data)} guardado. Ele volta quando você abrir a folha desse dia.`, 5000); PAX_UI.lote = null; } }
+    if (t === "lancar" && !PAX_UI.lote && PAX_UI._loteDia) PAX_UI.lote = paxLoteMontar(PAX_UI._loteDia);
+    return t0.apply(this, arguments); }; }
+{ const r0 = MOD_RESET.pax; MOD_RESET.pax = function () { try { if (PAX_UI.lote && paxLoteSujo()) paxRascSalva(true); } catch (e) {} PAX_UI._loteDia = null; return r0.apply(this, arguments); }; }
+window.addEventListener("beforeunload", () => { try { if (PAX_STATE.tab === "lancar" && PAX_UI.lote && paxLoteSujo()) paxRascSalva(true); } catch (e) {} });
+{ const s0 = window.paxLoteSalvar; window.paxLoteSalvar = async function () { const d = PAX_UI.lote && PAX_UI.lote.data; if (d) paxRascSalva(true); const r = await s0.apply(this, arguments);
+    try { if (PAX_UI.lote && PAX_UI.lote.data === d) { if (paxLoteSujo()) paxRascSalva(true); else { paxRascTira(d); if (PAX_UI.lote.rasc) { PAX_UI.lote.rasc = null; paintPax(); } } } } catch (e) {} return r; }; }
+{ const h0 = paxLoteHtml; paxLoteHtml = function () { let h = h0.apply(this, arguments); const L = PAX_UI.lote, o = paxRascLer(), outros = Object.keys(o).filter(d => d !== L.data).sort();
+    const quando = L.rasc ? new Date(L.rasc).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+    const faixa = (L.rasc || outros.length) ? `<div class="pl-rasc">${L.rasc ? `<span class="pl-rasc-t"><b>Rascunho</b> deste dia guardado em ${esc(quando)} neste navegador — ainda não está gravado na lista. Confira e clique em Gravar.</span>` : ""}${outros.length ? `<span class="pl-rasc-o">${L.rasc ? "Outros rascunhos:" : "Rascunhos guardados:"} ${outros.map(d => `<button type="button" class="chip" onclick="paxLoteDia(0, '${d}')">${esc(fmtDate(d))}</button>`).join("")}</span>` : ""}</div>` : "";
+    h = h.replace('<div class="lanc-card"><div class="lanc-card-h"><h3>Viagens</h3>', faixa + '<div class="lanc-card"><div class="lanc-card-h"><h3>Viagens</h3>');
+    h = h.replace('>Desfazer o que Digitei</button>', '>Desfazer o que Digitei</button><button class="btn" id="paxLoteRasc" onclick="paxRascSalvar()" title="Guarda o que foi digitado neste navegador, sem gravar na lista, para continuar depois">Salvar Rascunho</button>');
+    return h; }; }
+{ const r0 = paxLoteRodape; paxLoteRodape = function () { const r = r0.apply(this, arguments); const b = $("paxLoteRasc"); if (b) b.disabled = !paxLoteSujo(); return r; }; }
+(function () { const st = document.createElement("style"); st.id = "erp-v01457d";
+  st.textContent = `.pax-lanc .pl-rasc{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:10px 14px;border:1px solid #F1D9A6;border-left:4px solid #B7791F;background:#FFF8E8;border-radius:var(--radius);font-size:13.5px;color:#5B4A1E}
+  .pax-lanc .pl-rasc-o{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -51322,6 +51415,7 @@ CONFIG.version = "v0.14.53";   /* Passageiros: horários (F) dentro da linha 100
 CONFIG.version = "v0.14.54";   /* Passageiros: filtros em seção flutuante e código de cores (linha, sentido, tipo de dia, horário) */
 CONFIG.version = "v0.14.55";   /* Passageiros: Fretamento volta a ser um filtro próprio, separado da 1001 · Direto */
 CONFIG.version = "v0.14.56";   /* Passageiros › Banco de Dados: edição na célula; Data, Dia, Linha e Serviço em colunas separadas; sem Origem */
+CONFIG.version = "v0.14.57";   /* Passageiros: aba Histórico (indicadores e tabelas de todos os meses saem da Análise); mês e ano no canto do Calendário */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -49890,6 +49890,189 @@ function ctbPrepHtml() {
   @media print{.ctbp-bar,.ctbp-filtros,.ctbp-dica{display:none!important}}`;
   document.head.appendChild(st);
 })();
+/* =====================================================================================================================
+   v0.14.50 · Fluxo de Caixa espelhando a planilha CAIXA E DISPONIBILIDADE (fase 1, pedido do Rafael em 12/11/2026 18:11)
+   1 · Composição do saldo com as linhas que a planilha tem e o ERP não tinha: Pró-labore, Vales de funcionários e Diárias
+       (3 colunas novas em "Caixa — Fechamento diário": Configuração › Executar tudo). Sem as colunas, os 3 campos ficam
+       travados com aviso e nada deles é gravado. A importação passa a ler também as Moedas.
+   2 · Importar planilha: as despesas do dia do boletim vêm do CX-GERAL, linha a linha (fornecedor/NF), com a categoria da aba
+       DESPESAS quando o valor casa; o que sobra herda a categoria da linha agrupada ("Despesas eventuais").
+   3 · Importar planilha: se a data digitada no CX-GERAL não é a do dia das entradas (e o nome do arquivo confirma), o boletim
+       e os depósitos vão para o dia certo, com aviso.
+   4 · Importar planilha: pagamentos feitos pelo PagSeguro/PagBank (linhas do CX-GERAL) saem da tesouraria como transferência,
+       sem virar despesa (a despesa é o lançamento da CAP pago pelo PagBank).
+   ===================================================================================================================== */
+const CX_COMP_NOVOS = [["ProLabore", "Pró-labore / documentos da Diretoria"], ["ValesFunc", "Vales de funcionários"], ["Diarias", "Diárias"]];
+CX_COMP_NOVOS.forEach(([n, d]) => {
+  if (!CX_COMP.some(([k]) => k === n)) CX_COMP.push([n, d]);
+  if (!LISTS.cx_fech.columns.some(c => c.name === n)) LISTS.cx_fech.columns.push({ name: n, displayName: d, number: { decimalPlaces: "two", displayAs: "number" } });
+});
+CX.fechCols = null;   /* nomes das colunas de "Caixa — Fechamento diário" (null = ainda não lido) */
+function cxCompFaltam() { return CX.fechCols ? CX_COMP_NOVOS.map(([k]) => k).filter(k => !CX.fechCols.has(k)) : CX_COMP_NOVOS.map(([k]) => k); }
+async function cxFechColsLer(force) {
+  if (!CX.site || !CX.lists || !CX.lists.cx_fech) return null;
+  if (CX.fechCols && !force && !cxCompFaltam().length) return CX.fechCols;
+  if (!force && CX._fechColsEm && Date.now() - CX._fechColsEm < 60000) return CX.fechCols;
+  try { const cs = await graphAll(`/sites/${CX.site.id}/lists/${CX.lists.cx_fech.id}/columns?$select=name`); CX.fechCols = new Set(cs.map(c => c.name)); CX._fechColsEm = Date.now(); CX._fechColsErro = false; } catch (e) { CX._fechColsEm = Date.now(); CX._fechColsErro = true; if (force) CX.fechCols = null; }
+  return CX.fechCols;
+}
+{ const l0 = loadCx;
+  loadCx = async function () { const r = await l0.apply(this, arguments); try { await cxFechColsLer(); } catch (e) {} return r; };
+  window.loadCx = loadCx;
+}
+/* gravação do boletim: campo de coluna que ainda não existe não vai no pedido (o SharePoint recusaria o boletim inteiro) */
+{ const u0 = SP.update, c0 = SP.create;
+  const noFech = listId => typeof CX !== "undefined" && CX.lists && CX.lists.cx_fech && listId === CX.lists.cx_fech.id;
+  const limpa = async fields => { if (!fields || typeof fields !== "object" || !CX_COMP_NOVOS.some(([k]) => k in fields)) return fields; await cxFechColsLer(); const fal = cxCompFaltam(); if (!fal.length) return fields; const o = Object.assign({}, fields); fal.forEach(k => delete o[k]); return o; };
+  SP.update = async function (siteId, listId, itemId, fields) { if (noFech(listId)) fields = await limpa(fields); return u0.call(this, siteId, listId, itemId, fields); };
+  SP.create = async function (siteId, listId, fields) { if (noFech(listId)) fields = await limpa(fields); return c0.call(this, siteId, listId, fields); };
+  window.SP = SP;
+}
+/* na tela: sem as colunas, os 3 campos ficam travados e um aviso diz o que fazer */
+{ const p0 = paintCx;
+  paintCx = function () {
+    const r = p0.apply(this, arguments);
+    try {
+      const fal = cxCompFaltam(), lido = !!CX.fechCols;
+      fal.forEach(k => { const i = $("cx_" + k); if (i) { i.disabled = true; i.title = lido ? "Falta criar a coluna: Sistema › Configuração › Executar tudo" : "Não foi possível conferir as colunas da lista; recarregue o Fluxo de Caixa"; i.placeholder = lido ? "aguarda a Configuração" : "recarregue a página"; } });
+      const g = document.querySelector(".form-grid.cx-comp");
+      if (fal.length && lido && g && !$("cxCompAviso")) g.insertAdjacentHTML("afterend", `<div class="import-help" id="cxCompAviso" style="margin-top:10px">Para preencher <b>${CX_COMP_NOVOS.filter(([k]) => fal.includes(k)).map(([, l]) => esc(l)).join("</b>, <b>")}</b> na composição, ${session.n1 ? "rode uma vez <b>Sistema › Configuração › Executar tudo</b>" : "peça ao administrador para rodar <b>Sistema › Configuração › Executar tudo</b>"}. Até lá esses campos ficam travados e a diferença do boletim não os considera.</div>`);
+    } catch (e) {}
+    return r;
+  };
+  window.paintCx = paintCx;
+}
+
+/* ---- importação: lê de novo o CX-GERAL para completar o que a leitura antiga não trazia (revisado em 12/11) ---- */
+function cxImpDataNome(nome) {
+  const m = String(nome || "").match(/(\d{2})[-_.](\d{2})[-_.](\d{4}|\d{2})(?!\d)/); if (!m) return "";
+  const a = m[3].length === 2 ? "20" + m[3] : m[3], d = `${a}-${m[2]}-${m[1]}`, t = new Date(d + "T12:00:00");
+  return !isNaN(t) && t.getMonth() + 1 === Number(m[2]) && t.getDate() === Number(m[1]) ? d : "";
+}
+{ const m0 = cxImpMontar;
+  cxImpMontar = function (wb, nome) {
+    const R = m0.apply(this, arguments);
+    try {
+      const cx = wb.nomes.find(n => /^cx[- ]?geral/i.test(n)); if (!cx) return R;
+      const A = wb.aba(cx), num = v => (typeof v === "number" && isFinite(v) ? v : 0), IMP = x => x.OrigemRegistro === "Importação";
+      const cab = A.slice(0, 5).find(r => r && r.some(c => typeof c === "string" && /hist[óo]rico/i.test(c))) || [];
+      const iH = Math.max(0, cab.findIndex(c => typeof c === "string" && /hist[óo]rico/i.test(c))), iSai = cab.findIndex(c => typeof c === "string" && /^sa[ií]da/i.test(c));
+      const txt = r => (r && typeof r[iH] === "string" ? r[iH].trim() : ""), soma = re => cxN(A.filter(r => re.test(txt(r))).reduce((s, r) => s + num(r[iH + 1]), 0));
+      const val = r => cxN(iSai >= 0 ? num(r[iSai]) : num((r || []).slice(iH + 1).filter(c => typeof c === "number").pop()));
+      const iTot = A.findIndex(r => r && r.some(c => typeof c === "string" && /totais dia/i.test(c))), fim = iTot >= 0 ? iTot : A.length;
+      const iDes = A.findIndex((r, i) => i < fim && /^despesas?\b[\s:]*(do dia)?[\s:]*$/i.test(txt(r))), fimDep = iDes >= 0 ? iDes : fim;
+      const RE_DEP = /banco|santander|\bdep\b|dep\.|\bbb\b|pag ?seguro-? ?pagamento/i, RE_PAG = /pag ?(bank|seguro).*pagament|pagament.*pag ?(seguro|bank)/i;
+      let d0 = ""; A.forEach(r => (r || []).forEach(c => { if (!d0 && c instanceof Date) d0 = celData(c); }));
+      const dNome = cxImpDataNome(nome), tot = iTot >= 0 ? A[iTot] : null, jT = tot ? tot.findIndex(c => typeof c === "string" && /totais dia/i.test(c)) : -1;
+      const entBol = jT >= 0 ? cxN(num(tot[jT + 1])) : 0, saiBol = jT >= 0 ? cxN(num(tot[jT + 2])) : 0;
+      /* entradas líquidas de um dia na prévia (receita − ajuste negativo) e no que já está gravado */
+      const liq = arr => cxN(cxSoma(arr.filter(x => x.Tipo === "Entrada")) - cxSoma(arr.filter(x => x.Tipo === "Saída" && x.Origem === "Ajuste")));
+      const entPrev = d => liq(R.mov.filter(x => x.Data === d)), entGrav = d => liq(CX.mov.filter(x => x._d === d && x.OrigemRegistro !== "CAP"));
+      const bate = v => entBol > 0 && Math.abs(v - entBol) < 0.01;
+      const ach = re => { const r = A.find(x => re.test(txt(x))); return r ? num(r[iH + 1]) : 0; };
+      const montarBoletim = d => { const rs = A.find(x => x && x.some(c => typeof c === "string" && /saldo anterior/i.test(c))), js = rs ? rs.findIndex(c => typeof c === "string" && /saldo anterior/i.test(c)) : -1;
+        const f = { Title: d, Data: d, Status: "Aberto", SaldoAnterior: js >= 0 ? num(rs[js + 1]) : 0, Entradas: entBol, Saidas: saiBol, VTFetranspor: ach(/vt fetranspor/i), PagSeguroRec: ach(/^\s*pag ?seguro\s*$/i), Emprestimos: soma(/emprestimo|empréstimo/i), Troco: ach(/troco/i), DinheiroCofre: ach(/dinheiro no caixa/i), SaldoAgencias: ach(/saldo em esp[ée]cie nas ag/i), Diferenca: ach(/diferen[çc]a no caixa/i) };
+        f.SaldoAtual = cxN(num(f.SaldoAnterior) + num(f.Entradas) - num(f.Saidas)); return f; };
+      const tirarDoDia = d => { for (let i = R.mov.length - 1; i >= 0; i--) if (R.mov[i].Data === d && R.mov[i].Tipo === "Transferência" && IMP(R.mov[i])) R.mov.splice(i, 1); };
+      const tiraAviso = re => { R.avisos = R.avisos.filter(a => !re.test(a)); };
+      let f = R.fech[0] || null, d = f ? f.Data : "", confirmado = false;
+      /* ---- 3 · em que dia este boletim entra ---- */
+      const jaGravado = x => !!x && (!!cxFechDe(x) || R.pulados.includes(x)) && (bate(entGrav(x)) || !!cxFechDe(x));
+      if (f) {
+        if (bate(entPrev(d))) confirmado = true;
+        else if (entBol > 0) {
+          const cand = [...new Set(R.mov.filter(x => x.Tipo === "Entrada").map(x => x.Data))].filter(x => bate(entPrev(x)));
+          const alvo = dNome ? (cand.includes(dNome) ? dNome : "") : (cand.length === 1 ? cand[0] : "");
+          const gravado = [dNome].concat([...new Set(CX.mov.map(x => x._d))].filter(x => x && x !== d && bate(entGrav(x)))).find(jaGravado);
+          if (alvo && !cxFechDe(alvo)) {
+            R.mov.forEach(x => { if (x.Data === d && x.Tipo === "Transferência" && IMP(x)) x.Data = alvo; });
+            R.avisos.push(`CX-GERAL: a data digitada na planilha é ${fmtDate(d)}, mas as entradas são as de ${fmtDate(alvo)}${dNome === alvo ? " (o nome do arquivo confirma)" : " (o nome do arquivo não traz data: confira)"}. O boletim e os depósitos foram postos em ${fmtDate(alvo)}.`);
+            tiraAviso(/^CX-GERAL: entradas do boletim/); f.Data = alvo; f.Title = alvo; d = alvo; confirmado = true;
+          } else if (gravado) {   /* revisão B1: reimportação do mesmo arquivo — o dia certo já está no ERP */
+            tirarDoDia(d); R.fech.splice(R.fech.indexOf(f), 1); tiraAviso(/^CX-GERAL: entradas do boletim/);
+            R.avisos.push(`CX-GERAL: a data digitada na planilha é ${fmtDate(d)}, mas este boletim é o de ${fmtDate(gravado)}, que já está no ERP — o boletim, os depósitos e as despesas do CX-GERAL não foram importados de novo.`);
+            f = null;
+          } else if (dNome && dNome !== d) R.avisos.push(`CX-GERAL: o nome do arquivo indica ${fmtDate(dNome)} e a data digitada na planilha é ${fmtDate(d)}; as entradas do boletim não batem com a RECEITA de nenhum dos dois. O boletim ficou em ${fmtDate(d)} e as despesas ficaram como na aba DESPESAS — confira antes de importar.`);
+        }
+      } else if (d0 && dNome && dNome !== d0 && entBol > 0) {   /* revisão I5: data velha no CX-GERAL (ex.: a do dia anterior, já importado) */
+        if (!cxFechDe(dNome) && !R.pulados.includes(dNome) && bate(entPrev(dNome))) {
+          f = montarBoletim(dNome); d = dNome; confirmado = true; R.fech.push(f); tiraAviso(/^CX-GERAL: o boletim de .* já existe/);
+          A.slice(0, fimDep).forEach(r => { const t = txt(r); if (!RE_DEP.test(t) || /taxa/i.test(t)) return; const v = val(r);
+            if (v > 0) R.mov.push({ Title: t, Data: d, Tipo: "Transferência", Origem: "Depósito", Meio: /vt/i.test(t) ? "VT" : "Dinheiro", Conta: "Caixa matriz", ContaDestino: /santander/i.test(t) ? "Santander" : /pag ?seguro/i.test(t) ? "PagSeguro" : "Banco do Brasil", Valor: v, OrigemRegistro: "Importação" }); });
+          R.avisos.push(`CX-GERAL: a data digitada na planilha é ${fmtDate(d0)} (dia que já está no ERP), mas o nome do arquivo e as entradas são de ${fmtDate(dNome)}. O boletim e os depósitos foram postos em ${fmtDate(dNome)} — confira.`);
+        } else if (!cxFechDe(dNome)) R.avisos.push(`ATENÇÃO — CX-GERAL: a data digitada na planilha é ${fmtDate(d0)}, que já está no ERP, e o nome do arquivo indica ${fmtDate(dNome)}. O boletim e os depósitos de ${fmtDate(dNome)} NÃO foram importados: corrija a data na planilha e importe de novo.`);
+      }
+      if (!f) { R.mov.sort((a, b) => a.Data.localeCompare(b.Data)); R.dias = [...new Set(R.mov.map(x => x.Data).concat(R.fech.map(x => x.Data)))].sort(); return R; }
+      /* revisão I11/I2: linha da seção Despesas não é depósito (ex.: "Tarifa Banco do Brasil") */
+      if (iDes >= 0) { const antes = new Set(A.slice(0, iDes).map(txt).filter(Boolean)), depois = new Set(A.slice(iDes + 1, fim).map(txt).filter(Boolean));
+        for (let i = R.mov.length - 1; i >= 0; i--) { const x = R.mov[i]; if (x.Data === d && x.Tipo === "Transferência" && IMP(x) && x.Origem === "Depósito" && depois.has(String(x.Title).trim()) && !antes.has(String(x.Title).trim())) R.mov.splice(i, 1); } }
+      /* ---- 1 · composição completa ---- */
+      const comp = { Moedas: soma(/^moedas/i), ProLabore: soma(/^pr[óo][- ]?labore/i), ValesFunc: soma(/^vales?\b.*funcion/i), Diarias: soma(/^di[áa]rias?\b/i) };
+      Object.keys(comp).forEach(k => { if (comp[k]) f[k] = comp[k]; });
+      const compLida = cxN(CX_COMP.reduce((s, [k]) => s + Number(f[k] || 0), 0)), compPlan = cxN(Number(f.SaldoAtual || 0) - Number(f.Diferenca || 0));
+      if (Math.abs(compLida - compPlan) >= 0.01) R.avisos.push(`CX-GERAL: a composição lida soma ${fmtBRL(compLida)}; pelo saldo e pela diferença da planilha deveria somar ${fmtBRL(compPlan)} (${fmtBRL(Math.abs(cxN(compPlan - compLida)))} em linha que o ERP não reconhece). A diferença do boletim no ERP vai sair diferente da planilha — confira a composição depois de importar.`);
+      if (CX.fechCols && cxCompFaltam().some(k => f[k] != null)) R.avisos.push(`ATENÇÃO — faltam colunas na lista do boletim (${CX_COMP_NOVOS.filter(([k]) => cxCompFaltam().includes(k)).map(([, l]) => l).join(", ")}). Rode Sistema › Configuração › Executar tudo ANTES de importar; sem isso esses valores entram só nas Observações do boletim e a diferença sai maior que a da planilha.`);
+      /* ---- 4 · pagamentos feitos pelo PagSeguro/PagBank: saem da tesouraria sem virar despesa (a despesa está na CAP) ---- */
+      const jaTinha = R.mov.filter(x => x.Data === d && x.Tipo === "Transferência").map(x => `${String(x.Title).trim()}|${cxN(x.Valor)}`);
+      A.slice(0, fimDep).forEach(r => { const t = txt(r); if (!RE_PAG.test(t)) return; const v = val(r); if (!(v > 0)) return;
+        const k = `${t}|${v}`, i = jaTinha.indexOf(k); if (i >= 0) { jaTinha.splice(i, 1); return; }
+        R.mov.push({ Title: t, Data: d, Tipo: "Transferência", Origem: "Transferência", Meio: "Outro", Conta: "PagSeguro", ContaDestino: "Pagamentos pelo PagBank (CAP)", Valor: v, OrigemRegistro: "Importação", Observacoes: "pagamento feito pelo PagSeguro/PagBank: a despesa é o lançamento da CAP pago pelo PagBank" }); });
+      if (R.mov.some(x => x.Data === d && x.Conta === "PagSeguro" && x.ContaDestino === "Pagamentos pelo PagBank (CAP)") && cxTipoConta("PagSeguro") === "Banco") R.avisos.push("A conta PagSeguro está cadastrada como Banco em Contas e caixas: os pagamentos pelo PagBank não vão sair do saldo da tesouraria. O tipo esperado é Adquirente.");
+      /* ---- 2 · despesas do dia, linha a linha (só com o dia confirmado pelas entradas — revisão B2) ---- */
+      if (iDes < 0) R.avisos.push("CX-GERAL: não achei a seção \"Despesas\" — as despesas do dia ficaram como na aba DESPESAS.");
+      else if (!confirmado) R.avisos.push(`Despesas de ${fmtDate(d)}: as entradas do boletim não batem com a RECEITA desse dia, então as despesas ficaram como na aba DESPESAS (sem o detalhe do CX-GERAL).`);
+      else {
+        const linhas = A.slice(iDes + 1, fim).map(r => ({ t: txt(r), v: val(r) })).filter(x => x.t && x.v > 0 && !/^(sub)?[- ]?tota(l|is)\b|^soma\b/i.test(x.t));
+        const E = R.mov.filter(x => x.Data === d && x.Tipo === "Saída" && x.Origem === "Despesa" && IMP(x));
+        const totCx = cxN(linhas.reduce((s, x) => s + x.v, 0)), totAba = cxSoma(E);
+        if (linhas.length) {
+          const livres = E.slice(), resto = [];
+          linhas.forEach(l => { const i = livres.findIndex(e => Math.abs(Number(e.Valor) - l.v) < 0.005);
+            if (i >= 0) { const e = livres.splice(i, 1)[0]; if (normName(e.Title) !== normName(l.t)) { e.Observacoes = `categoria pela aba DESPESAS (mesmo valor): ${e.Title}`; e.Title = l.t; } } else resto.push(l); });
+          if (resto.length && livres.length === 1) { const e = livres[0]; R.mov.splice(R.mov.indexOf(e), 1);
+            resto.forEach(l => R.mov.push({ Title: l.t, Data: d, Tipo: "Saída", Origem: "Despesa", Meio: "Dinheiro", Conta: "Caixa matriz", Valor: l.v, Grupo: e.Grupo || null, Categoria: e.Categoria || e.Title, OrigemRegistro: "Importação", Observacoes: `na aba DESPESAS: ${e.Title} (${fmtBRL(e.Valor)})` })); }
+          else if (resto.length && !livres.length) resto.forEach(l => R.mov.push({ Title: l.t, Data: d, Tipo: "Saída", Origem: "Despesa", Meio: "Dinheiro", Conta: "Caixa matriz", Valor: l.v, Grupo: null, Categoria: null, OrigemRegistro: "Importação", Observacoes: "só no CX-GERAL (sem linha na aba DESPESAS): classifique" }));
+          else if (resto.length) {   /* mais de uma linha da aba DESPESAS sobrando: entram as linhas do CX-GERAL (o total do boletim), com a categoria da maior, a conferir */
+            const e = livres.slice().sort((x, y) => Number(y.Valor) - Number(x.Valor))[0]; livres.forEach(x => R.mov.splice(R.mov.indexOf(x), 1));
+            resto.forEach(l => R.mov.push({ Title: l.t, Data: d, Tipo: "Saída", Origem: "Despesa", Meio: "Dinheiro", Conta: "Caixa matriz", Valor: l.v, Grupo: e.Grupo || null, Categoria: e.Categoria || e.Title, OrigemRegistro: "Importação", Observacoes: `categoria a conferir — na aba DESPESAS: ${livres.map(x => `${x.Title} (${fmtBRL(x.Valor)})`).join("; ")}`.slice(0, 500) }));
+            R.avisos.push(`Despesas de ${fmtDate(d)}: ${resto.length} linha(s) do CX-GERAL não casam uma a uma com ${livres.length} linha(s) da aba DESPESAS. Entraram as linhas do CX-GERAL com a categoria "${e.Categoria || e.Title}" — confira a categoria de: ${resto.map(l => `${l.t} ${fmtBRL(l.v)}`).join("; ")}.`); }
+          const totFim = cxSoma(R.mov.filter(x => x.Data === d && x.Tipo === "Saída" && x.Origem === "Despesa" && IMP(x)));
+          if (Math.abs(totCx - totAba) >= 0.01) R.avisos.push(`Despesas de ${fmtDate(d)}: o CX-GERAL soma ${fmtBRL(totCx)} e a aba DESPESAS, ${fmtBRL(totAba)} (diferença de ${fmtBRL(Math.abs(cxN(totCx - totAba)))} na própria planilha). ${Math.abs(totFim - totCx) < 0.01 ? "Foram importadas as linhas do CX-GERAL, que é o que o boletim usa." : "Confira depois de importar."}`);
+          else R.avisos.push(`Despesas de ${fmtDate(d)}: importadas linha a linha pelo CX-GERAL (${linhas.length} linha(s), ${fmtBRL(totCx)}).`);
+        }
+      }
+      /* o boletim da planilha × o movimento importado do dia */
+      const t = cxTotais(R.mov.filter(x => x.Data === d));
+      if (Math.abs(t.sai - Number(f.Saidas || 0)) >= 0.01) R.avisos.push(`CX-GERAL: as saídas do boletim de ${fmtDate(d)} (${fmtBRL(f.Saidas)}) diferem do movimento importado do dia (${fmtBRL(t.sai)}) — confira depois de importar.`);
+      /* revisão I4/I10: os avisos de âncora e de duplicidade com a CAP são refeitos sobre o resultado final */
+      tiraAviso(/é anterior ao 1º boletim do ERP|têm o mesmo dia e valor de uma saída/);
+      const an = cxAncora(); if (an) R.fech.forEach(x => { if (x.SaldoAnterior != null && x.Data < an._d) R.avisos.push(`O boletim de ${fmtDate(x.Data)} (CX-GERAL) é anterior ao 1º boletim do ERP (${fmtDate(an._d)}): o saldo anterior dele passa a ser o ponto de partida (âncora) de todo o caixa.`); });
+      const dup = R.mov.filter(x => x.Tipo === "Saída" && CX.mov.some(m => m.OrigemRegistro === "CAP" && m._d === ymd(x.Data) && Math.abs(Number(m.Valor) - Number(x.Valor)) < 0.005));
+      if (dup.length) R.avisos.push(`${dup.length} despesa(s) da planilha têm o mesmo dia e valor de uma saída que já veio de um pagamento em dinheiro da CAP (${dup.slice(0, 4).map(x => `${fmtDate(ymd(x.Data))} ${fmtBRL(x.Valor)}`).join(", ")}${dup.length > 4 ? "…" : ""}) — confira para não contar duas vezes.`);
+      R.mov.sort((a, b) => a.Data.localeCompare(b.Data)); R.dias = [...new Set(R.mov.map(x => x.Data).concat(R.fech.map(x => x.Data)))].sort();
+    } catch (e) { R.avisos.push("CX-GERAL: não foi possível completar a leitura (" + ((e && e.message) || e) + ") — confira a composição e as despesas do dia depois de importar."); }
+    return R;
+  };
+  window.cxImpMontar = cxImpMontar;
+}
+/* na importação em lote, os campos novos do boletim só vão se as colunas existem (revisão I6/I7) */
+{ const g0 = window.cxImportGo;
+  window.cxImportGo = async function () {
+    const imp = CX.imp;
+    if (imp && imp.fech.some(f => CX_COMP_NOVOS.some(([k]) => f[k] != null))) {
+      await cxFechColsLer(true);
+      if (!CX.fechCols) { toast("Não foi possível conferir as colunas da lista do boletim agora. Nada foi importado: recarregue o Fluxo de Caixa e tente de novo.", 9000); return; }
+      const fal = cxCompFaltam();
+      if (fal.length) {
+        if (!confirm("Faltam colunas na lista do boletim (Pró-labore, Vales de funcionários, Diárias).\n\nO certo é rodar antes Sistema › Configuração › Executar tudo e importar depois.\n\nImportar mesmo assim? Esses valores vão só para as Observações do boletim e a diferença será recalculada sem eles.")) return;
+        imp.fech.forEach(f => { const g = CX_COMP_NOVOS.filter(([k]) => fal.includes(k) && f[k] != null); if (!g.length) return;
+          f.Observacoes = ((f.Observacoes ? f.Observacoes + " · " : "") + "Da planilha, sem coluna no ERP: " + g.map(([k, l]) => `${l} ${fmtBRL(f[k])}`).join("; ")).slice(0, 1000);
+          fal.forEach(k => delete f[k]); f.Diferenca = cxN(Number(f.SaldoAtual || 0) - CX_COMP.reduce((s, [k]) => s + Number(f[k] || 0), 0)); });
+      }
+    }
+    return g0.apply(this, arguments);
+  };
+}
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -49943,6 +50126,7 @@ CONFIG.version = "v0.14.48";   /* fechamento da CAP: Imprimir Tudo (relatório +
 CONFIG.version = "v0.14.48.1";   /* Fluxo de Caixa: data do boletim centralizada no campo */
 CONFIG.version = "v0.14.49";   /* Contabilidade: menu numa linha e Preparar Pacote (conferência com o extrato, documentos da impressão, + Anexar, dispensa de NF/cobrança com motivo) */
 CONFIG.version = "v0.14.49.1";   /* entrada não espera mais a foto do perfil (Graph devolvendo 502 travava todos em "carregando…") */
+CONFIG.version = "v0.14.50";   /* Fluxo de Caixa espelhando a planilha: composição com Pró-labore, Vales e Diárias; importação com despesas linha a linha pelo CX-GERAL, dia certo do boletim e pagamentos pelo PagBank */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

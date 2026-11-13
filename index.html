@@ -52657,6 +52657,158 @@ function capThAlinha(root) { try { (root || document).querySelectorAll("thead th
         const id = decodeURIComponent(m[2]), it = todos.find(x => String(x._id) === id) || (CAP_STATE.items || []).find(x => String(x._id) === id); if (it) it._mod = null; }); } catch (e) {}
     return out;
   }; window.graphBatch = graphBatch; }
+/* =====================================================================
+   v0.14.65 (13/11/2026) · CAP: "Obrigações" passa a se chamar "Parcelamentos"; Nº do Documento
+   1 · Em toda a CAP, o nome na tela é Parcelamento(s) (abas, botões, títulos, avisos, colunas). Só o texto muda:
+       listas, colunas e permissões continuam as mesmas.
+   2 · Parcelamento: Valor da Parcela e Valor Total mostram o valor em R$ embaixo do campo (R$ 0,00 quando vazio).
+   3 · "Nº da NF" vira "Nº do Documento" e é obrigatório quando o lançamento tem documento anexado
+       (boleto, NF ou outro; o comprovante de pagamento não conta).
+   4 · Parcelamento › Parcelas: coluna "Nº Doc. / NF" com o número do documento da cobrança de cada parcela.
+   ===================================================================== */
+const PARC_PRE = "(^|[^A-Za-zÀ-ú])";
+const PARC_N = o => (o === "O" ? "Parcelamento" : "parcelamento");
+const PARC_TROCAS = [
+  [/Nº da NF/g, "Nº do Documento"], [/N° da NF/g, "Nº do Documento"],
+  [/Nova(s?) Obrigaç(ão|ões)/g, (m, s, f) => `Novo${s} Parcelamento${f === "ões" ? "s" : ""}`], [/Nova(s?) obrigaç(ão|ões)/g, (m, s, f) => `Novo${s} parcelamento${f === "ões" ? "s" : ""}`], [/nova(s?) obrigaç(ão|ões)/g, (m, s, f) => `novo${s} parcelamento${f === "ões" ? "s" : ""}`],
+  [/Todas as Obrigações/g, "Todos os Parcelamentos"], [/Todas as obrigações/g, "Todos os parcelamentos"], [/todas as obrigações/g, "todos os parcelamentos"],
+  [/Nenhuma obrigação cadastrada/g, "Nenhum parcelamento cadastrado"], [/Nenhuma obrigação/g, "Nenhum parcelamento"], [/nenhuma obrigação/g, "nenhum parcelamento"],
+  [/Obrigações Ativas/g, "Parcelamentos Ativos"], [/Obrigações ativas/g, "Parcelamentos ativos"], [/OBRIGAÇÕES ATIVAS/g, "PARCELAMENTOS ATIVOS"], [/obrigações ativas/g, "parcelamentos ativos"], [/obrigação ativa/g, "parcelamento ativo"],
+  [/Obrigação restrita/g, "Parcelamento restrito"], [/Obrigação cadastrada/g, "Parcelamento cadastrado"], [/Obrigação atualizada/g, "Parcelamento atualizado"], [/Obrigação não encontrada/g, "Parcelamento não encontrado"], [/Obrigação excluída/g, "Parcelamento excluído"],
+  [/obrigação parcelada/g, "parcelamento"], [/Obrigação parcelada/g, "Parcelamento"], [/obrigação marcada/g, "parcelamento marcado"], [/obrigações marcadas/g, "parcelamentos marcados"],
+  [new RegExp(PARC_PRE + "([Dd]|[Nn])est?a ([Oo])brigação", "g"), (m, p, l, o) => `${p}${l}este ${PARC_N(o)}`], [new RegExp(PARC_PRE + "([Dd]|[Nn])essa ([Oo])brigação", "g"), (m, p, l, o) => `${p}${l}esse ${PARC_N(o)}`],
+  [new RegExp(PARC_PRE + "([Ee])sta ([Oo])brigação", "g"), (m, p, l, o) => `${p}${l}ste ${PARC_N(o)}`],
+  [new RegExp(PARC_PRE + "([Dd]|[Nn])a ([Oo])brigação", "g"), (m, p, l, o) => `${p}${l}o ${PARC_N(o)}`], [new RegExp(PARC_PRE + "([Pp])ela ([Oo])brigação", "g"), (m, p, l, o) => `${p}${l}elo ${PARC_N(o)}`], [new RegExp(PARC_PRE + "à ([Oo])brigação", "g"), (m, p, o) => `${p}ao ${PARC_N(o)}`],
+  [new RegExp(PARC_PRE + "([Uu])ma ([Oo])brigação", "g"), (m, p, l, o) => `${p}${l}m ${PARC_N(o)}`], [new RegExp(PARC_PRE + "a ([Oo])brigação", "g"), (m, p, o) => `${p}o ${PARC_N(o)}`], [new RegExp(PARC_PRE + "A ([Oo])brigação", "g"), (m, p, o) => `${p}O ${PARC_N(o)}`],
+  [new RegExp(PARC_PRE + "([Dd]|[Nn])as ([Oo])brigações", "g"), (m, p, l, o) => `${p}${l}os ${PARC_N(o)}s`], [new RegExp(PARC_PRE + "as ([Oo])brigações", "g"), (m, p, o) => `${p}os ${PARC_N(o)}s`], [new RegExp(PARC_PRE + "As ([Oo])brigações", "g"), (m, p, o) => `${p}Os ${PARC_N(o)}s`],
+  [/ativa\(s\) ·/g, "ativo(s) ·"],
+  [/OBRIGAÇÕES/g, "PARCELAMENTOS"], [/Obrigações/g, "Parcelamentos"], [/obrigações/g, "parcelamentos"], [/OBRIGAÇÃO/g, "PARCELAMENTO"], [/Obrigação/g, "Parcelamento"], [/obrigação/g, "parcelamento"]
+];
+function parcTxt(s) { if (!/brigaç|BRIGAÇ|da NF|ativa\(s\) ·/.test(s)) return s; for (const [a, b] of PARC_TROCAS) s = s.replace(a, b); return s; }
+window.parcTxt = parcTxt;
+function parcNaCap() { return /contas-a-pagar/.test(location.hash || ""); }
+const PARC_PULA = "textarea,script,style,header,nav,aside,[data-sem-parc],.desc-cell,.cap-obr-tit,td.contas,.obr-semdoc a,[contenteditable]";
+function parcRenomear(root) {
+  if (!root || !parcNaCap()) return;
+  try {
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n; const muda = [];
+    while ((n = w.nextNode())) { const v = n.nodeValue; if (!v || v.length < 6 || !/brigaç|BRIGAÇ|da NF|ativa\(s\) ·/.test(v)) continue; const p = n.parentElement; if (!p || p.closest(PARC_PULA)) continue; const t = parcTxt(v); if (t !== v) muda.push([n, t]); }
+    muda.forEach(([n, t]) => { n.nodeValue = t; });
+    (root.querySelectorAll ? root.querySelectorAll("[placeholder],[title],[aria-label]") : []).forEach(e => { if (e.closest(PARC_PULA)) return; ["placeholder", "title", "aria-label"].forEach(a => { const v = e.getAttribute(a); if (v && /brigaç|BRIGAÇ|da NF|ativa\(s\) ·/.test(v)) { const t = parcTxt(v); if (t !== v) e.setAttribute(a, t); } }); });
+  } catch (e) {}
+}
+window.parcRenomear = parcRenomear;
+{ let t = null; const roda = () => { t = null; parcRenomear(document.body); };
+  const obs = new MutationObserver(() => { if (!parcNaCap()) return; if (t) return; t = setTimeout(roda, 40); });
+  const liga = () => { try { obs.observe(document.body, { childList: true, subtree: true, characterData: true }); roda(); } catch (e) {} };
+  if (document.body) liga(); else document.addEventListener("DOMContentLoaded", liga);
+  window.addEventListener("hashchange", () => setTimeout(roda, 120)); }
+{ const t0 = toast; toast = function (msg) { try { if (parcNaCap() && typeof msg === "string") arguments[0] = parcTxt(msg); } catch (e) {} return t0.apply(this, arguments); }; window.toast = toast; }
+{ const c = CAP_COLS.find(x => x.k === "obr"); if (c) c.lbl = "Parcelamento"; try { if (typeof CAP_COLF !== "undefined" && CAP_COLF.obr) CAP_COLF.obr.tit = "Parcelamento"; } catch (e) {} }
+{ const i = PAG_DEF.cap.findIndex(p => p.k === "obr"); if (i >= 0) PAG_DEF.cap[i].n = PAG_DEF.cap[i].n.replace(/^Obrigações/, "Parcelamentos"); }
+
+/* ---------- 2 · valores do parcelamento em R$ ---------- */
+function obrValorMoeda(id) {   /* o mesmo campo em R$ do Valor do lançamento: mostra "R$ 0,00" vazio e formata ao digitar; o número gravado não muda */
+  const el = $(id); if (!el || el._moeda || typeof erpMoeda !== "function") return; erpMoeda(el);
+  const lb = el.closest(".field") && el.closest(".field").querySelector("label"); if (lb && lb.firstChild && lb.firstChild.nodeType === 3) lb.firstChild.nodeValue = lb.firstChild.nodeValue.replace(/\s*\(R\$\)\s*$/, "");
+}
+{ const f0 = window.obrForm; window.obrForm = function () { const r = f0.apply(this, arguments); try { obrValorMoeda("oVP"); obrValorMoeda("oVT"); } catch (e) {} return r; }; }
+
+/* ---------- 3 · Nº do Documento obrigatório quando há documento anexado ---------- */
+function capDocNumAnexos() { const it = CAP_STATE.editing; const l = it ? anexosDe(it).map(a => a.t) : (CAP_STATE.docFila || []).map(x => x.tipo); return l.filter(t => t !== "Comprovante").length; }
+function capDocNumSinc() {
+  const el = $("fNF"); if (!el) return; const f = el.closest(".field"), n = capDocNumAnexos(); if (!f) return;
+  if (n) f.style.display = "";
+  const lb = f.querySelector("label"); if (lb) { const r = lb.querySelector(".req"); if (n && !r) lb.insertAdjacentHTML("beforeend", '<span class="req">*</span>'); else if (!n && r) r.remove(); }
+  let h = f.querySelector(".hint.doc-num"); if (n && !h) { h = document.createElement("div"); h.className = "hint doc-num"; h.textContent = "Obrigatório: o lançamento tem documento anexado"; f.appendChild(h); } else if (!n && h) h.remove();
+}
+window.capDocNumSinc = capDocNumSinc;
+function capDocNumFalta() {
+  const el = $("fNF"); if (!el || !capDocNumAnexos() || String(el.value || "").trim()) return false;
+  capDocNumSinc(); const e = $("fErr"); if (e) { e.style.display = "block"; e.textContent = "Informe o Nº do Documento: o lançamento tem documento anexado."; } else toast("Informe o Nº do Documento: o lançamento tem documento anexado.", 7000);
+  try { const sec = el.closest(".sec-oculto"); if (!sec) el.focus(); } catch (x) {} return true;
+}
+{ const w0 = capWireForm; capWireForm = function () { const r = w0.apply(this, arguments); try { capDocNumSinc(); [400, 1500].forEach(ms => setTimeout(capDocNumSinc, ms)); } catch (e) {} return r; }; window.capWireForm = capWireForm; }
+{ const p0 = capFilaPinta; capFilaPinta = function () { const r = p0.apply(this, arguments); try { capDocNumSinc(); } catch (e) {} return r; }; window.capFilaPinta = capFilaPinta; }
+document.addEventListener("change", ev => { const t = ev.target, m = $("modal"); if (m && t && m.contains(t) && $("fNF") && t.matches && t.matches("input[type=file]")) [300, 1500, 4000, 9000].forEach(ms => setTimeout(capDocNumSinc, ms)); }, true);
+document.addEventListener("click", ev => { const m = $("modal"); if (m && ev.target && m.contains(ev.target) && $("fNF")) setTimeout(capDocNumSinc, 600); }, true);
+{ const s0 = capSalvarChecado; capSalvarChecado = function () { if (capDocNumFalta()) return; return s0.apply(this, arguments); }; window.capSalvarChecado = capSalvarChecado; }
+{ const s0 = capSave; capSave = async function () { if (capDocNumFalta()) return; return s0.apply(this, arguments); }; window.capSave = capSave; }
+/* na lista, o número aparece como "Doc." */
+{ const l0 = capFaturaLinha; capFaturaLinha = function (it) { let h = l0.apply(this, arguments); try { if (it && it.NumeroNF) h = h.replace(` · ${esc(`NF ${it.NumeroNF}`)}</div>`, ` · ${esc(`Doc. ${it.NumeroNF}`)}</div>`); } catch (e) {} return h; }; window.capFaturaLinha = capFaturaLinha; }
+
+/* ---------- 4 · Parcelamento › Parcelas: coluna Nº Doc. / NF ---------- */
+function obrColDoc() {
+  try { const t = document.querySelector("#modal .obr-crono table"); if (!t || t.dataset.docCol) return; t.dataset.docCol = "1";
+    const ths = [...t.querySelectorAll("thead th")], i = ths.findIndex(th => /Conta na CAP/i.test(th.textContent)); if (i < 0) return;
+    ths[i].insertAdjacentHTML("afterend", `<th data-sem-parc>Nº Doc. / NF</th>`);
+    t.querySelectorAll("tbody tr").forEach(tr => { const c = tr.querySelector("td.contas");
+      if (!c) { const cs = tr.querySelector("td[colspan]"); if (cs) cs.colSpan = cs.colSpan + 1; return; }
+      const ids = [...c.querySelectorAll("a[onclick]")].map(a => { const m = String(a.getAttribute("onclick")).match(/obrConta\(decodeURIComponent\('([^']*)'\)\)/); try { return m ? decodeURIComponent(m[1]) : ""; } catch (e) { return ""; } }).filter(Boolean);
+      const nums = ids.map(id => { const it = (CAP_STATE.items || []).find(x => String(x._id) === String(id)); return it && it.NumeroNF ? String(it.NumeroNF).trim() : ""; });
+      c.insertAdjacentHTML("afterend", `<td class="nw obr-docn" data-sem-titulo>${nums.some(Boolean) ? nums.map(n => esc(n || "—")).join("<br>") : `<span class="sup">—</span>`}</td>`); });
+  } catch (e) {}
+}
+{ const o0 = window.obrAbrir; window.obrAbrir = function () { const r = o0.apply(this, arguments); obrColDoc(); return r; }; }
+
+/* ---------- 5 · número da parcela protegido (pedido de 13/11, 19:10) ----------
+   Lançamento que pertence a um parcelamento: o campo Parcela fica travado (só o proprietário da CAP destrava, com confirmação).
+   Em qualquer lançamento, a parcela alterada precisa estar no formato k/N, com k de 1 a N; no parcelamento, N é o nº de
+   parcelas do cadastro e k não pode repetir outra parcela nem ficar vazio. */
+function capParcObr(it) {
+  try { if (it) { const oi = contaObrInfo(it); if (oi && oi.o && !oi.restrita) return oi.o; const oid = it.ObrigacaoLookupId; if (oid != null && oid !== "") return (OBR_STATE.items || []).find(o => String(o._id) === String(oid)) || null; }
+    else if (CAP_STATE.preset && CAP_STATE.preset.ObrigacaoLookupId) return (OBR_STATE.items || []).find(o => String(o._id) === String(CAP_STATE.preset.ObrigacaoLookupId)) || null; } catch (e) {}
+  return null;
+}
+function capParcErro(it) {
+  const el = $("fParc"); if (!el) return ""; const v = String(el.value || "").trim(), antes = String((it && it.Parcela) || "").trim();
+  if (v === antes) return "";   /* o que já estava gravado não é julgado */
+  const o = capParcObr(it), N0 = o ? Number(o.NumParcelas) || 0 : 0;
+  if (!v) return o && N0 && antes ? `A parcela não pode ficar vazia: este lançamento é a parcela ${antes} de "${o.Title}".` : "";
+  const m = v.match(/^(\d{1,3})\s*\/\s*(\d{1,3})$/); if (!m) return "Parcela: use o formato número/total, por exemplo 3/12.";
+  const k = Number(m[1]), N = Number(m[2]);
+  if (k < 1 || N < 1 || k > N) return `Parcela ${v}: o número da parcela vai de 1 até o total (${N}).`;
+  if (o && N0) {
+    if (N !== N0) return `Parcela ${v}: "${o.Title}" tem ${N0} parcelas — o total precisa ser ${N0}.`;
+    const outra = obrLancDe(o).find(x => (!it || String(x._id) !== String(it._id)) && !capCancelada(x) && (String(x.Parcela || "").match(/^(\d{1,3})\s*\//) || [])[1] === String(k));
+    if (outra) return `A parcela ${k}/${N0} de "${o.Title}" já existe (vence ${fmtDate(outra.Vencimento)}). Cada parcela tem um número só.`;
+  }
+  return "";
+}
+function capParcFalta() {
+  const msg = capParcErro(CAP_STATE.editing); if (!msg) return false;
+  const e = $("fErr"); if (e) { e.style.display = "block"; e.textContent = msg; } else toast(msg, 8000); return true;
+}
+function capParcTrava() {
+  const el = $("fParc"); if (!el || el.dataset.parcTrava) return; const it = CAP_STATE.editing, o = capParcObr(it); if (!o) return;
+  if (!it && !String(el.value || "").trim()) return;   /* lançamento novo sem parcela sugerida: livre (a validação confere ao salvar) */
+  el.dataset.parcTrava = "1"; el.readOnly = true; el.classList.add("parc-trava");
+  const f = el.closest(".field"); if (!f) return; const h = document.createElement("div"); h.className = "hint parc-hint"; h.dataset.semParc = "1";
+  h.innerHTML = `Definida pelo parcelamento "${esc(o.Title)}" — não se edita aqui.${typeof podeExcluir === "function" && podeExcluir("cap") ? ` <a href="#" id="fParcLib">Corrigir</a>` : ""}`; f.appendChild(h);
+  const a = $("fParcLib"); if (a) a.onclick = ev => { ev.preventDefault(); if (!confirm("Destravar o número da parcela? Ele identifica a parcela dentro do parcelamento; altere só para corrigir um erro.")) return; el.readOnly = false; el.classList.remove("parc-trava"); h.textContent = "Destravada: confira o número antes de salvar (formato número/total)."; el.focus(); };
+}
+{ const w0 = capWireForm; capWireForm = function () { const r = w0.apply(this, arguments); try { capParcTrava(); } catch (e) {} return r; }; window.capWireForm = capWireForm; }
+{ const s0 = capSalvarChecado; capSalvarChecado = function () { if (capParcFalta()) return; return s0.apply(this, arguments); }; window.capSalvarChecado = capSalvarChecado; }
+{ const s0 = capSave; capSave = async function () { if (capParcFalta()) return; return s0.apply(this, arguments); }; window.capSave = capSave; }
+{ const st = document.createElement("style"); st.textContent = `#fParc.parc-trava{background:var(--bg-2,#F4F5F7);color:var(--ink-2,#3A4150);cursor:not-allowed}`; document.head.appendChild(st); }
+
+/* ---------- 6 · Pendências: o número da aba e a página abrem no mês corrente (pedido de 13/11, 19:12) ----------
+   O selo da aba conta só as pendências com competência no mês atual; a página abre filtrada nesse mês e os quadros
+   de cima acompanham a competência escolhida. "Todas as competências" continua no filtro. */
+function capPendMes() { return todayISO().slice(0, 7); }
+capPendCount = function () { try { const m = capPendMes(); return capPendBase().filter(x => itemComp(x.it) === m).length; } catch (e) { return 0; } }; window.capPendCount = capPendCount;
+capPendUI = function () { if (!CAP_STATE.pend) CAP_STATE.pend = { tipo: [], q: "", comp: capPendMes(), sit: "", n: 60 }; return CAP_STATE.pend; }; window.capPendUI = capPendUI;
+{ const p0 = paintCapPend; paintCapPend = function (body) {
+    const r = p0.apply(this, arguments);
+    try { const U = capPendUI(), sel = $("capPendComp"), m = capPendMes();
+      if (sel) { if (![...sel.options].some(o => o.value === m)) { const o = document.createElement("option"); o.value = m; o.textContent = compLabel(m); sel.insertBefore(o, sel.options[1] || null); } if (U.comp) sel.value = U.comp; }
+      if (U.comp) { const base = capPendBase().filter(x => itemComp(x.it) === U.comp), ks = body.querySelectorAll(".cap-kpis .kpi"), n = t => base.filter(x => x.falta.includes(t)).length;
+        const vals = [base.length, n("Boleto"), n("NF"), n("Comprovante")]; ks.forEach((k, i) => { const v = k.querySelector(".val"); if (v && vals[i] != null) v.textContent = vals[i]; });
+        if (ks[0]) { const s = ks[0].querySelector(".sub"); if (s) { s.dataset.semTitulo = "1"; s.textContent = `em ${compLabel(U.comp)} · outros meses no filtro de competência`; } ks[0].classList.toggle("venc", !!base.length); ks[0].classList.toggle("pago", !base.length); }
+        const h = body.querySelector(".cap-empty h3"); if (h && !base.length) { h.textContent = `Nenhuma pendência de documento em ${compLabel(U.comp)}`; const p = body.querySelector(".cap-empty p"); if (p) p.textContent = "Para ver outros meses, troque a competência no filtro acima."; } }
+    } catch (e) {}
+    return r;
+  }; window.paintCapPend = paintCapPend; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -52726,6 +52878,7 @@ CONFIG.version = "v0.14.61";   /* CAP: exclusão em lote em Lançamentos e dentr
 CONFIG.version = "v0.14.62";   /* CAP › Funcionários: lote por comprovantes revisado (favorecido pelo comprovante, Pix, sem pagamento em dobro, só ativos, prévia sem rolagem lateral, filtro), situação em bolinhas, botão Add em Lote */
 CONFIG.version = "v0.14.63";   /* CAP: CNPJ/CPF obrigatório — obrigação com credor em Terceiros (pedido de cadastro pela própria obrigação) e nenhuma baixa sem documento */
 CONFIG.version = "v0.14.64";   /* CAP: lançamentos das obrigações acertados sozinhos pelo cadastro (razão social, CNPJ/CPF, descrição sem a parcela, centro de custo); títulos alinhados */
+CONFIG.version = "v0.14.65";   /* CAP: Obrigações passa a se chamar Parcelamentos; Nº do Documento obrigatório com anexo; coluna Nº Doc. / NF nas parcelas; valores do parcelamento em R$ */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

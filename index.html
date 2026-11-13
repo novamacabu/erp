@@ -52546,6 +52546,117 @@ async function obrAtualizarLancGravar(id) {
         if (ed) ed.insertAdjacentHTML("beforebegin", h); else pe.insertAdjacentHTML("afterbegin", h); } } catch (e) {}
     return r;
   }; }
+/* =====================================================================
+   v0.14.64 (13/11/2026) · CAP: lançamentos das obrigações acertados sozinhos
+   1 · Descrição dos lançamentos de obrigação sem o número da parcela (ele já está na coluna Obrigação):
+       passa a ser o tipo de despesa (subcategoria/categoria da obrigação ou do cadastro do credor).
+   2 · Sincronização automática: com o credor da obrigação em Terceiros, os lançamentos dela recebem a
+       Razão Social, o CNPJ/CPF, o vínculo, a descrição nova e o centro de custo (da obrigação ou do cadastro).
+       Só troca descrição que ainda está no formato automático "NOME k/N" ou "NOME mm/aaaa".
+   3 · Editar Lançamento: o campo chama "Razão Social / Favorecido" e já vem com o cadastro da obrigação.
+   4 · Títulos das tabelas alinhados: o botão de filtro fica fixo à direita e não empurra o texto.
+   ===================================================================== */
+const OBR_SINC = { rodando: false, em: 0, INTERVALO: 10 * 60 * 1000, MAX: 200, falhou: new Set(), ultimo: null };
+function obrDescLanc(o) {
+  if (!o) return "";
+  let cad = null; try { cad = tercDeCampos(o); } catch (e) {}
+  const ok = v => { v = String(v == null ? "" : v).trim(); return v && normName(v) !== normName("Outros") ? v : ""; };
+  return ok(o.Subcategoria) || ok(cad && cad.SubcategoriaPadrao) || ok(cad && cad.CategoriaPadrao) || ok(o.Categoria) || ok(o.SubCarteira) || String(o.Title || "").trim();
+}
+window.obrDescLanc = obrDescLanc;
+function obrCcLanc(o, cad) { const v = String((o && o.CentroCusto) || (cad && cad.CentroCustoPadrao) || "").trim(); return CENTROS_CUSTO.includes(v) ? v : ""; }
+/* descrição ainda no formato automático: "NOME DA OBRIGAÇÃO 33/101" ou "NOME DA OBRIGAÇÃO 11/2026" */
+function obrDescAuto(o, it) { const t = normName(it.Title || ""), n = normName(o.Title || ""); if (!n || !t.startsWith(n)) return false; return /^\s*(\d{1,3}\s*\/\s*\d{1,4})?$/.test(t.slice(n.length)); }
+{ const c0 = obrAutoCampos; obrAutoCampos = function (o, r, R) {
+    const f = c0.apply(this, arguments);
+    try { const d = obrDescLanc(o); if (d) f.Title = d;
+      if (!f.CentroCusto && hasCol("CentroCusto")) { const cc = obrCcLanc(o, tercDeCampos(o)); if (cc) f.CentroCusto = cc; } } catch (e) {}
+    return f;
+  }; window.obrAutoCampos = obrAutoCampos; }
+function obrSincPlano() {
+  const out = [];
+  for (const o of (OBR_STATE.items || [])) {
+    let cad = null, doc = ""; try { cad = tercDeCampos(o); doc = pagDocDeCad(cad); } catch (e) {}
+    const term = obrDescLanc(o), cc = obrCcLanc(o, cad);
+    for (const it of obrLancDe(o)) {
+      if (OBR_SINC.falhou.has(String(it._id)) || capCancelada(it)) continue;
+      const up = {};
+      if (cad && doc && !(typeof tercTravaMotivo === "function" && tercTravaMotivo(cad))) { let xi = null; try { xi = tercDeCampos(it); } catch (e) {}
+        if (!xi || xi === cad) {
+          if (String(it.Fornecedor || "") !== cad.Title) up.Fornecedor = cad.Title;
+          if (!pagDocOk(it.CNPJ)) up.CNPJ = docFmt(doc);
+          if (hasCol("FornecedorRefId") && String(it.FornecedorRefLookupId == null ? "" : it.FornecedorRefLookupId) !== String(cad._id)) up.FornecedorRefLookupId = Number(cad._id);
+        } }
+      if (hasCol("Obrigacao") && (it.ObrigacaoLookupId == null || it.ObrigacaoLookupId === "")) up.ObrigacaoLookupId = Number(o._id);
+      if (term && obrDescAuto(o, it) && String(it.Title || "") !== term) up.Title = term;
+      if (cc && hasCol("CentroCusto") && !String(it.CentroCusto || "").trim()) up.CentroCusto = cc;
+      if (Object.keys(up).length) out.push({ o, it, up });
+    }
+  }
+  out.sort((a, b) => (a.it.Status === "Pago" ? 1 : 0) - (b.it.Status === "Pago" ? 1 : 0));   /* os em aberto primeiro */
+  return out;
+}
+window.obrSincPlano = obrSincPlano;
+async function obrSincRodar(forcar) {
+  if (OBR_SINC.rodando || (!forcar && Date.now() - OBR_SINC.em < OBR_SINC.INTERVALO) || !obrAutoPode()) return null;
+  if (!(OBR_STATE.items || []).length || !(FORN_STATE.items || []).length || !(CAP_STATE.items || []).length) return null;
+  OBR_SINC.rodando = true; OBR_SINC.em = Date.now(); const res = { ok: 0, falhas: 0 };
+  try {
+    const P = obrSincPlano(), fila = P.slice(0, OBR_SINC.MAX); if (!fila.length) { OBR_SINC.ultimo = res; return res; }
+    const base = `/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/items`;
+    const prevP = session.pagAtual, prevM = session.modAtual; session.pagAtual = "cap.lista"; session.modAtual = "cap";
+    try {
+      for (let i = 0; i < fila.length; i += 20) {
+        const lote = fila.slice(i, i + 20), reqs = lote.map(x => { const body = Object.assign({}, x.up);
+          if (hasCol("Historico")) body.Historico = capHistAdd(x.it, "acertada pela obrigação (automático)", [x.up.Fornecedor ? `razão social: ${x.up.Fornecedor}` : "", x.up.Title ? `descrição: ${x.up.Title}` : "", x.up.CentroCusto ? `centro de custo: ${x.up.CentroCusto}` : ""].filter(Boolean).join(" · "));
+          x.body = body; return { method: "PATCH", url: `${base}/${x.it._id}/fields`, body }; });
+        try { const r = await graphBatch(reqs); r.forEach((y, k) => { if (y && y.ok) { res.ok++; Object.assign(lote[k].it, lote[k].body); } else { res.falhas++; OBR_SINC.falhou.add(String(lote[k].it._id)); } }); }
+        catch (e) { console.warn("obr sinc", e); lote.forEach(x => OBR_SINC.falhou.add(String(x.it._id))); res.falhas += lote.length; }
+      }
+    } finally { session.pagAtual = prevP; session.modAtual = prevM; }
+    if (res.ok) { CAP_STATE.rev = (CAP_STATE.rev || 0) + 1; try { OBR_CACHE = null; } catch (e) {} try { if (!$("modalBack").classList.contains("on")) obrRepintar(); } catch (e) {}
+      toast(`${res.ok} lançamento(s) de obrigações acertado(s) pelo cadastro (razão social, CNPJ/CPF, descrição e centro de custo)${res.falhas ? ` · ${res.falhas} não puderam ser alterados` : ""}.`, 9000); }
+    if (P.length > fila.length) OBR_SINC.em = 0;
+    OBR_SINC.ultimo = res; return res;
+  } catch (e) { console.warn("obr sinc", e); return res; }
+  finally { OBR_SINC.rodando = false; }
+}
+window.obrSincRodar = obrSincRodar;
+{ const a0 = obrAutoRodar; obrAutoRodar = async function () { const r = await a0.apply(this, arguments); try { await obrSincRodar(); } catch (e) {} return r; }; window.obrAutoRodar = obrAutoRodar; }
+/* salvar a obrigação (credor, centro de custo, subcategoria) leva a mudança aos lançamentos na hora */
+{ const s0 = obrSalvar; obrSalvar = async function () { const r = await s0.apply(this, arguments); try { if (r !== false) setTimeout(() => { OBR_SINC.falhou.clear(); obrSincRodar(true); }, 900); } catch (e) {} return r; }; window.obrSalvar = obrSalvar; }
+/* a janela "Atualizar Lançamentos" já sugere a descrição nova */
+{ const a0 = window.obrAtualizarLanc; window.obrAtualizarLanc = function (id) { const r = a0.apply(this, arguments);
+    try { const o = (OBR_STATE.items || []).find(x => String(x._id) === String(id)), e = $("olDesc"); if (o && e && !e.value) e.value = obrDescLanc(o); } catch (e) {} return r; }; }
+
+/* ---------- Editar Lançamento: Razão Social / Favorecido, já com o cadastro da obrigação ---------- */
+{ const f0 = capForm; capForm = function () { const h = f0.apply(this, arguments); return typeof h === "string" ? h.replace(/<label>Favorecido<span class="req">/g, '<label>Razão Social / Favorecido<span class="req">') : h; }; window.capForm = capForm; }
+{ const e0 = window.capEdit; window.capEdit = function (id) {
+    const r = e0.apply(this, arguments);
+    try { const it = CAP_STATE.editing, fo = $("fForn"); if (it && String(it._id) === String(id) && fo && !fornByName(fo.value)) {
+        let x = null; const oid = it.ObrigacaoLookupId; const o = oid != null && oid !== "" ? (OBR_STATE.items || []).find(z => String(z._id) === String(oid)) : null; if (o) x = tercDeCampos(o);
+        const d = pagDocDeCad(x);
+        if (x && d) { fo.value = x.Title; const dc = $("fCNPJ"); if (dc && !pagDocOk(dc.value)) dc.value = docFmt(d); try { capFornHint(); } catch (e) {}
+          const h = $("fFornHint"); if (h) { h.textContent = "Trazido do cadastro da obrigação em Terceiros — salve para gravar no lançamento."; h.className = "hint ok"; } $("modal").dataset.sujo = "1"; } } } catch (e) {}
+    return r;
+  }; }
+
+/* ---------- títulos das tabelas: o botão de filtro fica fixo à direita, o texto não se move ---------- */
+function capThAlinha(root) { try { (root || document).querySelectorAll("thead th > .cf-b").forEach(b => { const th = b.parentElement; if (th.dataset.cfAl) return; th.dataset.cfAl = "1"; th.classList.add("cf-th"); if (getComputedStyle(th).position === "static") th.style.position = "relative"; }); } catch (e) {} }
+{ const d0 = capDomDecora; capDomDecora = function () { const r = d0.apply(this, arguments); capThAlinha(); return r; }; window.capDomDecora = capDomDecora; }
+{ const d0 = capColFDecora; capColFDecora = function () { const r = d0.apply(this, arguments); capThAlinha(); return r; }; window.capColFDecora = capColFDecora; }
+{ const st = document.createElement("style"); st.textContent = `th.cf-th{padding-left:16px!important;padding-right:16px!important;vertical-align:middle!important;text-align:center}
+  th.cf-th > .cf-b{position:absolute;right:1px;top:50%;transform:translateY(-50%);padding:3px 3px;margin:0}`; document.head.appendChild(st); }
+/* gravação em lote num lançamento da CAP zera a marca de conflito local (senão a próxima edição ou baixa do mesmo
+   lançamento acusaria "alterado depois que você o abriu" contra a própria gravação automática) */
+{ const g0 = graphBatch; graphBatch = async function (reqs) {
+    const out = await g0.apply(this, arguments);
+    try { const capL = CAP_STATE.list && CAP_STATE.list.id, todos = typeof capTodos === "function" ? capTodos() : CAP_STATE.items || [];
+      if (capL) (reqs || []).forEach((r, i) => { if (!out[i] || !out[i].ok || String(r.method || "").toUpperCase() !== "PATCH") return;
+        const m = String(r.url || "").match(/\/lists\/([^/]+)\/items\/([^/]+)/); if (!m || m[1] !== capL) return;
+        const id = decodeURIComponent(m[2]), it = todos.find(x => String(x._id) === id) || (CAP_STATE.items || []).find(x => String(x._id) === id); if (it) it._mod = null; }); } catch (e) {}
+    return out;
+  }; window.graphBatch = graphBatch; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -52614,6 +52725,7 @@ CONFIG.version = "v0.14.60";   /* CAP: parcelas das obrigações publicadas auto
 CONFIG.version = "v0.14.61";   /* CAP: exclusão em lote em Lançamentos e dentro da obrigação, com confirmação; parcela excluída não é recriada pelo automático; filtro nos títulos das tabelas da CAP */
 CONFIG.version = "v0.14.62";   /* CAP › Funcionários: lote por comprovantes revisado (favorecido pelo comprovante, Pix, sem pagamento em dobro, só ativos, prévia sem rolagem lateral, filtro), situação em bolinhas, botão Add em Lote */
 CONFIG.version = "v0.14.63";   /* CAP: CNPJ/CPF obrigatório — obrigação com credor em Terceiros (pedido de cadastro pela própria obrigação) e nenhuma baixa sem documento */
+CONFIG.version = "v0.14.64";   /* CAP: lançamentos das obrigações acertados sozinhos pelo cadastro (razão social, CNPJ/CPF, descrição sem a parcela, centro de custo); títulos alinhados */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

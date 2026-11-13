@@ -51929,6 +51929,385 @@ window.clGravar = async () => {
   .cl-tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:999px}.cl-tag.criar{background:#E7F4EC;color:#197A46}.cl-tag.baixa{background:#E6EEF9;color:#1F4E8C}.cl-tag.ja{background:#EEF1F5;color:var(--ink-2)}.cl-tag.falta{background:#FDECEA;color:#B3271E}
   .obr-auto{margin:0 0 14px}.colab-hist td.cl-anx{white-space:nowrap}`;
   document.head.appendChild(st); })();
+/* ==========================================================================================
+   v0.14.61 (13/11/2026) · Contas a Pagar — exclusão em lote (pedido das 17:01)
+   · Lançamentos: a barra de seleção (a mesma do "Pagar selecionadas") ganha "Excluir Selecionadas".
+   · Dentro da obrigação: caixa de seleção em cada parcela que tem lançamento na CAP, "selecionar todas em aberto" e "Excluir Selecionadas".
+   · Sempre com confirmação, dizendo quantos lançamentos, o total, quantos já estão pagos e quantos documentos saem junto.
+   · Parcela de obrigação excluída NÃO é recriada pela publicação automática (fica guardada em ERP — Parâmetros › obr_auto_excluidas);
+     para tê-la de volta, use "Lançar" na parcela, dentro da obrigação.
+   Só exclui quem tem permissão de excluir na CAP.
+   · Filtro nos títulos das tabelas da CAP (pedido das 17:04): em Lançamentos o filtro é sobre todos os lançamentos (não só os já mostrados na tela)
+     e os totais acompanham; em Funcionários, Fornecedores e Obrigações o filtro esconde as linhas da tabela que está na tela.
+   ========================================================================================== */
+const OBR_EXC_CHAVE = "obr_auto_excluidas";
+OBR_AUTO.excl = null;
+function obrExcKey(obrId, r) { return `${obrId}|${r.k || r.comp}`; }
+function obrExcKeyDeItem(it) { const oid = it && (it.ObrigacaoLookupId || it.ObrigacaoId); if (!oid) return ""; const m = String(it.Parcela || "").match(/^(\d{1,3})\s*[\/-]\s*\d{1,3}$/); return `${oid}|${m ? Number(m[1]) : (itemComp(it) || "")}`; }
+async function obrExcLer() { const p = await erpParamLer(OBR_EXC_CHAVE); if (p === undefined) return null; OBR_AUTO.excl = new Set(p && Array.isArray(p.valor) ? p.valor : []); return OBR_AUTO.excl; }
+/* a publicação automática respeita o que foi excluído à mão; sem conseguir ler a lista de excluídas, não cria nada */
+{ const pl0 = obrAutoPlano; obrAutoPlano = function () { const P = pl0.apply(this, arguments), ex = OBR_AUTO.excl; if (!ex || !ex.size) return P;
+    const fica = [], fora = []; P.criar.forEach(x => (ex.has(obrExcKey(x.o._id, x.r)) ? fora : fica).push(x)); P.criar = fica; P.excluidas = fora.length; return P; }; }
+{ const r0 = obrAutoRodar; obrAutoRodar = async function () { if (OBR_AUTO.rodando) return null; try { if ((await obrExcLer()) === null) return null; } catch (e) { return null; } return r0.apply(this, arguments); }; window.obrAutoRodar = obrAutoRodar; }
+/* exclusão avulsa (botão Excluir do lançamento) de parcela de obrigação também fica guardada */
+{ const d0 = window.capDelete; window.capDelete = async function (id) { const it = CAP_STATE.items.find(x => String(x._id) === String(id)), k = it ? obrExcKeyDeItem(it) : ""; const r = await d0.apply(this, arguments);
+    try { if (k && !CAP_STATE.items.some(x => String(x._id) === String(id))) { const ex = (await obrExcLer()) || new Set(); ex.add(k); OBR_AUTO.excl = ex; await erpParamGravar(OBR_EXC_CHAVE, [...ex].slice(-5000)); } } catch (e) {} return r; }; }
+
+async function capExcluirLote(ids, opt) {
+  opt = opt || {};
+  if (!podeExcluir("cap")) { toast("Você não tem permissão para excluir lançamentos."); return false; }
+  const s = new Set((ids || []).map(String)), its = CAP_STATE.items.filter(it => s.has(String(it._id))); if (!its.length) { toast("Nenhum lançamento selecionado."); return false; }
+  const pagos = its.filter(it => it.Status === "Pago").length, total = its.reduce((a, it) => a + Number(it.Valor || 0), 0), deObr = its.filter(it => obrExcKeyDeItem(it)).length;
+  const anexosDeles = it => { const ehRep = typeof capEhReparo === "function" && capEhReparo(it); return ehRep ? [] : anexosDe(it).filter(a => a && a.id && a.d && !(a.rc || a.rcs)); }, nDocs = its.reduce((a, it) => a + anexosDeles(it).length, 0);
+  const exemplos = its.slice(0, 4).map(it => it.Title || "sem descrição").join("; ") + (its.length > 4 ? "…" : "");
+  if (!confirm(`Excluir em definitivo ${its.length} lançamento(s), no total de ${fmtBRL(total)}?\n${exemplos}\n${pagos ? `ATENÇÃO: ${pagos} já está(ão) PAGO(S). ` : ""}${nDocs ? `${nDocs} documento(s) anexado(s) sai(em) da pasta. ` : ""}${deObr ? `${deObr} é(são) parcela(s) de obrigação: não será(ão) recriada(s) sozinha(s). ` : ""}Não dá para desfazer.`)) return false;
+  if (pagos && !confirm(`Confirma também a exclusão dos ${pagos} lançamento(s) já pago(s)? O registro do pagamento se perde.`)) return false;
+  const base = `/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/items`, okIds = []; let falha = 0, docsFalha = 0;
+  toast(`Excluindo ${its.length} lançamento(s)…`, 4000);
+  const prevP = session.pagAtual, prevM = session.modAtual; session.pagAtual = "cap.lista"; session.modAtual = "cap";
+  try {
+    try { const res = await graphBatch(its.map(it => ({ method: "DELETE", url: `${base}/${it._id}` }))); res.forEach((r, i) => { if (r && (r.ok || r.status === 404)) okIds.push(String(its[i]._id)); else falha++; }); }
+    catch (e) { toast("Não foi possível excluir: " + e.message, 8000); return false; }
+    const feitos = its.filter(it => okIds.includes(String(it._id)));
+    for (const it of feitos) for (const a of anexosDeles(it)) { try { await graph(`/drives/${a.d}/items/${a.id}`, { method: "DELETE" }); } catch (e) { docsFalha++; } }
+    const chaves = feitos.map(obrExcKeyDeItem).filter(Boolean);
+    if (chaves.length) { try { const ex = (await obrExcLer()) || new Set(); chaves.forEach(k => ex.add(k)); OBR_AUTO.excl = ex; await erpParamGravar(OBR_EXC_CHAVE, [...ex].slice(-5000)); }
+      catch (e) { chaves.forEach(k => { OBR_AUTO.excl = OBR_AUTO.excl || new Set(); OBR_AUTO.excl.add(k); }); toast("Excluído, mas não consegui guardar que essas parcelas não devem ser recriadas (" + (e.message || e) + "). Elas podem voltar na próxima abertura da CAP.", 10000); } }
+  } finally { session.pagAtual = prevP; session.modAtual = prevM; }
+  capTirarLocal(okIds); try { OBR_CACHE = null; } catch (e) {}
+  toast(`${okIds.length} lançamento(s) excluído(s)${falha ? ` · ${falha} não puderam ser excluídos` : ""}${docsFalha ? ` · ${docsFalha} documento(s) ficaram na pasta` : ""}.`, 8000);
+  return true;
+}
+window.capExcluirSel = async () => { const ok = await capExcluirLote([...CAP_STATE.sel]); if (ok) { try { paintCAP(); } catch (e) {} } };
+{ const b0 = capSelBarHtml; capSelBarHtml = function () { let h = b0.apply(this, arguments); if (!h || !podeExcluir("cap")) return h; const n = capSelItens().length;
+    return h.replace('<button class="btn sm ghost" onclick="capSelLimpar()">', `<button class="btn sm cap-exc-lote" onclick="capExcluirSel()" title="Excluir em definitivo os lançamentos selecionados (pede confirmação)">Excluir ${n} selecionada(s)</button><button class="btn sm ghost" onclick="capSelLimpar()">`); }; }
+
+/* ---- dentro da obrigação: seleção das parcelas com lançamento ---- */
+const OBL = { obr: "", sel: new Set() };
+function oblIdsDaLinha(tr) { const ids = []; tr.querySelectorAll("td.contas a[onclick*='obrConta(']").forEach(a => { const m = a.getAttribute("onclick").match(/obrConta\((?:decodeURIComponent\()?['"]([^'"]+)['"]/); if (m) { let v = m[1]; try { v = decodeURIComponent(v); } catch (e) {} ids.push(String(v)); } }); return ids; }
+function oblPinta() {
+  const m = $("modal"), bar = m && m.querySelector(".obl-bar"); if (!bar) return;
+  const its = CAP_STATE.items.filter(it => OBL.sel.has(String(it._id))), tot = its.reduce((a, it) => a + Number(it.Valor || 0), 0);
+  bar.innerHTML = its.length ? `<span><b>${its.length}</b> lançamento(s) selecionado(s) · ${esc(fmtBRL(tot))}</span><span class="grow"></span><button type="button" class="btn sm cap-exc-lote" onclick="oblExcluir()">Excluir ${its.length} selecionado(s)</button><button type="button" class="btn sm ghost" onclick="oblLimpar()">Limpar seleção</button>` : `<span class="sup">Marque as parcelas com lançamento na CAP para excluir várias de uma vez. A caixa do título marca todas as que ainda não foram pagas.</span>`;
+  bar.classList.toggle("on", !!its.length);
+  m.querySelectorAll(".obl-c").forEach(c => { c.checked = c.dataset.ids.split(",").every(id => OBL.sel.has(id)); c.closest("tr").classList.toggle("sel", c.checked); });
+  const all = m.querySelector(".obl-all"); if (all) { const ab = [...m.querySelectorAll(".obl-c[data-aberta='1']")]; all.checked = ab.length > 0 && ab.every(c => c.checked); all.indeterminate = !all.checked && [...m.querySelectorAll(".obl-c")].some(c => c.checked); }
+}
+window.oblSel = (el) => { el.dataset.ids.split(",").forEach(id => { if (el.checked) OBL.sel.add(id); else OBL.sel.delete(id); }); oblPinta(); };
+window.oblTodas = on => { $("modal").querySelectorAll(".obl-c").forEach(c => { if (on && c.dataset.aberta !== "1") return; c.dataset.ids.split(",").forEach(id => { if (on) OBL.sel.add(id); else OBL.sel.delete(id); }); }); oblPinta(); };
+window.oblLimpar = () => { OBL.sel.clear(); oblPinta(); };
+window.oblExcluir = async () => { const id = OBL.obr, ok = await capExcluirLote([...OBL.sel]); if (ok) { OBL.sel.clear(); try { obrAbrir(id, OBR_UI.lastBack, true); } catch (e) {} try { obrRepintar(); } catch (e) {} } };
+{ const o0 = window.obrAbrir;
+  window.obrAbrir = function (id) { if (String(id) !== OBL.obr) { OBL.obr = String(id); OBL.sel.clear(); } const r = o0.apply(this, arguments);
+    try { const m = $("modal"); if (!podeExcluir("cap") || !m) return r;
+      const tabela = [...m.querySelectorAll("table")].find(t => t.querySelector("td.contas")); if (!tabela || tabela.dataset.obl) return r; tabela.dataset.obl = "1";
+      const vivos = new Set(CAP_STATE.items.map(it => String(it._id))); [...OBL.sel].forEach(x => { if (!vivos.has(x)) OBL.sel.delete(x); });
+      const hr = tabela.querySelector("thead tr"); if (hr) hr.insertAdjacentHTML("afterbegin", `<th class="selc"><input type="checkbox" class="obl-all" onchange="oblTodas(this.checked)" title="Selecionar todas as parcelas com lançamento ainda não pago" aria-label="Selecionar todas as parcelas em aberto"></th>`);
+      tabela.querySelectorAll("tbody tr").forEach(tr => { const unico = tr.querySelector("td[colspan]"); if (tr.classList.contains("col") || (unico && tr.children.length <= 2)) { tr.querySelectorAll("td[colspan]").forEach(td => { if (td === tr.lastElementChild) td.colSpan = td.colSpan + 1; }); return; }
+        const ids = oblIdsDaLinha(tr); if (!ids.length) { tr.insertAdjacentHTML("afterbegin", `<td class="selc"></td>`); return; }
+        const aberta = ids.every(i => { const it = CAP_STATE.items.find(x => String(x._id) === i); return it && it.Status !== "Pago"; });
+        tr.insertAdjacentHTML("afterbegin", `<td class="selc" onclick="event.stopPropagation()"><input type="checkbox" class="obl-c" data-ids="${esc(ids.join(","))}" data-aberta="${aberta ? 1 : 0}" onchange="oblSel(this)" aria-label="Selecionar esta parcela"></td>`); });
+      const wrap = tabela.closest(".obr-crono") || tabela.closest(".table-wrap") || tabela; wrap.insertAdjacentHTML("beforebegin", `<div class="cap-selbar obl-bar"></div>`); oblPinta();
+    } catch (e) { console.warn("obl sel", e); }
+    return r; }; }
+/* aviso das Obrigações: diz quantas parcelas excluídas à mão não voltam sozinhas */
+{ const p0 = paintObr; paintObr = function () { const r = p0.apply(this, arguments); try { const a = $("obrBody") && $("obrBody").querySelector(".obr-auto"), n = OBR_AUTO.excl ? OBR_AUTO.excl.size : 0; if (a && n && !a.querySelector(".obr-exc-n")) a.insertAdjacentHTML("beforeend", ` <span class="obr-exc-n"><b>${n}</b> parcela(s) excluída(s) à mão não são recriadas; para lançar de novo, use "Lançar" na parcela.</span>`); } catch (e) {} return r; }; window.paintObr = paintObr; }
+(function () { const st = document.createElement("style"); st.id = "erp-v01461";
+  st.textContent = `.btn.cap-exc-lote{color:#B3271E;border-color:#F3CFCB;background:#fff}.btn.cap-exc-lote:hover{background:#FDECEA}
+  .obl-bar{margin:0 0 8px;background:#F7F9FC;border-color:var(--line)}.obl-bar.on{background:#FFF3E9;border-color:#F5C9B0}
+  .modal tr.sel td{background:#FFF7F0}.modal th.selc,.modal td.selc{width:30px;text-align:center}.modal td.selc input,.modal th.selc input{width:16px;height:16px;cursor:pointer;margin:0}`;
+  document.head.appendChild(st); })();
+
+/* ---------- filtro nos títulos das tabelas da CAP ---------- */
+function erpColPopFecha() { const p = document.getElementById("pbPop"); if (p) p.remove(); }
+/* o = { btn, k, vals: [{ v, rot, n }], sel: Set|null, onAplica(Set|null), onLimpa() } — mesma janelinha do Banco de Dados de Passageiros */
+function erpColPop(o) {
+  const ja = document.getElementById("pbPop"); if (ja && ja.dataset.k === o.k) { erpColPopFecha(); return; } erpColPopFecha();
+  const p = document.createElement("div"); p.id = "pbPop"; p.className = "pb-pop"; p.dataset.k = o.k; p.setAttribute("role", "dialog"); p.setAttribute("aria-label", "Filtrar a coluna " + (o.titulo || ""));
+  p.innerHTML = `<div class="pb-pop-t"><b>${esc(o.titulo || "Filtrar")}</b></div>${o.vals.length > 8 ? `<input type="search" class="lanc-in pb-pop-q" placeholder="Procurar valor…" aria-label="Procurar valor">` : ""}
+    <div class="pb-pop-a"><button type="button" class="ctb-lnk" data-a="todos">Marcar Todos</button><button type="button" class="ctb-lnk" data-a="nenhum">Desmarcar Todos</button></div>
+    <div class="pb-pop-l">${o.vals.map((x, i) => `<label><input type="checkbox" data-i="${i}" ${!o.sel || o.sel.has(x.v) ? "checked" : ""}><span>${esc(x.rot || "(vazio)")}</span><i>${x.n}</i></label>`).join("") || `<p class="hint">Sem valores.</p>`}</div>
+    <div class="pb-pop-f"><button type="button" class="btn sm" data-a="limpar">Limpar esta Coluna</button><button type="button" class="btn sm primary" data-a="ok">Aplicar</button></div>`;
+  document.body.appendChild(p);
+  const r = o.btn.getBoundingClientRect(), w = 290; p.style.width = w + "px"; p.style.zIndex = "1200"; p.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + window.scrollX - 8)) + "px"; p.style.top = (r.bottom + window.scrollY + 6) + "px";
+  const cbs = () => [...p.querySelectorAll(".pb-pop-l input")];
+  const aplica = () => { const m = cbs().filter(c => c.checked).map(c => o.vals[Number(c.dataset.i)].v); if (!m.length) { toast("Marque ao menos um valor (ou use Limpar esta Coluna)."); return; } erpColPopFecha(); o.onAplica(m.length === o.vals.length ? null : new Set(m)); };
+  p.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; const a = b.dataset.a;
+    if (a === "todos" || a === "nenhum") cbs().forEach(c => { if (c.closest("label").style.display !== "none") c.checked = a === "todos"; }); else if (a === "limpar") { erpColPopFecha(); o.onAplica(null); } else if (a === "ok") aplica(); });
+  const q = p.querySelector(".pb-pop-q"); if (q) q.addEventListener("input", () => { const t = normName(q.value); p.querySelectorAll(".pb-pop-l label").forEach(l => { l.style.display = !t || normName(l.textContent).includes(t) ? "" : "none"; }); });
+  p.addEventListener("keydown", e => { if (e.key === "Escape") { erpColPopFecha(); o.btn.focus(); } else if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); aplica(); } });
+  (q || p.querySelector("button")).focus();
+}
+/* --- Lançamentos: filtro sobre os dados --- */
+CAP_STATE.colF = CAP_STATE.colF || {};
+const CAP_COLF = {
+  desc:   { tit: "Fornecedor / Favorecido", v: it => String(it.Fornecedor || "").trim() },
+  obr:    { tit: "Obrigação", v: it => { const oi = typeof OBR_STATE !== "undefined" && OBR_STATE.items.length ? contaObrInfo(it) : null; return oi && !oi.restrita ? String(oi.titulo || "") : ""; } },
+  cat:    { tit: "Categoria", v: it => String(it.Categoria || "") },
+  cls:    { tit: "Classificação", v: it => { const f = capFornDe(it); return f ? String(f.Tipo || "") : ""; } },
+  cc:     { tit: "Centro de Custo", v: it => String(ccDe(it) || "") },
+  comp:   { tit: "Competência", v: it => itemComp(it) || "", rot: v => (v ? compLabel(v) : ""), ord: (a, b) => b.localeCompare(a) },
+  venc:   { tit: "Vencimento (mês)", v: it => (it.Vencimento ? ymd(it.Vencimento).slice(0, 7) : ""), rot: v => (v ? compLabel(v) : ""), ord: (a, b) => b.localeCompare(a) },
+  dias:   { tit: "Prazo", v: it => { const c = classifyItem(it); return c.pago ? "Pago" : c.dias == null ? "Sem vencimento" : c.dias < 0 ? "Vencido" : c.dias === 0 ? "Vence hoje" : c.dias <= 7 ? "Vence em até 7 dias" : c.dias <= 30 ? "Vence em 8 a 30 dias" : "Vence depois de 30 dias"; }, ord: (a, b) => ["Vencido", "Vence hoje", "Vence em até 7 dias", "Vence em 8 a 30 dias", "Vence depois de 30 dias", "Sem vencimento", "Pago"].indexOf(a) - ["Vencido", "Vence hoje", "Vence em até 7 dias", "Vence em 8 a 30 dias", "Vence depois de 30 dias", "Sem vencimento", "Pago"].indexOf(b) },
+  valor:  { tit: "Faixa de Valor", v: it => { const n = Number(it.Valor || 0); return n < 100 ? "Até R$ 100" : n < 500 ? "R$ 100 a 500" : n < 1000 ? "R$ 500 a 1.000" : n < 5000 ? "R$ 1.000 a 5.000" : n < 20000 ? "R$ 5.000 a 20.000" : "Acima de R$ 20.000"; }, ord: (a, b) => ["Até R$ 100", "R$ 100 a 500", "R$ 500 a 1.000", "R$ 1.000 a 5.000", "R$ 5.000 a 20.000", "Acima de R$ 20.000"].indexOf(a) - ["Até R$ 100", "R$ 100 a 500", "R$ 500 a 1.000", "R$ 1.000 a 5.000", "R$ 5.000 a 20.000", "Acima de R$ 20.000"].indexOf(b) },
+  status: { tit: "Status", v: it => { const c = classifyItem(it); return capCancelada(it) ? "Cancelada" : c.pago ? "Pago" : c.isenta ? "N/A" : c.dias !== null && c.dias < 0 ? "Vencido" : String(it.Status || "Em aberto"); } },
+  banco:  { tit: "Banco", v: it => String(it.Banco || "") }
+};
+function capColFAtivo() { return Object.keys(CAP_STATE.colF).some(k => CAP_STATE.colF[k] && CAP_STATE.colF[k].size); }
+function capColFAplica(arr, semCol) { Object.keys(CAP_STATE.colF).forEach(k => { const s = CAP_STATE.colF[k], d = CAP_COLF[k]; if (!s || !s.size || !d || k === semCol) return; arr = arr.filter(it => s.has(d.v(it))); }); return arr; }
+{ const f0 = filteredItems; filteredItems = function () { const a = f0.apply(this, arguments); return capColFAtivo() ? capColFAplica(a) : a; }; }
+window.capColFAbre = (k, btn) => { const d = CAP_COLF[k]; if (!d) return;
+  const guard = CAP_STATE.colF; CAP_STATE.colF = {}; let base; try { base = filteredItems(false); } finally { CAP_STATE.colF = guard; } base = capColFAplica(base, k);
+  const cont = new Map(); base.forEach(it => { const v = d.v(it); cont.set(v, (cont.get(v) || 0) + 1); });
+  const vals = [...cont.keys()].sort(d.ord || ((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, "pt-BR")))).map(v => ({ v, rot: d.rot ? d.rot(v) : v, n: cont.get(v) }));
+  erpColPop({ btn, k: "cap:" + k, titulo: d.tit, vals, sel: CAP_STATE.colF[k] && CAP_STATE.colF[k].size ? CAP_STATE.colF[k] : null, onAplica: s => { if (s) CAP_STATE.colF[k] = s; else delete CAP_STATE.colF[k]; CAP_STATE.limAssin = ""; paintCAP(); } }); };
+window.capColFLimpa = () => { CAP_STATE.colF = {}; CAP_STATE.limAssin = ""; erpColPopFecha(); paintCAP(); };
+/* --- demais tabelas (Funcionários, Fornecedores, Obrigações): filtro sobre as linhas que estão na tela --- */
+const CAP_DOMF = {};
+function capDomVal(td) { if (!td) return ""; const d = td.querySelector(".desc"); if (d) return d.textContent.replace(/\s+/g, " ").trim(); const c = td.cloneNode(true); c.querySelectorAll(".sup,button,input,select").forEach(e => e.remove()); return (c.textContent.replace(/\s+/g, " ").trim() || td.textContent.replace(/\s+/g, " ").trim()).replace(/^—$/, ""); }
+function capDomLinhas(t) { return [...t.querySelectorAll("tbody tr")].filter(tr => !tr.querySelector("td[colspan]") && tr.children.length > 2); }
+function capDomAplica(t, chave) { const F = CAP_DOMF[chave] || {}, hs = [...t.querySelectorAll("thead th")]; let vis = 0, tot = 0;
+  capDomLinhas(t).forEach(tr => { tot++; let ok = true; Object.keys(F).forEach(h => { const i = hs.findIndex(th => th.dataset.cfh === h); if (i < 0 || !F[h] || !F[h].size) return; if (!F[h].has(capDomVal(tr.children[i]))) ok = false; }); tr.hidden = !ok; if (ok) vis++; });
+  hs.forEach(th => { const b = th.querySelector(".cf-b"); if (b) b.classList.toggle("on", !!(F[th.dataset.cfh] && F[th.dataset.cfh].size)); });
+  const wrap = t.closest(".table-wrap") || t; let av = wrap.previousElementSibling && wrap.previousElementSibling.classList.contains("cf-aviso") ? wrap.previousElementSibling : null; const ativo = Object.keys(F).some(h => F[h] && F[h].size);
+  if (ativo && !av) { wrap.insertAdjacentHTML("beforebegin", `<div class="cf-aviso hint"></div>`); av = wrap.previousElementSibling; } if (av) { if (ativo) av.innerHTML = `Filtro de coluna: mostrando <b>${vis}</b> de <b>${tot}</b> linha(s) · os totais do rodapé continuam sendo os da lista inteira · <button type="button" class="ctb-lnk" onclick="capDomLimpa(${jsArg(chave)})">Limpar Filtros das Colunas</button>`; else av.remove(); } }
+function capDomDecora(t, chave) { if (!t) return; const hs = [...t.querySelectorAll("thead th")];
+  hs.forEach((th, i) => { const rot = th.textContent.replace(/[▾●▲▼]/g, "").replace(/\s+/g, " ").trim(); if (!rot || th.querySelector("input") || th.classList.contains("selc") || th.classList.contains("favc")) return; th.dataset.cfh = rot;
+    if (!th.querySelector(".cf-b")) { th.insertAdjacentHTML("beforeend", ` <button type="button" class="cf-b" title="Filtrar por ${esc(rot)}" aria-label="Filtrar por ${esc(rot)}">▾</button>`);
+      th.querySelector(".cf-b").addEventListener("click", ev => { ev.stopPropagation(); ev.preventDefault(); const F = CAP_DOMF[chave] = CAP_DOMF[chave] || {}, cont = new Map(), idx = [...t.querySelectorAll("thead th")].indexOf(th);
+        capDomLinhas(t).forEach(tr => { let ok = true; Object.keys(F).forEach(h => { if (h === rot || !F[h] || !F[h].size) return; const j = hs.findIndex(x => x.dataset.cfh === h); if (j >= 0 && !F[h].has(capDomVal(tr.children[j]))) ok = false; }); if (!ok) return; const v = capDomVal(tr.children[idx]); cont.set(v, (cont.get(v) || 0) + 1); });
+        const vals = [...cont.keys()].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, "pt-BR", { numeric: true }))).map(v => ({ v, rot: v, n: cont.get(v) }));
+        erpColPop({ btn: ev.currentTarget, k: chave + ":" + rot, titulo: rot, vals, sel: F[rot] && F[rot].size ? F[rot] : null, onAplica: s => { if (s) F[rot] = s; else delete F[rot]; capDomAplica(t, chave); } }); }); } });
+  capDomAplica(t, chave); }
+window.capDomLimpa = chave => { delete CAP_DOMF[chave]; erpColPopFecha(); try { obrRepintar(); } catch (e) {} };
+function capColFDecora() {
+  try { const body = $("capBody");
+    if (body && (CAP_STATE.view || "lista") === "lista") { const t = body.querySelector(".cap-lista-wrap table") || body.querySelector("table.cap-cards");
+      if (t) { t.querySelectorAll("thead th[data-col]").forEach(th => { const k = th.dataset.col; if (!CAP_COLF[k] || th.querySelector(".cf-b")) return; const on = CAP_STATE.colF[k] && CAP_STATE.colF[k].size;
+          th.insertAdjacentHTML("beforeend", ` <button type="button" class="cf-b${on ? " on" : ""}" title="Filtrar por ${esc(CAP_COLF[k].tit)}" aria-label="Filtrar por ${esc(CAP_COLF[k].tit)}" onclick="event.stopPropagation(); capColFAbre('${k}', this)">${on ? "●" : "▾"}</button>`); }); }
+      const alvo = body.querySelector(".cap-lista-wrap") || body.querySelector(".cap-empty"); const ja = body.querySelector(".cf-aviso-cap");
+      if (capColFAtivo() && alvo && !ja) alvo.insertAdjacentHTML("beforebegin", `<div class="cf-aviso cf-aviso-cap hint">Filtro de coluna ligado em: <b>${esc(Object.keys(CAP_STATE.colF).filter(k => CAP_STATE.colF[k] && CAP_STATE.colF[k].size).map(k => CAP_COLF[k].tit).join(", "))}</b> · <button type="button" class="ctb-lnk" onclick="capColFLimpa()">Limpar Filtros das Colunas</button></div>`); }
+    if (body && CAP_STATE.view === "colab") capDomDecora(body.querySelector("table.colab-table"), "colab");
+    const ob = $("obrBody"); if (ob) ob.querySelectorAll("table.cap-table").forEach((t, i) => capDomDecora(t, "obr" + i));
+    const fb = $("fornBody"); if (fb) fb.querySelectorAll("table.cap-table").forEach((t, i) => capDomDecora(t, "forn" + i));
+  } catch (e) { console.warn("cap colF", e); }
+}
+{ const pc = paintCAP; paintCAP = function () { erpColPopFecha(); const r = pc.apply(this, arguments); capColFDecora(); return r; }; window.paintCAP = paintCAP; }
+{ const po = paintObr; paintObr = function () { const r = po.apply(this, arguments); capColFDecora(); return r; }; window.paintObr = paintObr; }
+{ const pf = paintForn; paintForn = function () { const r = pf.apply(this, arguments); capColFDecora(); return r; }; window.paintForn = paintForn; }
+document.addEventListener("mousedown", e => { const p = document.getElementById("pbPop"); if (p && p.dataset.k && /^(cap:|colab|obr|forn)/.test(p.dataset.k) && !p.contains(e.target) && !(e.target.closest && e.target.closest(".cf-b"))) erpColPopFecha(); });
+(function () { const st = document.createElement("style"); st.id = "erp-v01461b";
+  st.textContent = `.cf-b{border:0;background:none;font:inherit;font-size:10px;line-height:1;color:inherit;opacity:.55;cursor:pointer;padding:3px 4px;border-radius:5px;vertical-align:middle}.cf-b:hover{opacity:1;background:#E3E9F2}.cf-b.on{opacity:1;background:var(--navy);color:#fff}
+  .cf-aviso{margin:0 0 8px;padding:6px 10px;border:1px solid #F5C9B0;background:#FFF7F0;border-radius:8px;color:var(--navy)}.pb-pop-t{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+  #capBody tr[hidden],#obrBody tr[hidden],#fornBody tr[hidden]{display:none!important}`;
+  document.head.appendChild(st); })();
+/* ==========================================================================================
+   v0.14.62 (13/11/2026) · CAP › Funcionários — lançamento em lote por comprovantes, revisão pedida às 17:37
+   1 · A prévia cabe na janela, sem rolagem lateral (colunas fixas, nomes de arquivo numa linha só; em telas estreitas vira cartões).
+   2 · No Modo Foco a prévia usa a largura toda.
+   3 · Filtro na prévia: Todos · Prontos · Com Pendência · Repetidos/Já Lançados.
+   4 · A carteira sai do próprio comprovante ("Pagamento de Salários", "salario 08/2026") e do nome do arquivo ("SAL", "FER", "ADT"…).
+   5 · Corrigir um campo não redesenha a lista: a linha fica onde está e o foco continua no campo.
+   6 · O funcionário vem SEMPRE dos dados do comprovante (Favorecido / Dados do recebedor: nome e CPF, inclusive CPF mascarado ***.123.456-**),
+       nunca do nome do arquivo. Lê também o "Comprovante do Pix". Se a pessoa escolher à mão alguém que não confere com o CPF ou o nome
+       do comprovante, a linha fica bloqueada.
+   7 · Sem pagamento em dobro de Salário, Férias e 13º: mesmo funcionário, carteira e competência já pagos (ou repetidos no lote) ficam bloqueados.
+   8 · Só funcionário cadastrado no RH e não desligado.
+   9 · Salário, FGTS, INSS, 13º e Vencido em bolinhas (verde pago · amarelo pendente · vermelho vencido).
+   10 · Botão "Add em Lote (Comprovantes)".
+   ========================================================================================== */
+CL.filtro = "todos";
+const CL_ROT_INVALIDO = /^(nome|cpf|cnpj|cnpj ?\/ ?cpf|valor|valor pago|institui[çc][ãa]o.*|chave|ag[êe]ncia.*|conta.*|data.*|sal[áa]rios?|pagamento.*|mensagem.*|finalidade|hist[óo]rico|de|para|tipo.*)$/i;
+function clLinhasPdf(pages) { const linhas = []; let off = 0;
+  pages.forEach(pg => { const its = pg.items.filter(i => String(i.str || "").trim()).map(i => ({ str: String(i.str).replace(/\s+/g, " ").trim(), x: i.x, y: i.y + off, w: i.w || 0 })).sort((a, b) => a.y - b.y || a.x - b.x); let cur = null, maxY = 0;
+    its.forEach(i => { if (!cur || Math.abs(i.y - cur.y) > 3.5) { cur = { y: i.y, its: [] }; linhas.push(cur); } cur.its.push(i); if (i.y > maxY) maxY = i.y; }); off = maxY + 40; });
+  linhas.forEach(l => { l.its.sort((a, b) => a.x - b.x); l.txt = l.its.map(i => i.str).join(" ").replace(/\s+/g, " ").trim(); }); return linhas; }
+/* valor que fica logo abaixo de um rótulo, na mesma coluna (até o rótulo seguinte da linha) */
+function clAbaixo(L, li, it, alcance) { const dir = L[li].its.filter(x => x.x > it.x + 6).map(x => x.x), nx = dir.length ? Math.min(...dir) : Infinity;
+  for (let j = li + 1; j <= Math.min(L.length - 1, li + (alcance || 3)); j++) { const xs = L[j].its.filter(x => x.x >= it.x - 8 && x.x < nx - 6); if (xs.length) return xs.map(x => x.str).join(" ").replace(/\s+/g, " ").trim(); } return ""; }
+function clRotulo(L, re, de, ate) { for (let i = Math.max(0, de || 0); i < Math.min(L.length, ate == null ? L.length : ate); i++) { const it = L[i].its.find(x => re.test(x.str)); if (it) return { li: i, it }; } return null; }
+function clNomeOk(s) { const t = String(s || "").replace(/\s+/g, " ").trim(); return t.length >= 5 && !/\d/.test(t) && !CL_ROT_INVALIDO.test(t) && /[A-Za-zÀ-ú]{2,}\s+[A-Za-zÀ-ú]{2,}/.test(t) ? t : ""; }
+clCarteira = function (txt, ehArquivo) { let t = " " + normName(txt).replace(/[_\-.]+/g, " ") + " ";
+  if (ehArquivo) t = t.replace(/\b(19|20)\d{2}\s+\d{1,2}\s+\d{1,2}\b/g, " ").replace(/\b\d{1,2}\s+(19|20)\d{2}\b/g, " ");
+  if (/\b13\s*(o|º|sal|salario)?\b.*salario|\bdecimo\b|\b13o\b|\b13 sal|gratificacao natalina/.test(t) || (ehArquivo && /\b13\b/.test(t))) return "dec";
+  if (/rescis|homolog/.test(t)) return "resc"; if (/\bferias\b|\bfer\b/.test(t)) return "fer"; if (/adiant|\badt\b|\bvale\b(?! transp)/.test(t)) return "adi";
+  if (/horas? extras?|\bhe\b/.test(t)) return "hex"; if (/vale transp|\bvt\b/.test(t)) return "vt"; if (/\bfgts\b/.test(t)) return "fgts"; if (/\binss\b/.test(t)) return "inss";
+  if (/salario|\bsal\b|\bfolha\b/.test(t)) return "sal"; return ""; };
+clCompetencia = function (textos, nomeArq, dataPg, cart) {
+  const acha = s => { const t = " " + normName(s) + " "; let m = t.match(/\b(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s*(?:de\s*|\/\s*)?((?:20)?\d{2})\b/); if (m) return `${m[2].length === 2 ? "20" + m[2] : m[2]}-${String(CL_MESES[m[1]]).padStart(2, "0")}`;
+    m = t.match(/(?:^|[^\d\/])(0?[1-9]|1[0-2])\s*\/\s*(20\d{2})(?!\d)/); return m ? `${m[2]}-${m[1].padStart(2, "0")}` : ""; };
+  const c = acha(textos); if (c) return c;
+  if (!dataPg) return ""; const base = dataPg.slice(0, 7); return (cart === "sal" && Number(dataPg.slice(8, 10)) <= 10) ? capCompAdd(base, -1) : base; };
+clExtrair = function (pages, nomeArq) {
+  const L = clLinhasPdf(pages), tudo = L.map(l => l.txt).join("\n"), o = { nome: "", cpf: "", cpfMeio: "", valor: 0, data: "", finalidade: "", historico: "", msg: "", banco: "", forma: "", aut: "", ok: false };
+  /* quem recebe: tabela "Favorecido …" (TED) ou bloco "Dados do recebedor › Nome" (Pix e TED novo) */
+  const iPag = L.findIndex(l => /dados do pagador|^pagador\b|dados da conta de origem/i.test(l.txt)), iRec = L.findIndex(l => /dados do (recebedor|favorecido|benefici[áa]rio)|^recebedor\b|^destinat[áa]rio\b/i.test(l.txt));
+  const fav = clRotulo(L, /^favorecido\b/i); if (fav) o.nome = clNomeOk(clAbaixo(L, fav.li, fav.it));
+  if (!o.nome && iRec >= 0) { const ate = iPag > iRec ? iPag : iRec + 10, n = clRotulo(L, /^nome\b/i, iRec, ate); if (n) o.nome = clNomeOk(clAbaixo(L, n.li, n.it)); }
+  if (!o.nome) { const n = clRotulo(L, /^(nome do favorecido|nome do recebedor|benefici[áa]rio)\b/i); if (n) o.nome = clNomeOk(clAbaixo(L, n.li, n.it)); }
+  /* CPF de quem recebe: inteiro ou mascarado (***.123.456-**), procurado primeiro no bloco do recebedor */
+  const reC = /\b(\d{3})\.(\d{3})\.(\d{3})-(\d{2})\b/, reM = /\*{3}\.?(\d{3})\.(\d{3})-?\*{2}/, bloco = iRec >= 0 ? L.slice(iRec, iPag > iRec ? iPag : iRec + 10).map(l => l.txt).join("\n") : "";
+  let m = bloco.match(reC) || (iRec < 0 ? tudo.match(reC) : null) || (iPag > 0 ? L.slice(0, iPag).map(l => l.txt).join("\n").match(reC) : null); if (m) o.cpf = m[0];
+  if (!o.cpf) { m = bloco.match(reM) || (iPag > 0 ? L.slice(0, iPag).map(l => l.txt).join("\n").match(reM) : tudo.match(reM)); if (m) o.cpfMeio = m[1] + m[2]; }
+  /* valor e data */
+  const dinheiro = s => { const mm = String(s || "").match(/\d{1,3}(?:\.\d{3})*,\d{2}/g); return mm ? clNum(mm[mm.length - 1]) : 0; };
+  const rv = clRotulo(L, /^valor\b/i); if (rv) { o.valor = dinheiro(clAbaixo(L, rv.li, rv.it)) || dinheiro(L[rv.li].its.filter(x => x.x >= rv.it.x).map(x => x.str).join(" ")); }
+  if (!o.valor) { m = tudo.match(/valor[^\d\n]{0,25}(\d{1,3}(?:\.\d{3})*,\d{2})/i) || tudo.match(/R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/); if (m) o.valor = clNum(m[1]); }
+  const rd = clRotulo(L, /^data (da transfer|e hora|do pagamento|da transa|do d[ée]bito)/i); if (rd) o.data = clIso(clAbaixo(L, rd.li, rd.it)) || clIso(L[rd.li].txt);
+  if (!o.data) { m = tudo.match(/data[^\d\n]{0,30}(\d{2}\/\d{2}\/\d{4})/i) || tudo.match(/(\d{2}\/\d{2}\/\d{4})/); if (m) o.data = clIso(m[1]); }
+  /* para que foi: finalidade, histórico e mensagem */
+  const rf = clRotulo(L, /^finalidade\b/i), rh = clRotulo(L, /^hist[óo]rico\b/i), rm = clRotulo(L, /^mensagem\b/i);
+  if (rf) o.finalidade = clAbaixo(L, rf.li, rf.it); if (rh) o.historico = clAbaixo(L, rh.li, rh.it); if (rm) o.msg = clAbaixo(L, rm.li, rm.it);
+  if (!o.finalidade && /pagamento de sal[áa]rios?/i.test(tudo)) o.finalidade = "Pagamento de Salários";
+  m = tudo.match(/autentica[çc][ãa]o[^\n]*\n\s*([0-9A-F]{12,})/i) || tudo.match(/\b(E\d{20,})\b/); if (m) o.aut = m[1];
+  const pagador = iPag >= 0 ? L.slice(iPag).map(l => l.txt).join(" ") : tudo;
+  o.banco = /santander/i.test(pagador) ? "Santander" : /bradesco/i.test(pagador) ? "Bradesco" : /banco do brasil/i.test(pagador) ? "Banco do Brasil" : /pagbank|pagseguro/i.test(pagador) ? "PagBank" : /santander/i.test(tudo) ? "Santander" : "";
+  o.forma = /comprovante d[eo] pix|\bpix\b/i.test(tudo) ? "PIX" : /\bted\b|transfer[êe]ncia/i.test(tudo) ? "TED" : "";
+  const motivo = `${o.finalidade} ${o.msg} ${o.historico}`;
+  o.cart = clCarteira(motivo) || clCarteira(String(nomeArq || "").replace(/\.pdf$/i, ""), true);
+  o.comp = clCompetencia(`${o.msg} ${o.historico}`, nomeArq, o.data, o.cart); o.ok = !!(o.valor && o.data); return o;
+};
+function clTok(s) { return normName(s).split(" ").filter(w => w.length > 2 && !/^(dos|das|del)$/.test(w)); }
+function clNomeConfere(a, b) { const ta = clTok(a), tb = clTok(b); if (!ta.length || !tb.length) return null; const com = ta.filter(w => tb.includes(w)).length; return ta[0] === tb[0] && (com >= 2 || Math.min(ta.length, tb.length) === 1) || com >= Math.min(3, Math.min(ta.length, tb.length)); }
+function clAtivos() { return (COLAB.funcs || []).filter(f => f.Situacao !== "Desligado"); }
+clAcharFunc = function (o) {
+  const todos = COLAB.funcs || [], cpf = colabDig(o.cpf);
+  if (cpf.length === 11) { const f = todos.find(x => colabCpf(x) === cpf); if (f) return { f, como: "CPF" }; }
+  if (o.cpfMeio) { let c = todos.filter(x => { const k = colabCpf(x); return k.length === 11 && k.slice(3, 9) === o.cpfMeio; }); if (c.length > 1 && o.nome) c = c.filter(x => clNomeConfere(o.nome, x.Title)); if (c.length === 1 && (!o.nome || clNomeConfere(o.nome, c[0].Title) !== false)) return { f: c[0], como: "CPF e nome do comprovante" }; }
+  if (!o.nome) return { f: null, como: "" };
+  const alvo = normName(o.nome); let c = todos.filter(f => normName(f.Title) === alvo); if (c.length === 1) return { f: c[0], como: "nome do comprovante" };
+  const ta = clTok(o.nome); c = todos.filter(f => { const tf = clTok(f.Title); return ta.length >= 2 && tf.length >= 2 && ta[0] === tf[0] && (ta.every(w => tf.includes(w)) || tf.every(w => ta.includes(w))); });
+  return c.length === 1 ? { f: c[0], como: "nome do comprovante" } : { f: null, como: c.length > 1 ? "mais de um funcionário com esse nome" : "" };
+};
+const CL_SEM_DOBRO = { sal: "Salário", fer: "Férias", dec: "13º Salário" };
+clAcao = function (l) {
+  const f = (COLAB.funcs || []).find(x => String(x._id) === String(l.funcId)), w = CAP_COLAB_CARTEIRAS.find(x => x.k === l.cart), igual = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;
+  if (!f) return { k: "falta", txt: l.nome ? `"${l.nome}" não está no cadastro do RH — só é permitido pagar funcionário cadastrado` : "Escolha o funcionário (o comprovante não trouxe o nome de quem recebeu)" };
+  if (f.Situacao === "Desligado") return { k: "bloq", txt: `${f.Title} está desligado no RH — pagamento não permitido por aqui` };
+  const cf = colabCpf(f);
+  if (colabDig(l.cpf).length === 11 && cf && cf !== colabDig(l.cpf)) return { k: "bloq", txt: `O comprovante é de ${l.nome || "outra pessoa"} (CPF diferente do de ${f.Title})` };
+  if (l.cpfMeio && cf && cf.slice(3, 9) !== l.cpfMeio) return { k: "bloq", txt: `O comprovante é de ${l.nome || "outra pessoa"} (CPF ***.${l.cpfMeio.slice(0, 3)}.${l.cpfMeio.slice(3)}-**), não de ${f.Title}` };
+  if (l.nome && !(cf && (colabDig(l.cpf).length === 11 || l.cpfMeio)) && clNomeConfere(l.nome, f.Title) === false) return { k: "bloq", txt: `O comprovante está em nome de ${l.nome}, que não confere com ${f.Title}` };
+  if (!w || !w.sub) return { k: "falta", txt: "Escolha a carteira" };
+  if (!(l.valor > 0)) return { k: "falta", txt: "Informe o valor" }; if (!/^\d{4}-\d{2}-\d{2}$/.test(l.data || "")) return { k: "falta", txt: "Informe a data do pagamento" }; if (!/^\d{4}-\d{2}$/.test(l.comp || "")) return { k: "falta", txt: "Informe a competência (MM/AAAA)" };
+  const itens = colabItensDe(f), i = CL.linhas.indexOf(l);
+  const ja = itens.find(it => classifyItem(it).pago && igual(capValorEfetivo(it), l.valor) && it.DataPagamento && ymd(it.DataPagamento) === l.data);
+  if (ja) return { k: "ja", it: ja, txt: `Já lançado: ${ja.Title || "lançamento pago"} — será pulado` };
+  const antes = CL.linhas.slice(0, i).filter(x => !x.feito && String(x.funcId) === String(l.funcId));
+  const igualNoLote = antes.find(x => x.data === l.data && igual(x.valor, l.valor) && x.cart === l.cart); if (igualNoLote) return { k: "ja", txt: `Repetido neste lote: mesmo pagamento do arquivo ${igualNoLote.arq}` };
+  if (CL_SEM_DOBRO[l.cart]) {
+    const pago = itens.find(it => classifyItem(it).pago && colabCarteiraDe(it).k === l.cart && (itemComp(it) || "") === l.comp);
+    if (pago) return { k: "bloq", dobro: true, txt: `${CL_SEM_DOBRO[l.cart]} de ${compLabel(l.comp)} já foi pago a ${f.Title} (${fmtBRL(capValorEfetivo(pago))}${pago.DataPagamento ? " em " + fmtDate(pago.DataPagamento) : ""}) — pagamento em dobro não é permitido` };
+    const dup = antes.find(x => x.cart === l.cart && x.comp === l.comp); if (dup) return { k: "bloq", dobro: true, txt: `${CL_SEM_DOBRO[l.cart]} de ${compLabel(l.comp)} em dobro neste lote para ${f.Title} (arquivo ${dup.arq}) — confira a competência ou a carteira` };
+  }
+  const ab = itens.filter(it => { const c = classifyItem(it); return !c.pago && !c.isenta && colabCarteiraDe(it).k === l.cart && (itemComp(it) || "") === l.comp; });
+  const alvo = ab.find(it => igual(it.Valor, l.valor)) || (ab.length === 1 ? ab[0] : null);
+  const semId = !l.nome && !l.cpf && !l.cpfMeio ? " · comprovante sem nome legível: confira o PDF" : "";
+  if (alvo) return { k: "baixa", it: alvo, txt: `Dá baixa em: ${alvo.Title || "lançamento em aberto"}${igual(alvo.Valor, l.valor) ? "" : ` (valor lançado ${fmtBRL(alvo.Valor)})`}${semId}` };
+  return { k: "criar", txt: semId ? semId.slice(3) : "" };
+};
+const CL_TAG = { criar: "Criar", baixa: "Dar Baixa", ja: "Pular", falta: "Pendente", bloq: "Bloqueado" };
+function clGrupo(a) { return a.k === "criar" || a.k === "baixa" ? "ok" : a.k === "ja" || a.dobro ? "rep" : "pend"; }
+function clCompTxt(c) { const m = String(c || "").match(/^(\d{4})-(\d{2})$/); return m ? `${m[2]}/${m[1]}` : ""; }
+function clCompDe(txt) { const m = String(txt || "").trim().match(/^(0?[1-9]|1[0-2])\s*[\/\-. ]\s*((?:20)?\d{2})$/); return m ? `${m[2].length === 2 ? "20" + m[2] : m[2]}-${m[1].padStart(2, "0")}` : ""; }
+function clSubInfo(l) { if (!l.lido) return l.erro || "não foi possível ler este PDF — preencha os campos"; const cpf = l.cpf ? `CPF ***.${colabDig(l.cpf).slice(3, 6)}.${colabDig(l.cpf).slice(6, 9)}-**` : l.cpfMeio ? `CPF ***.${l.cpfMeio.slice(0, 3)}.${l.cpfMeio.slice(3)}-**` : ""; return [l.nome || "sem nome no comprovante", cpf, l.finalidade || l.msg, l.historico].filter(Boolean).join(" · "); }
+function clLinhaHtml(l, i) {
+  const a = l._a, pode = a.k === "criar" || a.k === "baixa", fs = clAtivos().slice().sort((x, y) => String(x.Title || "").localeCompare(String(y.Title || ""), "pt-BR")), carts = CAP_COLAB_CARTEIRAS.filter(w => w.sub), fSel = (COLAB.funcs || []).find(f => String(f._id) === String(l.funcId));
+  const extra = fSel && fSel.Situacao === "Desligado" ? `<option value="${esc(fSel._id)}" selected>${esc(fSel.Title)} (desligado)</option>` : "";
+  return `<tbody class="cl-item cl-${a.k}" data-i="${i}" data-a="${esc(a.k + "|" + a.txt)}"><tr class="cl-l1">
+      <td class="cl-c0"><input type="checkbox" class="cl-sel" ${pode && l.sel ? "checked" : ""} ${pode ? "" : "disabled"} aria-label="Lançar este comprovante"></td>
+      <td class="cl-arq"><button type="button" class="ctb-lnk cl-nome" onclick="clVerPdf(${i})" title="${esc(l.arq)} — abrir o PDF">${esc(l.arq)}</button><div class="sup cl-sub ${l.lido ? "" : "venc"}" title="${esc(clSubInfo(l))}">${esc(clSubInfo(l))}</div></td>
+      <td><select class="lanc-in lanc-sel cl-f" data-k="funcId" aria-label="Funcionário"><option value="">— escolher —</option>${extra}${fs.map(f => `<option value="${esc(f._id)}" ${String(f._id) === String(l.funcId) ? "selected" : ""}>${esc(f.Title)}</option>`).join("")}</select><div class="sup cl-como">${l.como ? "pelo " + esc(l.como) : ""}</div></td>
+      <td><select class="lanc-in lanc-sel cl-f" data-k="cart" aria-label="Carteira"><option value="">— escolher —</option>${carts.map(w => `<option value="${w.k}" ${w.k === l.cart ? "selected" : ""}>${esc(w.n)}</option>`).join("")}</select></td>
+      <td><input type="text" inputmode="numeric" class="lanc-in cl-f" data-k="comp" value="${esc(clCompTxt(l.comp))}" placeholder="MM/AAAA" maxlength="7" aria-label="Competência (MM/AAAA)"></td>
+      <td><input type="date" class="lanc-in cl-f" data-k="data" value="${esc(l.data || "")}" aria-label="Data do pagamento"></td>
+      <td><input type="text" inputmode="decimal" class="lanc-in num cl-f" data-k="valor" value="${l.valor ? l.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : ""}" aria-label="Valor"></td>
+      <td class="cl-t"><span class="cl-tag ${a.k}">${CL_TAG[a.k]}</span></td></tr>
+    <tr class="cl-l2"><td></td><td colspan="7" class="cl-msg">${esc(a.txt)}</td></tr></tbody>`;
+}
+function clContas() { const n = { ok: 0, pend: 0, rep: 0 }; CL.linhas.forEach(l => { if (!l.feito) n[clGrupo(l._a)]++; }); const sel = CL.linhas.filter(l => l.sel && !l.feito && (l._a.k === "criar" || l._a.k === "baixa")); return { n, sel, tot: sel.reduce((s, l) => s + l.valor, 0), total: CL.linhas.filter(l => !l.feito).length }; }
+function clResumoPinta() { const el = $("clResumo"); if (!el) return; const C = clContas(), ch = (k, r, q) => `<button type="button" class="chip ${CL.filtro === k ? "on" : ""}" aria-pressed="${CL.filtro === k}" onclick="clFiltro('${k}')">${r} <b>${q}</b></button>`;
+  el.innerHTML = CL.linhas.length ? `<div class="cl-chips">${ch("todos", "Todos", C.total)}${ch("ok", "Prontos", C.n.ok)}${ch("pend", "Com Pendência", C.n.pend)}${ch("rep", "Repetidos / Já Lançados", C.n.rep)}</div><span class="grow"></span><span>Marcados: <b>${C.sel.length}</b> · <b>${esc(fmtBRL(C.tot))}</b></span>` : "";
+  const b = $("clGo"); if (b) { b.disabled = !C.sel.length || CL.lendo || CL.gravando; b.textContent = CL.lendo ? "Lendo os PDFs…" : C.sel.length ? `Lançar ${C.sel.length} Comprovante(s)` : "Nada a Lançar"; } }
+function clRecalcula() { CL.linhas.forEach(l => { l._a = clAcao(l); }); }
+clPinta = function () { const el = $("clPrev"); if (!el) return; clRecalcula();
+  const vis = CL.linhas.map((l, i) => [l, i]).filter(([l]) => !l.feito && (CL.filtro === "todos" || clGrupo(l._a) === CL.filtro));
+  el.innerHTML = !CL.linhas.length ? `<p class="hint" style="margin:0">Nenhum arquivo ainda. Escolha os PDFs dos comprovantes (pode marcar vários de uma vez) ou arraste-os para cá.</p>`
+    : `<div class="cl-prev2"><table class="cl-tab"><colgroup><col class="c0"><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"><col class="c6"><col class="c7"></colgroup><thead><tr><th></th><th>Arquivo e dados do comprovante</th><th>Funcionário</th><th>Carteira</th><th>Compet.</th><th>Pagamento</th><th class="r">Valor</th><th>Situação</th></tr></thead>${vis.map(([l, i]) => clLinhaHtml(l, i)).join("") || `<tbody><tr><td colspan="8" class="cl-vazio">Nenhum comprovante neste filtro.</td></tr></tbody>`}</table></div>`;
+  clResumoPinta(); };
+/* depois de corrigir um campo: nada é redesenhado; só a situação das linhas afetadas muda (a linha fica no lugar e o foco continua no campo) */
+function clSinc() { clRecalcula(); const el = $("clPrev"); if (!el) return;
+  el.querySelectorAll("tbody.cl-item").forEach(tb => { const l = CL.linhas[Number(tb.dataset.i)]; if (!l) return; const a = l._a, ass = a.k + "|" + a.txt, pode = a.k === "criar" || a.k === "baixa";
+    const cb = tb.querySelector(".cl-sel"); if (cb) { cb.disabled = !pode; cb.checked = pode && !!l.sel; }
+    if (tb.dataset.a !== ass) { tb.dataset.a = ass; tb.className = "cl-item cl-" + a.k; const t = tb.querySelector(".cl-tag"); if (t) { t.className = "cl-tag " + a.k; t.textContent = CL_TAG[a.k]; } const m = tb.querySelector(".cl-msg"); if (m) m.textContent = a.txt; }
+    const c = tb.querySelector(".cl-como"); if (c) c.textContent = l.como ? "pelo " + l.como : ""; });
+  clResumoPinta(); }
+window.clFiltro = k => { CL.filtro = k; const p = $("clPrev"), s = p && p.querySelector(".cl-prev2"); const st = s ? s.scrollTop : 0; clPinta(); const s2 = $("clPrev").querySelector(".cl-prev2"); if (s2) s2.scrollTop = 0; };
+clAdicionar = async function (files) {
+  const pdfs = [...files].filter(f => /\.pdf$/i.test(f.name) || f.type === "application/pdf"); if (!pdfs.length) { toast("Escolha arquivos PDF."); return; }
+  if (pdfs.length < files.length) toast(`${files.length - pdfs.length} arquivo(s) ignorado(s): só PDF.`, 5000);
+  CL.lendo = true; clResumoPinta(); const st = $("clStatus");
+  for (let i = 0; i < pdfs.length; i++) { const file = pdfs[i]; if (CL.linhas.some(l => l.arq === file.name && l.file.size === file.size)) continue;
+    if (st) st.textContent = `Lendo ${i + 1} de ${pdfs.length}: ${file.name}`;
+    const l = { arq: file.name, file, sel: true, lido: false, funcId: "", cart: "", comp: "", data: "", valor: 0, nome: "", cpf: "", cpfMeio: "", finalidade: "", historico: "", msg: "", banco: "", forma: "", aut: "", como: "" };
+    try { const o = clExtrair(await pontoLerPdf(file), file.name); Object.assign(l, { lido: true, nome: o.nome, cpf: o.cpf, cpfMeio: o.cpfMeio, valor: o.valor, data: o.data, finalidade: o.finalidade, historico: o.historico, msg: o.msg, banco: o.banco, forma: o.forma, aut: o.aut, cart: o.cart, comp: o.comp });
+      const a = clAcharFunc(o); if (a.f) { l.funcId = String(a.f._id); l.como = a.como; } }
+    catch (e) { l.erro = "não foi possível ler este PDF (" + (e.message || e) + ") — preencha os campos"; }
+    CL.linhas.push(l); }
+  CL.lendo = false; if (st) st.textContent = ""; clPinta();
+};
+window.colabLote = async () => {
+  if (!colabPodeLancar()) { toast("Seu acesso à CAP é só de leitura."); return; }
+  if (!COLAB.funcs) await colabFuncsLer();
+  CL.linhas = []; CL.lendo = false; CL.gravando = false; CL.filtro = "todos";
+  $("modal").className = "modal xl cl-modal";
+  modal(`<div class="modal-head"><h2>Lançar Comprovantes em Lote</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body"><p class="lead" style="margin:0 0 10px">Envie os PDFs dos comprovantes de pagamento aos funcionários. O ERP lê cada um, mostra a prévia e só grava depois que você confirmar. Cada lançamento fica <b>pago</b>, com o PDF anexado como Comprovante.</p>
+      <div class="cl-drop" id="clDrop"><input type="file" id="clArq" accept="application/pdf,.pdf" multiple hidden><button type="button" class="btn" onclick="document.getElementById('clArq').click()">Escolher os PDFs…</button><span class="sup">ou arraste os arquivos para cá · vários de uma vez</span><span class="grow"></span><span class="sup" id="clStatus"></span></div>
+      <div class="cl-resumo" id="clResumo"></div>
+      <div id="clPrev"></div>
+      <p class="hint" style="margin:10px 0 0">O funcionário vem dos dados do comprovante (nome e CPF de quem recebeu), nunca do nome do arquivo. Só entra funcionário cadastrado no RH e não desligado. Salário, Férias e 13º não podem ser pagos duas vezes para a mesma competência. Se já existe lançamento em aberto da mesma carteira e competência, o ERP dá baixa nele.${rhPesAtivo() ? "" : " Sem acesso aos dados pessoais do RH, o funcionário é conferido só pelo nome."}</p>
+      <div class="imp-log" id="clLog" style="display:none"></div></div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" id="clGo" disabled onclick="clGravar()">Nada a Lançar</button></div>`);
+  const inp = $("clArq"), dz = $("clDrop"), prev = $("clPrev");
+  inp.addEventListener("change", () => { const fs = [...inp.files]; inp.value = ""; if (fs.length) clAdicionar(fs); });
+  ["dragenter", "dragover"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("on"); })); ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("on"); }));
+  dz.addEventListener("drop", e => { const fs = [...(e.dataTransfer ? e.dataTransfer.files : [])]; if (fs.length) clAdicionar(fs); });
+  prev.addEventListener("change", e => { const tb = e.target.closest("tbody.cl-item"); if (!tb) return; const l = CL.linhas[Number(tb.dataset.i)]; if (!l) return;
+    if (e.target.classList.contains("cl-sel")) l.sel = e.target.checked;
+    else if (e.target.dataset.k) { const k = e.target.dataset.k, v = e.target.value; if (k === "valor") l.valor = clNum(v); else if (k === "comp") { l.comp = clCompDe(v); if (l.comp) e.target.value = clCompTxt(l.comp); } else l[k] = v; if (k === "funcId") l.como = ""; l.sel = true; }
+    clSinc(); });
+  clPinta();
+};
+/* ---------- 9 · bolinhas ---------- */
+colabFlagHtml = function (st) { return st === "pago" ? `<span class="cf-dot pago" role="img" aria-label="Pago" title="Pago"></span>` : st === "pend" ? `<span class="cf-dot pend" role="img" aria-label="Pendente" title="Pendente: há lançamento no mês ainda não pago"></span>` : `<span class="cf-dot vz" role="img" aria-label="Sem lançamento" title="Sem lançamento desta carteira no mês atual"></span>`; };
+{ const pc = paintCAP;
+  paintCAP = function () { const r = pc.apply(this, arguments);
+    try { const body = $("capBody"); if (body && CAP_STATE.view === "colab") {
+        body.querySelectorAll(".colab-table td.cf-c .pill.st-vencido").forEach(p => { p.outerHTML = `<span class="cf-dot venc" role="img" aria-label="Vencido" title="${esc(p.getAttribute("title") || "Vencido")}"></span>`; });
+        body.querySelectorAll(".colab-table tbody tr").forEach(tr => { const td = tr.children[10]; if (td && td.classList.contains("cf-c") && !td.querySelector(".cf-dot")) td.innerHTML = `<span class="cf-dot vz" role="img" aria-label="Nada vencido" title="Nada vencido antes do mês atual"></span>`; });
+        const nota = body.querySelector(".cf-nota"); if (nota && !nota.dataset.v62) { nota.dataset.v62 = "1"; const mes = MESES_NOME[Number(colabMesK().slice(5, 7)) - 1] || ""; nota.innerHTML = `Salário, FGTS, INSS e 13º mostram a situação de <b>${esc(mes)} de ${colabMesK().slice(0, 4)}</b> (lançamentos com vencimento ou pagamento neste mês): <span class="cf-dot pago"></span> pago · <span class="cf-dot pend"></span> pendente · <span class="cf-dot vz"></span> sem lançamento. Em Vencido, <span class="cf-dot venc"></span> avisa pendência vencida antes deste mês.`; }
+        const b = body.querySelector(".cl-lote"); if (b && !b.dataset.v62) { b.dataset.v62 = "1"; b.setAttribute("data-sem-titulo", ""); b.innerHTML = `<span class="cl-b1">Add em Lote</span><span class="cl-b2">(Comprovantes)</span>`; b.title = "Lançar em lote pelos comprovantes de pagamento (PDF)"; } } } catch (e) { console.warn("colab v62", e); }
+    return r; };
+  window.paintCAP = paintCAP; }
+(function () { const st = document.createElement("style"); st.id = "erp-v01462";
+  st.textContent = `.cf-dot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle;background:#fff;border:1.5px solid #C5CCD6}.cf-dot.pago{background:#1E9E5A;border-color:#1E9E5A}.cf-dot.pend{background:#F2B705;border-color:#D9A300}.cf-dot.venc{background:#D03B2F;border-color:#D03B2F}
+  .btn.cl-lote{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1;padding:5px 16px;min-height:42px;white-space:nowrap;flex:0 0 auto}.btn.cl-lote .cl-b1{font-weight:800}.btn.cl-lote .cl-b2{font-size:10.5px;font-weight:500;opacity:.85;letter-spacing:.02em}
+  #modal.cl-modal .modal-body{overflow-x:hidden}
+  #modalBack.foco > #modal.cl-modal,#modalBack.foco > .modal.xl.cl-modal{width:100%!important;max-width:none!important}
+  #modalBack.foco > .modal.cl-modal > .modal-head,#modalBack.foco > .modal.cl-modal > .modal-body,#modalBack.foco > .modal.cl-modal > .modal-foot{padding-left:28px;padding-right:28px}
+  .cl-resumo{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:12px 0 8px;font-size:13.5px}.cl-chips{display:flex;flex-wrap:wrap;gap:6px}.cl-chips .chip b{margin-left:4px}
+  .cl-prev2{max-height:50vh;overflow-y:auto;overflow-x:hidden;border:1px solid var(--line);border-radius:10px;overflow-anchor:none}
+  .cl-tab{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13.5px}.cl-tab col.c0{width:36px}.cl-tab col.c2{width:21%}.cl-tab col.c3{width:13%}.cl-tab col.c4{width:98px}.cl-tab col.c5{width:146px}.cl-tab col.c6{width:112px}.cl-tab col.c7{width:104px}
+  .cl-tab thead th{position:sticky;top:0;z-index:1;background:#F4F6FA;text-align:left;font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);padding:8px;white-space:nowrap;border-bottom:1px solid var(--line)}.cl-tab thead th.r{text-align:right}
+  .cl-tab td{padding:6px 8px 2px;vertical-align:top;min-width:0}.cl-tab .cl-c0{padding-top:14px;text-align:center}.cl-tab tbody.cl-item{border-bottom:1px solid var(--line-2)}.cl-tab tr.cl-l2 td{padding:0 8px 8px}
+  .cl-tab .lanc-in{width:100%;min-width:0;height:36px;padding:0 8px;font-size:13.5px}.cl-tab select.lanc-in{padding-right:26px;text-overflow:ellipsis}.cl-tab input[data-k=valor]{text-align:right}.cl-tab input[data-k=comp]{text-align:center}
+  .cl-tab .cl-nome{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-weight:700;padding-top:8px}.cl-tab .cl-sub,.cl-tab .cl-como{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+  .cl-tab .cl-t{padding-top:13px;white-space:nowrap}.cl-tab .cl-msg{font-size:12.5px;color:var(--ink-2)}.cl-tab .cl-msg:empty{padding-bottom:0}
+  .cl-tab tbody.cl-bloq .cl-msg,.cl-tab tbody.cl-falta .cl-msg{color:#B3271E;font-weight:600}.cl-tab tbody.cl-ja,.cl-tab tbody.cl-falta,.cl-tab tbody.cl-bloq{background:#FAFAFB}.cl-tab .cl-vazio{padding:18px;color:var(--ink-3)}
+  .cl-tag.bloq{background:#B3271E;color:#fff}.cl-tag.falta{background:#FDECEA;color:#B3271E}
+  @media (max-width:1080px){.cl-tab,.cl-tab tbody,.cl-tab tr,.cl-tab td{display:block;width:auto}.cl-tab colgroup,.cl-tab thead{display:none}.cl-tab tr.cl-l1{display:grid;grid-template-columns:28px 1fr 1fr;gap:4px 8px;padding:8px}.cl-tab tr.cl-l1 td{padding:0}.cl-tab .cl-arq{grid-column:2 / 4}.cl-tab tr.cl-l2 td:first-child{display:none}}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -51994,6 +52373,8 @@ CONFIG.version = "v0.14.57";   /* Passageiros: aba Histórico (indicadores e tab
 CONFIG.version = "v0.14.58";   /* Passageiros: relatório em Excel do Banco de Dados (padrão da empresa, colunas ajustadas ao conteúdo); Mês a Mês com a opção Total; tabela centralizada */
 CONFIG.version = "v0.14.59";   /* Passageiros: aba Alertas (informe executivo de quedas por mês, linha e horário) */
 CONFIG.version = "v0.14.60";   /* CAP: parcelas das obrigações publicadas automaticamente (mês atual em diante); obrigação abre com Parcelas e Documentos expandidos; aba Funcionários com situação do mês por carteira e lançamento em lote por comprovantes (PDF) */
+CONFIG.version = "v0.14.61";   /* CAP: exclusão em lote em Lançamentos e dentro da obrigação, com confirmação; parcela excluída não é recriada pelo automático; filtro nos títulos das tabelas da CAP */
+CONFIG.version = "v0.14.62";   /* CAP › Funcionários: lote por comprovantes revisado (favorecido pelo comprovante, Pix, sem pagamento em dobro, só ativos, prévia sem rolagem lateral, filtro), situação em bolinhas, botão Add em Lote */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

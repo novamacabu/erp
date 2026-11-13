@@ -51037,6 +51037,65 @@ function paxTitulos() {
   } catch (e) {}
 }
 { const p0 = paintPax; paintPax = function () { const r = p0.apply(this, arguments); paxTitulos(); try { requestAnimationFrame(paxTitulos); } catch (e) {} return r; }; window.paintPax = paintPax; }
+/* ==========================================================================================
+   v0.14.54 (13/11/2026) · Estatística de Passageiros — pedido das 12:17
+   1 · O menu de filtros (com Mês e Ano) passa a ser uma seção flutuante: fica preso abaixo do cabeçalho enquanto a página rola.
+   2 · Código de cores nos filtros, igual ao dos gráficos: linha (1000 azul-marinho · 1001 laranja · 2000 verde),
+       sentido (Ida azul · Volta roxo), tipo de dia (úteis cinza-azulado · sábados âmbar · domingos e feriados vermelho)
+       e, em cada horário, a bolinha do sentido em que ele roda. O eixo do gráfico por horário e a folha de Lançamentos usam as mesmas cores.
+   3 · Rótulos "Ano" e "Mês" alinhados ao centro dos botões.
+   ========================================================================================== */
+const PAX_CC = { sent: { Ida: "#1F6FB2", Volta: "#7A3E9D" }, tipo: { util: "#55616E", sab: "#B7791F", dom: "#C0392B" } };
+function paxCorLinha(l) { return PAX_CORES_LINHA[l] || "#55616E"; }
+function paxCores() {
+  try {
+    const fb = document.querySelector("#paxBody .pax-fbar"); if (!fb) return;
+    /* horários → sentidos em que rodam no mês (para a bolinha) */
+    const sh = {}; paxDoMes().forEach(x => { (sh[x.Horario] = sh[x.Horario] || new Set()).add((x.Sentido || "Ida") === "Volta" ? "Volta" : "Ida"); });
+    fb.querySelectorAll(".chip[onclick]").forEach(b => { const m = (b.getAttribute("onclick") || "").match(/paxFiltro\('(\w+)',\s*(?:decodeURIComponent\()?['"]([^'"]*)['"]/); if (!m) return; const k = m[1]; let v = m[2], cor = "", cor2 = ""; try { v = decodeURIComponent(v); } catch (e) {}
+      if (!v) return;
+      if (k === "linha") cor = paxCorLinha(v); else if (k === "sentido") cor = PAX_CC.sent[v] || ""; else if (k === "tipo") cor = PAX_CC.tipo[v] || "";
+      else if (k === "hora") { const s = sh[v] ? [...sh[v]].sort() : []; cor = s.length ? PAX_CC.sent[s[0]] : ""; cor2 = s.length > 1 ? PAX_CC.sent[s[1]] : ""; }
+      if (!cor) return; b.classList.add("cc"); b.style.setProperty("--cc", cor); b.style.setProperty("--cc2", cor2 || cor); });
+    /* seção flutuante: Mês/Ano + filtros num só bloco preso abaixo do cabeçalho */
+    let fl = document.getElementById("paxFlut"); const ma = document.getElementById("paxMAB");
+    if (!fl || !fl.contains(fb)) { fl = document.createElement("div"); fl.id = "paxFlut"; fl.className = "pax-flut"; fb.parentNode.insertBefore(fl, ma && ma.parentNode === fb.parentNode ? ma : fb); if (ma && ma.parentNode === fl.parentNode) fl.appendChild(ma); fl.appendChild(fb);
+      const sen = document.createElement("div"); sen.className = "pax-flut-sen"; fl.parentNode.insertBefore(sen, fl);
+      if (window.IntersectionObserver) { if (PAX_UI._io) PAX_UI._io.disconnect(); PAX_UI._io = new IntersectionObserver(es => es.forEach(e => fl.classList.toggle("preso", !e.isIntersecting && e.boundingClientRect.top < (PAX_UI._top || 0) + 2)), { rootMargin: `-${(PAX_UI._top || 0) + 1}px 0px 0px 0px`, threshold: 0 }); PAX_UI._io.observe(sen); } }
+  } catch (e) {}
+}
+function paxTopo() { try { const tb = document.querySelector(".topbar"); let t = 0; if (tb) { const p = getComputedStyle(tb).position; if (p === "sticky" || p === "fixed") t = Math.round(tb.getBoundingClientRect().height); } PAX_UI._top = t; document.documentElement.style.setProperty("--pax-top", t + "px"); } catch (e) {} }
+{ const p0 = paintPax; paintPax = function () { paxTopo(); const r = p0.apply(this, arguments); paxCores(); return r; }; window.paintPax = paintPax; }
+window.addEventListener("resize", () => { if (document.getElementById("paxBody")) paxTopo(); });
+/* a folha de Lançamentos: grupo com a cor da linha e o sentido na cor do sentido */
+{ const h0 = paxLoteHtml; paxLoteHtml = function () { return h0.apply(this, arguments).replace(/<div class="pl-grupo"><b>(\d{4}) · ([^<]*)<\/b> · (Ida|Volta)<\/div>/g, (m, l, n, s) => `<div class="pl-grupo" style="border-left-color:${paxCorLinha(l)}"><b style="color:${paxCorLinha(l)}">${l} · ${n}</b> · <span class="pl-sent" style="color:${PAX_CC.sent[s]}">${s}</span></div>`); }; }
+/* o eixo do gráfico por horário: Ida azul, Volta roxo (as mesmas cores dos filtros); as barras ficam com a cor da linha */
+{ const c0 = paxCfgPagGrat; paxCfgPagGrat = function (o) { if (PAX_UI._semFds && o) o = Object.assign({}, o, { fds: null }); return c0.call(this, o); }; }
+{ const h0 = paxHorChart;
+  paxHorChart = function () {
+    PAX_UI._semFds = true; let r; try { r = h0.apply(this, arguments); } finally { PAX_UI._semFds = false; }
+    try { const c = window.Chart && Chart.getChart("paxChartHoras"), ps = c && c.options.plugins.paxSent; if (ps) { ps.corI = PAX_CC.sent.Ida; ps.corV = PAX_CC.sent.Volta; ps.fundoV = "rgba(122,62,157,.06)"; const nI = ps.nI; c.options.scales.x.ticks.color = t => (t.index >= nI ? PAX_CC.sent.Volta : PAX_CC.sent.Ida); c.update("none"); } } catch (e) {}
+    return r;
+  };
+}
+{ const b0 = PAX_PLUG_SENT.beforeDatasetsDraw; PAX_PLUG_SENT.beforeDatasetsDraw = function (ch) { const o = ch.options.plugins.paxSent; if (!o || !o.fundoV) return b0.apply(this, arguments);
+    const x = ch.scales.x, a = ch.chartArea; if (!x || !o.nV || !o.nI) return; const w = (x.right - x.left) / (o.nI + o.nV), xm = x.left + w * o.nI, c = ch.ctx;
+    c.save(); c.fillStyle = o.fundoV; c.fillRect(xm, a.top, a.right - xm, a.bottom - a.top); c.strokeStyle = "rgba(15,30,58,.35)"; c.setLineDash([4, 4]); c.lineWidth = 1; c.beginPath(); c.moveTo(xm, a.top); c.lineTo(xm, x.bottom + 22); c.stroke(); c.restore(); }; }
+(function () { const st = document.createElement("style"); st.id = "erp-v01454";
+  st.textContent = `.pax-flut{position:sticky;top:var(--pax-top,0px);z-index:30;margin:0 0 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:10px 14px 8px;transition:box-shadow .15s}
+  .pax-flut.preso{box-shadow:0 10px 24px rgba(16,24,40,.16);border-color:#C9D0D8;border-top-left-radius:0;border-top-right-radius:0}
+  .pax-flut .pax-ma{margin:0 0 8px;padding-bottom:8px;border-bottom:1px dashed var(--line)}
+  .pax-flut .pax-fbar{margin:0;padding:0;border:0;box-shadow:none;background:none}
+  .pax-flut-sen{height:1px;margin-bottom:-1px}
+  .pax-fbar .chip.cc{display:inline-flex;align-items:center;gap:6px;border-color:color-mix(in srgb,var(--cc) 45%,var(--line))}
+  .pax-fbar .chip.cc::before{content:"";width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:linear-gradient(90deg,var(--cc) 50%,var(--cc2) 50%)}
+  .pax-fbar .chip.cc:hover{border-color:var(--cc)}
+  .pax-fbar .chip.cc.on{background:var(--cc);border-color:var(--cc);color:#fff}
+  .pax-fbar .chip.cc.on::before{background:#fff;opacity:.9}
+  #paxBody .pax-ma .rot{align-self:center;margin:0 2px 0 0!important;line-height:1;padding:0}#paxBody .pax-ma .rot.sep{margin-left:14px!important}
+  .pax-lanc .pl-sent{font-weight:700}
+  @media (max-width:760px),(max-height:620px){.pax-flut{position:static}}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -51095,6 +51154,7 @@ CONFIG.version = "v0.14.51";   /* Estatística de Passageiros: filtros (linha, s
 CONFIG.version = "v0.14.51.1";   /* ícone da aba do navegador sem fundo branco (SVG que acompanha o tema claro/escuro) */
 CONFIG.version = "v0.14.52";   /* Estatística de Passageiros numa página só: filtros centralizados, horários em botões, calendário, trechos por extenso e histórico juntos; rótulos de dados completos */
 CONFIG.version = "v0.14.53";   /* Passageiros: horários (F) dentro da linha 1001; sentido pela seção IDA/VOLTA da planilha, com correção do que já foi gravado; Barras/Linhas por gráfico; por horário com pagantes × gratuidades; aba Banco de Dados; aba Lançamentos (o dia inteiro numa folha); Excel no padrão da empresa; abre no mês atual */
+CONFIG.version = "v0.14.54";   /* Passageiros: filtros em seção flutuante e código de cores (linha, sentido, tipo de dia, horário) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -51096,6 +51096,28 @@ window.addEventListener("resize", () => { if (document.getElementById("paxBody")
   .pax-lanc .pl-sent{font-weight:700}
   @media (max-width:760px),(max-height:620px){.pax-flut{position:static}}`;
   document.head.appendChild(st); })();
+/* ==========================================================================================
+   v0.14.55 (13/11/2026) · Estatística de Passageiros — correção pedida às 12:23
+   O Fretamento volta a ser um filtro próprio ("Fretamento"), separado da 1001 · Direto: é a linha 1001 no quadro de horários,
+   mas a estatística dele é acompanhada à parte. O horário continua com a marca "(F)". Nada é regravado.
+   Os gráficos Mês a Mês e Ano a Ano sobem para logo depois do Dia a Dia.
+   ========================================================================================== */
+const PAX_L_FRET = "1001 (F)";
+Object.assign(PAX_SERVICO_INFO.Fretamento, { linha: PAX_L_FRET, desc: "Fretamento", rot: "Fretamento - Linha 1001 (Direto)", sentidoIda: "CM x MC", sentidoVolta: "MC x CM" });
+PAX_LINHA_ROT[PAX_L_FRET] = "Fretamento"; PAX_CORES_LINHA[PAX_L_FRET] = "#0F8B8D";
+{ const i = PAX_LOTE_SERV.findIndex(x => x[0] === "Fretamento"); if (i >= 0) PAX_LOTE_SERV[i][1] = "Fretamento · Linha 1001"; }
+paxServRot = function (s) { return s; };
+/* legenda dos gráficos: "Fretamento", sem o "Linha" na frente */
+{ const fix = () => { try { if (!window.Chart) return; document.querySelectorAll("#paxBody canvas").forEach(cv => { const c = Chart.getChart(cv); if (!c) return; let m = false; c.data.datasets.forEach(d => { if (typeof d.label === "string" && /^Linha Fretamento/.test(d.label)) { d.label = d.label.replace(/^Linha /, ""); m = true; } }); if (m) c.update("none"); }); } catch (e) {} };
+  const p0 = paintPax; paintPax = function () { const r = p0.apply(this, arguments); fix(); try { requestAnimationFrame(fix); } catch (e) {} return r; }; window.paintPax = paintPax; }
+/* folha de Lançamentos: o grupo do Fretamento com a sua cor */
+{ const h0 = paxLoteHtml; paxLoteHtml = function () { return h0.apply(this, arguments).replace(/<div class="pl-grupo"><b>(Fretamento · Linha 1001)<\/b> · (Ida|Volta)<\/div>/g, (m, n, s) => `<div class="pl-grupo" style="border-left-color:${PAX_CORES_LINHA[PAX_L_FRET]}"><b style="color:${PAX_CORES_LINHA[PAX_L_FRET]}">${n}</b> · <span class="pl-sent" style="color:${PAX_CC.sent[s]}">${s}</span></div>`); }; }
+/* Mês a Mês e Ano a Ano sobem para logo depois do gráfico Dia a Dia (pedido das 12:26); indicadores e tabelas do histórico continuam no fim */
+{ const sobe = () => { try { const dias = document.getElementById("paxChartDias"), ref = dias && dias.closest(".cap-card"); if (!ref) return; let ant = ref;
+      ["paxChartMes", "paxChartAnoMes"].forEach(id => { const cv = document.getElementById(id), c = cv && cv.closest(".cap-card"); if (!c || c === ant.nextElementSibling) { if (c) ant = c; return; } ant.insertAdjacentElement("afterend", c); ant = c; const ch = window.Chart && Chart.getChart(cv); if (ch) ch.resize(); }); } catch (e) {} };
+  const p0 = paintPax; paintPax = function () { const r = p0.apply(this, arguments); sobe(); return r; }; window.paintPax = paintPax; }
+/* o bloco flutuante fica por trás do menu lateral e do seu fundo escuro (12:34) */
+(function () { const st = document.createElement("style"); st.id = "erp-v01455"; st.textContent = `.pax-flut{z-index:15}`; document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -51155,6 +51177,7 @@ CONFIG.version = "v0.14.51.1";   /* ícone da aba do navegador sem fundo branco 
 CONFIG.version = "v0.14.52";   /* Estatística de Passageiros numa página só: filtros centralizados, horários em botões, calendário, trechos por extenso e histórico juntos; rótulos de dados completos */
 CONFIG.version = "v0.14.53";   /* Passageiros: horários (F) dentro da linha 1001; sentido pela seção IDA/VOLTA da planilha, com correção do que já foi gravado; Barras/Linhas por gráfico; por horário com pagantes × gratuidades; aba Banco de Dados; aba Lançamentos (o dia inteiro numa folha); Excel no padrão da empresa; abre no mês atual */
 CONFIG.version = "v0.14.54";   /* Passageiros: filtros em seção flutuante e código de cores (linha, sentido, tipo de dia, horário) */
+CONFIG.version = "v0.14.55";   /* Passageiros: Fretamento volta a ser um filtro próprio, separado da 1001 · Direto */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

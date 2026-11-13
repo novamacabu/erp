@@ -52308,6 +52308,244 @@ colabFlagHtml = function (st) { return st === "pago" ? `<span class="cf-dot pago
   .cl-tag.bloq{background:#B3271E;color:#fff}.cl-tag.falta{background:#FDECEA;color:#B3271E}
   @media (max-width:1080px){.cl-tab,.cl-tab tbody,.cl-tab tr,.cl-tab td{display:block;width:auto}.cl-tab colgroup,.cl-tab thead{display:none}.cl-tab tr.cl-l1{display:grid;grid-template-columns:28px 1fr 1fr;gap:4px 8px;padding:8px}.cl-tab tr.cl-l1 td{padding:0}.cl-tab .cl-arq{grid-column:2 / 4}.cl-tab tr.cl-l2 td:first-child{display:none}}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.63 (13/11/2026) · CAP: CNPJ/CPF obrigatório
+   1 · Obrigação: campo CNPJ / CPF ao lado do credor, lido de Terceiros; sem cadastro, abre o pedido de
+       cadastro (o mesmo do Novo Lançamento) e volta para a obrigação com o que estava digitado.
+       Salvar exige o credor em Terceiros com documento, também nas obrigações antigas. Carteira: edição livre.
+   2 · Pagamento: nenhuma baixa é gravada sem CNPJ/CPF (guarda de gravação, vale para toda origem).
+       O documento vem do lançamento, do cadastro em Terceiros, da obrigação vinculada ou do funcionário no RH
+       e fica carimbado no lançamento pago.
+   ===================================================================== */
+const OBR_DOC = { args: null };
+function pagDocOk(d) { d = docClean(d || ""); return d.length === 11 || d.length === 14 ? d : ""; }
+function pagDocDeCad(x) { if (!x) return ""; const ds = (typeof tercCnpjTodos === "function" ? tercCnpjTodos(x) : [docClean(x.CNPJ)]); for (const d of ds) if (pagDocOk(d)) return pagDocOk(d); return ""; }
+/* documento que vale para o lançamento: "" = não tem · "isento" = não é pagamento a terceiro */
+function pagDocDe(it) {
+  if (!it) return "";
+  let d = pagDocOk(it.CNPJ); if (d) return d;
+  if (it.TipoLancamento === "Transferência entre contas") return "isento";
+  try { d = pagDocDeCad(tercDeCampos(it)); if (d) return d; } catch (e) {}
+  try { const oid = it.ObrigacaoLookupId != null && it.ObrigacaoLookupId !== "" ? it.ObrigacaoLookupId : it.Obrigacao;
+    if (oid != null && oid !== "") { const o = (OBR_STATE.items || []).find(x => String(x._id) === String(oid)); if (o) { d = pagDocDeCad(tercDeCampos(o)); if (d) return d; } } } catch (e) {}
+  try { if (typeof COLAB !== "undefined" && COLAB.funcs && it.Fornecedor) { const n = normName(it.Fornecedor), f = COLAB.funcs.find(x => normName(x.Title) === n); d = f ? pagDocOk(colabCpf(f)) : ""; if (d) return d; } } catch (e) {}
+  try { if (typeof credPropria === "function" && credPropria(it.Fornecedor)) { d = pagDocOk(typeof nmbEstabPadrao === "function" ? nmbEstabPadrao() : ""); if (d) return d; } } catch (e) {}
+  return "";
+}
+window.pagDocDe = pagDocDe;
+function pagDocMsg(it) { return `Pagamento sem CNPJ/CPF: "${(it && (it.Fornecedor || it.Title)) || "lançamento"}" não tem CNPJ nem CPF associado. Informe o documento no lançamento ou cadastre o credor em Terceiros antes de dar a baixa.`; }
+function pagDocGuarda(method, path, body) {
+  const M = String(method || "GET").toUpperCase(); if (M !== "POST" && M !== "PATCH") return;
+  const p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0];
+  const m = p0.match(/\/lists\/([^/]+)\/items(?:\/([^/]+)(?:\/fields)?)?$/); if (!m) return;
+  const capL = CAP_STATE.list && CAP_STATE.list.id; if (!capL || m[1] !== capL) return;
+  const iid = m[2] ? decodeURIComponent(m[2]) : null, novos = (M === "POST" ? body && body.fields : body) || {};
+  if (M === "POST" && iid) return;
+  const ant = iid ? (typeof capTodos === "function" ? capTodos() : CAP_STATE.items || []).find(i => String(i._id) === String(iid)) || null : null;
+  if (iid && !ant) return;   /* lançamento que não está na memória: sem como julgar */
+  const paga = (novos.Status === "Pago" && (!ant || ant.Status !== "Pago")) || (novos.ValorPago != null && Number(novos.ValorPago) > Number((ant && ant.ValorPago) || 0)) || (!!novos.DataPagamento && !(ant && ant.DataPagamento) && !(ant && ant.Status === "Pago"));
+  if (!paga) return;
+  const mg = Object.assign({}, ant || {}, novos), d = pagDocDe(mg);
+  if (d === "isento") return;
+  if (!d) throw tercErro(pagDocMsg(mg));
+  if (!pagDocOk(mg.CNPJ) && typeof hasCol === "function" && hasCol("CNPJ")) novos.CNPJ = docFmt(d);   /* o pagamento fica com o documento gravado */
+}
+{ const t0 = tercGuarda; tercGuarda = function (method, path, body) { const r = t0.apply(this, arguments); pagDocGuarda(method, path, body); return r; }; window.tercGuarda = tercGuarda; }
+/* aviso antes de abrir a baixa: leva direto para o lançamento, onde o documento é informado */
+{ const p0 = window.capPagar;
+  if (p0) window.capPagar = function (id) {
+    try { const it = (CAP_STATE.items || []).find(x => String(x._id) === String(id));
+      if (it && !capCancelada(it) && podeEditar("cap") && !pagDocDe(it)) { toast(pagDocMsg(it), 9000); if (typeof capEdit === "function") capEdit(it._id); return; } } catch (e) {}
+    return p0.apply(this, arguments);
+  }; }
+/* Novo lançamento: sai a exceção "sem CNPJ/CPF (exterior)" — todo pagamento tem documento */
+{ const f0 = capForm; capForm = function () { const h = f0.apply(this, arguments); return typeof h === "string" ? h.replace(/<label class="check"[^>]*><input type="checkbox" id="fSemDoc">[^<]*<\/label>/, "") : h; }; window.capForm = capForm; }
+
+/* ---------- obrigação: CNPJ / CPF do credor ---------- */
+function obrDocHint(deDoc) {
+  const fo = $("oForn"), dc = $("oDoc"), h = $("oFornHint"), hd = $("oDocHint"); if (!fo || !dc || !h) return null;
+  const nome = fo.value.trim();
+  if (typeof credPropria === "function" && credPropria(nome)) {
+    if (!dc.value.trim() && typeof nmbEstabPadrao === "function" && nmbEstabPadrao()) dc.value = docFmt(nmbEstabPadrao());
+    dc.readOnly = false; h.textContent = "Contas da própria empresa: use um dos CNPJs da empresa."; h.className = "hint ok"; if (hd) hd.textContent = ""; return null;
+  }
+  let f = fornByName(nome);
+  if (!f && deDoc && pagDocOk(dc.value)) { const g = fornByDoc(dc.value) || (FORN_STATE.items || []).find(x => typeof tercTemDoc === "function" && tercTemDoc(x, dc.value)); if (g) { fo.value = g.Title; f = g; } }
+  if (!f) {
+    dc.readOnly = false;
+    if (!nome) { h.textContent = ""; h.className = "hint"; }
+    else { h.innerHTML = `Não está em Terceiros › Banco de Dados: a obrigação não pode ficar sem CNPJ/CPF. <a href="#" onclick="obrCadastrarForn(); return false;">Solicitar o cadastro</a>`; h.className = "hint warn"; }
+    if (hd) hd.textContent = nome ? "Digite o documento: se já houver cadastro, ele é localizado" : ""; return null;
+  }
+  const d = pagDocDeCad(f), trava = typeof tercTravaMotivo === "function" ? tercTravaMotivo(f) : null;
+  dc.value = d ? docFmt(d) : ""; dc.readOnly = true;
+  if (trava) { h.textContent = "🚫 " + trava; h.className = "hint warn"; }
+  else if (!d) { h.textContent = `"${f.Title}" está em Terceiros sem CNPJ/CPF: complete o cadastro antes de salvar a obrigação.`; h.className = "hint warn"; }
+  else { h.textContent = "Vinculado ao cadastro em Terceiros"; h.className = "hint ok"; }
+  if (hd) hd.textContent = d ? "Do cadastro em Terceiros" : "";
+  return f;
+}
+window.obrDocHint = obrDocHint;
+{ const f0 = window.obrForm; window.obrForm = function (id, preset, voltar) {
+    const r = f0.apply(this, arguments);
+    try {
+      const fo = $("oForn"); if (!fo || $("oDoc")) return r;
+      OBR_DOC.args = [id, preset, voltar];
+      const cx = fo.closest(".field");
+      cx.insertAdjacentHTML("afterend", `<div class="field"><label>CNPJ / CPF<span class="req">*</span></label><input id="oDoc" data-mask="doc" inputmode="numeric" autocomplete="off" placeholder="Do cadastro em Terceiros"><div class="hint" id="oDocHint"></div></div>`);
+      try { if (typeof mascarasPreparar === "function") mascarasPreparar($("modal")); } catch (e) {}
+      fo.addEventListener("input", () => obrDocHint(false)); fo.addEventListener("change", () => obrDocHint(false));
+      $("oDoc").addEventListener("input", () => obrDocHint(true));
+      obrDocHint(false);
+    } catch (e) { console.warn("obrDoc", e); }
+    return r;
+  }; }
+/* pedido de cadastro a partir da obrigação: igual ao do Novo Lançamento; ao salvar ou cancelar, volta para a obrigação */
+window.obrCadastrarForn = function () {
+  if (!podeEditar("forn")) { toast("Seu acesso a Terceiros é só de leitura — peça o cadastro a quem edita Terceiros.", 7000); return; }
+  if (!$("oForn")) return;
+  const args = OBR_DOC.args || [null, null, false], nome = $("oForn").value.trim(), doc = $("oDoc") ? $("oDoc").value.trim() : "";
+  const draft = {}; document.querySelectorAll("#modal input[id], #modal select[id], #modal textarea[id]").forEach(el => { draft[el.id] = el.type === "checkbox" ? { c: el.checked } : el.value; });
+  const volta = ok => {
+    window.obrForm.apply(null, args);
+    Object.entries(draft).forEach(([k, v]) => { const el = $(k); if (!el) return; if (v && typeof v === "object") el.checked = !!v.c; else { if (k === "oSubcat" && $("oCat") && $("oSubcatList")) $("oSubcatList").innerHTML = subcatOptions($("oCat").value); el.value = v; } });
+    if (ok && $("oForn")) $("oForn").value = ok.Title;
+    obrDocHint(false); $("modal").dataset.sujo = "1";
+  };
+  FORN_STATE.editando = null;
+  modal(fornForm({ Title: nome, CNPJ: docFmt(doc), Tipo: "", Ativo: true })); fornWireForm();
+  document.querySelectorAll("#modal .modal-head .x, #modal .modal-foot .btn:not(.primary)").forEach(b => { if (/Cancelar|×/.test(b.textContent)) b.onclick = ev => { ev.preventDefault(); volta(null); }; });
+  let salvando = false;
+  $("gSave").onclick = async () => { if (salvando) return; salvando = true; try { const ok = await fornSave(null, true); if (!ok) return; try { await loadForn(); } catch (e) { toast("Cadastro gravado, mas a lista não foi recarregada: " + e.message, 6000); } volta(ok); } finally { salvando = false; } };
+};
+{ const o0 = obrSalvar; obrSalvar = async function (o) {
+    let para = false;
+    try {
+      const fo = $("oForn"), nome = fo ? fo.value.trim() : "";
+      if (nome) {
+        if (typeof loadForn === "function" && !(FORN_STATE.items || []).length) { try { await loadForn(true); } catch (e) {} }
+        const r = consCredorOk(nome, $("oDoc") ? $("oDoc").value : "");
+        if (!r.ok) {
+          const e = $("oErr"); if (e) { e.style.display = "block"; e.innerHTML = `${esc(r.msg)}${r.f ? "" : ` <a href="#" onclick="obrCadastrarForn(); return false;">Solicitar o cadastro</a>`}`; } else toast(r.msg, 8000);
+          para = true;
+          if (!r.f && podeEditar("forn")) { toast("Credor sem cadastro em Terceiros: preencha o cadastro (CNPJ/CPF obrigatório) para salvar a obrigação.", 8000); obrCadastrarForn(); }
+        } else if (r.f && fo.value.trim() !== r.f.Title) fo.value = r.f.Title;   /* localizado pelo documento */
+      }
+    } catch (e) { console.warn("obrDoc salvar", e); }
+    if (para) return false;
+    return o0.apply(this, arguments);
+  }; window.obrSalvar = obrSalvar; }
+/* Obrigações: aviso das que estão sem CNPJ/CPF */
+function obrSemDoc() { return (OBR_STATE.items || []).filter(o => (o.Status || "Ativa") === "Ativa" && (typeof obrVisivel !== "function" || obrVisivel(o)) && !(typeof credPropria === "function" && credPropria(o.FornecedorTexto)) && !pagDocDeCad(tercDeCampos(o))); }
+window.obrSemDoc = obrSemDoc;
+{ const p0 = paintObr; paintObr = function () {
+    const r = p0.apply(this, arguments);
+    try { const b = $("obrBody"); if (b && !b.querySelector(".obr-semdoc") && (FORN_STATE.items || []).length) { const L = obrSemDoc();
+        if (L.length) { const kp = b.querySelector(".obr-auto") || b.querySelector(".cap-kpis"); if (kp) kp.insertAdjacentHTML("afterend", `<div class="obr-semdoc import-help" data-sem-titulo><b>${L.length} ${L.length === 1 ? "obrigação ativa sem CNPJ/CPF" : "obrigações ativas sem CNPJ/CPF"}:</b> ${L.slice(0, 6).map(o => `<a href="#" onclick="obrForm(${esc(jsArg(o._id))}); return false;">${esc(o.Title)}</a>`).join(" · ")}${L.length > 6 ? ` · e mais ${L.length - 6}` : ""}. As parcelas delas não recebem baixa enquanto o credor não estiver em Terceiros com o documento.</div>`); } } } catch (e) {}
+    return r;
+  }; window.paintObr = paintObr; }
+{ const st = document.createElement("style"); st.textContent = `.obr-semdoc{margin:0 0 14px;border-left:3px solid var(--err)}.obr-semdoc a{font-weight:600}#oDoc[readonly]{background:var(--bg-2,#F4F5F7);color:var(--ink-2,#3A4150)}`; document.head.appendChild(st); }
+/* ---------- Lançamentos: coluna Razão Social (o nome oficial do cadastro ou o favorecido); a descrição vira o subtítulo;
+   a parcela vai para a coluna Obrigação, abaixo do subtítulo que já existia (pedido de 13/11, 18:00) ---------- */
+function capRazao(it) {
+  if (!it) return "";
+  try { let x = tercDeCampos(it);
+    if (!x) { const oid = it.ObrigacaoLookupId != null && it.ObrigacaoLookupId !== "" ? it.ObrigacaoLookupId : null; const o = oid != null ? (OBR_STATE.items || []).find(z => String(z._id) === String(oid)) : null; if (o) x = tercDeCampos(o); }
+    if (x && x.Title) return String(x.Title).trim(); } catch (e) {}
+  return String(it.Fornecedor || "").trim();
+}
+window.capRazao = capRazao;
+{ const c = CAP_COLS.find(x => x.k === "desc"); if (c) { c.lbl = "Razão Social"; c.val = it => normName(capRazao(it) || it.Title); }
+  try { if (typeof CAP_COLF !== "undefined" && CAP_COLF.desc) CAP_COLF.desc = { tit: "Razão Social", v: it => capRazao(it) }; } catch (e) {} }
+{ const l0 = capFaturaLinha; capFaturaLinha = function (it) {
+    let h = l0.apply(this, arguments);
+    try {
+      h = h.replace(/<td class="desc-cell"><div class="desc">([\s\S]*?)<\/div><div class="sup">[\s\S]*?<\/div><\/td>/, (m, d) => {
+        const tag = (d.match(/ <span class="doc-tag"[\s\S]*$/) || [""])[0], rz = capRazao(it);
+        const sub = [esc(it.Title || "—"), it.ContaFornecedor ? `<b>${esc(it.ContaFornecedor)}</b>` : "", it.NumeroNF ? esc(`NF ${it.NumeroNF}`) : ""].filter(Boolean).join(" · ");
+        return `<td class="desc-cell"><div class="desc" data-sem-titulo>${esc(rz || it.Title || "—")}${tag}</div><div class="sup cap-desc-sub" data-sem-titulo>${rz ? sub : sub.replace(esc(it.Title || "—"), "sem favorecido")}</div></td>`;
+      });
+      if (it.Parcela) h = h.replace(/(<td class="m-oculta cap-obr-cel">)([\s\S]*?)(<\/td>)/, (m, a, b, z) => `${a}${b}<div class="sup cap-obr-parc">Parcela ${esc(String(it.Parcela))}</div>${z}`);
+    } catch (e) {}
+    return h;
+  }; window.capFaturaLinha = capFaturaLinha; }
+/* ---------- lote de comprovantes: funcionário sem CPF no RH não é pago (todo pagamento tem documento) ---------- */
+{ const a0 = clAcao; clAcao = function (l) {
+    const a = a0.apply(this, arguments);
+    try { if (a && (a.k === "criar" || a.k === "baixa")) { const f = (COLAB.funcs || []).find(x => String(x._id) === String(l.funcId));
+        const tem = pagDocOk(colabDig(l.cpf)) || pagDocOk(colabCpf(f)) || (a.it && pagDocOk(a.it.CNPJ));
+        if (!tem) return { k: "falta", txt: `${f ? f.Title : "Funcionário"} está sem CPF no RH — complete em RH › Funcionários (todo pagamento precisa de CPF)` }; } } catch (e) {}
+    return a;
+  }; window.clAcao = clAcao; }
+/* ---------- obrigação: levar a Razão Social, o CNPJ/CPF, a descrição e o centro de custo para todos os lançamentos dela ---------- */
+function obrLancDe(o) { const D = obrCalcular(); return (CAP_STATE.items || []).filter(it => { const l = D.link.get(String(it._id)); return !!(l && l.o && String(l.o._id) === String(o._id)); }); }
+window.obrLancDe = obrLancDe;
+window.obrAtualizarLanc = function (id) {
+  const o = (OBR_STATE.items || []).find(x => String(x._id) === String(id)); if (!o) return;
+  if (!obrPodeEditarCap()) { toast("Seu acesso à CAP é só de leitura."); return; }
+  const cad = tercDeCampos(o), doc = pagDocDeCad(cad);
+  if (!cad || !doc) { toast("Antes, vincule a obrigação a um cadastro de Terceiros com CNPJ/CPF (Editar Obrigação).", 8000); return; }
+  const its = obrLancDe(o); if (!its.length) { toast("Esta obrigação ainda não tem lançamentos."); return; }
+  const pagos = its.filter(it => it.Status === "Pago").length;
+  const cc = o.CentroCusto || cad.CentroCustoPadrao || "", cat = o.Categoria || "";
+  const html = `<p class="sup" data-sem-titulo style="margin:0 0 12px">Os <b>${its.length}</b> lançamento(s) desta obrigação${pagos ? ` (${pagos} já pago(s))` : ""} passam a apontar para o cadastro de Terceiros abaixo. A parcela de cada um continua na coluna Obrigação.</p>
+    <div class="form-grid">
+      <div class="field full"><label>Razão Social</label><input value="${esc(cad.Title || "")}" readonly></div>
+      <div class="field"><label>CNPJ / CPF</label><input value="${esc(docFmt(doc))}" readonly></div>
+      <div class="field"><label>Classificação</label><input value="${esc(cad.Tipo || "sem classificação")}" readonly><div class="hint">Vem do cadastro em Terceiros; troca-se lá ou na própria lista</div></div>
+      <div class="field full"><label>Descrição de todos os lançamentos</label><input id="olDesc" placeholder="Em branco = manter a descrição de cada um" autocomplete="off"></div>
+      <div class="field"><label>Centro de custo</label><input id="olCC" list="olCCList" autocomplete="off" value="${esc(cc)}" placeholder="Em branco = não alterar">${ccDatalist("olCCList")}</div>
+      <div class="field"><label>Categoria</label><select id="olCat"><option value="">Não alterar</option>${CATEGORIAS.map(c => `<option ${c === cat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+      <div class="field full"><label>Subcategoria</label><input id="olSub" autocomplete="off" value="${esc(o.Subcategoria || "")}" placeholder="Em branco = não alterar"></div>
+    </div><div class="err-msg" id="olErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`;
+  $("modal").className = "modal";
+  openModal("Atualizar lançamentos da obrigação", html, () => obrAtualizarLancGravar(id));
+  const b = $("mSave"); if (b) b.textContent = `Atualizar ${its.length}`;
+  const canc = document.querySelector("#modal .modal-foot .btn:not(.primary)"), volta = `obrAbrir(${jsArg(o._id)}, ${OBR_UI.lastBack == null ? "null" : Number(OBR_UI.lastBack)}, true)`;
+  if (canc) { canc.setAttribute("onclick", volta); canc.textContent = "← Voltar"; } const x = document.querySelector("#modal .modal-head .x"); if (x) x.setAttribute("onclick", volta);
+};
+function obrPodeEditarCap() { const prev = session.pagAtual; session.pagAtual = "cap.lista"; try { return !!podeEditar("cap"); } finally { session.pagAtual = prev; } }
+async function obrAtualizarLancGravar(id) {
+  const o = (OBR_STATE.items || []).find(x => String(x._id) === String(id)), cad = o && tercDeCampos(o), doc = pagDocDeCad(cad); if (!o || !cad || !doc) return false;
+  const g = i => ($(i) ? String($(i).value).trim() : ""), desc = g("olDesc"), cc = g("olCC"), cat = g("olCat"), sub = g("olSub");
+  if (cc && !CENTROS_CUSTO.includes(cc)) { const e = $("olErr"); e.style.display = "block"; e.textContent = "Centro de custo: escolha um da lista."; return false; }
+  const its = obrLancDe(o), base = `/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/items`, reqs = [], alvo = [];
+  for (const it of its) {
+    const up = {};
+    if (String(it.Fornecedor || "") !== cad.Title) up.Fornecedor = cad.Title;
+    if (docClean(it.CNPJ) !== doc) up.CNPJ = docFmt(doc);
+    if (String(it.FornecedorRefLookupId == null ? "" : it.FornecedorRefLookupId) !== String(cad._id)) up.FornecedorRefLookupId = Number(cad._id);
+    if (String(it.ObrigacaoLookupId == null ? "" : it.ObrigacaoLookupId) !== String(o._id)) up.ObrigacaoLookupId = Number(o._id);
+    if (desc && String(it.Title || "") !== desc) up.Title = desc;
+    if (cc && String(it.CentroCusto || "") !== cc) up.CentroCusto = cc;
+    if (cat && String(it.Categoria || "") !== cat) up.Categoria = cat;
+    if (sub && String(it.Subcategoria || "") !== sub) up.Subcategoria = sub;
+    if (!Object.keys(up).length) continue;
+    const local = Object.assign({}, up);
+    if (hasCol("Historico")) up.Historico = capHistAdd(it, "atualizada pela obrigação", [up.Fornecedor ? `favorecido: ${cad.Title}` : "", up.Title ? `descrição: ${desc}` : "", up.CentroCusto ? `centro de custo: ${cc}` : ""].filter(Boolean).join(" · "));
+    const body = {}; for (const k of Object.keys(up)) { const col = k === "FornecedorRefLookupId" ? "FornecedorRefId" : k === "ObrigacaoLookupId" ? "Obrigacao" : k; if (hasCol(col)) body[k] = up[k]; }
+    if (!Object.keys(body).length) continue;
+    reqs.push({ method: "PATCH", url: `${base}/${it._id}/fields`, body }); alvo.push({ it, local: Object.assign(local, up.Historico ? { Historico: up.Historico } : {}) });
+  }
+  if (!reqs.length) { toast("Os lançamentos já estavam atualizados."); try { obrAbrir(o._id, OBR_UI.lastBack, true); } catch (e) {} return false; }
+  let ok = 0, falha = 0, motivo = "";
+  const prevP = session.pagAtual, prevM = session.modAtual; session.pagAtual = "cap.lista"; session.modAtual = "cap";
+  try { const res = await graphBatch(reqs); res.forEach((r, i) => { if (r && r.ok) { ok++; Object.assign(alvo[i].it, alvo[i].local); } else { falha++; if (!motivo && r) motivo = (r.body && r.body.error && r.body.error.message) || (r.error && r.error.message) || ""; } }); }
+  catch (e) { toast("Não foi possível atualizar: " + e.message, 9000); return false; }
+  finally { session.pagAtual = prevP; session.modAtual = prevM; }
+  CAP_STATE.rev = (CAP_STATE.rev || 0) + 1; try { OBR_CACHE = null; } catch (e) {}
+  toast(`${ok} lançamento(s) atualizado(s)${falha ? ` · ${falha} não puderam ser alterados${motivo ? ` (${motivo})` : ""}` : ""}.`, 9000);
+  try { obrAbrir(o._id, OBR_UI.lastBack, true); } catch (e) {} try { obrRepintar(); } catch (e) {}
+  return false;
+}
+{ const o0 = window.obrAbrir; window.obrAbrir = function (id) {
+    const r = o0.apply(this, arguments);
+    try { const pe = document.querySelector("#modal .modal-foot"), o = (OBR_STATE.items || []).find(x => String(x._id) === String(id));
+      if (pe && o && !pe.querySelector(".obr-atl") && obrPodeEditarCap() && obrLancDe(o).length) { const ed = [...pe.querySelectorAll("button")].find(b => /Editar obrigação/i.test(b.textContent));
+        const h = `<button class="btn obr-atl" onclick="obrAtualizarLanc(${esc(jsArg(o._id))})" title="Leva a Razão Social, o CNPJ/CPF, a descrição e o centro de custo para todos os lançamentos desta obrigação">Atualizar Lançamentos</button>`;
+        if (ed) ed.insertAdjacentHTML("beforebegin", h); else pe.insertAdjacentHTML("afterbegin", h); } } catch (e) {}
+    return r;
+  }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -52375,6 +52613,7 @@ CONFIG.version = "v0.14.59";   /* Passageiros: aba Alertas (informe executivo de
 CONFIG.version = "v0.14.60";   /* CAP: parcelas das obrigações publicadas automaticamente (mês atual em diante); obrigação abre com Parcelas e Documentos expandidos; aba Funcionários com situação do mês por carteira e lançamento em lote por comprovantes (PDF) */
 CONFIG.version = "v0.14.61";   /* CAP: exclusão em lote em Lançamentos e dentro da obrigação, com confirmação; parcela excluída não é recriada pelo automático; filtro nos títulos das tabelas da CAP */
 CONFIG.version = "v0.14.62";   /* CAP › Funcionários: lote por comprovantes revisado (favorecido pelo comprovante, Pix, sem pagamento em dobro, só ativos, prévia sem rolagem lateral, filtro), situação em bolinhas, botão Add em Lote */
+CONFIG.version = "v0.14.63";   /* CAP: CNPJ/CPF obrigatório — obrigação com credor em Terceiros (pedido de cadastro pela própria obrigação) e nenhuma baixa sem documento */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

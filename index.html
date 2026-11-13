@@ -50073,6 +50073,248 @@ function cxImpDataNome(nome) {
     return g0.apply(this, arguments);
   };
 }
+/* =====================================================================================================================
+   v0.14.51 · Estatística de Passageiros — filtros em todas as visões e análise no tempo (pedido do Rafael, 13/11/2026 11:05)
+   · Uma barra de filtros só, acima de Por Horário, Por Dia, Por Trecho e Painel: Linha · Sentido · Tipo de dia · Horário.
+     Os indicadores do topo passam a seguir o filtro.
+   · Por Horário: o gráfico separa o que é linha do que é horário — eixo X só com o horário, uma série por linha e um gráfico
+     por sentido (Ida / Volta). Medida: total do mês ou média por viagem. Com um horário escolhido, mostra a evolução dele:
+     dia a dia no mês e mês a mês em todo o histórico.
+   · Painel: mês a mês e ano a ano com os mesmos filtros (uma linha, um horário), curva de cada ano por mês e, na tabela,
+     média por viagem e variação contra o mês anterior e contra o mesmo mês do ano anterior.
+   Nenhuma lista ou coluna nova.
+   ===================================================================================================================== */
+Object.assign(PAX_UI, { horaFilt: "", diaTipo: "", medida: "" });
+{ const r0 = MOD_RESET.pax; MOD_RESET.pax = function () { const r = r0.apply(this, arguments); PAX_UI.horaFilt = ""; PAX_UI.diaTipo = ""; return r; }; }
+const PAX_TIPOS_DIA = [["", "Todos"], ["util", "Dias Úteis"], ["sab", "Sábados"], ["dom", "Domingos e Feriados"]];
+const PAX_CORES_LINHA = { "1000": "#1E2153", "1001": "#E86A38", "2000": "#2E8B57", "9000": "#7C8DB0" };
+function paxTipoDia(iso) { const d = dLocal(iso); if (isNaN(d)) return ""; if (d.getDay() === 0 || feriadoNome(iso)) return "dom"; return d.getDay() === 6 ? "sab" : "util"; }
+function paxMedida() { return PAX_UI.medida || (PAX_UI.medida = paxPref("medida", "total", ["total", "media"])); }
+/* filtro único do módulo; "sem" deixa um critério de fora (para montar as opções do próprio critério) */
+function paxFiltra(its, sem) {
+  const U = PAX_UI, s = sem || "";
+  return its.filter(x => (s === "linha" || !U.linhaFilt || paxLinhaDoServ(x.Servico) === U.linhaFilt) && (s === "sentido" || !U.sentidoFilt || (x.Sentido || "Ida") === U.sentidoFilt)
+    && (s === "hora" || !U.horaFilt || x.Horario === U.horaFilt) && (s === "tipo" || !U.diaTipo || paxTipoDia(x.Data) === U.diaTipo));
+}
+function paxFiltroAtivo() { return !!(PAX_UI.linhaFilt || PAX_UI.sentidoFilt || PAX_UI.horaFilt || PAX_UI.diaTipo); }
+function paxFiltroTxt() {
+  const U = PAX_UI, p = [];
+  if (U.linhaFilt) p.push("linha " + U.linhaFilt); if (U.sentidoFilt) p.push(U.sentidoFilt); if (U.horaFilt) p.push("horário " + U.horaFilt);
+  if (U.diaTipo) p.push((PAX_TIPOS_DIA.find(t => t[0] === U.diaTipo) || [])[1].toLowerCase());
+  return p.join(" · ");
+}
+/* a barra de filtros: as opções de linha e de horário vêm dos dados da visão (o mês; no Painel, todo o histórico) */
+function paxFiltrosHtml(base) {
+  const U = PAX_UI, chip = (k, v, l, on) => `<button type="button" class="chip ${on ? "on" : ""}" aria-pressed="${on}" onclick="paxFiltro('${k}', ${jsArg(v)})">${esc(l)}</button>`;
+  const linhas = [...new Set(base.map(x => paxLinhaDoServ(x.Servico)).concat(U.linhaFilt ? [U.linhaFilt] : []))].filter(Boolean).sort();
+  const horas = [...new Set(paxFiltra(base, "hora").map(x => x.Horario).concat(U.horaFilt ? [U.horaFilt] : []))].filter(Boolean).sort();
+  return `<div class="pax-filtros pax-fbar">
+    <div class="pax-chips"><span class="rot">Linha</span>${chip("linha", "", "Todas", !U.linhaFilt)}${linhas.map(l => chip("linha", l, `${l} · ${paxDescDoServ(PAX_SERVICOS.find(k => paxLinhaDoServ(k) === l) || "")}`, U.linhaFilt === l)).join("")}</div>
+    <div class="pax-chips"><span class="rot">Sentido</span>${[["", "Ambos"], ["Ida", "Ida"], ["Volta", "Volta"]].map(([v, l]) => chip("sentido", v, l, U.sentidoFilt === v)).join("")}
+      <span class="rot pax-rot2">Tipo de Dia</span>${PAX_TIPOS_DIA.map(([v, l]) => chip("tipo", v, l, U.diaTipo === v)).join("")}</div>
+    <div class="pax-chips"><span class="rot">Horário</span><select id="paxHoraSel" class="lanc-in lanc-sel pax-hora" onchange="paxFiltro('hora', this.value)" aria-label="Horário"><option value="">Todos os horários (${horas.length})</option>${horas.map(h => `<option value="${esc(h)}" ${U.horaFilt === h ? "selected" : ""}>${esc(h)}</option>`).join("")}</select>
+      ${paxFiltroAtivo() ? `<span class="sup pax-ftxt">Filtro: ${esc(paxFiltroTxt())}</span><button type="button" class="btn sm ghost" onclick="paxFiltro('limpar')">Limpar Filtros</button>` : `<span class="sup pax-ftxt">Os filtros valem para Por Horário, Por Dia, Por Trecho e Painel.</span>`}</div>
+  </div>`;
+}
+window.paxFiltro = (chave, valor) => {
+  const U = PAX_UI;
+  if (chave === "agrup") U.agrup = valor;
+  else if (chave === "linha") { U.linhaFilt = valor; }
+  else if (chave === "sentido") U.sentidoFilt = valor;
+  else if (chave === "hora") U.horaFilt = valor;
+  else if (chave === "tipo") U.diaTipo = valor;
+  else if (chave === "medida") { U.medida = valor; paxPrefSet("medida", valor); }
+  else if (chave === "limpar") { U.linhaFilt = ""; U.sentidoFilt = ""; U.horaFilt = ""; U.diaTipo = ""; }
+  paintPax();
+};
+window.paxTrechoVerLista = (serv) => { closeModal(); PAX_STATE.tab = "horario"; PAX_UI.agrup = "dia"; PAX_UI.linhaFilt = paxLinhaDoServ(serv); PAX_UI.sentidoFilt = ""; PAX_UI.horaFilt = ""; paintPax(); toast("Mostrando a lista dia a dia do serviço " + serv); };
+/* clicar numa linha da tabela Por Horário continua abrindo o dia a dia; o botão ao lado fixa o horário no filtro */
+window.paxFixarHora = (serv, hora, sent) => { PAX_UI.linhaFilt = paxLinhaDoServ(serv); PAX_UI.horaFilt = hora; PAX_UI.sentidoFilt = sent; paintPax(); try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) {} };
+
+/* ---- a página ---- */
+paintPax = function () {
+  const body = $("paxBody"); if (!body) return;
+  const edita = PAX_STATE.ready && podeEditar("pax"), tab = PAX_STATE.tab, doMes = paxDoMes(), its = paxFiltra(doMes);
+  const acts = $("paxActions"); if (acts) acts.innerHTML = (PAX_STATE.ready ? `<button class="btn pax-exp" onclick="paxExportar()" title="Baixa as viagens em Excel: um mês, um ano ou todos os dados">Exportar Excel</button>` : "") + (edita ? `<button class="btn" onclick="paxTab('importar')">Importar planilha</button><button class="btn primary" onclick="paxForm()">Lançar viagem</button>` : "");
+  if (!PAX_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>A lista "Financeiro — Passageiros" ainda não existe</h3><p>Rode Sistema › Configuração › "Executar tudo na ordem" (você precisa ser proprietário do site Financeiro). Depois importe a planilha mensal por aqui.</p></div>`; return; }
+  const meses = [...new Set(PAX_STATE.itens.map(x => x.Data.slice(0, 7)))].sort().reverse();
+  const viagens = its.length, pag = its.reduce((s, x) => s + Number(x.Pagantes || 0), 0), grat = its.reduce((s, x) => s + Number(x.Gratuidade || 0), 0), lug = its.reduce((s, x) => s + Number(x.Lugares || PAX_LUGARES), 0);
+  const dias = new Set(its.map(x => x.Data)).size, ocup = lug ? pag / lug : 0, melhor = its.slice().sort((a, c) => paxTotal(c) - paxTotal(a))[0];
+  const kpi = (lbl, val, sub, cls) => `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div><div class="sub">${esc(sub)}</div></div>`;
+  const tabs = [["horario", "Por horário"], ["dia", "Por dia"], ["trecho", "Por trecho"], ["painel", "Painel"]].concat(edita ? [["importar", "Importar"]] : []).map(([k, l]) => `<button role="tab" class="${tab === k ? "on" : ""}" onclick="paxTab('${k}')">${l}</button>`).join("");
+  const filtros = tab === "importar" ? "" : paxFiltrosHtml(tab === "painel" ? PAX_STATE.itens : doMes);
+  const vazio = paxFiltroAtivo() && doMes.length
+    ? `<div class="cap-empty"><h3>Nada no filtro em ${esc(mesLabel(PAX_STATE.mes))}</h3><p>Nenhuma viagem com ${esc(paxFiltroTxt())}. <button type="button" class="ctb-lnk" onclick="paxFiltro('limpar')">Limpar os filtros</button></p></div>`
+    : `<div class="cap-empty"><h3>Sem viagens em ${esc(mesLabel(PAX_STATE.mes))}</h3><p>${edita ? "Importe a planilha do mês ou lance as viagens." : "Nada lançado neste mês."}</p></div>`;
+  let conteudo = "";
+  if (tab === "importar") conteudo = paxImportHtml();
+  else if (tab === "painel") conteudo = paxPainel();
+  else if (!its.length) conteudo = vazio;
+  else if (tab === "horario") conteudo = paxPorHorario(its);
+  else if (tab === "dia") conteudo = paxPorDia(its);
+  else if (tab === "trecho") conteudo = paxPorTrecho(its);
+  const kpis = tab === "importar" || tab === "painel" ? "" : `<div class="cap-kpis cap-kpis-6">${kpi("Passageiros", (pag + grat).toLocaleString("pt-BR"), `${grat} gratuidade(s)${paxFiltroAtivo() ? " · no filtro" : ""}`)}${kpi("Viagens", viagens, `${dias} dia(s) com lançamento`)}${kpi("Média por viagem", viagens ? (pag / viagens).toFixed(1).replace(".", ",") : "—", "pagantes")}${kpi("Ocupação média", viagens ? `${Math.round(ocup * 100)}%` : "—", `meta ${Math.round(PAX_META * 100)}% · ${lug.toLocaleString("pt-BR")} lugares ofertados`, !viagens ? "" : ocup >= PAX_META ? "pago" : ocup < 0.5 ? "venc" : "hoje")}${kpi("Melhor viagem", melhor ? `${melhor.Horario} ${melhor.Sentido || ""}` : "—", melhor ? `${paxTotal(melhor)} pass. · ${melhor.Servico} · ${fmtDate(melhor.Data)}` : "")}</div>`;
+  const foco = document.activeElement && document.activeElement.id === "paxHoraSel";
+  body.innerHTML = `<div class="op-topo">${tab === "painel" ? `<span class="sup">Todo o histórico (${meses.length} mês(es))</span>` : mesAnoPicker("paxMA", PAX_STATE.mes, meses)}<span class="grow"></span><div class="seg-tabs" role="tablist">${tabs}</div></div>
+    ${filtros}${kpis}${conteudo}`;
+  if (tab !== "painel") mesAnoPickerWire("paxMA", v => { PAX_STATE.mes = v; paintPax(); });
+  if (foco && $("paxHoraSel")) { try { $("paxHoraSel").focus({ preventScroll: true }); } catch (e) {} }
+  if (tab === "importar") paxImportWire();
+  if (tab === "dia") paxChartDia(its);
+  if (tab === "horario") paxHorChart(its);
+  if ((tab === "dia" || tab === "horario") && window.erpChartButtons) erpChartButtons("#paxBody");
+  if (tab === "painel") paxPainelCharts();
+};
+window.paintPax = paintPax;
+
+/* ---- Por Horário ---- */
+paxPorHorario = function (its) {
+  const U = PAX_UI, m = paxHorModo(), med = paxMedida(), umaHora = !!U.horaFilt;
+  const chips = `<div class="pax-filtros"><div class="pax-chips"><span class="rot">Visão</span><button class="chip ${U.agrup === "resumo" ? "on" : ""}" onclick="paxFiltro('agrup', 'resumo')">Resumo por Horário</button><button class="chip ${U.agrup !== "resumo" ? "on" : ""}" onclick="paxFiltro('agrup', 'dia')">Dia a Dia</button>
+    <span class="rot pax-rot2">Gráfico</span>${[["off", "Ocultar"], ["bar", "Barras"], ["line", "Linhas"]].map(([v, l]) => `<button class="chip ${m === v ? "on" : ""}" onclick="paxHorModoSet('${v}')">${l}</button>`).join("")}
+    ${U.agrup === "resumo" && !umaHora ? `<span class="rot pax-rot2">Medida</span>${[["total", "Total do Mês"], ["media", "Média por Viagem"]].map(([v, l]) => `<button class="chip ${med === v ? "on" : ""}" onclick="paxFiltro('medida', '${v}')">${l}</button>`).join("")}` : ""}</div></div>`;
+  let html = "";
+  if (U.agrup === "resumo") {
+    const g = new Map();
+    its.forEach(x => { const k = `${x.Servico}|${x.Horario}|${x.Sentido || "Ida"}`; if (!g.has(k)) g.set(k, { serv: x.Servico, hora: x.Horario, sent: x.Sentido || "Ida", n: 0, pag: 0, grat: 0, lug: 0, dias: new Set() }); const o = g.get(k); o.n++; o.pag += Number(x.Pagantes || 0); o.grat += Number(x.Gratuidade || 0); o.lug += Number(x.Lugares || PAX_LUGARES); o.dias.add(x.Data); });
+    const rows = [...g.values()].sort((a, b) => (paxLinhaDoServ(a.serv) || "").localeCompare(paxLinhaDoServ(b.serv) || "") || a.sent.localeCompare(b.sent) || a.hora.localeCompare(b.hora));
+    const max = Math.max(1, ...rows.map(r => r.n ? r.pag / r.n : 0));
+    rows.forEach(r => { const md = r.n ? r.pag / r.n : 0, oc = r.lug ? r.pag / r.lug : 0;
+      html += `<tr onclick="paxDetalhe(${jsArg(r.serv)}, ${jsArg(r.hora)}, ${jsArg(r.sent)})" title="Ver o dia a dia deste horário"><td class="nw"><b>${esc(paxLinhaDoServ(r.serv))}</b></td><td>${esc(paxRotDoServ(r.serv))}</td><td class="nw sup"><span title="Dias da semana atendidos neste mês">${[...new Set([...r.dias].map(d => DIAS_SEMANA[dLocal(d).getDay()]))].join(", ") || "—"}</span></td><td class="nw"><b>${esc(r.hora)}</b></td><td>${esc(r.sent)}</td><td class="n">${r.dias.size}</td><td class="n">${r.pag.toLocaleString("pt-BR")}</td><td class="n">${r.grat}</td><td class="n"><span class="pax-heat" ${paxHeat(md, max)}>${md.toFixed(1).replace(".", ",")}</span></td><td>${paxOcupHtml(oc)}</td><td class="nw">${umaHora ? "" : `<button type="button" class="btn mini" onclick="event.stopPropagation(); paxFixarHora(${jsArg(r.serv)}, ${jsArg(r.hora)}, ${jsArg(r.sent)})" title="Filtrar por este horário e ver a evolução dele">Evolução</button>`}</td></tr>`; });
+    return `${chips}${paxHorGrafHtml(its)}<div class="table-wrap"><table class="cap-table pax-t"><thead><tr><th>Linha</th><th>Descrição</th><th>Dia</th><th>Horário</th><th>Sentido</th><th class="n">Dias</th><th class="n">Pagantes</th><th class="n">Gratuid.</th><th class="n">Média/viagem</th><th>Ocupação</th><th></th></tr></thead><tbody>${html}</tbody></table></div>
+      <p class="hint">Ida = sentido Macaé (CM × MC); Volta = sentido Conceição (MC × CM). Ocupação = pagantes ÷ lugares ofertados (${PAX_LUGARES} por viagem); a cor da média compara os horários entre si. <b>Evolução</b> fixa o horário no filtro e mostra o dia a dia e o mês a mês dele.</p>`;
+  }
+  const rows = its.slice().sort((a, b) => a.Data.localeCompare(b.Data) || a.Horario.localeCompare(b.Horario) || (a.Sentido || "").localeCompare(b.Sentido || ""));
+  rows.forEach(x => { const oc = Number(x.Pagantes || 0) / Number(x.Lugares || PAX_LUGARES);
+    html += `<tr onclick="paxDetalhe(${jsArg(x.Servico)}, ${jsArg(x.Horario)}, ${jsArg(x.Sentido || "Ida")})"><td class="nw"><b>${esc(paxLinhaDoServ(x.Servico))}</b></td><td>${esc(paxRotDoServ(x.Servico))}</td><td class="nw">${paxDiaCurto(x.Data)}</td><td class="nw${fimDeSemanaOuFeriado(x.Data) ? " pax-fds-txt" : ""}">${DIAS_SEMANA[dLocal(x.Data).getDay()]}</td><td class="nw"><b>${esc(x.Horario)}</b></td><td>${esc(x.Sentido || "Ida")}</td><td class="n">${Number(x.Pagantes || 0).toLocaleString("pt-BR")}</td><td class="n">${Number(x.Gratuidade || 0)}</td><td>${paxOcupHtml(oc)}</td></tr>`; });
+  return `${chips}${paxHorGrafHtml(its)}<div class="table-wrap"><table class="cap-table pax-t"><thead><tr><th>Linha</th><th>Descrição</th><th>Dia</th><th>Dia da semana</th><th>Horário</th><th>Sentido</th><th class="n">Pagantes</th><th class="n">Gratuid.</th><th>Ocupação</th></tr></thead><tbody>${html}</tbody></table></div>
+    <p class="hint">${its.length} viagem(ns) no filtro. Clique para abrir o dia a dia completo deste horário.</p>`;
+};
+/* quais gráficos a aba mostra: horário escolhido = evolução (dia a dia + mês a mês); resumo = um por sentido; dia a dia = um */
+function paxHorPlano(its) {
+  const U = PAX_UI;
+  if (U.horaFilt) return [{ id: "paxChartHor", tipo: "dias", tit: `Horário ${U.horaFilt} — Dia a Dia`, sub: `${mesLabel(PAX_STATE.mes)} · pagantes e gratuidades · fins de semana e feriados em laranja` },
+    { id: "paxChartHorMes", tipo: "meses", tit: `Horário ${U.horaFilt} — Mês a Mês`, sub: "média de pagantes por viagem em cada mês do histórico, com o mesmo filtro" }];
+  if (U.agrup !== "resumo") return [{ id: "paxChartHor", tipo: "dias", tit: "Passageiros Dia a Dia", sub: `${mesLabel(PAX_STATE.mes)} · pagantes e gratuidades das viagens do filtro · fins de semana e feriados em laranja` }];
+  const sents = ["Ida", "Volta"].filter(s => its.some(x => (x.Sentido || "Ida") === s)), med = paxMedida() === "media" ? "média de pagantes por viagem" : "total de passageiros no mês";
+  return sents.map(s => ({ id: "paxChartHor" + s, tipo: "horas", sent: s, tit: `Passageiros por Horário — ${s}`, sub: `${mesLabel(PAX_STATE.mes)} · ${med} · eixo: horário de saída · uma cor por linha` }));
+}
+paxHorGrafHtml = function (its) {
+  if (paxHorModo() === "off") return "";
+  return paxHorPlano(its || paxFiltra(paxDoMes())).map(p => `<div class="cap-card"><div class="cap-card-h"><h3>${esc(p.tit)}</h3><span class="cap-card-s">${esc(p.sub)}</span></div><div class="cap-chart" style="height:${p.tipo === "horas" ? 250 : 230}px"><canvas id="${p.id}"></canvas></div></div>`).join("");
+};
+paxHorChart = function (its) {
+  if (!window.Chart || paxHorModo() === "off") return;
+  const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim(), nav = css("--navy"), lar = css("--orange"), linha = paxHorModo() === "line";
+  const eixo = (extra) => Object.assign({ ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade } }, extra || {});
+  const novo = (el, cfg) => { const old = Chart.getChart(el); if (old) old.destroy(); try { new Chart(el, Object.assign(cfg, { plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [] })); } catch (e) { console.warn("chart pax hor", e); } };
+  const fmt = v => v == null ? "" : (Number.isInteger(v) ? v.toLocaleString("pt-BR") : v.toFixed(1).replace(".", ","));
+  paxHorPlano(its).forEach(p => {
+    const el = $(p.id); if (!el) return;
+    if (p.tipo === "horas") {
+      const f = its.filter(x => (x.Sentido || "Ida") === p.sent), horas = [...new Set(f.map(x => x.Horario))].sort(), linhas = [...new Set(f.map(x => paxLinhaDoServ(x.Servico) || "—"))].sort(), media = paxMedida() === "media";
+      const ds = linhas.map(l => { const data = horas.map(h => { const v = f.filter(x => x.Horario === h && (paxLinhaDoServ(x.Servico) || "—") === l); if (!v.length) return null; const t = media ? v.reduce((s, x) => s + Number(x.Pagantes || 0), 0) / v.length : v.reduce((s, x) => s + paxTotal(x), 0); return Math.round(t * 10) / 10; });
+        const cor = PAX_CORES_LINHA[l] || "#55616E"; return linha ? { type: "line", label: "Linha " + l, data, borderColor: cor, backgroundColor: cor, borderWidth: 2, tension: .25, pointRadius: 3.5, spanGaps: true } : { label: "Linha " + l, data, backgroundColor: cor, skipNull: true, maxBarThickness: 46 }; });
+      novo(el, { type: linha ? "line" : "bar", data: { labels: horas, datasets: ds },
+        options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: linhas.length > 1, position: "bottom", labels: { boxWidth: 12, color: PAX_CH.cor, font: { size: PAX_CH.eixo, weight: 600 } } },
+            datalabels: { erpKeep: true, display: ctx => ctx.dataset.data[ctx.dataIndex] != null && (horas.length * linhas.length <= 28 || ctx.chart.canvas.id !== p.id), anchor: "end", align: linha ? "top" : "end", offset: 2, clamp: true, formatter: fmt, font: { size: 11, weight: 800 }, color: ctx => ctx.dataset.borderColor || ctx.dataset.backgroundColor } },
+          scales: { x: eixo({ grid: { display: false }, ticks: { autoSkip: false, maxRotation: 50, font: { size: PAX_CH.eixo - 1, weight: 600 }, color: PAX_CH.cor }, title: { display: true, text: "Horário de saída", color: PAX_CH.cor, font: { size: 11.5, weight: 600 } } }), y: eixo({ beginAtZero: true, grace: "18%" }) } } });
+    } else if (p.tipo === "dias") {
+      const dias = diasDoMes(PAX_STATE.mes), P = {}, G = {}; its.forEach(x => { P[x.Data] = (P[x.Data] || 0) + Number(x.Pagantes || 0); G[x.Data] = (G[x.Data] || 0) + Number(x.Gratuidade || 0); });
+      const z = linha ? null : 0, pag = dias.map(d => P[d] != null ? P[d] : z), grat = dias.map(d => G[d] != null ? G[d] : z), fds = dias.map(d => fimDeSemanaOuFeriado(d));
+      const dsP = linha ? { type: "line", label: "Pagantes", data: pag, borderColor: nav, backgroundColor: nav, borderWidth: 2, tension: .25, pointRadius: 3.5, pointBackgroundColor: fds.map(x => x ? lar : nav), pointBorderColor: fds.map(x => x ? lar : nav) } : { label: "Pagantes", data: pag, backgroundColor: fds.map(x => x ? lar : nav), stack: "p" };
+      const dsG = linha ? { type: "line", label: "Gratuidades", data: grat, borderColor: "#7C8DB0", backgroundColor: "#7C8DB0", borderWidth: 2, borderDash: [5, 4], tension: .25, pointRadius: 3 } : { label: "Gratuidades", data: grat, backgroundColor: "#AFC0DD", stack: "p" };
+      novo(el, { type: linha ? "line" : "bar", data: { labels: dias.map(d => String(dLocal(d).getDate())), datasets: [dsP, dsG] },
+        options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: true, position: "bottom", labels: { boxWidth: 12, color: PAX_CH.cor, font: { size: PAX_CH.eixo, weight: 600 } } },
+            datalabels: { erpKeep: true, display: ctx => ctx.datasetIndex === (linha ? 0 : 1) && !!(linha ? pag[ctx.dataIndex] : (pag[ctx.dataIndex] || 0) + (grat[ctx.dataIndex] || 0)), anchor: "end", align: linha ? "top" : "end", offset: 2, clamp: true, formatter: (v, ctx) => { const t = linha ? v : (pag[ctx.dataIndex] || 0) + (grat[ctx.dataIndex] || 0); return t ? t.toLocaleString("pt-BR") : ""; }, font: { size: 11.5, weight: 800 }, color: ctx => fds[ctx.dataIndex] ? "#A33B00" : "#1E2153" } },
+          scales: { x: eixo({ stacked: !linha, grid: { display: false }, ticks: { font: { size: PAX_CH.eixo - 1, weight: 600 }, color: ctx => fds[ctx.index] ? "#A33B00" : PAX_CH.cor } }), y: eixo({ stacked: !linha, beginAtZero: true, grace: "18%" }) } } });
+    } else {   /* meses: média de pagantes por viagem deste horário em cada mês do histórico */
+      const M = new Map(); paxFiltra(PAX_STATE.itens).forEach(x => { const k = x.Data.slice(0, 7); if (!M.has(k)) M.set(k, { n: 0, p: 0 }); const o = M.get(k); o.n++; o.p += Number(x.Pagantes || 0); });
+      const ks = [...M.keys()].sort(), data = ks.map(k => Math.round(10 * M.get(k).p / M.get(k).n) / 10), atual = ks.map(k => k === PAX_STATE.mes);
+      novo(el, { type: linha ? "line" : "bar", data: { labels: ks.map(mesLabelCurto), datasets: [linha ? { type: "line", label: "Média por viagem", data, borderColor: nav, backgroundColor: nav, borderWidth: 2, tension: .25, pointRadius: 4, pointBackgroundColor: atual.map(a => a ? lar : nav), pointBorderColor: atual.map(a => a ? lar : nav) } : { label: "Média por viagem", data, backgroundColor: atual.map(a => a ? lar : nav) }] },
+        options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: ctx => `${M.get(ks[ctx.dataIndex]).n} viagem(ns) · ${M.get(ks[ctx.dataIndex]).p.toLocaleString("pt-BR")} pagantes` } },
+            datalabels: { erpKeep: true, display: true, anchor: "end", align: linha ? "top" : "end", offset: 2, clamp: true, formatter: fmt, font: { size: 11.5, weight: 800 }, color: "#1E2153" } },
+          scales: { x: eixo({ grid: { display: false } }), y: eixo({ beginAtZero: true, grace: "18%" }) } } });
+    }
+  });
+};
+/* o detalhe do trecho respeita o filtro */
+{ const d0 = window.paxTrechoDetalhe;
+  window.paxTrechoDetalhe = function (serv, trecho) { const o = paxDoMes; paxDoMes = () => paxFiltra(o()); try { return d0.apply(this, arguments); } finally { paxDoMes = o; } };
+}
+
+/* ---- Painel: mês a mês e ano a ano, com os filtros ---- */
+function paxPainelDados() {
+  const porMes = new Map();
+  paxFiltra(PAX_STATE.itens).forEach(x => { const k = x.Data.slice(0, 7); if (!/^\d{4}-\d{2}$/.test(k)) return; if (!porMes.has(k)) porMes.set(k, { k, n: 0, pag: 0, grat: 0, lug: 0, dias: new Set() }); const o = porMes.get(k); o.n++; o.pag += Number(x.Pagantes || 0); o.grat += Number(x.Gratuidade || 0); o.lug += Number(x.Lugares || PAX_LUGARES); o.dias.add(x.Data); });
+  const meses = [...porMes.values()].sort((a, b) => a.k.localeCompare(b.k)), anos = [...new Set(meses.map(m => m.k.slice(0, 4)))].sort();
+  return { porMes, meses, anos };
+}
+function paxVar(a, b) { if (a == null || b == null || !b) return `<span class="sup">—</span>`; const p = 100 * (a - b) / b, s = (p >= 0 ? "+" : "−") + Math.abs(p).toFixed(1).replace(".", ",") + "%"; return `<span class="pax-var ${p >= 0.05 ? "up" : p <= -0.05 ? "down" : ""}">${s}</span>`; }
+function paxMesAnterior(k, n) { const [y, m] = k.split("-").map(Number), d = new Date(y, m - 1 - n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
+paxPainel = function () {
+  if (!PAX_STATE.itens.length) return `<div class="cap-empty"><h3>Painel sem dados</h3><p>Importe pelo menos um mês para ver a evolução.</p></div>`;
+  const { porMes, meses, anos } = paxPainelDados();
+  if (!meses.length) return `<div class="cap-empty"><h3>Nada no filtro</h3><p>Nenhuma viagem no histórico com ${esc(paxFiltroTxt())}. <button type="button" class="ctb-lnk" onclick="paxFiltro('limpar')">Limpar os filtros</button></p></div>`;
+  const tot = k => meses.reduce((s, m) => s + m[k], 0), totalPag = tot("pag"), totalGrat = tot("grat"), totalLug = tot("lug"), totalViag = tot("n");
+  const melhorMes = meses.slice().sort((a, b) => (b.pag + b.grat) - (a.pag + a.grat))[0];
+  const kpi = (lbl, val, sub, cls) => `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div><div class="sub">${esc(sub)}</div></div>`;
+  const filtroTx = paxFiltroAtivo() ? ` · ${paxFiltroTxt()}` : "";
+  const kpis = `<div class="cap-kpis cap-kpis-6">
+    ${kpi("Meses com Dados", meses.length, `${anos.length} ano(s)${paxFiltroAtivo() ? " · no filtro" : ""}`)}
+    ${kpi("Passageiros Totais", (totalPag + totalGrat).toLocaleString("pt-BR"), `${totalGrat.toLocaleString("pt-BR")} gratuidade(s)`)}
+    ${kpi("Viagens Totais", totalViag.toLocaleString("pt-BR"), "no período com lançamento")}
+    ${kpi("Média por Viagem", totalViag ? (totalPag / totalViag).toFixed(1).replace(".", ",") : "—", "pagantes")}
+    ${kpi("Ocupação Acumulada", totalLug ? Math.round(100 * totalPag / totalLug) + "%" : "—", `meta ${Math.round(PAX_META * 100)}%`, totalLug && totalPag / totalLug >= PAX_META ? "pago" : "")}
+    ${kpi("Melhor Mês", melhorMes ? mesLabel(melhorMes.k) : "—", melhorMes ? `${(melhorMes.pag + melhorMes.grat).toLocaleString("pt-BR")} passageiros` : "")}
+  </div>`;
+  const T = m => m ? m.pag + m.grat : null;
+  const linhas = meses.slice().reverse().map(m => { const ant = porMes.get(paxMesAnterior(m.k, 1)), ano = porMes.get(paxMesAnterior(m.k, 12));
+    return `<tr><td class="nw">${esc(mesLabel(m.k))}</td><td class="n">${m.dias.size}</td><td class="n">${m.n.toLocaleString("pt-BR")}</td><td class="n">${m.pag.toLocaleString("pt-BR")}</td><td class="n">${m.grat.toLocaleString("pt-BR")}</td><td class="n"><b>${(m.pag + m.grat).toLocaleString("pt-BR")}</b></td><td class="n">${m.n ? (m.pag / m.n).toFixed(1).replace(".", ",") : "—"}</td><td class="n" title="${ant ? "contra " + esc(mesLabel(ant.k)) : "sem o mês anterior no histórico"}">${paxVar(T(m), T(ant))}</td><td class="n" title="${ano ? "contra " + esc(mesLabel(ano.k)) : "sem o mesmo mês do ano anterior"}">${paxVar(T(m), T(ano))}</td><td>${paxOcupHtml(m.lug ? m.pag / m.lug : 0)}</td></tr>`; }).join("");
+  const linhasAno = anos.map(a => { const ms = meses.filter(m => m.k.startsWith(a)), t = ms.reduce((s, m) => s + m.pag + m.grat, 0), n = ms.reduce((s, m) => s + m.n, 0), p = ms.reduce((s, m) => s + m.pag, 0), l = ms.reduce((s, m) => s + m.lug, 0);
+    const prev = String(Number(a) - 1), comuns = ms.filter(m => porMes.has(`${prev}-${m.k.slice(5)}`)), tCom = comuns.reduce((s, m) => s + m.pag + m.grat, 0), tAnt = comuns.reduce((s, m) => { const x = porMes.get(`${prev}-${m.k.slice(5)}`); return s + x.pag + x.grat; }, 0);
+    return `<tr><td class="nw"><b>${esc(a)}</b></td><td class="n">${ms.length}</td><td class="n">${n.toLocaleString("pt-BR")}</td><td class="n"><b>${t.toLocaleString("pt-BR")}</b></td><td class="n">${ms.length ? Math.round(t / ms.length).toLocaleString("pt-BR") : "—"}</td><td class="n">${n ? (p / n).toFixed(1).replace(".", ",") : "—"}</td><td class="n" title="${comuns.length ? `contra os mesmos ${comuns.length} mês(es) de ${prev}` : "sem os mesmos meses do ano anterior"}">${paxVar(comuns.length ? tCom : null, comuns.length ? tAnt : null)}</td><td>${paxOcupHtml(l ? p / l : 0)}</tr>`; }).join("");
+  const modo = PAX_UI.painelGrafMes || "bar";
+  return `${kpis}
+    <div class="cap-card"><div class="cap-card-h"><h3>Mês a Mês</h3><span class="cap-card-s">pagantes e gratuidades · ${meses.length} mês(es)${esc(filtroTx)}</span><span class="grow"></span><span class="seg-tabs" role="tablist" style="margin-left:auto" id="paxGrafMesSeg"><button data-modo="bar" class="${modo === "bar" ? "on" : ""}" onclick="PAX_UI.painelGrafMes='bar'; paxPainelCharts()">Barras</button><button data-modo="line" class="${modo === "line" ? "on" : ""}" onclick="PAX_UI.painelGrafMes='line'; paxPainelCharts()">Linhas</button></span></div><div class="cap-chart" style="height:260px"><canvas id="paxChartMes"></canvas></div></div>
+    <div class="cap-card"><div class="cap-card-h"><h3>Ano a Ano</h3><span class="cap-card-s">total de passageiros de cada mês, uma curva por ano${esc(filtroTx)}</span></div><div class="cap-chart" style="height:260px"><canvas id="paxChartAnoMes"></canvas></div></div>
+    <div class="cap-card"><div class="cap-card-h"><h3>Totais por Ano</h3><span class="cap-card-s">a variação compara os mesmos meses do ano anterior</span></div><div class="table-wrap"><table class="cap-table pax-t"><thead><tr><th>Ano</th><th class="n">Meses</th><th class="n">Viagens</th><th class="n">Passageiros</th><th class="n">Média/mês</th><th class="n">Média/viagem</th><th class="n">Var. ano anterior</th><th>Ocupação</th></tr></thead><tbody>${linhasAno}</tbody></table></div></div>
+    <div class="cap-card"><div class="cap-card-h"><h3>Tabela Mês a Mês</h3><span class="cap-card-s">do mais recente para o mais antigo</span></div><div class="table-wrap"><table class="cap-table pax-t"><thead><tr><th>Mês</th><th class="n">Dias</th><th class="n">Viagens</th><th class="n">Pagantes</th><th class="n">Gratuid.</th><th class="n">Total</th><th class="n">Média/viagem</th><th class="n">Var. mês anterior</th><th class="n">Var. mesmo mês ano ant.</th><th>Ocupação</th></tr></thead><tbody>${linhas}</tbody></table></div></div>`;
+};
+paxPainelCharts = function () {
+  if (!window.Chart) return;
+  const { porMes, meses, anos } = paxPainelDados(), css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim(), nav = css("--navy"), lar = css("--orange");
+  const eixo = extra => Object.assign({ ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade } }, extra || {});
+  const leg = { display: true, labels: { color: PAX_CH.cor, font: { size: PAX_CH.eixo, weight: 600 }, boxWidth: 12 } };
+  const novo = (el, cfg) => { const old = Chart.getChart(el); if (old) old.destroy(); try { new Chart(el, Object.assign(cfg, { plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [] })); } catch (e) { console.warn("chart pax painel", e); } };
+  const el = $("paxChartMes");
+  if (el) { const modo = PAX_UI.painelGrafMes || "bar", lin = modo === "line", poucos = meses.length <= 18;
+    document.querySelectorAll("#paxGrafMesSeg button").forEach(b => b.classList.toggle("on", b.dataset.modo === modo));
+    novo(el, { type: lin ? "line" : "bar", data: { labels: meses.map(m => mesLabelCurto(m.k)), datasets: [
+        Object.assign({ label: "Pagantes", data: meses.map(m => m.pag), backgroundColor: nav }, lin ? { borderColor: nav, tension: .3, pointRadius: 4 } : {}),
+        Object.assign({ label: "Gratuidades", data: meses.map(m => m.grat), backgroundColor: lar }, lin ? { borderColor: lar, tension: .3, pointRadius: 4 } : {})] },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: leg, datalabels: { display: poucos, anchor: "end", align: "top", formatter: v => v ? v.toLocaleString("pt-BR") : "", font: { size: PAX_CH.rot, weight: 800 }, color: ctx => ctx.datasetIndex === 1 ? lar : nav } },
+        scales: { x: eixo(), y: eixo({ beginAtZero: true, grace: "22%" }) } } }); }
+  const el2 = $("paxChartAnoMes");
+  if (el2) { const CORES = [nav, lar, "#2E8B57", "#7C8DB0", "#8E5BB5", "#B38600"];
+    novo(el2, { type: "line", data: { labels: PAX_MES_ABREV, datasets: anos.map((a, i) => { const cor = CORES[(anos.length - 1 - i) % CORES.length], ult = i === anos.length - 1;
+        return { label: a, data: PAX_MES_ABREV.map((_, j) => { const m = porMes.get(`${a}-${String(j + 1).padStart(2, "0")}`); return m ? m.pag + m.grat : null; }), borderColor: cor, backgroundColor: cor, borderWidth: ult ? 3 : 2, borderDash: ult ? [] : [5, 4], tension: .25, pointRadius: ult ? 4 : 3, spanGaps: false }; }) },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false }, plugins: { legend: Object.assign({}, leg, { position: "bottom" }), datalabels: { display: ctx => ctx.datasetIndex === anos.length - 1 && ctx.dataset.data[ctx.dataIndex] != null, anchor: "end", align: "top", formatter: v => v ? v.toLocaleString("pt-BR") : "", font: { size: 11.5, weight: 800 }, color: ctx => ctx.dataset.borderColor } },
+        scales: { x: eixo({ grid: { display: false } }), y: eixo({ beginAtZero: true, grace: "18%" }) } } }); }
+};
+(function () {
+  const st = document.createElement("style"); st.id = "erp-v01451";
+  st.textContent = `.pax-fbar{padding:12px 14px;margin:0 0 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .pax-chips .rot.pax-rot2{margin-left:14px}
+  .pax-chips select.pax-hora{width:auto!important;min-width:210px;max-width:260px;flex:0 0 auto;height:34px;padding:4px 30px 4px 10px;margin:0}
+  .pax-fbar .pax-chips{align-items:center;row-gap:6px}.pax-fbar .pax-chips .rot{align-self:center;margin-bottom:0;line-height:1}
+  .pax-ftxt{margin-left:10px}
+  .pax-var{font-weight:700;color:var(--ink-2)}.pax-var.up{color:#197A46}.pax-var.down{color:#B3271E}
+  @media (max-width:760px){.pax-chips .rot.pax-rot2{margin-left:0;flex-basis:100%}.pax-ftxt{margin-left:0;flex-basis:100%}}`;
+  document.head.appendChild(st);
+})();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -50127,6 +50369,7 @@ CONFIG.version = "v0.14.48.1";   /* Fluxo de Caixa: data do boletim centralizada
 CONFIG.version = "v0.14.49";   /* Contabilidade: menu numa linha e Preparar Pacote (conferência com o extrato, documentos da impressão, + Anexar, dispensa de NF/cobrança com motivo) */
 CONFIG.version = "v0.14.49.1";   /* entrada não espera mais a foto do perfil (Graph devolvendo 502 travava todos em "carregando…") */
 CONFIG.version = "v0.14.50";   /* Fluxo de Caixa espelhando a planilha: composição com Pró-labore, Vales e Diárias; importação com despesas linha a linha pelo CX-GERAL, dia certo do boletim e pagamentos pelo PagBank */
+CONFIG.version = "v0.14.51";   /* Estatística de Passageiros: filtros (linha, sentido, tipo de dia, horário) em todas as visões; gráfico por horário com eixo limpo; evolução de um horário; Painel mês a mês e ano a ano */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

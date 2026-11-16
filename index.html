@@ -53038,6 +53038,360 @@ window.pagePortalCtf = pagePortalCtf; window.pageCtfInd = pageCtfInd;
   document.head.appendChild(st); }
 /* v0.14.76 (16/11/2026) · Pedido do Rafael (10:30): só o ícone da aba do navegador passa para a opção 4 do ônibus (4 colunas, traseira
    arredondada em cima, duas rodas, frente laranja), que fica maior no quadrado; topo, menu lateral e ícone do celular seguem com a opção 5. */
+/* =====================================================================
+   v0.14.77 (16/11/2026) · Estatística de Passageiros × Tabela de Horários (pedido do Rafael, 16:12)
+   1. Horário digitado sem os dois-pontos ("1715", "715", "5h20", "17.15") vira HH:MM no lançamento de viagem, na folha do dia
+      e no cadastro da Tabela de Horários.
+   2. Tabela de Horários: cada horário passa a ter DIAS DA SEMANA (caixas Seg…Dom e Feriado, dentro do tipo de dia) e SENTIDO
+      (Ida/Volta). Colunas novas "Dias" e "Sentido" na lista "Operacional — Horários" (Configuração › Executar tudo). Enquanto
+      a coluna não existe ou está vazia: os dias saem do tipo de dia + observação ("2ª a 5ª", "Segunda a Quinta", "Sexta-feira")
+      e o sentido da saída (Macabu/Madalena = Ida; Macaé = Volta). A observação é mantida coerente com os dias marcados.
+   3. Lançamento de viagem TRAVADO pela Tabela de Horários: data (dia da semana/feriado) + serviço + horário + sentido têm de
+      existir na tabela. A regra mora na guarda de gravação (SP.create/SP.update da lista de passageiros) e é antecipada no
+      formulário, na folha do dia e nas alterações em lote do Banco de Dados. A folha do dia passa a ser montada pela tabela.
+      Horário avulso: cadastrar na aba Especiais da Tabela de Horários. Importação de planilha não é travada (só avisa).
+      Sem conseguir ler a tabela (sem acesso/lista inexistente), o ERP avisa e não trava.
+   5. Tabela de Horários: botão Ativo/Inativo em cada horário do quadro (só horário ativo vale para lançar).
+   4. Banco de Dados: coluna Trechos editável (clique na célula); aviso e filtro das viagens fora da tabela. Viagem lançada à
+      mão em serviço/sentido que só tem um trecho no histórico já nasce com esse trecho.
+   ===================================================================== */
+/* ---- 1 · horário sem dois-pontos ---- */
+function erpHoraNorm(v) {
+  const s = String(v == null ? "" : v).trim().toLowerCase().replace(/\s*\(f\)$/, ""); if (!s) return "";
+  let m = s.match(/^(\d{1,2})\s*[:h.,;\- ]\s*(\d{1,2})\s*(?:m|min)?$/) || s.match(/^(\d{1,2})(\d{2})$/) || s.match(/^(\d{1,2})\s*h?$/);
+  if (!m) return String(v).trim();
+  const h = Number(m[1]), mi = Number(m[2] || 0); if (h > 23 || mi > 59) return String(v).trim();
+  return String(h).padStart(2, "0") + ":" + String(mi).padStart(2, "0");
+}
+window.erpHoraNorm = erpHoraNorm;
+const ERP_HORA_SEL = '#pxHora, #hHora, #paxLoteGrid input[data-k="hora"]';
+function erpHoraArruma(el) { if (!el || !el.matches || !el.matches(ERP_HORA_SEL)) return; const n = erpHoraNorm(el.value); if (n !== el.value) { el.value = n; el.dispatchEvent(new Event("input", { bubbles: true })); } }
+document.addEventListener("focusout", e => erpHoraArruma(e.target), true);
+document.addEventListener("keydown", e => { if (e.key === "Enter") erpHoraArruma(e.target); }, true);
+
+/* ---- 2 · Tabela de Horários: dias da semana e sentido ---- */
+LISTS.horarios.columns.push(
+  { name: "Dias", displayName: "Dias da semana", text: { allowMultipleLines: false, maxLength: 40 } },
+  { name: "Sentido", displayName: "Sentido", choice: choice(["Ida", "Volta"]) });
+const HOR_DK = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"], HOR_DSEM = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"];
+const HOR_DROT = { seg: "Seg", ter: "Ter", qua: "Qua", qui: "Qui", sex: "Sex", sab: "Sáb", dom: "Dom", fer: "Feriado" };
+const HOR_DNOME = { seg: "Segunda", ter: "Terça", qua: "Quarta", qui: "Quinta", sex: "Sexta", sab: "Sábado", dom: "Domingo", fer: "Feriado" };
+function horDiasQuadro(q) { return q === "Segunda a sexta" ? ["seg", "ter", "qua", "qui", "sex"] : q === "Sábados" ? ["sab"] : q === "Domingos e feriados" ? ["dom", "fer"] : ["seg", "ter", "qua", "qui", "sex", "sab", "dom", "fer"]; }
+function horDiasObs(obs) {   /* "2ª a 5ª", "Segunda a Quinta", "Sexta-feira", "2ª a 6ª, exceto feriados" → dias; sem menção a dia → null */
+  const t = String(obs || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const FULL = "segunda|terca|quarta|quinta|sexta|sabado|domingo", AMB = "2a|3a|4a|5a|6a|seg|ter|qua|qui|sex|sab|dom", SUF = "(?:s-feiras|-feiras|-feira|s)?\\.?";
+  const idx = k => ({ "2a": 0, segunda: 0, seg: 0, "3a": 1, terca: 1, ter: 1, "4a": 2, quarta: 2, qua: 2, "5a": 3, quinta: 3, qui: 3, "6a": 4, sexta: 4, sex: 4, sabado: 5, sab: 5, domingo: 6, dom: 6 })[k];
+  const B = "(?<![a-z0-9])", A = "(?![a-z0-9])";
+  const parte = p => {   /* abreviações e "2a…6a" soltos só contam em intervalo ("seg. a qui.") ou quando o trecho é só uma lista de dias ("Seg/Qua/Sex") */
+    const set = new Set();
+    let r = p.replace(new RegExp(B + "(" + FULL + "|" + AMB + ")" + SUF + "\\s*(?:a|as|ate|-|–)\\s*(" + FULL + "|" + AMB + ")" + SUF + A, "g"), (m, a, b) => { const i = idx(a), j = idx(b); for (let k = i; ; k = (k + 1) % 7) { set.add(HOR_DSEM[k]); if (k === j) break; } return " "; });
+    r = r.replace(new RegExp(B + "(" + FULL + ")" + SUF + A, "g"), (m, a) => { set.add(HOR_DSEM[idx(a)]); return " "; });
+    if (new RegExp(B + "feriados?" + A).test(r)) set.add("fer");
+    const amb = []; const sobra = r.replace(new RegExp(B + "(" + AMB + ")" + SUF + A, "g"), (m, a) => { amb.push(a); return " "; }).replace(/(?<![a-z0-9])(e|de|das|dos|a|as|aos|ate|na|no|nas|nos|em|feiras?|feriados?|so|somente|apenas|roda)(?![a-z0-9])/g, " ").replace(/[\s,;.:\/()+&–-]/g, "");
+    if (amb.length && !sobra) amb.forEach(a => set.add(HOR_DSEM[idx(a)]));
+    return set;
+  };
+  const todos = [...HOR_DSEM, "fer"], m = t.match(/(?<![a-z])(exceto|menos|nao roda)(?![a-z])/);
+  if (!m) { const inc = parte(t); return inc.size ? todos.filter(d => inc.has(d)) : null; }
+  const inc = parte(t.slice(0, m.index)), exc = parte(t.slice(m.index + m[0].length));
+  if (!inc.size && !exc.size) return null;
+  return todos.filter(d => (inc.size ? inc.has(d) : true) && !exc.has(d));
+}
+function horDiasDe(x) {
+  const base = horDiasQuadro(x.Quadro), exp = String(x.Dias || "").toLowerCase().split(/[^a-z]+/).filter(d => HOR_DROT[d]);
+  if (exp.length) return exp;
+  const o = horDiasObs(x.Observacao); if (o) { const r = base.filter(d => o.includes(d)); if (r.length) return r; }
+  return base;
+}
+function horDiasRot(ds) {
+  const sem = HOR_DSEM.filter(d => ds.includes(d)), fer = ds.includes("fer");
+  let t; const i0 = HOR_DSEM.indexOf(sem[0]), seguido = sem.length > 1 && sem.every((d, i) => HOR_DSEM.indexOf(d) === i0 + i);
+  if (!sem.length) t = ""; else if (sem.length === 1) t = HOR_DSEM.indexOf(sem[0]) < 5 ? HOR_DNOME[sem[0]] + "-feira" : HOR_DNOME[sem[0]];
+  else if (seguido && sem.length > 2) t = `${HOR_DNOME[sem[0]]} a ${HOR_DNOME[sem[sem.length - 1]]}`; else t = sem.map(d => HOR_DNOME[d]).join(sem.length === 2 ? " e " : ", ");
+  return [t, fer ? (t ? "feriados" : "Feriados") : ""].filter(Boolean).join(" e ");
+}
+function horSentidoDe(x) { return x.Sentido === "Ida" || x.Sentido === "Volta" ? x.Sentido : (x.Origem === "Macaé" ? "Volta" : "Ida"); }
+/* serviço(s) da Estatística de Passageiros a que o horário corresponde */
+function horPaxServs(x) {
+  if (x.Bloco === "Fretamento" || x.Servico === "Fretamento") return ["Fretamento"];
+  if (x.Bloco === "Madalena") return ["Madalena"];
+  const direto = /direto|pre[cç]o [uú]nico/i.test(x.Servico || "") || x.Linha === "Linha 1001";
+  const mad = x.Servico === "Madalena" || !!x.Madalena || horViaMad(x) || x.Linha === "Linha 2000";
+  const r = [direto ? "Direto" : "Parador"]; if (mad) r.push("Madalena"); return r;
+}
+Object.assign(window, { horDiasDe, horDiasObs, horDiasRot, horSentidoDe, horPaxServs, horDiasQuadro });
+const horMesmoSet = (a, b) => a.length === b.length && a.every(d => b.includes(d));
+{ const f0 = window.horForm;
+  window.horForm = function (id) {
+    const r = f0.apply(this, arguments); const grid = document.querySelector("#modal .form-grid"); if (!grid || !$("hQuadro") || $("hDias")) return r;
+    const x = id ? HOR_STATE.itens.find(i => i._id === String(id)) : null, v = x || { Quadro: $("hQuadro").value, Origem: $("hOrigem").value };
+    const marc = horDiasDe(v), sent = horSentidoDe(v);
+    grid.insertAdjacentHTML("beforeend", `<div class="field"><label>Sentido</label><select id="hSent"><option ${sent !== "Volta" ? "selected" : ""}>Ida</option><option ${sent === "Volta" ? "selected" : ""}>Volta</option></select><div class="hint">Ida = sentido Macaé · Volta = sentido Conceição. É o sentido usado na Estatística de Passageiros.</div></div>
+      <div class="field full"><label>Dias em que o horário roda</label><div id="hDias" class="hor-dias">${[...HOR_DSEM, "fer"].map(d => `<label class="hor-dia"><input type="checkbox" value="${d}" ${marc.includes(d) ? "checked" : ""}><span>${HOR_DROT[d]}</span></label>`).join("")}</div><div class="hint" id="hDiasHint"></div></div>`);
+    const box = $("hDias"); let tocouDias = !!x, tocouSent = !!(x && x.Sentido);
+    const ajusta = reinicia => { const base = horDiasQuadro($("hQuadro").value); box.querySelectorAll("input").forEach(i => { const ok = base.includes(i.value); i.disabled = !ok; if (!ok) i.checked = false; else if (reinicia) i.checked = true; i.parentElement.classList.toggle("off", !ok); });
+      $("hDiasHint").textContent = `Só os dias do tipo de dia "${$("hQuadro").value}" ficam disponíveis. A Estatística de Passageiros só aceita lançar este horário nos dias marcados.`; };
+    ajusta(false);
+    $("hQuadro").addEventListener("change", () => ajusta(true));
+    box.addEventListener("change", () => { tocouDias = true; });
+    $("hSent").addEventListener("change", () => { tocouSent = true; });
+    $("hOrigem").addEventListener("change", () => { if (!tocouSent) $("hSent").value = $("hOrigem").value === "Macaé" ? "Volta" : "Ida"; });
+    return r;
+  };
+}
+/* o que o formulário acrescenta à gravação do horário (chamado pela guarda de gravação abaixo) */
+function horExtrasDoForm(fields, itemId) {
+  const box = $("hDias"); if (!box || !$("hSent")) return null;
+  const x = itemId ? HOR_STATE.itens.find(i => i._id === String(itemId)) : null, base = horDiasQuadro(fields.Quadro);
+  const marc = [...box.querySelectorAll("input:checked")].filter(i => !i.disabled).map(i => i.value);
+  if (!marc.length) throw new Error("Marque ao menos um dia em que o horário roda.");
+  const todos = horMesmoSet(marc, base), obsD = horDiasObs(fields.Observacao), rot = horDiasRot(marc);
+  if (obsD) { const daObs = base.filter(d => obsD.includes(d)); if (daObs.length && !horMesmoSet(daObs, marc)) throw new Error(`A observação fala em "${horDiasRot(daObs)}", mas os dias marcados são "${rot}". Ajuste a observação ou os dias.`); }
+  else if (!todos) fields.Observacao = [rot, fields.Observacao].filter(Boolean).join(" · ").slice(0, 120);
+  const extra = {}, sent = $("hSent").value, sentPadrao = fields.Origem === "Macaé" ? "Volta" : "Ida";
+  if (!todos || (x && x.Dias)) extra.Dias = todos ? null : marc.join(",");
+  if (sent !== sentPadrao || (x && x.Sentido)) extra.Sentido = sent;
+  return { extra, sentObrig: sent !== sentPadrao };
+}
+(function () { const st = document.createElement("style"); st.id = "erp-v01477";
+  st.textContent = `.hor-dias{display:flex;flex-wrap:wrap;gap:6px}.hor-dia{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid #D3D8DE;border-radius:2px;font-size:13.5px;font-weight:600;cursor:pointer;background:#fff;text-transform:none;letter-spacing:0;color:var(--ink)}
+  .hor-dia.off{opacity:.4;cursor:not-allowed}.hor-dia input{width:auto;margin:0}
+  .pax-lanc .pl-st.fora{background:#FFF6DB;color:#7A5300;font-weight:700}
+  .pax-tab-aviso{margin:0 0 12px}.pb-t td.pb-tr.pb-tr-ed{cursor:pointer}.pb-t td.pb-tr.pb-tr-ed:hover{background:#F1F5FB}.pb-t td.pb-tr .pb-tr-vz{color:var(--orange-ink,#B8381A);font-weight:700}
+  .pb-t tr.pb-fora td.pb-h{color:#A33B00}
+  .ptr-grid{display:grid;grid-template-columns:1fr 110px;gap:8px 12px;align-items:center}.ptr-grid label{font-size:13.5px;font-weight:600;color:var(--ink);text-transform:none;letter-spacing:0}`;
+  document.head.appendChild(st); })();
+
+/* ---- 3 · a Tabela de Horários como fonte dos lançamentos de passageiros ---- */
+const PAXH = { ok: false, erro: "", t: 0, cache: new Map() };
+async function paxHorCarrega(force) {
+  if (!force && PAXH.t && Date.now() - PAXH.t < 120000) return;
+  try { await loadHor(HOR_STATE.list === undefined); PAXH.ok = !!HOR_STATE.ready; PAXH.erro = HOR_STATE.ready ? "" : "a lista “Operacional — Horários” ainda não existe"; }
+  catch (e) { PAXH.ok = false; PAXH.erro = "sem acesso à lista “Operacional — Horários” (" + (e && e.message || e) + ")"; }
+  PAXH.t = Date.now(); PAXH.cache.clear();
+}
+function paxHorDiaChave(data) { return feriadoNome(data) ? "fer" : HOR_DK[dLocal(data).getDay()]; }
+/* viagens que a tabela prevê para a data: [{ servs, hora, sent, x }]; null = não dá para conferir */
+function paxHorDoDia(data) {
+  if (!PAXH.ok || !/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) return null;
+  if (PAXH.src !== HOR_STATE.itens) { PAXH.cache.clear(); PAXH.src = HOR_STATE.itens; }   /* a tabela foi relida ou alterada (por qualquer tela): refaz */
+  if (PAXH.cache.has(data)) return PAXH.cache.get(data);
+  const k = paxHorDiaChave(data), r = [];
+  HOR_STATE.itens.forEach(x => { if (x.Ativo === false || !/^\d{2}:\d{2}$/.test(String(x.Horario || ""))) return; if (!horDiasDe(x).includes(k)) return; r.push({ servs: horPaxServs(x), hora: x.Horario, sent: horSentidoDe(x), x }); });
+  PAXH.cache.set(data, r); return r;
+}
+function paxHorDiaRot(data) { const k = paxHorDiaChave(data), f = feriadoNome(data); return (k === "fer" ? `feriado (${f})` : HOR_DSEM.indexOf(k) < 5 ? HOR_DNOME[k].toLowerCase() + "-feira" : HOR_DNOME[k].toLowerCase()) + `, ${fmtDate(data)}`; }
+function paxHorConfere(f, soResposta) {   /* f: { Data, Servico, Horario (puro), Sentido } */
+  const dia = paxHorDoDia(f.Data); if (!dia) return { ok: true, semTabela: true };
+  const sent = f.Sentido || "Ida", hora = String(f.Horario || "").replace(/\s*\(F\)$/, "");
+  if (dia.some(v => v.servs.includes(f.Servico) && v.hora === hora && v.sent === sent)) return { ok: true };
+  if (soResposta) return { ok: false };
+  const doServ = dia.filter(v => v.servs.includes(f.Servico)), mesmoSent = [...new Set(doServ.filter(v => v.sent === sent).map(v => v.hora))].sort();
+  const outroSent = doServ.some(v => v.hora === hora && v.sent !== sent), rot = typeof paxServRot === "function" ? paxServRot(f.Servico) : f.Servico;
+  let msg = `${rot} ${hora} ${sent} não está na Tabela de Horários para ${paxHorDiaRot(f.Data)}. `;
+  msg += outroSent ? `Nesse dia, ${hora} existe no outro sentido (${sent === "Ida" ? "Volta" : "Ida"}). ` : mesmoSent.length ? `Horários de ${rot} · ${sent} nesse dia: ${mesmoSent.join(", ")}. ` : `Não há horário de ${rot} · ${sent} nesse dia. `;
+  msg += "Para liberar um horário, cadastre-o em Operacional › Frota › Tabela de Horários (aba Especiais para viagem avulsa).";
+  return { ok: false, msg, validos: mesmoSent };
+}
+Object.assign(window, { paxHorConfere, paxHorDoDia, paxHorCarrega, PAXH });
+{ const l0 = loadPax; loadPax = async function () { const r = await l0.apply(this, arguments); try { await paxHorCarrega(false); } catch (e) {} return r; }; window.loadPax = loadPax; }
+/* trecho único do histórico para serviço + sentido (ex.: Fretamento Volta → "MC X CM") */
+function paxTrechosConhecidos(serv, sent) { const n = new Map(); PAX_STATE.itens.forEach(x => { if (x.Servico !== serv || (x.Sentido || "Ida") !== sent) return; Object.entries(paxTrechos(x)).forEach(([k, v]) => { if (v && !/gratuid/i.test(k)) n.set(k, (n.get(k) || 0) + 1); }); }); return [...n.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]); }
+/* guarda de gravação: toda escrita na lista de passageiros e na de horários passa por aqui */
+{ const c0 = SP.create, u0 = SP.update;
+  const ehPax = l => PAX_STATE.list && l === PAX_STATE.list.id, ehHor = l => HOR_STATE.list && l === HOR_STATE.list.id;
+  const semColuna = e => /(not recognized|n[aã]o (foi )?reconhec|does not exist|n[aã]o existe)/i.test(e && e.message || "") && /dias|sentido/i.test(e && e.message || "");
+  const gravaHor = async (fn, args, fields, itemId) => {
+    const ex = horExtrasDoForm(fields, itemId);
+    if (!ex) { const x = itemId ? HOR_STATE.itens.find(i => i._id === String(itemId)) : null;
+      if (x && x.Dias && !("Dias" in fields) && (("Observacao" in fields && (fields.Observacao || "") !== (x.Observacao || "")) || ("Quadro" in fields && fields.Quadro !== x.Quadro))) fields.Dias = null;   /* o quadro foi atualizado por outra tela: os dias voltam a sair do tipo de dia + observação */
+      return fn.apply(SP, args); }
+    Object.assign(fields, ex.extra);
+    try { const r = await fn.apply(SP, args); PAXH.t = 0; return r; }
+    catch (e) { if (!semColuna(e)) throw e;
+      if (ex.sentObrig) throw new Error(`As colunas "Dias da semana" e "Sentido" ainda não existem na lista do SharePoint. ${session.n1 ? "Rode Sistema › Configuração › Executar tudo para criá-las." : "Peça a um administrador para rodar a Configuração."}`);
+      delete fields.Dias; delete fields.Sentido; const r = await fn.apply(SP, args); PAXH.t = 0;   /* a observação já diz os dias e o sentido é o da saída */
+      setTimeout(() => toast("Horário gravado. Para guardar os dias e o sentido em colunas próprias, rode Sistema › Configuração › Executar tudo.", 9000), 900); return r; }
+  };
+  SP.create = function (siteId, listId, fields) {
+    if (ehHor(listId)) return (async () => gravaHor(c0, arguments, fields, null))();
+    if (ehPax(listId) && fields && !PAX_UI._semTrava) {
+      let c; try { c = paxHorConfere({ Data: fields.Data, Servico: fields.Servico, Horario: fields.Horario, Sentido: fields.Sentido }); } catch (e) { return Promise.reject(e); } if (!c.ok) return Promise.reject(new Error(c.msg));
+      if (!fields.Trechos && fields.Origem === "Manual" && Number(fields.Pagantes) > 0) { const ks = paxTrechosConhecidos(fields.Servico, fields.Sentido || "Ida"); if (ks.length === 1) { const t = { [ks[0]]: Number(fields.Pagantes) }; if (Number(fields.Gratuidade) > 0) t.Gratuidade = Number(fields.Gratuidade); fields.Trechos = JSON.stringify(t); } }
+    }
+    return c0.apply(SP, arguments);
+  };
+  SP.update = function (siteId, listId, itemId, fields) {
+    if (ehHor(listId) && fields && ("Quadro" in fields || "Observacao" in fields)) return (async () => gravaHor(u0, arguments, fields, itemId))();
+    if (ehPax(listId) && fields && !PAX_UI._semTrava && ["Data", "Servico", "Horario", "Sentido"].some(k => k in fields)) {
+      const x = PAX_STATE.itens.find(i => i._id === String(itemId));
+      const at = x ? { Data: x.Data, Servico: x.Servico, Horario: paxHoraPura(x), Sentido: x.Sentido || "Ida" } : null;
+      const mudou = !at || ["Data", "Servico", "Horario", "Sentido"].some(k => k in fields && String(fields[k] == null ? "" : fields[k]).replace(/\s*\(F\)$/, "") !== at[k]);
+      if (mudou) { let c; try { c = paxHorConfere(Object.assign({}, at || {}, fields)); } catch (e) { return Promise.reject(e); } if (!c.ok) return Promise.reject(new Error(c.msg)); }   /* viagem antiga fora da tabela continua corrigível no que não é a chave */
+    }
+    if (ehPax(listId) && fields && "Pagantes" in fields && !("Trechos" in fields)) { try { const x = PAX_STATE.itens.find(i => i._id === String(itemId)), t = x ? paxTrechos(x) : {}, ks = Object.keys(t).filter(k => !/gratuid/i.test(k));
+        if (ks.length === 1 && Number(t[ks[0]]) === Number(x.Pagantes || 0) && Number(fields.Pagantes) !== Number(x.Pagantes || 0)) { t[ks[0]] = Number(fields.Pagantes); if (!t[ks[0]]) delete t[ks[0]]; fields.Trechos = Object.keys(t).length ? JSON.stringify(t) : null; } } catch (e) {} }   /* viagem de um trecho só: o trecho acompanha os pagantes */
+    return u0.apply(SP, arguments);
+  };
+}
+/* formulário "Lançar viagem": horários do dia como sugestão e conferência antes de gravar */
+{ const f0 = window.paxForm;
+  window.paxForm = function (id) {
+    const r = f0.apply(this, arguments); const h = $("pxHora"); if (!h || $("pxHoraHint")) return r;
+    h.setAttribute("list", "pxHoraList"); h.setAttribute("inputmode", "numeric"); h.setAttribute("placeholder", "05:20 ou 0520");
+    h.insertAdjacentHTML("afterend", `<datalist id="pxHoraList"></datalist><div class="hint" id="pxHoraHint"></div>`);
+    const pinta = () => { const d = $("pxData").value, dia = paxHorDoDia(d), hint = $("pxHoraHint"), dl = $("pxHoraList"); if (!hint) return;
+      if (!dia) { hint.textContent = PAXH.ok ? "" : `Tabela de Horários indisponível (${PAXH.erro || "não lida"}): o lançamento não é conferido.`; dl.innerHTML = ""; return; }
+      const serv = $("pxServ").value, sent = $("pxSent").value, hs = [...new Set(dia.filter(v => v.servs.includes(serv) && v.sent === sent).map(v => v.hora))].sort();
+      dl.innerHTML = hs.map(x => `<option value="${x}">`).join("");
+      hint.textContent = hs.length ? `Tabela de Horários (${paxHorDiaRot(d)}): ${hs.join(" · ")}` : `A Tabela de Horários não tem ${serv} · ${sent} em ${paxHorDiaRot(d)}.`; };
+    ["pxData", "pxServ", "pxSent"].forEach(k => $(k).addEventListener("change", pinta));
+    h.addEventListener("change", () => { const d = $("pxData").value, dia = paxHorDoDia(d); if (!dia) return; const hora = erpHoraNorm(h.value), serv = $("pxServ").value, ss = [...new Set(dia.filter(v => v.servs.includes(serv) && v.hora === hora).map(v => v.sent))]; if (ss.length === 1 && $("pxSent").value !== ss[0]) { $("pxSent").value = ss[0]; pinta(); } });
+    pinta(); return r;
+  };
+}
+document.addEventListener("click", e => {   /* antes do Salvar: acerta o horário e confere com a tabela (a mensagem aparece no próprio formulário) */
+  const b = e.target.closest && e.target.closest("#mSave"); if (!b) return;
+  ["pxHora", "hHora"].forEach(k => { const el = $(k); if (el) el.value = erpHoraNorm(el.value); });
+  if (!$("pxHora") || !$("pxData") || !/^\d{2}:\d{2}$/.test($("pxHora").value)) return;
+  const fk = { Data: $("pxData").value, Servico: $("pxServ").value, Horario: $("pxHora").value, Sentido: $("pxSent").value };
+  if (PAX_STATE.itens.some(i => i.Data === fk.Data && i.Servico === fk.Servico && paxHoraPura(i) === fk.Horario && (i.Sentido || "Ida") === fk.Sentido)) return;   /* é a própria viagem em edição (chave igual) ou repetida: o formulário cuida */
+  let c; try { c = paxHorConfere(fk); } catch (e2) { return; }
+  if (!c.ok) { e.preventDefault(); e.stopImmediatePropagation(); const er = $("pxErr"); if (er) { er.style.display = "block"; er.textContent = c.msg; } else toast(c.msg, 9000); }
+}, true);
+/* folha do dia: a grade vem da Tabela de Horários; o que está gravado fora dela aparece marcado */
+{ const m0 = paxLoteMontar;
+  paxLoteMontar = function (data) {
+    const L = m0.apply(this, arguments), dia = paxHorDoDia(data); L.tab = !!dia; if (!dia) return L;
+    const k = (s, h, se) => `${s}|${h}|${se}`, daTab = new Map(), mad = new Set(dia.filter(v => v.x.Bloco === "Madalena").map(v => v.hora + "|" + v.sent));
+    dia.forEach(v => { if (v.x.Quadro === "Especiais") return;   /* horário especial vale para lançar, mas não entra na grade de todo dia: usa-se "Adicionar Viagem" */
+      const dupMad = v.x.Bloco !== "Madalena" && v.servs.includes("Madalena") && mad.has(v.hora + "|" + v.sent); if (dupMad) return; const kk = k(v.servs[0], v.hora, v.sent); if (!daTab.has(kk)) daTab.set(kk, v); });
+    const naTab = l => dia.some(v => v.servs.includes(l.serv) && v.hora === l.hora && v.sent === l.sent);
+    const linhas = L.linhas.filter(l => l.id || l.livre || l.pag !== "" || l.grat !== "" || naTab(l));
+    linhas.forEach(l => { l.fora = !naTab(l) && !l.livre; });
+    linhas.forEach(l => { if (l.livre && !l.id && daTab.has(k(l.serv, l.hora, l.sent))) delete l.livre; });
+    daTab.forEach((v, kk) => { if (!linhas.some(l => !l.livre && (k(l.serv, l.hora, l.sent) === kk || (v.servs.includes(l.serv) && l.hora === v.hora && l.sent === v.sent)))) linhas.push({ serv: v.servs[0], hora: v.hora, sent: v.sent, pag: "", grat: "", id: null, p0: null, g0: null }); });
+    const ord = s => { const i = PAX_LOTE_SERV.findIndex(x => x[0] === s); return i < 0 ? 9 : i; };
+    L.linhas = linhas.sort((a, b) => (a.livre ? 1 : 0) - (b.livre ? 1 : 0) || (a.livre ? 0 : ord(a.serv) - ord(b.serv) || (a.sent === b.sent ? 0 : a.sent === "Ida" ? -1 : 1) || a.hora.localeCompare(b.hora)));
+    return L;
+  };
+}
+{ const h0 = paxLoteHtml;
+  paxLoteHtml = function () {
+    let h = h0.apply(this, arguments); const L = PAX_UI.lote;
+    if (L && L.tab) { h = h.replace(/A grade abaixo traz os horários que rodam em dia parecido \([^)]*\) e o que já está gravado neste dia\./, `A grade abaixo traz os horários da <b>Tabela de Horários</b> para ${esc(paxHorDiaRot(L.data))} e o que já está gravado neste dia. Só é possível lançar viagem em horário da tabela.`);
+      h = h.replace("+ Adicionar Viagem (horário fora da grade)", "+ Adicionar Viagem (outro serviço ou sentido da tabela)");
+      const nf = L.linhas.filter(l => l.fora).length; if (nf) h = h.replace('<div class="lanc-card"><div class="lanc-card-h"><h3>Viagens</h3>', `<div class="import-help pax-tab-aviso"><b>${nf} viagem(ns) gravada(s) neste dia fora da Tabela de Horários</b> (marcadas “Fora da Tabela”). Corrija o horário, o dia, o serviço ou o sentido no Banco de Dados, ou cadastre o horário na Tabela de Horários.</div><div class="lanc-card"><div class="lanc-card-h"><h3>Viagens</h3>`); }
+    else if (L) h = h.replace('<div class="lanc-card"><div class="lanc-card-h"><h3>Viagens</h3>', `<div class="import-help pax-tab-aviso">Tabela de Horários indisponível (${esc(PAXH.erro || "não lida")}): a grade foi montada pelos dias parecidos e os lançamentos <b>não são conferidos</b> com a tabela.</div><div class="lanc-card"><div class="lanc-card-h"><h3>Viagens</h3>`);
+    return h;
+  };
+}
+{ const r0 = paxLoteRodape;
+  paxLoteRodape = function () { const r = r0.apply(this, arguments); try { PAX_UI.lote.linhas.forEach((l, i) => { if (!l.fora) return; const ch = document.querySelector(`#paxLoteGrid [data-i="${i}"] .pl-st`); if (ch) { ch.classList.add("fora"); ch.textContent = "Fora da Tabela"; ch.title = "Gravada, mas não existe na Tabela de Horários para este dia"; } }); } catch (e) {} return r; };
+}
+{ const s0 = window.paxLoteSalvar;
+  window.paxLoteSalvar = async function () {
+    const L = PAX_UI.lote; if (L) for (const l of L.linhas) { if (l.livre && l.hora) l.hora = erpHoraNorm(l.hora); if (paxLoteSt(l) !== "novo") continue;
+      const c = paxHorConfere({ Data: L.data, Servico: l.serv, Horario: l.hora, Sentido: l.sent }); if (!c.ok) { toast(c.msg, 10000); return; } }
+    return s0.apply(this, arguments);
+  };
+}
+/* Banco de Dados: alteração em lote não pode levar viagem para fora da tabela */
+{ const b0 = window.paxBancoLote;
+  window.paxBancoLote = async function (campo, valor) {
+    try { const ruins = paxBancoSelecionadas().filter(x => (campo === "Sentido" ? (x.Sentido || "Ida") : x.Servico) !== valor).filter(x => !paxForaDaTabela(x)).map(x => paxHorConfere(Object.assign({ Data: x.Data, Servico: x.Servico, Horario: paxHoraPura(x), Sentido: x.Sentido || "Ida" }, { [campo]: valor }))).filter(c => !c.ok);   /* só conta quem está na tabela e sairia dela */
+      if (ruins.length) { toast(`Nada foi alterado: ${ruins.length} das viagens selecionadas ficariam fora da Tabela de Horários. Exemplo: ${ruins[0].msg}`, 12000); return; } } catch (e) {}
+    return b0.apply(this, arguments);
+  };
+}
+/* ---- 4 · Banco de Dados: trechos editáveis e viagens fora da tabela ---- */
+function paxForaDaTabela(x) { return !paxHorConfere({ Data: x.Data, Servico: x.Servico, Horario: paxHoraPura(x), Sentido: x.Sentido || "Ida" }, true).ok; }
+{ const l0 = paxBancoLista; paxBancoLista = function () { const r = l0.apply(this, arguments); return PAX_UI.bFora && PAXH.ok ? r.filter(paxForaDaTabela) : r; }; }
+window.paxBancoFora = v => { PAX_UI.bFora = !!v; paxBancoPinta(); };
+{ const r0 = paxBancoRow;
+  paxBancoRow = function (x, edita) {
+    let h = r0.apply(this, arguments); const fora = paxForaDaTabela(x), vazio = !Object.entries(paxTrechos(x)).some(([k, v]) => v && !/gratuid/i.test(k));
+    if (fora) h = h.replace(/^<tr data-id="([^"]*)" class="/, '<tr data-id="$1" title="Fora da Tabela de Horários para este dia" class="pb-fora ');
+    if (edita) h = h.replace('<td class="sup pb-tr">', `<td class="sup pb-tr pb-tr-ed" tabindex="0" title="Clique para editar os trechos desta viagem">${vazio && Number(x.Pagantes) > 0 ? '<span class="pb-tr-vz">+ informar</span>' : ""}`);
+    return h;
+  };
+}
+{ const h0 = paxBancoHtml;
+  paxBancoHtml = function () {
+    let h = h0.apply(this, arguments);
+    try { if (PAXH.ok) { const n = paxFiltra(paxDoMes()).filter(paxForaDaTabela).length;
+        if (n || PAX_UI.bFora) h = `<div class="import-help pax-tab-aviso"><b>${n} viagem(ns) de ${esc(mesLabel(PAX_STATE.mes))} fora da Tabela de Horários</b> (o horário não existe para o dia da semana, o serviço ou o sentido gravados; aparecem com o horário em laranja). <button type="button" class="btn sm" onclick="paxBancoFora(${PAX_UI.bFora ? "false" : "true"})">${PAX_UI.bFora ? "Mostrar Todas" : "Mostrar Só Essas"}</button></div>` + h; }
+      else h = `<div class="import-help pax-tab-aviso">Tabela de Horários indisponível (${esc(PAXH.erro || "não lida")}): as viagens não estão sendo conferidas com a tabela.</div>` + h; } catch (e) {}
+    return h;
+  };
+}
+{ const g0 = paxBGrava; paxBGrava = async function (td, x) { const antes = paxForaDaTabela(x), r = await g0.apply(this, arguments); try { if (paxForaDaTabela(x) !== antes && td.isConnected) paxBancoPinta(); } catch (e) {} return r; }; }   /* a marca "fora da tabela" e a contagem acompanham a correção na célula */
+window.paxTrechosEditar = id => {
+  if (!podeEditar("pax")) { toast("Seu acesso à Estatística de Passageiros é só de leitura."); return; }
+  const x = PAX_STATE.itens.find(i => i._id === String(id)); if (!x) return;
+  const atual = paxTrechos(x), sent = x.Sentido || "Ida", conhecidos = paxTrechosConhecidos(x.Servico, sent), pag = Number(x.Pagantes || 0);
+  const ks = [...new Set([...Object.keys(atual).filter(k => !/gratuid/i.test(k)), ...conhecidos])];
+  const temAlgum = ks.some(k => Number(atual[k]) > 0);
+  $("modal").className = "modal";
+  openModal(`Trechos · ${fmtDate(x.Data)} · ${paxServRot(x.Servico)} ${paxHoraPura(x)} ${sent}`, `<p class="hint" style="margin:0 0 12px">Pagantes desta viagem: <b>${pag}</b>. Informe quantos em cada trecho; a soma tem de fechar com os pagantes.</p>
+    <div class="ptr-grid" id="ptrGrid">${ks.map((k, i) => `<label for="ptr${i}">${esc(paxTrechoLegivel(k))} <span class="sup">(${esc(k)})</span></label><input type="number" min="0" id="ptr${i}" data-k="${esc(k)}" value="${Number(atual[k]) > 0 ? Number(atual[k]) : (!temAlgum && ks.length === 1 ? pag : "")}">`).join("")}
+      <input id="ptrNovoK" placeholder="Outro trecho (ex.: MC X CM)" maxlength="30" style="text-transform:uppercase"><input type="number" min="0" id="ptrNovoV" placeholder="0"></div>
+    ${ks.length ? "" : `<p class="hint" style="margin-top:10px">Ainda não há trechos no histórico de ${esc(paxServRot(x.Servico))} · ${esc(sent)}: escreva o trecho no formato ORIGEM X DESTINO.</p>`}
+    <label style="display:flex;gap:8px;align-items:center;margin-top:14px;font-weight:600;text-transform:none;letter-spacing:0"><input type="checkbox" id="ptrAjusta" style="width:auto"> Atualizar os pagantes da viagem para a soma dos trechos</label>
+    <div class="err-msg" id="ptrErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const err = m => { $("ptrErr").style.display = "block"; $("ptrErr").textContent = m; return false; }, t = {}; let soma = 0, ruim = false;
+    document.querySelectorAll("#ptrGrid input[data-k]").forEach(i => { const v = i.value.trim(); if (v === "") return; const n = Number(v); if (!Number.isInteger(n) || n < 0) { ruim = true; return; } if (n) { t[i.dataset.k] = n; soma += n; } });
+    const nk = $("ptrNovoK").value.trim().replace(/\s+/g, " ").toUpperCase(), nv = $("ptrNovoV").value.trim();
+    if (nk || nv) { const n = Number(nv); if (!nk || !/^.+\s[X×]\s.+$/.test(nk)) return err("Escreva o outro trecho como ORIGEM X DESTINO (ex.: MC X CM)."); if (!Number.isInteger(n) || n <= 0) return err("Informe a quantidade do outro trecho."); t[nk.replace("×", "X")] = (t[nk] || 0) + n; soma += n; }
+    if (ruim) return err("Use números inteiros (zero ou mais).");
+    const ajusta = $("ptrAjusta").checked, f = {};
+    if (soma && soma !== pag && !ajusta) return err(`A soma dos trechos (${soma}) é diferente dos pagantes da viagem (${pag}). Acerte os trechos ou marque “Atualizar os pagantes”.`);
+    if (Number(x.Gratuidade) > 0) t.Gratuidade = Number(x.Gratuidade);
+    f.Trechos = Object.keys(t).length ? JSON.stringify(t) : null; if (ajusta && soma !== pag) f.Pagantes = soma;
+    await SP.update(PAX_STATE.site.id, PAX_STATE.list.id, x._id, f);
+    Object.assign(x, f); PAX_UI._loteVelho = true; toast("Trechos gravados"); paxBancoPinta(); return true;
+  });
+};
+document.addEventListener("click", e => { const td = e.target.closest && e.target.closest(".pax-banco td.pb-tr-ed"); if (!td) return; const tr = td.closest("tr[data-id]"); if (tr) paxTrechosEditar(tr.dataset.id); });
+document.addEventListener("keydown", e => { if (e.key !== "Enter" && e.key !== " ") return; const td = e.target; if (!td || !td.matches || !td.matches(".pax-banco td.pb-tr-ed")) return; e.preventDefault(); const tr = td.closest("tr[data-id]"); if (tr) paxTrechosEditar(tr.dataset.id); });
+/* importação de planilha: não trava (é o registro do que rodou), mas a prévia aponta o que está fora da tabela */
+{ const p0 = paxImportPrevHtml;
+  paxImportPrevHtml = function (imp) {
+    let h = p0.apply(this, arguments);
+    try { if (PAXH.ok && imp && imp.regs) { const res = new Map(); imp.regs.forEach(f => { if (paxHorConfere(f).ok) return; const k = `${paxServRot(f.Servico)} ${f.Horario} ${f.Sentido} (${HOR_DROT[paxHorDiaChave(f.Data)]})`; res.set(k, (res.get(k) || 0) + 1); });
+        if (res.size) { const tot = [...res.values()].reduce((a, b) => a + b, 0), lista = [...res.entries()].sort((a, b) => b[1] - a[1]);
+          h += `<div class="import-help" style="margin-top:12px"><b>${tot} viagem(ns) da planilha fora da Tabela de Horários</b> (a importação grava assim mesmo; elas ficam marcadas no Banco de Dados): ${esc(lista.slice(0, 12).map(([k, n]) => `${k}: ${n} dia(s)`).join("; "))}${lista.length > 12 ? ` e mais ${lista.length - 12}` : ""}. Se o horário rodou de verdade, cadastre-o na Tabela de Horários; se não, confira a planilha.</div>`; } } } catch (e) {}
+    return h;
+  };
+}
+/* botão Ativo em cada horário do quadro (pedido das 16:31): liga e desliga sem abrir o formulário; só horário ativo vale para lançar passageiros */
+{ const p0 = paintHor;
+  paintHor = function () {
+    const r = p0.apply(this, arguments);
+    try { if (HOR_STATE.ready && podeEditar("horarios")) document.querySelectorAll('#horBody tr[onclick*="horForm("]').forEach(tr => {
+        const m = (tr.getAttribute("onclick") || "").match(/decodeURIComponent\('([^']*)'\)/); if (!m || tr.querySelector(".hor-ativo")) return;
+        const x = HOR_STATE.itens.find(i => i._id === decodeURIComponent(m[1])); if (!x) return; const on = x.Ativo !== false, td = tr.querySelector("td.a") || tr.lastElementChild;
+        td.insertAdjacentHTML("beforeend", `<button type="button" class="hor-ativo${on ? " on" : ""}" role="switch" aria-checked="${on}" data-id="${esc(x._id)}" title="${on ? "Ativo: aparece no quadro e aceita lançamento de passageiros. Clique para desativar." : "Desativado: fora do quadro e dos lançamentos. Clique para ativar."}" aria-label="${esc(x.Origem + " " + x.Horario)}: ${on ? "ativo" : "desativado"}"><i></i><span>${on ? "Ativo" : "Inativo"}</span></button>`); }); } catch (e) {}
+    return r;
+  };
+  window.paintHor = paintHor;
+}
+window.horAtivoAlternar = async id => {
+  if (!podeEditar("horarios")) { toast("Seu acesso à Tabela de Horários é só de leitura."); return; }
+  const x = HOR_STATE.itens.find(i => i._id === String(id)); if (!x) return; const novo = x.Ativo === false;
+  const b = document.querySelector(`#horBody .hor-ativo[data-id="${CSS.escape(String(id))}"]`); if (b) b.disabled = true;
+  try { await SP.update(HOR_STATE.site.id, HOR_STATE.list.id, x._id, { Ativo: novo }); }
+  catch (e) { if (b) b.disabled = false; toast("Não foi possível gravar: " + e.message, 7000); return; }
+  x.Ativo = novo; PAXH.cache.clear(); paintHor();
+  toast(novo ? `${x.Origem} ${x.Horario} ativado: volta ao quadro e aos lançamentos de passageiros.` : `${x.Origem} ${x.Horario} desativado: sai do quadro, da impressão e dos lançamentos de passageiros.`, 6000);
+};
+document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("#horBody .hor-ativo"); if (!b) return; e.preventDefault(); e.stopPropagation(); horAtivoAlternar(b.dataset.id); }, true);
+(function () { const st = document.createElement("style"); st.id = "erp-v01477b";
+  st.textContent = `.hor-ativo{display:inline-flex;align-items:center;gap:6px;margin-left:8px;padding:3px 9px 3px 4px;min-height:26px;border:1px solid #D3D8DE;border-radius:999px;background:#fff;font:700 11.5px Manrope,"Segoe UI",sans-serif;color:var(--ink-2);cursor:pointer;vertical-align:middle;white-space:nowrap}
+  .hor-ativo i{display:block;width:26px;height:16px;border-radius:999px;background:#C9CDD3;position:relative;transition:background .15s}.hor-ativo i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:left .15s}
+  .hor-ativo.on{color:#197A46;border-color:#BFE3CD}.hor-ativo.on i{background:#197A46}.hor-ativo.on i::after{left:12px}.hor-ativo:disabled{opacity:.5;cursor:wait}
+  .hor-t td.a{white-space:nowrap;text-align:right}@media print{.hor-ativo{display:none}}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -53119,6 +53473,7 @@ CONFIG.version = "v0.14.73";   /* Operacional, arrumação 1: menus Frota, Centr
 CONFIG.version = "v0.14.74";   /* Operacional: Horários e Tarifas na Frota (Central de Comando sai); Frota › Sem Parar com Portal CTF e Indicadores de Abastecimento */
 CONFIG.version = "v0.14.75";   /* símbolo do sistema: ônibus (opção 5) no topo, no menu, na aba do navegador e no ícone do celular */
 CONFIG.version = "v0.14.76";   /* ícone da aba do navegador: ônibus de 4 colunas (opção 4); o resto segue com a opção 5 */
+CONFIG.version = "v0.14.77";   /* Passageiros × Tabela de Horários: horário sem dois-pontos, dias da semana e sentido no horário, lançamento travado pela tabela, trechos editáveis */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -52915,6 +52915,112 @@ function opHubCrumbs() {
 }
 { const alvo = document.getElementById("main");
   if (alvo && typeof MutationObserver === "function") { let t = 0; new MutationObserver(() => { if (t) return; t = setTimeout(() => { t = 0; opHubCrumbs(); }, 0); }).observe(alvo, { childList: true, subtree: true }); } }
+/* =====================================================================
+   v0.14.74 (16/11/2026) · Arrumação do Operacional, rodada 1 (cont.) — pedido do Rafael, 09:12
+   - Tabela de Horários e Tabela de Tarifas passam para o menu Frota; o menu Central de Comando sai (o endereço antigo abre a Frota).
+   - Frota › Sem Parar (menu novo, dentro da Frota) com:
+       Portal CTF ..... o portal de controle de abastecimento de diesel da frota (CTF · Sem Parar Empresas) aberto dentro do ERP,
+                        com "Abrir em nova aba" para quando o portal não aceitar abrir dentro de outro site ou não manter o login;
+       Indicadores .... página reservada aos KPIs de abastecimento. Hoje explica os dois caminhos (API pela Sem Parar Empresas ou
+                        importação do relatório de abastecimentos exportado do portal); a leitura entra quando houver um arquivo
+                        de exemplo ou o acesso à API.
+   - Trilha e menu lateral sobem pelos menus encaixados (Início › Operacional › Frota › Sem Parar › Portal CTF).
+   ===================================================================== */
+CONFIG.portalCtfUrl = "https://www.portalctf.com.br/PortalCTF/AutenticacaoUsuario.aspx?ReturnUrl=%2fPortalCTF%2fMainPage.aspx";   /* página pública de login do portal */
+{ const iCmd = OP_HUBS.findIndex(h => h.id === "op_comando");
+  if (iCmd >= 0) OP_HUBS.splice(iCmd, 1);
+  const iMod = MODULES.findIndex(m => m.id === "op_comando"); if (iMod >= 0) MODULES.splice(iMod, 1);
+  const fr = OP_HUBS.find(h => h.id === "op_frota");
+  fr.lead = "Os veículos e o que acompanha a operação deles na rua: rastreamento, trajetos, infrações, horários, tarifas e abastecimento.";
+  fr.filhos.push(
+    { id: "horarios", desc: "Quadro de partidas de Conceição de Macabu, Macaé e Madalena por tipo de dia; A4 e Excel" },
+    { id: "tarifas", desc: "Tarifas por linha e trecho, como no quadro do guichê; impressão A4" },
+    { id: "op_semparar", desc: "Abastecimento de diesel da frota (CTF · Sem Parar Empresas): o portal e os indicadores" });
+  ["horarios", "tarifas"].forEach(id => { const m = MODULES.find(x => x.id === id); if (m) { m.menu = false; m.hubDe = "op_frota"; } });
+  OP_HUBS.push({ id: "op_semparar", pai: "op_frota", path: "#/operacional/sem-parar", icon: "gps", name: "Sem Parar",
+    lead: "Abastecimento de diesel da frota pelo sistema CTF (Sem Parar Empresas).",
+    filhos: [
+      { id: "op_ctf", desc: "O portal de controle de abastecimento da frota, aberto aqui dentro do ERP (login do próprio portal)" },
+      { id: "op_ctf_ind", desc: "KPIs de abastecimento: litros, gasto, preço médio e consumo por veículo (em estudo: API ou importação)" } ] });
+  const novos = [
+    { id: "op_semparar", path: "#/operacional/sem-parar", icon: "gps", name: "Sem Parar", area: "Operacional", groups: ["operacional", "diretoria"], status: "piloto", hub: true, menu: false, hubDe: "op_frota" },
+    { id: "op_ctf", path: "#/operacional/sem-parar/portal-ctf", icon: "globe", name: "Portal CTF", area: "Operacional", groups: ["operacional", "diretoria"], status: "piloto", menu: false, hubDe: "op_semparar", wide: true },
+    { id: "op_ctf_ind", path: "#/operacional/sem-parar/indicadores", icon: "chart", name: "Indicadores de Abastecimento", area: "Operacional", groups: ["operacional", "diretoria"], status: "em estudo", menu: false, hubDe: "op_semparar" } ];
+  const iFr = MODULES.findIndex(m => m.id === "op_frota");
+  MODULES.splice(iFr >= 0 ? iFr + 1 : MODULES.length, 0, ...novos);
+  const a = AREAS.find(x => x.name === "Operacional");
+  if (a) a.desc = "Frota (veículos, horários, tarifas, abastecimento), equipe, manutenção, almoxarifado, equipamentos e painel de horários";
+}
+/* cadeia de menus de um módulo: [Frota, Sem Parar] para o Portal CTF */
+function opHubCadeia(id) {
+  const out = []; let m = MODULES.find(x => x.id === id), n = 0;
+  while (m && m.hubDe && n++ < 5) { const h = OP_HUBS.find(x => x.id === m.hubDe); if (!h) break; out.unshift(h); m = MODULES.find(x => x.id === h.id); }
+  return out;
+}
+const opCrumbsHtml = (cadeia, fim) => `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a>${cadeia.map(h => `<span>›</span><a href="${h.path}">${esc(h.name)}</a>`).join("")}<span>›</span><b>${esc(fim)}</b></nav>`;
+pageOpHub = function (h) {
+  const tiles = h.filhos.map(f => ({ f, m: MODULES.find(x => x.id === f.id) })).filter(x => x.m && canSee(x.m))
+    .map(({ f, m }) => `<a class="tile" href="${m.path}">${typeof favBtn === "function" ? favBtn(m) : ""}<span class="tile-ico">${ICONS[m.icon] || ICONS.chart}</span><h3>${esc(m.name)}</h3><div class="area">${esc(f.desc)}</div><span class="st ${m.status === "próximo" ? "proximo" : ""}"><i></i>${esc(m.status || "")}</span></a>`).join("");
+  return `<div class="page">${opCrumbsHtml(opHubCadeia(h.id), h.name)}
+    <h1>${esc(h.name)}</h1><p class="lead">${esc(h.lead)} Clique num bloco para abrir.</p>
+    ${tiles ? `<div class="tiles">${tiles}</div>` : `<div class="cap-empty"><h3>Sem acesso</h3><p>Nenhuma página deste menu está liberada para o seu usuário.</p></div>`}</div>`;
+};
+window.pageOpHub = pageOpHub;
+opHubCrumbs = function () {
+  const main = document.getElementById("main"); if (!main) return;
+  const cadeia = opHubCadeia(session.modAtual); if (!cadeia.length) return;
+  main.querySelectorAll("nav.crumbs").forEach(nav => {
+    if (nav.querySelector(`a[href="${cadeia[cadeia.length - 1].path}"]`)) return;
+    let ref = nav.querySelector('a[href="#/area/Operacional"]'); if (!ref) return;
+    cadeia.forEach(h => { const a = nav.querySelector(`a[href="${h.path}"]`); if (a) { ref = a; return; } ref.insertAdjacentHTML("afterend", `<span>›</span><a href="${h.path}">${esc(h.name)}</a>`); ref = ref.nextElementSibling.nextElementSibling; });
+  });
+};
+/* menu lateral: página dentro de menus encaixados marca o menu que aparece no menu lateral (Frota) */
+{ const n0 = navAtivo;
+  navAtivo = function (id) { const c = opHubCadeia(id); return n0.call(this, c.length ? c[0].id : id); }; }
+function pagePortalCtf() {
+  const url = CONFIG.portalCtfUrl;
+  return `<div class="page ctf-page">${opCrumbsHtml(opHubCadeia("op_ctf"), "Portal CTF")}
+    <div class="cap-topo"><div><h1 style="margin:0">Portal CTF</h1><p class="sup" style="margin:2px 0 0">Controle de abastecimento de diesel da frota · CTF / Sem Parar Empresas · o login é o do próprio portal</p></div><span class="grow"></span>
+      <div class="page-actions"><button class="btn" type="button" onclick="ctfRecarregar()">Recarregar</button><a class="btn primary" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Abrir em nova aba ↗</a></div></div>
+    <p class="ctf-aviso">Se o portal não aparecer abaixo ou não mantiver o login, é porque ele não permite ser aberto dentro de outro site: use <b>Abrir em nova aba</b>.</p>
+    <div class="ctf-moldura"><iframe id="ctfFrame" title="Portal CTF" src="${esc(url)}" referrerpolicy="no-referrer"></iframe></div></div>`;
+}
+window.ctfRecarregar = () => { const f = document.getElementById("ctfFrame"); if (f) f.src = CONFIG.portalCtfUrl; };
+function pageCtfInd() {
+  return `<div class="page">${opCrumbsHtml(opHubCadeia("op_ctf_ind"), "Indicadores de Abastecimento")}
+    <h1>Indicadores de Abastecimento</h1><p class="lead">KPIs do abastecimento de diesel da frota, a partir do sistema CTF (Sem Parar Empresas). Em estudo: a página recebe os dados assim que o caminho de integração for definido.</p>
+    <div class="ctf-grid">
+      <section class="cap-card"><div class="cap-card-h"><h3>Caminho 1 · API</h3><span class="cap-card-s">automático</span></div><div class="ctf-txt">
+        <p>O portal não publica uma API aberta. Integrações de cartão combustível costumam ser liberadas por contrato: pedir ao gerente de conta da <b>Sem Parar Empresas</b> se existe API ou webservice de abastecimentos para o cliente, e a documentação.</p>
+        <p>Com API, os indicadores se atualizam sozinhos (pelo Make, como os relatórios do GlobalBus).</p></div></section>
+      <section class="cap-card"><div class="cap-card-h"><h3>Caminho 2 · Importação</h3><span class="cap-card-s">funciona sem a Sem Parar</span></div><div class="ctf-txt">
+        <p>O portal tem o relatório de <b>abastecimentos por data</b>. Exportado em Excel ou CSV, ele é importado aqui e vira o painel.</p>
+        <p>Para montar a importação: exportar um mês do relatório e mandar o arquivo no chat do ERP.</p></div></section>
+      <section class="cap-card"><div class="cap-card-h"><h3>O que o painel vai mostrar</h3><span class="cap-card-s">proposta</span></div><div class="ctf-txt">
+        <ul><li>Litros e gasto (R$) no mês, por veículo e por posto</li><li>Preço médio por litro e variação</li><li>Consumo (km/l) por veículo, com o hodômetro do abastecimento</li><li>Abastecimentos recusados e fora do padrão</li><li>Ligação com a Frota (prefixo) e com a CAP (fatura do mês)</li></ul></div></section>
+    </div></div>`;
+}
+window.pagePortalCtf = pagePortalCtf; window.pageCtfInd = pageCtfInd;
+{ const st = document.createElement("style"); st.id = "erp-v01474";
+  st.textContent = `.ctf-aviso{margin:10px 0 12px;font-size:13.5px;color:var(--ink-2)}
+  .ctf-moldura{border:1px solid #E2E5E9;border-radius:2px;background:#fff;height:calc(100vh - 250px);min-height:520px}
+  .ctf-moldura iframe{width:100%;height:100%;border:0;display:block}
+  .ctf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin-top:8px}
+  .ctf-txt{padding:12px 16px 16px;font-size:14px;line-height:1.55;color:var(--ink)}.ctf-txt p{margin:0 0 8px}.ctf-txt ul{margin:0;padding-left:18px}
+  @media (max-width:640px){.ctf-moldura{height:70vh;min-height:420px}}`;
+  document.head.appendChild(st); }
+{ const r0 = route;
+  route = function () {
+    const hash = (location.hash || "").split("?")[0];
+    if (hash === "#/operacional/central-de-comando") { location.replace("#/operacional/menu-frota"); return; }   /* o menu Central de Comando saiu (v0.14.74) */
+    const pg = { "#/operacional/sem-parar/portal-ctf": ["op_ctf", pagePortalCtf], "#/operacional/sem-parar/indicadores": ["op_ctf_ind", pageCtfInd] }[hash];
+    if (!pg) return r0.apply(this, arguments);
+    const m = MODULES.find(x => x.id === pg[0]); if (!canSee(m)) { location.hash = "#/inicio"; return; }
+    session.modAtual = m.id; session.pagAtual = ""; document.body.classList.remove("nav-open", "lista-aberta"); document.body.classList.toggle("wide", !!m.wide);
+    $("main").innerHTML = pg[1](); navAtivo(m.id); window.scrollTo(0, 0);
+  };
+}
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -52993,6 +53099,7 @@ CONFIG.version = "v0.14.70";   /* símbolo do sistema: três quadrados cinza #BF
 CONFIG.version = "v0.14.71";   /* símbolo do sistema: três quadrados cinza #6B7280 (preenchimento e contorno) e o laranja */
 CONFIG.version = "v0.14.72";   /* símbolo do sistema "Curva": laranja em quarto de círculo, três quadrados cinza #8A9099 sem contorno */
 CONFIG.version = "v0.14.73";   /* Operacional, arrumação 1: menus Frota, Central de Comando e Equipe; Tarefas, Regulamentações, Ocorrências e Diesel fora do menu; Escala da Equipe */
+CONFIG.version = "v0.14.74";   /* Operacional: Horários e Tarifas na Frota (Central de Comando sai); Frota › Sem Parar com Portal CTF e Indicadores de Abastecimento */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

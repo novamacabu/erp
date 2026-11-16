@@ -9195,7 +9195,7 @@ function pageEquip() {
   const EQUIP_MODS = [
     { id: "pagbank",    name: "Máquinas Pagbank",     icon: "device",   desc: "Cadastro das maquininhas (modelo, série, status, local, responsável)", status: "piloto", href: "#/operacional/equipamentos/pagbank" },
     { id: "riocard",    name: "Rio Card",             icon: "ticket",   desc: "Cartões Rio Card da empresa e reparos de validadores e botoeiras",        status: "piloto", href: "#/operacional/equipamentos/rio-card" },   /* v0.12.25 · v0.12.79: hub */
-    { id: "frota",      name: "Frota",                icon: "bus",      desc: "Cadastro de veículos (prévia — ver Operacional › Frota)",             status: "prévia", href: "#/operacional/frota" },
+    { id: "frota",      name: "Veículos",             icon: "bus",      desc: "Cadastro de veículos (ver Operacional › Frota › Veículos)",             status: "prévia", href: "#/operacional/frota" },
     { id: "ti",         name: "Equipamentos de TI",   icon: "device",   desc: "Computadores, impressoras, roteadores (próximas versões)",              status: "próximo", href: null },
     { id: "radio",      name: "Rádios e GPS",         icon: "pulse",    desc: "Rádios de agência, GPS da frota (próximas versões)",                    status: "próximo", href: null }
   ];
@@ -15894,7 +15894,7 @@ Object.assign(SETUP_TEXT, {
   horarios: `Cria no site Operacional a lista "Operacional — Horários" com o quadro de partidas embutido (linha, fretamento e Madalena, por tipo de dia). Editado em Operacional › Tabela de Horários.`,
   pax: `Cria no site Financeiro a lista "Financeiro — Passageiros" (vazia): passageiros por viagem, alimentada pela importação da planilha mensal em Financeiro › Estatística de Passageiros. A lista antiga "Operacional — Passageiros" (site Operacional) não é usada nem apagada.`,
   gar_eq: `Cria no site Operacional a lista "Garagem — Equipe" (vazia): funcionários das garagens de Macaé e Conceição de Macabu, com horário padrão e equipe de plantão.`,
-  gar_esc: `Cria no site Operacional a lista "Garagem — Escala" (vazia): turnos e plantões por dia, gerados ou importados em Operacional › Escala Garagem.`
+  gar_esc: `Cria no site Operacional a lista "Garagem — Escala" (vazia): turnos e plantões por dia, gerados ou importados em Operacional › Equipe › Escala da Equipe.`
 });
 
 /* =====================================================================
@@ -17642,7 +17642,7 @@ function garChave(f) { return `${f.Garagem}|${f.Data}|${f.Turno}|${f.Funcionario
 function garIniciais(n) { return String(n || "?").split(" ").filter(Boolean).slice(0, 2).map(s => s[0]).join("").toUpperCase(); }
 function pageGar() {
   return `<div class="page">
-    <div class="page-head"><div><h1>Escala Garagem</h1>
+    <div class="page-head"><div><h1>Escala da Equipe</h1>
     <p class="lead">Escala de serviço das garagens de Macaé (equipe fixa + plantão de sábado, domingo e feriado) e de Conceição de Macabu (rodízio diário dos fiscais). Gere o mês, ajuste dia a dia e imprima em A4 para o mural.</p></div>
     <div class="page-actions" id="garActions"></div></div>
     <div id="garBody"><div class="cap-empty"><h3>Carregando…</h3><p>Buscando as listas no SharePoint.</p></div></div>
@@ -17657,7 +17657,7 @@ function paintGar() {
   const body = $("garBody"); if (!body) return;
   const g = GAR_STATE.garagem, edita = GAR_STATE.ready && podeEditar("garagem");
   const acts = $("garActions"); if (acts) acts.innerHTML = `<button class="btn" onclick="garImprimir()">Imprimir (PDF)</button><button class="btn" onclick="garEquipeAbrir()" title="Integrantes da garagem: horário padrão, equipe de plantão e ordem do rodízio">Equipe</button>${edita ? `<button class="btn" onclick="garTab('importar')">Importar planilha</button><button class="btn primary" onclick="garGerar()">Gerar mês</button>` : ""}`;   /* v0.12.72: sem as abas Escala do mês / Equipe / Importar — a equipe abre numa janela */
-  if (!GAR_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>As listas da Escala Garagem ainda não existem</h3><p>Rode Sistema › Configuração › "Executar tudo na ordem" (você precisa ser proprietário do site Operacional). Depois cadastre a equipe de cada garagem ou importe as planilhas de escala.</p></div>`; return; }
+  if (!GAR_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>As listas da Escala da Equipe ainda não existem</h3><p>Rode Sistema › Configuração › "Executar tudo na ordem" (você precisa ser proprietário do site Operacional). Depois cadastre a equipe de cada garagem ou importe as planilhas de escala.</p></div>`; return; }
   const tabsG = `<div class="seg-tabs" role="tablist">${GAR_GARAGENS.map(x => `<button role="tab" class="${g === x ? "on" : ""}" onclick="garGaragem(${jsArg(x)})">Garagem ${esc(x)}</button>`).join("")}</div>`;
   if (GAR_STATE.tab === "equipe") GAR_STATE.tab = "escala";
   const sub = GAR_STATE.tab === "importar" ? `<button class="btn sm ghost" onclick="garTab('escala')">← Voltar à escala</button>` : "";
@@ -24803,8 +24803,8 @@ function frotaDetroRelatorio(tipo, paisagem, opt) {   /* opt.tela (v0.12.69): de
 const FROTA = { aba: "veic", site: null, list: undefined, listVeic: undefined, listManut: undefined, listNc: undefined, itens: [], veics: [], manut: [], ncs: [], erro: "", f: { veic: "", sit: "", q: "" } };
 function pageFrota() {
   return `<div class="page" id="frotaRoot">
-    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><b>Frota</b></nav>
-    <div class="cap-topo"><div><h1 style="margin:0">Frota</h1><p class="sup" style="margin:2px 0 0">Veículos, vistoria, manutenção e multas</p></div><span class="grow"></span><div id="frotaActions" class="page-actions"></div></div>
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><b>Veículos</b></nav>
+    <div class="cap-topo"><div><h1 style="margin:0">Veículos</h1><p class="sup" style="margin:2px 0 0">Veículos, vistoria, manutenção e multas</p></div><span class="grow"></span><div id="frotaActions" class="page-actions"></div></div>
     <div class="cap-views" id="frotaTabs"><button class="tab" data-k="veic" onclick="frotaAba('veic')">Veículos</button><button class="tab" data-k="manut" onclick="frotaAba('manut')">Manutenção</button><button class="tab" data-k="nc" onclick="frotaAba('nc')">Não conformidades</button><button class="tab" data-k="multas" onclick="frotaAba('multas')">Registro de Multas</button><button class="tab" data-k="geral" onclick="frotaAba('geral')">Visão geral (prévia)</button></div>
     <div id="frotaBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
   </div>`;
@@ -31629,7 +31629,7 @@ function frotaGeralPintar(body) {
 
 /* ---------- página do veículo ---------- */
 const FV = { id: "", aba: "int", svgs: null, svgsDe: "" };
-function frotaCrumbs(v, extra) { return `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><a href="#/operacional/frota">Frota</a>${!v && extra ? `<span>›</span><b>${esc(extra)}</b>` : ""}${v ? `<span>›</span>${extra ? `<a href="#/operacional/frota/veiculo/${encodeURIComponent(v._id)}">${esc(v.Title || "Veículo")}</a><span>›</span><b>${esc(extra)}</b>` : `<b>${esc(v.Title || "Veículo")}</b>`}` : ""}</nav>`; }
+function frotaCrumbs(v, extra) { return `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><a href="#/operacional/frota">Veículos</a>${!v && extra ? `<span>›</span><b>${esc(extra)}</b>` : ""}${v ? `<span>›</span>${extra ? `<a href="#/operacional/frota/veiculo/${encodeURIComponent(v._id)}">${esc(v.Title || "Veículo")}</a><span>›</span><b>${esc(extra)}</b>` : `<b>${esc(v.Title || "Veículo")}</b>`}` : ""}</nav>`; }
 function pageFrotaVeic() { return `<div class="page" id="fvRoot"><div id="fvTopo">${frotaCrumbs(null)}</div><div id="fvBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`; }
 async function renderFrotaVeic(id) {
   FV.id = String(id);
@@ -52840,12 +52840,81 @@ capPendUI = function () { if (!CAP_STATE.pend) CAP_STATE.pend = { tipo: [], q: "
    (#BFC5CD no lugar de #D3D8DE); o laranja continua. */
 /* v0.14.71 (15/11/2026) · Pedido do Rafael (18:57): cinza dos três quadrados #6B7280 (escolhido entre quatro tons), preenchimento e
    contorno no mesmo tom; o laranja continua. O brilho claro nas bordas no iPhone é o efeito de vidro do sistema, não está na imagem. */
-/* v0.14.72 (15/11/2026) · Pedido do Rafael (19:03): opção 2 · Seta da tela de design (variações geométricas). Três quadrados cinza #8A9099
-   (mais claro que o #6B7280), sem contorno (o traço deixava linhas nos cantos de cima e da esquerda); o quadrado de cima à direita é
-   cortado na diagonal: triângulo laranja em cima (aponta para cima e à direita) sobre o quadrado cinza-claro #CDD1D6. */
 /* v0.14.72 (15/11/2026) · Pedido do Rafael (19:01–19:04): variação geométrica "1 · Curva" (tela de design, quadro "Variações
    geométricas"): o quadrado laranja vira um quarto de círculo (a estrada que dobra); três quadrados cinza #8A9099, um tom mais claro
    que o #6B7280 da v0.14.71, só preenchimento, sem contorno. */
+/* =====================================================================
+   v0.14.73 (16/11/2026) · Arrumação do Operacional, rodada 1 (pedido do Rafael, 08:58)
+   - Saem do menu do Operacional (página do departamento, menu lateral e busca): Central de Tarefas, Regulamentações, Ocorrências e
+     Controle de Diesel. Código, listas, permissões e endereços continuam (as tarefas automáticas e as "Normas relacionadas" seguem
+     funcionando); voltam ao menu tirando o id de OP_FORA_DO_MENU.
+   - Menus novos (cartões, como Agentes Financeiros e Diretoria › Relatórios):
+       Frota ............... Veículos (a antiga página Frota), GlobalBus, Itinerários, Mapa Operacional, Painel de Infrações
+       Central de Comando .. Tabela de Horários, Tabela de Tarifas
+       Equipe .............. Escala da Equipe (antiga Escala Garagem)
+   - Os endereços das páginas não mudam (favoritos, links e permissões continuam valendo); só os menus são novos. A permissão de cada
+     página é a mesma de antes; o cartão do menu aparece para quem tem alguma página dele.
+   ===================================================================== */
+const OP_FORA_DO_MENU = ["tarefas", "regul", "ocorr", "diesel"];
+const OP_HUBS = [
+  { id: "op_frota", path: "#/operacional/menu-frota", icon: "bus", name: "Frota",
+    lead: "Os veículos e o que acompanha a operação deles na rua: rastreamento, trajetos e infrações.",
+    filhos: [
+      { id: "frota",     desc: "Cadastro dos ônibus, vistorias, manutenção, não conformidades, multas e a vida de cada veículo" },
+      { id: "globalbus", desc: "Gestão de frota e telemetria (SATX): o portal e os indicadores dos relatórios da plataforma" },
+      { id: "itin",      desc: "O trajeto de cada linha e sentido: pontos de embarque e desembarque, áreas restritas e alertas" },
+      { id: "mapa_op",   desc: "Veículos em tempo real no GlobalBus, numa janela ao lado do ERP" },
+      { id: "infracoes", desc: "Infrações de condução dos motoristas: indicadores, gráficos, relatórios e envio" } ] },
+  { id: "op_comando", path: "#/operacional/central-de-comando", icon: "tv", name: "Central de Comando",
+    lead: "Os quadros que comandam a operação do dia: partidas e tarifas.",
+    filhos: [
+      { id: "horarios", desc: "Quadro de partidas de Conceição de Macabu, Macaé e Madalena por tipo de dia; A4 e Excel" },
+      { id: "tarifas",  desc: "Tarifas por linha e trecho, como no quadro do guichê; impressão A4" } ] },
+  { id: "op_equipe", path: "#/operacional/equipe", icon: "people", name: "Equipe",
+    lead: "As pessoas da operação: escalas de serviço.",
+    filhos: [
+      { id: "garagem", desc: "Escala de serviço da equipe: garagens de Macaé (equipe fixa e plantões) e de Conceição de Macabu (rodízio dos fiscais)" } ] }
+];
+{ const nm = { frota: "Veículos", garagem: "Escala da Equipe" };
+  MODULES.forEach(m => { if (OP_FORA_DO_MENU.includes(m.id)) m.menu = false; if (nm[m.id]) m.name = nm[m.id]; });
+  const iFrota = MODULES.findIndex(m => m.id === "frota");
+  const hubs = OP_HUBS.map(h => ({ id: h.id, path: h.path, icon: h.icon, name: h.name, area: "Operacional", groups: ["operacional", "diretoria"], status: "ativo", hub: true }));
+  MODULES.splice(iFrota >= 0 ? iFrota : MODULES.length, 0, ...hubs);   /* os menus ficam no lugar onde a Frota estava (ordem padrão do departamento) */
+  OP_HUBS.forEach(h => h.filhos.forEach(f => { const m = MODULES.find(x => x.id === f.id); if (m) { m.menu = false; m.hubDe = h.id; } }));
+  const a = AREAS.find(x => x.name === "Operacional");
+  if (a) a.desc = "Frota, central de comando, equipe, manutenção, almoxarifado, equipamentos e painel de horários";
+}
+function pageOpHub(h) {
+  const tiles = h.filhos.map(f => ({ f, m: MODULES.find(x => x.id === f.id) })).filter(x => x.m && canSee(x.m))
+    .map(({ f, m }) => `<a class="tile" href="${m.path}">${typeof favBtn === "function" ? favBtn(m) : ""}<span class="tile-ico">${ICONS[m.icon] || ICONS.chart}</span><h3>${esc(m.name)}</h3><div class="area">${esc(f.desc)}</div><span class="st ${m.status === "próximo" ? "proximo" : ""}"><i></i>${esc(m.status || "")}</span></a>`).join("");
+  return `<div class="page">
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><b>${esc(h.name)}</b></nav>
+    <h1>${esc(h.name)}</h1><p class="lead">${esc(h.lead)} Clique num bloco para abrir.</p>
+    ${tiles ? `<div class="tiles">${tiles}</div>` : `<div class="cap-empty"><h3>Sem acesso</h3><p>Nenhuma página deste menu está liberada para o seu usuário.</p></div>`}</div>`;
+}
+window.pageOpHub = pageOpHub;
+{ const r0 = route;
+  route = function () {
+    const hash = (location.hash || "").split("?")[0];
+    const h = OP_HUBS.find(x => x.path === hash);
+    if (!h) return r0.apply(this, arguments);
+    const m = MODULES.find(x => x.id === h.id); if (!canSee(m)) { location.hash = "#/inicio"; return; }
+    session.modAtual = h.id; session.pagAtual = ""; document.body.classList.remove("wide", "nav-open", "lista-aberta");
+    $("main").innerHTML = pageOpHub(h); if (typeof navAtivo === "function") navAtivo(h.id); window.scrollTo(0, 0);
+  };
+}
+/* Trilha: página que mora num destes menus ganha o menu entre o departamento e ela (as telas que montam a própria trilha também) */
+function opHubCrumbs() {
+  const main = document.getElementById("main"); if (!main) return;
+  const m = MODULES.find(x => x.id === session.modAtual); const h = m && OP_HUBS.find(x => x.id === m.hubDe); if (!h) return;
+  main.querySelectorAll("nav.crumbs").forEach(nav => {
+    if (nav.querySelector(`a[href="${h.path}"]`)) return;
+    const area = nav.querySelector('a[href="#/area/Operacional"]'); if (!area) return;
+    area.insertAdjacentHTML("afterend", `<span>›</span><a href="${h.path}">${esc(h.name)}</a>`);
+  });
+}
+{ const alvo = document.getElementById("main");
+  if (alvo && typeof MutationObserver === "function") { let t = 0; new MutationObserver(() => { if (t) return; t = setTimeout(() => { t = 0; opHubCrumbs(); }, 0); }).observe(alvo, { childList: true, subtree: true }); } }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -52923,7 +52992,7 @@ CONFIG.version = "v0.14.69";   /* símbolo do sistema: três quadrados cinza-cla
 CONFIG.version = "v0.14.70";   /* símbolo do sistema: três quadrados cinza #BFC5CD, preenchimento e contorno no mesmo tom, e o laranja */
 CONFIG.version = "v0.14.71";   /* símbolo do sistema: três quadrados cinza #6B7280 (preenchimento e contorno) e o laranja */
 CONFIG.version = "v0.14.72";   /* símbolo do sistema "Curva": laranja em quarto de círculo, três quadrados cinza #8A9099 sem contorno */
-CONFIG.version = "v0.14.72";   /* símbolo do sistema: opção Seta — três quadrados cinza sem contorno e o quarto cortado na diagonal (laranja e cinza-claro) */
+CONFIG.version = "v0.14.73";   /* Operacional, arrumação 1: menus Frota, Central de Comando e Equipe; Tarefas, Regulamentações, Ocorrências e Diesel fora do menu; Escala da Equipe */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -53392,6 +53392,461 @@ document.addEventListener("click", e => { const b = e.target.closest && e.target
   .hor-ativo.on{color:#197A46;border-color:#BFE3CD}.hor-ativo.on i{background:#197A46}.hor-ativo.on i::after{left:12px}.hor-ativo:disabled{opacity:.5;cursor:wait}
   .hor-t td.a{white-space:nowrap;text-align:right}@media print{.hor-ativo{display:none}}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.78 (17/11/2026) · TI › Manutenção de Equipamentos (pedido do Rafael, 08:05)
+   Cadastro dos ativos de TI e registro das manutenções (preventivas, corretivas, formatação, limpeza, upgrades…).
+   - Listas novas no site TI (Configuração › Executar tudo): "TI — Ativos" e "TI — Manutenções".
+   - Abas: Painel · Ativos · Manutenções · Plano Preventivo.
+   - Fluxo: a manutenção nasce Agendada (ou já Concluída, para registrar o que foi feito); Em andamento / Aguardando peça /
+     Aguardando terceiro podem tirar o equipamento de uso ("Em manutenção"); Concluída devolve ao uso, grava a última preventiva
+     e calcula a próxima pela periodicidade do ativo (e pode já agendar a próxima); Descarte concluído baixa o ativo.
+     Agendada com data passada aparece como "Atrasada". Checklist de serviços sugerido pelo tipo de equipamento.
+   - Gravação recusa conflito (outra pessoa alterou o item depois que você abriu), com quem e quando.
+   - Permissões: módulo "Manutenção de Equipamentos" em Usuários e permissões (ver · editar · proprietário exclui).
+   ===================================================================== */
+MODULES.push({ id: "ti_manut", path: "#/ti/manutencao-de-equipamentos", icon: "wrench", name: "Manutenção de Equipamentos", area: "TI", groups: ["ti"], status: "piloto", wide: true });
+{ const a = AREAS.find(x => x.name === "TI"); if (a) a.desc = "Chamados internos e manutenção de equipamentos"; }
+if (typeof AG_MOD_SITES !== "undefined") AG_MOD_SITES.ti_manut = [];
+const TIM_TIPOS_ATIVO = ["Computador (desktop)", "Notebook", "Monitor", "Impressora", "Multifuncional", "Scanner", "Nobreak / estabilizador", "Roteador", "Switch", "Access point / Wi-Fi", "Servidor / NAS", "Telefone IP / ramal", "Celular corporativo", "Tablet", "Câmera / DVR / NVR", "Relógio de ponto", "Projetor / TV", "Periférico (teclado, mouse, headset)", "Outro"];
+const TIM_SITU = ["Em uso", "Em estoque / reserva", "Em manutenção", "Emprestado", "Defeituoso / aguardando reparo", "Baixado / descartado"];
+const TIM_LOCAIS = ["Sede — Conceição de Macabu", "Garagem — Macaé", "Agência — Conceição de Macabu", "Agência — Macaé", "Home office", "Outro"];
+const TIM_TIPOS_MAN = ["Preventiva", "Corretiva", "Preditiva / inspeção", "Formatação / reinstalação", "Instalação / configuração", "Atualização / upgrade", "Backup / restauração", "Descarte / baixa"];
+const TIM_STATUS = ["Agendada", "Em andamento", "Aguardando peça", "Aguardando terceiro", "Concluída", "Cancelada"];
+const TIM_PRIOR = ["Baixa", "Média", "Alta", "Crítica"];
+const TIM_EXEC = ["Interna (TI)", "Terceirizada", "Garantia do fabricante"];
+const TIM_SERV = {
+  "Limpeza": ["Limpeza física interna (poeira, ventoinhas)", "Limpeza externa (gabinete, tela, teclado)", "Troca de pasta térmica", "Limpeza de cabeçote / roletes", "Limpeza de lentes / câmera"],
+  "Sistema e software": ["Formatação e reinstalação do sistema", "Atualização do sistema operacional", "Atualização de drivers / BIOS / firmware", "Antivírus: atualização e varredura completa", "Limpeza de arquivos temporários", "Otimização / desfragmentação de disco", "Instalação de software", "Remoção de software não autorizado", "Inventário de software e licenças", "Configuração de usuário / perfil"],
+  "Hardware": ["Verificação de disco (SMART / erros)", "Teste de memória", "Troca de peça", "Upgrade de memória", "Upgrade de armazenamento (SSD)", "Teste de bateria", "Troca de toner / cartucho / fita", "Teste de impressão / digitalização"],
+  "Rede e segurança": ["Revisão de cabos e conexões", "Configuração de rede / IP", "Backup da configuração do equipamento", "Troca de senhas padrão", "Verificação de gravação (câmeras)"],
+  "Dados": ["Backup de dados do usuário", "Restauração de backup", "Teste de restauração", "Apagamento seguro de dados (descarte)"],
+  "Geral": ["Inspeção visual", "Teste de funcionamento", "Etiqueta de patrimônio conferida", "Outro"]
+};
+const TIM_SERV_TODOS = Object.values(TIM_SERV).flat();
+function timPreset(tipoAtivo) {   /* checklist sugerido para a preventiva, pelo tipo do equipamento */
+  const t = String(tipoAtivo || "");
+  const base = ["Inspeção visual", "Teste de funcionamento", "Etiqueta de patrimônio conferida"];
+  if (/Computador|Notebook/.test(t)) return ["Limpeza física interna (poeira, ventoinhas)", "Limpeza externa (gabinete, tela, teclado)", "Troca de pasta térmica", "Atualização do sistema operacional", "Atualização de drivers / BIOS / firmware", "Antivírus: atualização e varredura completa", "Limpeza de arquivos temporários", "Verificação de disco (SMART / erros)", "Backup de dados do usuário", "Inventário de software e licenças", ...(/Notebook/.test(t) ? ["Teste de bateria"] : []), ...base];
+  if (/Impressora|Multifuncional|Scanner/.test(t)) return ["Limpeza de cabeçote / roletes", "Limpeza externa (gabinete, tela, teclado)", "Atualização de drivers / BIOS / firmware", "Teste de impressão / digitalização", "Revisão de cabos e conexões", ...base];
+  if (/Nobreak/.test(t)) return ["Teste de bateria", "Limpeza externa (gabinete, tela, teclado)", "Revisão de cabos e conexões", ...base];
+  if (/Roteador|Switch|Access point/.test(t)) return ["Atualização de drivers / BIOS / firmware", "Backup da configuração do equipamento", "Troca de senhas padrão", "Revisão de cabos e conexões", "Limpeza física interna (poeira, ventoinhas)", ...base];
+  if (/Servidor/.test(t)) return ["Backup de dados do usuário", "Teste de restauração", "Verificação de disco (SMART / erros)", "Atualização do sistema operacional", "Atualização de drivers / BIOS / firmware", "Limpeza física interna (poeira, ventoinhas)", ...base];
+  if (/Câmera/.test(t)) return ["Verificação de gravação (câmeras)", "Limpeza de lentes / câmera", "Atualização de drivers / BIOS / firmware", "Verificação de disco (SMART / erros)", ...base];
+  if (/Celular|Tablet/.test(t)) return ["Atualização do sistema operacional", "Antivírus: atualização e varredura completa", "Backup de dados do usuário", "Teste de bateria", ...base];
+  return ["Limpeza externa (gabinete, tela, teclado)", ...base];
+}
+function timPeriodoPadrao(t) { t = String(t || ""); return /Impressora|Multifuncional|Servidor/.test(t) ? 3 : /Computador|Notebook|Nobreak|Câmera|Scanner/.test(t) ? 6 : /Periférico|Monitor|Projetor/.test(t) ? 0 : 12; }
+LISTS.ti_ativos = {
+  key: "ti_ativos", displayName: "TI — Ativos", siteKey: "ti", titleAs: "Patrimônio",
+  description: "TI NMB · ativos de tecnologia (computadores, notebooks, impressoras, rede, nobreaks, câmeras…) com local, responsável, situação, garantia e periodicidade da manutenção preventiva. Editada em TI › Manutenção de Equipamentos.",
+  columns: [
+    { name: "Tipo",               displayName: "Tipo",                    required: true, choice: choice(TIM_TIPOS_ATIVO, true) },
+    { name: "Marca",              displayName: "Marca",                   text: { allowMultipleLines: false, maxLength: 60 } },
+    { name: "Modelo",             displayName: "Modelo",                  text: { allowMultipleLines: false, maxLength: 100 } },
+    { name: "NumeroSerie",        displayName: "Nº de série",             text: { allowMultipleLines: false, maxLength: 80 } },
+    { name: "Hostname",           displayName: "Nome na rede / hostname", text: { allowMultipleLines: false, maxLength: 60 } },
+    { name: "SistemaOperacional", displayName: "Sistema operacional",     text: { allowMultipleLines: false, maxLength: 60 } },
+    { name: "Configuracao",       displayName: "Configuração",            text: { allowMultipleLines: false, maxLength: 160 } },
+    { name: "Departamento",       displayName: "Departamento",            choice: choice(CENTROS_CUSTO, true) },
+    { name: "Local",              displayName: "Local",                   choice: choice(TIM_LOCAIS, true) },
+    { name: "Responsavel",        displayName: "Responsável / usuário",   text: { allowMultipleLines: false, maxLength: 100 } },
+    { name: "Situacao",           displayName: "Situação",                required: true, choice: choice(TIM_SITU) },
+    { name: "DataAquisicao",      displayName: "Data de aquisição",       dateTime: dateOnly },
+    { name: "GarantiaAte",        displayName: "Garantia até",            dateTime: dateOnly },
+    { name: "Fornecedor",         displayName: "Fornecedor",              text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "ValorAquisicao",     displayName: "Valor de aquisição",      number: { decimalPlaces: "two", displayAs: "number", minimum: 0 } },
+    { name: "PeriodicidadeMeses", displayName: "Preventiva a cada (meses)", number: integer(0, 60) },
+    { name: "UltimaPreventiva",   displayName: "Última preventiva",       dateTime: dateOnly },
+    { name: "ProximaPreventiva",  displayName: "Próxima preventiva",      dateTime: dateOnly },
+    { name: "Observacoes",        displayName: "Observações",             text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Historico",          displayName: "Histórico (JSON)",        text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+LISTS.ti_manut = {
+  key: "ti_manut", displayName: "TI — Manutenções", siteKey: "ti", titleAs: "Protocolo",
+  description: "TI NMB · manutenções dos ativos de TI (preventiva, corretiva, formatação, upgrade, backup, descarte…): status, datas, técnico, serviços feitos, peças e custo. Editada em TI › Manutenção de Equipamentos.",
+  columns: [
+    { name: "AtivoId",        displayName: "Ativo (id)",              required: true, text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Ativo",          displayName: "Ativo (patrimônio)",      text: { allowMultipleLines: false, maxLength: 60 } },
+    { name: "AtivoDesc",      displayName: "Equipamento",             text: { allowMultipleLines: false, maxLength: 160 } },
+    { name: "Tipo",           displayName: "Tipo de manutenção",      required: true, choice: choice(TIM_TIPOS_MAN) },
+    { name: "Status",         displayName: "Status",                  required: true, choice: choice(TIM_STATUS) },
+    { name: "Prioridade",     displayName: "Prioridade",              choice: choice(TIM_PRIOR) },
+    { name: "DataPrevista",   displayName: "Data prevista",           dateTime: dateOnly },
+    { name: "DataInicio",     displayName: "Início",                  dateTime: dateOnly },
+    { name: "DataConclusao",  displayName: "Concluída em",            dateTime: dateOnly },
+    { name: "Tecnico",        displayName: "Técnico / responsável",   text: { allowMultipleLines: false, maxLength: 100 } },
+    { name: "Execucao",       displayName: "Execução",                choice: choice(TIM_EXEC) },
+    { name: "Fornecedor",     displayName: "Fornecedor / assistência", text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "Custo",          displayName: "Custo (R$)",              number: { decimalPlaces: "two", displayAs: "number", minimum: 0 } },
+    { name: "Servicos",       displayName: "Serviços realizados (JSON)", text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Pecas",          displayName: "Peças trocadas",          text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Descricao",      displayName: "Motivo / problema",       text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Solucao",        displayName: "O que foi feito / laudo", text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Chamado",        displayName: "Chamado de TI",           text: { allowMultipleLines: false, maxLength: 40 } },
+    { name: "ForaDeUso",      displayName: "Equipamento fora de uso", boolean: {} },
+    { name: "ProximaPreventiva", displayName: "Próxima preventiva calculada", dateTime: dateOnly },
+    { name: "Historico",      displayName: "Histórico (JSON)",        text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+SETUP_ORDER.push("ti_ativos", "ti_manut");
+SETUP_TEXT.ti_ativos = `Cria no site TI a lista "TI — Ativos" (v0.14.78): cadastro dos equipamentos de TI (tipo, marca, modelo, série, local, responsável, situação, garantia e periodicidade da preventiva). Editada em TI › Manutenção de Equipamentos.`;
+SETUP_TEXT.ti_manut = `Cria no site TI a lista "TI — Manutenções" (v0.14.78): manutenções preventivas e corretivas dos ativos (status, datas, técnico, serviços, peças, custo). Editada em TI › Manutenção de Equipamentos.`;
+
+const TIM = { site: null, la: undefined, lm: undefined, ativos: [], mans: [], ready: false, erro: "", aba: "painel",
+  fa: { q: "", tipo: "", sit: "", local: "", dep: "" }, fm: { q: "", st: "", tipo: "", ano: "" }, fp: { sit: "" } };
+MOD_RESET.ti_manut = () => { TIM.aba = "painel"; TIM.fa = { q: "", tipo: "", sit: "", local: "", dep: "" }; TIM.fm = { q: "", st: "", tipo: "", ano: "" }; TIM.fp = { sit: "" }; };
+const timHoje = () => todayISO();
+const timD = v => v ? ymd(v) : "";
+function timMaisMeses(iso, n) { if (!iso || !n) return ""; const d = dLocal(iso); const dia = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + Number(n)); const ult = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); d.setDate(Math.min(dia, ult)); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function timDias(iso) { if (!iso) return null; return Math.round((dLocal(iso) - dLocal(timHoje())) / 86400000); }
+async function timCarregar(force) {
+  TIM.erro = "";
+  try {
+    if (!TIM.site) TIM.site = await SP.site(CONFIG.sites.ti);
+    if (force || TIM.la === undefined || TIM.lm === undefined) { const ls = await SP.lists(TIM.site.id); TIM.la = ls.find(l => l.displayName === LISTS.ti_ativos.displayName) || null; TIM.lm = ls.find(l => l.displayName === LISTS.ti_manut.displayName) || null; }
+    if (!TIM.la || !TIM.lm) { TIM.ativos = []; TIM.mans = []; TIM.ready = false; return; }
+    const [a, m] = await Promise.all([SP.items(TIM.site.id, TIM.la.id), SP.items(TIM.site.id, TIM.lm.id)]);
+    const map = it => Object.assign({ _id: String(it.id), _lm: it.lastModifiedDateTime || "" }, it.fields || {});
+    TIM.ativos = a.map(map); TIM.mans = m.map(map); TIM.ready = true;
+  } catch (e) { TIM.erro = String((e && e.message) || e); TIM.ready = false; TIM.la = undefined; TIM.lm = undefined; }
+}
+window.timCarregar = timCarregar;
+const timPode = () => TIM.ready && podeEditar("ti_manut");
+const timAtivo = id => TIM.ativos.find(a => a._id === String(id));
+const timAtivoRot = a => a ? [a.Title, a.Tipo, [a.Marca, a.Modelo].filter(Boolean).join(" ")].filter(Boolean).join(" · ") : "";
+const timJson = (v, d) => { try { const x = JSON.parse(v || ""); return x == null ? d : x; } catch (e) { return d; } };
+const timAberta = m => !["Concluída", "Cancelada"].includes(m.Status);
+function timStatusEf(m) { return m.Status === "Agendada" && m.DataPrevista && timD(m.DataPrevista) < timHoje() ? "Atrasada" : (m.Status || "Agendada"); }
+function timStPill(s) { const c = { "Concluída": "st-pago", "Cancelada": "st-cinza", "Atrasada": "st-venc", "Em andamento": "st-hoje", "Aguardando peça": "st-pend", "Aguardando terceiro": "st-pend", "Agendada": "st-aguardando" }[s] || "st-cinza"; return `<span class="pill ${c}"><i></i>${esc(s)}</span>`; }
+function timSitPill(s) { const c = { "Em uso": "st-pago", "Em manutenção": "st-hoje", "Defeituoso / aguardando reparo": "st-venc", "Baixado / descartado": "st-cinza", "Emprestado": "st-pend", "Em estoque / reserva": "st-aguardando" }[s] || "st-cinza"; return `<span class="pill ${c}"><i></i>${esc(s || "—")}</span>`; }
+function timPrioPill(p) { if (!p) return ""; const c = { "Crítica": "st-venc", "Alta": "st-hoje", "Média": "st-aguardando", "Baixa": "st-cinza" }[p]; return `<span class="pill ${c}"><i></i>${esc(p)}</span>`; }
+/* plano preventivo de um ativo: { prox, sit: "vencida"|"breve"|"emdia"|"agendada"|"sem" , ag } */
+function timPlano(a) {
+  const per = Number(a.PeriodicidadeMeses || 0);
+  if (!per || a.Situacao === "Baixado / descartado") return { prox: "", sit: "sem", ag: null };
+  const ag = TIM.mans.filter(m => m.AtivoId === a._id && m.Tipo === "Preventiva" && timAberta(m)).sort((x, y) => timD(x.DataPrevista).localeCompare(timD(y.DataPrevista)))[0] || null;
+  const ult = timD(a.UltimaPreventiva), prox = timD(a.ProximaPreventiva) || (ult ? timMaisMeses(ult, per) : "");
+  if (ag) return { prox: timD(ag.DataPrevista) || prox, sit: "agendada", ag };
+  if (!prox) return { prox: "", sit: "vencida", nunca: true, ag: null };
+  const d = timDias(prox); return { prox, sit: d < 0 ? "vencida" : d <= 30 ? "breve" : "emdia", ag: null };
+}
+function timPlanoPill(p) { const r = { vencida: ["st-venc", p.nunca ? "Nunca feita" : "Vencida"], breve: ["st-pend", "Vence em 30 dias"], emdia: ["st-pago", "Em dia"], agendada: ["st-aguardando", "Agendada"], sem: ["st-cinza", "Sem preventiva"] }[p.sit]; return `<span class="pill ${r[0]}"><i></i>${r[1]}</span>`; }
+function timHist(v, txt) { const h = timJson(v, []); h.push({ em: new Date().toISOString(), por: (session.me && session.me.displayName) || "", o: txt }); return JSON.stringify(h.slice(-60)); }
+/* gravação com conferência de conflito (outra pessoa alterou depois que a tela leu) */
+async function timGrava(lista, x, fields) {
+  const L = lista === "a" ? TIM.la : TIM.lm;
+  if (x && x._id) {
+    try { const at = await graph(`/sites/${TIM.site.id}/lists/${L.id}/items/${x._id}?$select=id,lastModifiedDateTime,lastModifiedBy`);
+      if (x._lm && at && at.lastModifiedDateTime && at.lastModifiedDateTime !== x._lm) { const quem = at.lastModifiedBy && at.lastModifiedBy.user && at.lastModifiedBy.user.displayName; throw new Error(`Este registro foi alterado por ${quem || "outra pessoa"} em ${new Date(at.lastModifiedDateTime).toLocaleString("pt-BR")} depois que você o abriu. Clique em Atualizar e refaça a alteração.`); } }
+    catch (e) { if (/foi alterado/.test(e.message)) throw e; }
+    const r = await SP.update(TIM.site.id, L.id, x._id, fields);
+    Object.assign(x, fields); try { const at = await graph(`/sites/${TIM.site.id}/lists/${L.id}/items/${x._id}?$select=id,lastModifiedDateTime`); x._lm = at.lastModifiedDateTime || x._lm; } catch (e) {}
+    return r;
+  }
+  const it = await SP.create(TIM.site.id, L.id, fields);
+  const novo = Object.assign({ _id: String(it.id), _lm: it.lastModifiedDateTime || "" }, it.fields || fields);
+  (lista === "a" ? TIM.ativos : TIM.mans).push(novo); return novo;
+}
+function pageTiManut() {
+  return `<div class="page" id="timRoot">
+    <div class="cap-topo"><div><h1 style="margin:0">Manutenção de Equipamentos</h1><p class="sup" style="margin:2px 0 0">Ativos de TI e manutenções preventivas e corretivas: formatação, limpeza, upgrades, backup e descarte</p></div><span class="grow"></span><div id="timActions" class="page-actions"></div></div>
+    <div id="timBody"><div class="cap-empty"><h3>Carregando…</h3><p>Buscando as listas no SharePoint.</p></div></div></div>`;
+}
+async function renderTiManut() { const b = $("timBody"); if (!b) return; await timCarregar(true); paintTiManut(); }
+window.renderTiManut = renderTiManut;
+const timKpi = (lbl, val, sub, cls, on) => `<button type="button" class="kpi ${cls || ""}" ${on ? `onclick="${on}"` : 'tabindex="-1"'}><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div><div class="sub">${esc(sub)}</div></button>`;
+function paintTiManut() {
+  const body = $("timBody"), acts = $("timActions"); if (!body) return;
+  const ed = timPode();
+  if (acts) acts.innerHTML = `<button class="btn" onclick="renderTiManut()">Atualizar</button>${TIM.ready ? `<button class="btn" onclick="timExcel()">Exportar Excel</button>` : ""}${ed ? `<button class="btn" onclick="timAtivoForm()">Cadastrar Equipamento</button><button class="btn primary" onclick="timManForm()">Registrar Manutenção</button>` : ""}`;
+  if (!TIM.ready) { body.innerHTML = TIM.erro ? `<div class="cap-empty"><h3>Não foi possível ler as listas</h3><p>${esc(TIM.erro)}</p><button class="btn" onclick="renderTiManut()">Tentar de Novo</button></div>` : `<div class="cap-empty"><h3>As listas "TI — Ativos" e "TI — Manutenções" ainda não existem</h3><p>Rode Sistema › Configuração › "Executar tudo na ordem" (é preciso ser proprietário do site TI).</p></div>`; return; }
+  const abas = [["painel", "Painel"], ["ativos", "Ativos"], ["man", "Manutenções"], ["plano", "Plano Preventivo"]];
+  const nVenc = TIM.ativos.filter(a => timPlano(a).sit === "vencida").length, nAtr = TIM.mans.filter(m => timStatusEf(m) === "Atrasada").length;
+  const tabs = `<div class="seg-tabs" role="tablist">${abas.map(([k, l]) => `<button role="tab" class="${TIM.aba === k ? "on" : ""}" onclick="timAba('${k}')">${l}${k === "plano" && nVenc ? ` <span class="tim-badge">${nVenc}</span>` : ""}${k === "man" && nAtr ? ` <span class="tim-badge">${nAtr}</span>` : ""}</button>`).join("")}</div>`;
+  const h = TIM.aba === "ativos" ? timAtivosHtml() : TIM.aba === "man" ? timMansHtml() : TIM.aba === "plano" ? timPlanoHtml() : timPainelHtml();
+  body.innerHTML = `<div class="op-topo"><span class="grow"></span>${tabs}</div>${h}`;
+  timWire();
+}
+window.paintTiManut = paintTiManut;
+window.timAba = k => { TIM.aba = k; paintTiManut(); };
+function timPainelHtml() {
+  const at = TIM.ativos.filter(a => a.Situacao !== "Baixado / descartado"), ano = String(new Date().getFullYear());
+  const planos = at.map(a => ({ a, p: timPlano(a) }));
+  const venc = planos.filter(x => x.p.sit === "vencida"), breve = planos.filter(x => x.p.sit === "breve");
+  const abertas = TIM.mans.filter(timAberta), atras = TIM.mans.filter(m => timStatusEf(m) === "Atrasada");
+  const conclAno = TIM.mans.filter(m => m.Status === "Concluída" && timD(m.DataConclusao).startsWith(ano));
+  const custo = conclAno.reduce((s, m) => s + Number(m.Custo || 0), 0);
+  const garantia = at.filter(a => { const d = timDias(timD(a.GarantiaAte)); return d != null && d >= 0 && d <= 60; });
+  const kpis = `<div class="cap-kpis cap-kpis-6">
+    ${timKpi("Equipamentos ativos", at.length, `${at.filter(a => a.Situacao === "Em uso").length} em uso`, "", "timAba('ativos')")}
+    ${timKpi("Em manutenção", at.filter(a => a.Situacao === "Em manutenção" || a.Situacao === "Defeituoso / aguardando reparo").length, "fora de uso agora", at.some(a => a.Situacao === "Em manutenção") ? "hoje" : "", "TIM.fa.sit='Em manutenção'; timAba('ativos')")}
+    ${timKpi("Preventivas vencidas", venc.length, `${breve.length} vencem em 30 dias`, venc.length ? "venc" : "pago", "TIM.fp.sit='vencida'; timAba('plano')")}
+    ${timKpi("Manutenções em aberto", abertas.length, `${atras.length} atrasada(s)`, atras.length ? "venc" : abertas.length ? "hoje" : "", "TIM.fm.st='abertas'; timAba('man')")}
+    ${timKpi(`Concluídas em ${ano}`, conclAno.length, `${conclAno.filter(m => m.Tipo === "Preventiva").length} preventivas`, "pago", `TIM.fm.st='Concluída'; TIM.fm.ano='${ano}'; timAba('man')`)}
+    ${timKpi(`Custo em ${ano}`, fmtBRL(custo), "manutenções concluídas", "")}
+  </div>`;
+  const lin = (a, p) => `<tr onclick="timAtivoAbrir(${jsArg(a._id)})"><td class="nw"><b>${esc(a.Title || "—")}</b></td><td>${esc(a.Tipo || "")}<div class="sup">${esc([a.Marca, a.Modelo].filter(Boolean).join(" "))}</div></td><td>${esc(a.Responsavel || a.Departamento || "—")}<div class="sup">${esc(a.Local || "")}</div></td><td class="nw">${p.prox ? fmtDate(p.prox) : "—"}</td><td>${timPlanoPill(p)}</td></tr>`;
+  const tab = (t, rows, vazio) => `<section class="cap-card"><div class="cap-card-h"><h3>${t}</h3></div>${rows.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Patrimônio</th><th>Equipamento</th><th>Usuário / Local</th><th>Preventiva</th><th>Situação</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>` : `<p class="sup" style="padding:12px 16px">${vazio}</p>`}</section>`;
+  const manLin = m => `<tr onclick="timManForm(${jsArg(m._id)})"><td class="nw"><b>${esc(m.Title || "")}</b></td><td>${esc(m.Ativo || "")}<div class="sup">${esc(m.AtivoDesc || "")}</div></td><td>${esc(m.Tipo || "")}</td><td class="nw">${m.DataPrevista ? fmtDate(m.DataPrevista) : "—"}</td><td>${timStPill(timStatusEf(m))}</td></tr>`;
+  const prox = abertas.slice().sort((x, y) => timD(x.DataPrevista || "9999").localeCompare(timD(y.DataPrevista || "9999"))).slice(0, 10);
+  return `${kpis}<div class="tim-duo">
+    ${tab("Preventivas vencidas", venc.slice(0, 12).map(x => lin(x.a, x.p)), "Nenhuma preventiva vencida.")}
+    <section class="cap-card"><div class="cap-card-h"><h3>Próximas manutenções em aberto</h3></div>${prox.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Protocolo</th><th>Equipamento</th><th>Tipo</th><th>Prevista</th><th>Status</th></tr></thead><tbody>${prox.map(manLin).join("")}</tbody></table></div>` : `<p class="sup" style="padding:12px 16px">Nenhuma manutenção em aberto.</p>`}</section>
+    ${garantia.length ? `<section class="cap-card"><div class="cap-card-h"><h3>Garantias vencendo em 60 dias</h3></div><div class="table-wrap"><table class="cap-table"><thead><tr><th>Patrimônio</th><th>Equipamento</th><th>Usuário / Local</th><th>Garantia até</th><th>Faltam</th></tr></thead><tbody>${garantia.sort((x, y) => timD(x.GarantiaAte).localeCompare(timD(y.GarantiaAte))).map(a => `<tr onclick="timAtivoAbrir(${jsArg(a._id)})"><td class="nw"><b>${esc(a.Title || "—")}</b></td><td>${esc(a.Tipo || "")}<div class="sup">${esc([a.Marca, a.Modelo].filter(Boolean).join(" "))}</div></td><td>${esc(a.Responsavel || a.Departamento || "—")}<div class="sup">${esc(a.Local || "")}</div></td><td class="nw">${fmtDate(a.GarantiaAte)}</td><td class="nw"><span class="pill ${timDias(timD(a.GarantiaAte)) <= 15 ? "st-venc" : "st-pend"}"><i></i>${timDias(timD(a.GarantiaAte))} dia(s)</span></td></tr>`).join("")}</tbody></table></div></section>` : ""}
+  </div>${TIM.ativos.length ? "" : `<div class="cap-empty"><h3>Nenhum equipamento cadastrado</h3><p>Comece por "Cadastrar Equipamento". Cada equipamento recebe a periodicidade da preventiva pelo tipo (dá para mudar).</p></div>`}`;
+}
+function timFiltroSel(id, rot, opts, val) { return `<select id="${id}" aria-label="${esc(rot)}"><option value="">${esc(rot)}</option>${opts.map(o => `<option ${val === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`; }
+function timAtivosLista() {
+  const f = TIM.fa, q = normName(f.q);
+  return TIM.ativos.filter(a => (!f.tipo || a.Tipo === f.tipo) && (!f.sit || a.Situacao === f.sit) && (!f.local || a.Local === f.local) && (!f.dep || a.Departamento === f.dep)
+    && (!q || normName([a.Title, a.Tipo, a.Marca, a.Modelo, a.NumeroSerie, a.Hostname, a.Responsavel, a.Departamento, a.Local].join(" ")).includes(q)))
+    .sort((x, y) => String(x.Title || "").localeCompare(String(y.Title || ""), "pt-BR", { numeric: true }));
+}
+function timAtivosHtml() {
+  const f = TIM.fa, its = timAtivosLista(), uniq = k => [...new Set(TIM.ativos.map(a => a[k]).filter(Boolean))].sort();
+  const lin = a => { const p = timPlano(a), g = timD(a.GarantiaAte), gd = timDias(g);
+    return `<tr onclick="timAtivoAbrir(${jsArg(a._id)})"><td class="nw"><b>${esc(a.Title || "—")}</b></td><td>${esc(a.Tipo || "")}<div class="sup">${esc([a.Marca, a.Modelo].filter(Boolean).join(" "))}${a.NumeroSerie ? " · S/N " + esc(a.NumeroSerie) : ""}</div></td><td>${esc(a.Responsavel || "—")}<div class="sup">${esc(a.Departamento || "")}</div></td><td>${esc(a.Local || "—")}</td><td>${timSitPill(a.Situacao)}</td><td class="nw">${a.UltimaPreventiva ? fmtDate(a.UltimaPreventiva) : "—"}</td><td class="nw">${p.prox ? fmtDate(p.prox) : "—"}<div>${timPlanoPill(p)}</div></td><td class="nw">${g ? `${fmtDate(g)}${gd < 0 ? '<div class="sup">vencida</div>' : ""}` : "—"}</td></tr>`; };
+  return `<div class="filters" role="search"><input type="search" id="timAQ" class="span-2" placeholder="Buscar: patrimônio, modelo, série, usuário, hostname…" value="${esc(f.q)}">
+    ${timFiltroSel("timAT", "Todos os tipos", uniq("Tipo"), f.tipo)}${timFiltroSel("timAS", "Todas as situações", TIM_SITU, f.sit)}${timFiltroSel("timAL", "Todos os locais", uniq("Local"), f.local)}${timFiltroSel("timAD", "Todos os departamentos", uniq("Departamento"), f.dep)}
+    <button class="btn ghost" onclick="TIM.fa={q:'',tipo:'',sit:'',local:'',dep:''}; paintTiManut()">Limpar</button></div>
+    ${its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Patrimônio</th><th>Equipamento</th><th>Usuário</th><th>Local</th><th>Situação</th><th>Última Preventiva</th><th>Próxima Preventiva</th><th>Garantia</th></tr></thead><tbody>${its.map(lin).join("")}</tbody></table></div><p class="hint">${its.length} equipamento(s). Clique para abrir a ficha com o histórico de manutenções.</p>` : `<div class="cap-empty"><h3>${TIM.ativos.length ? "Nenhum equipamento no filtro" : "Nenhum equipamento cadastrado"}</h3><p>${TIM.ativos.length ? "Troque ou limpe os filtros." : 'Use "Cadastrar Equipamento".'}</p></div>`}`;
+}
+function timMansLista() {
+  const f = TIM.fm, q = normName(f.q);
+  return TIM.mans.filter(m => { const s = timStatusEf(m);
+    return (!f.st || (f.st === "abertas" ? timAberta(m) : s === f.st)) && (!f.tipo || m.Tipo === f.tipo) && (!f.ano || [timD(m.DataConclusao), timD(m.DataPrevista), timD(m.DataInicio)].some(d => d.startsWith(f.ano)))
+      && (!q || normName([m.Title, m.Ativo, m.AtivoDesc, m.Tipo, m.Tecnico, m.Fornecedor, m.Descricao, m.Solucao, m.Chamado].join(" ")).includes(q)); })
+    .sort((x, y) => (timD(y.DataConclusao) || timD(y.DataPrevista) || "").localeCompare(timD(x.DataConclusao) || timD(x.DataPrevista) || ""));
+}
+function timMansHtml() {
+  const f = TIM.fm, its = timMansLista(), anos = [...new Set(TIM.mans.map(m => (timD(m.DataConclusao) || timD(m.DataPrevista)).slice(0, 4)).filter(Boolean))].sort().reverse();
+  const total = its.reduce((s, m) => s + Number(m.Custo || 0), 0);
+  const lin = m => `<tr onclick="timManForm(${jsArg(m._id)})"><td class="nw"><b>${esc(m.Title || "")}</b></td><td>${esc(m.Ativo || "")}<div class="sup">${esc(m.AtivoDesc || "")}</div></td><td>${esc(m.Tipo || "")}${m.Prioridade && m.Prioridade !== "Média" ? `<div>${timPrioPill(m.Prioridade)}</div>` : ""}</td><td>${timStPill(timStatusEf(m))}</td><td class="nw">${m.DataPrevista ? fmtDate(m.DataPrevista) : "—"}</td><td class="nw">${m.DataConclusao ? fmtDate(m.DataConclusao) : "—"}</td><td>${esc(m.Tecnico || "—")}<div class="sup">${esc(m.Execucao || "")}</div></td><td class="n nw">${m.Custo ? fmtBRL(m.Custo) : "—"}</td></tr>`;
+  return `<div class="filters" role="search"><input type="search" id="timMQ" class="span-2" placeholder="Buscar: protocolo, patrimônio, técnico, problema…" value="${esc(f.q)}">
+    <select id="timMS" aria-label="Status"><option value="">Todos os status</option><option value="abertas" ${f.st === "abertas" ? "selected" : ""}>Em aberto (todas)</option>${[...TIM_STATUS.slice(0, 4), "Atrasada", ...TIM_STATUS.slice(4)].map(o => `<option ${f.st === o ? "selected" : ""}>${o}</option>`).join("")}</select>
+    ${timFiltroSel("timMT", "Todos os tipos", TIM_TIPOS_MAN, f.tipo)}${timFiltroSel("timMA", "Todos os anos", anos, f.ano)}
+    <button class="btn ghost" onclick="TIM.fm={q:'',st:'',tipo:'',ano:''}; paintTiManut()">Limpar</button></div>
+    ${its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Protocolo</th><th>Equipamento</th><th>Tipo</th><th>Status</th><th>Prevista</th><th>Concluída</th><th>Técnico</th><th class="n">Custo</th></tr></thead><tbody>${its.map(lin).join("")}</tbody></table></div><p class="hint">${its.length} manutenção(ões) · custo ${fmtBRL(total)}. "Atrasada" = agendada com a data prevista já passada.</p>` : `<div class="cap-empty"><h3>${TIM.mans.length ? "Nenhuma manutenção no filtro" : "Nenhuma manutenção registrada"}</h3><p>${TIM.mans.length ? "Troque ou limpe os filtros." : 'Use "Registrar Manutenção", ou "Agendar" no Plano Preventivo.'}</p></div>`}`;
+}
+function timPlanoHtml() {
+  const f = TIM.fp, ed = timPode();
+  const ps = TIM.ativos.filter(a => a.Situacao !== "Baixado / descartado").map(a => ({ a, p: timPlano(a) })).filter(x => x.p.sit !== "sem" && (!f.sit || x.p.sit === f.sit))
+    .sort((x, y) => { const o = { vencida: 0, breve: 1, agendada: 2, emdia: 3 }; return o[x.p.sit] - o[y.p.sit] || (x.p.prox || "").localeCompare(y.p.prox || ""); });
+  const n = k => TIM.ativos.filter(a => a.Situacao !== "Baixado / descartado" && timPlano(a).sit === k).length;
+  const chips = [["", "Todos"], ["vencida", `Vencidas (${n("vencida")})`], ["breve", `Vencem em 30 Dias (${n("breve")})`], ["agendada", `Agendadas (${n("agendada")})`], ["emdia", `Em Dia (${n("emdia")})`]].map(([k, l]) => `<button type="button" class="chip ${f.sit === k ? "on" : ""}" onclick="TIM.fp.sit='${k}'; paintTiManut()">${l}</button>`).join("");
+  const sem = TIM.ativos.filter(a => a.Situacao !== "Baixado / descartado" && !Number(a.PeriodicidadeMeses || 0)).length;
+  const lin = ({ a, p }) => `<tr><td class="nw"><a href="javascript:void 0" onclick="timAtivoAbrir(${jsArg(a._id)})"><b>${esc(a.Title || "—")}</b></a></td><td>${esc(a.Tipo || "")}<div class="sup">${esc([a.Marca, a.Modelo].filter(Boolean).join(" "))}</div></td><td>${esc(a.Responsavel || "—")}<div class="sup">${esc(a.Local || "")}</div></td><td class="nw">a cada ${Number(a.PeriodicidadeMeses)} ${Number(a.PeriodicidadeMeses) === 1 ? "mês" : "meses"}</td><td class="nw">${a.UltimaPreventiva ? fmtDate(a.UltimaPreventiva) : "nunca"}</td><td class="nw">${p.prox ? fmtDate(p.prox) : "—"}</td><td>${timPlanoPill(p)}</td>
+    <td class="nw">${ed ? (p.ag ? `<button class="btn sm" onclick="timManForm(${jsArg(p.ag._id)})">Abrir ${esc(p.ag.Title || "")}</button>` : `<button class="btn sm" onclick="timManForm(null, { AtivoId: ${jsArg(a._id)}, Tipo: 'Preventiva', Status: 'Agendada', DataPrevista: ${jsArg(p.prox && p.prox >= timHoje() ? p.prox : timHoje())} })">Agendar</button> <button class="btn sm" onclick="timManForm(null, { AtivoId: ${jsArg(a._id)}, Tipo: 'Preventiva', Status: 'Concluída' })">Registrar Feita</button>`) : ""}</td></tr>`;
+  return `<div class="filters tim-chips">${chips}</div>
+    ${ps.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Patrimônio</th><th>Equipamento</th><th>Usuário / Local</th><th>Periodicidade</th><th>Última</th><th>Próxima</th><th>Situação</th><th></th></tr></thead><tbody>${ps.map(lin).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nada neste filtro</h3><p>O plano mostra os equipamentos com periodicidade de preventiva.</p></div>`}
+    <p class="hint">A próxima preventiva é calculada pela última preventiva concluída + a periodicidade do equipamento.${sem ? ` ${sem} equipamento(s) sem periodicidade ficam fora do plano (defina na ficha).` : ""}</p>`;
+}
+function timWire() {
+  const on = (id, ev, fn) => { const e = $(id); if (e) e.addEventListener(ev, fn); };
+  on("timAQ", "input", e => { TIM.fa.q = e.target.value; erpDeb("timAQ", () => keepFocus(paintTiManut)); });
+  on("timMQ", "input", e => { TIM.fm.q = e.target.value; erpDeb("timMQ", () => keepFocus(paintTiManut)); });
+  [["timAT", "fa", "tipo"], ["timAS", "fa", "sit"], ["timAL", "fa", "local"], ["timAD", "fa", "dep"], ["timMS", "fm", "st"], ["timMT", "fm", "tipo"], ["timMA", "fm", "ano"]].forEach(([id, g, k]) => on(id, "change", e => { TIM[g][k] = e.target.value; paintTiManut(); }));
+}
+/* ---------- ficha do equipamento ---------- */
+window.timAtivoAbrir = id => {
+  const a = timAtivo(id); if (!a) return; const ed = timPode(), p = timPlano(a);
+  const mans = TIM.mans.filter(m => m.AtivoId === a._id).sort((x, y) => (timD(y.DataConclusao) || timD(y.DataPrevista) || "").localeCompare(timD(x.DataConclusao) || timD(x.DataPrevista) || ""));
+  const custo = mans.filter(m => m.Status === "Concluída").reduce((s, m) => s + Number(m.Custo || 0), 0);
+  const dl = (l, v) => v ? `<div><dt>${esc(l)}</dt><dd>${v}</dd></div>` : "";
+  $("modal").className = "modal wide";
+  modal(`<div class="modal-head"><h2>${esc(a.Title || "Equipamento")} · ${esc(a.Tipo || "")}</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body"><div class="tim-ficha-top">${timSitPill(a.Situacao)} ${timPlanoPill(p)}</div>
+    <dl class="tim-dl">${dl("Marca / modelo", esc([a.Marca, a.Modelo].filter(Boolean).join(" ")))}${dl("Nº de série", esc(a.NumeroSerie || ""))}${dl("Hostname", esc(a.Hostname || ""))}${dl("Sistema", esc(a.SistemaOperacional || ""))}${dl("Configuração", esc(a.Configuracao || ""))}
+      ${dl("Usuário", esc(a.Responsavel || ""))}${dl("Departamento", esc(a.Departamento || ""))}${dl("Local", esc(a.Local || ""))}${dl("Aquisição", a.DataAquisicao ? fmtDate(a.DataAquisicao) : "")}${dl("Garantia até", a.GarantiaAte ? fmtDate(a.GarantiaAte) : "")}
+      ${dl("Fornecedor", esc(a.Fornecedor || ""))}${dl("Valor", a.ValorAquisicao ? fmtBRL(a.ValorAquisicao) : "")}${dl("Preventiva", Number(a.PeriodicidadeMeses || 0) ? `a cada ${Number(a.PeriodicidadeMeses)} meses · última ${a.UltimaPreventiva ? fmtDate(a.UltimaPreventiva) : "nunca"} · próxima ${p.prox ? fmtDate(p.prox) : "—"}` : "sem preventiva programada")}${dl("Observações", esc(a.Observacoes || ""))}</dl>
+    <h3 class="tim-h3">Histórico de manutenções <span class="sup">${mans.length} registro(s) · custo ${fmtBRL(custo)}</span></h3>
+    ${mans.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Protocolo</th><th>Tipo</th><th>Status</th><th>Data</th><th>Serviços</th><th class="n">Custo</th></tr></thead><tbody>${mans.map(m => { const sv = timJson(m.Servicos, []); return `<tr onclick="timManForm(${jsArg(m._id)})"><td class="nw"><b>${esc(m.Title || "")}</b></td><td>${esc(m.Tipo || "")}</td><td>${timStPill(timStatusEf(m))}</td><td class="nw">${fmtDate(timD(m.DataConclusao) || timD(m.DataPrevista) || "")}</td><td>${esc(sv.slice(0, 3).join("; "))}${sv.length > 3 ? ` <span class="sup">+${sv.length - 3}</span>` : ""}</td><td class="n nw">${m.Custo ? fmtBRL(m.Custo) : "—"}</td></tr>`; }).join("")}</tbody></table></div>` : `<p class="sup">Nenhuma manutenção registrada para este equipamento.</p>`}
+    </div><div class="modal-foot">${ed && podeExcluir("ti_manut") && !mans.length ? `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="timAtivoExcluir(${jsArg(a._id)})">Excluir</button>` : ""}<button class="btn" onclick="closeModal()">Fechar</button>${ed ? `<button class="btn" onclick="timAtivoForm(${jsArg(a._id)})">Editar Cadastro</button><button class="btn primary" onclick="timManForm(null, { AtivoId: ${jsArg(a._id)} })">Nova Manutenção</button>` : ""}</div>`);
+};
+window.timAtivoForm = id => {
+  if (!timPode()) { toast("Seu acesso à Manutenção de Equipamentos é só de leitura."); return; }
+  const x = id ? timAtivo(id) : null, v = x || { Situacao: "Em uso", Tipo: "Computador (desktop)", PeriodicidadeMeses: 6 };
+  const sel = (id2, arr, val, livre) => livre ? `<input id="${id2}" list="${id2}L" value="${esc(val || "")}"><datalist id="${id2}L">${arr.map(o => `<option value="${esc(o)}">`).join("")}</datalist>` : `<select id="${id2}">${opt(arr, val, false)}</select>`;
+  const pats = TIM.ativos.map(a => a.Title).filter(Boolean);
+  $("modal").className = "modal wide";
+  openModal(x ? `Editar ${x.Title}` : "Cadastrar equipamento", `<div class="form-grid">
+    <div class="field"><label>Patrimônio / etiqueta<span class="req">*</span></label><input id="taPat" maxlength="40" value="${esc(v.Title || "")}" placeholder="Ex.: TI-0001"></div>
+    <div class="field"><label>Tipo<span class="req">*</span></label>${sel("taTipo", TIM_TIPOS_ATIVO, v.Tipo, true)}</div>
+    <div class="field"><label>Marca</label><input id="taMarca" maxlength="60" value="${esc(v.Marca || "")}"></div>
+    <div class="field"><label>Modelo</label><input id="taModelo" maxlength="100" value="${esc(v.Modelo || "")}"></div>
+    <div class="field"><label>Nº de série</label><input id="taSerie" maxlength="80" value="${esc(v.NumeroSerie || "")}"></div>
+    <div class="field"><label>Nome na rede / hostname</label><input id="taHost" maxlength="60" value="${esc(v.Hostname || "")}"></div>
+    <div class="field"><label>Sistema operacional</label><input id="taSO" maxlength="60" list="taSOL" value="${esc(v.SistemaOperacional || "")}"><datalist id="taSOL">${["Windows 11 Pro", "Windows 10 Pro", "Windows Server", "Linux", "macOS", "Android", "iOS"].map(o => `<option value="${o}">`).join("")}</datalist></div>
+    <div class="field"><label>Configuração</label><input id="taCfg" maxlength="160" value="${esc(v.Configuracao || "")}" placeholder="Processador · memória · disco"></div>
+    <div class="field"><label>Usuário / responsável</label><input id="taResp" maxlength="100" value="${esc(v.Responsavel || "")}"></div>
+    <div class="field"><label>Departamento</label>${sel("taDep", CENTROS_CUSTO, v.Departamento, true)}</div>
+    <div class="field"><label>Local</label>${sel("taLocal", TIM_LOCAIS, v.Local, true)}</div>
+    <div class="field"><label>Situação<span class="req">*</span></label>${sel("taSit", TIM_SITU, v.Situacao, false)}</div>
+    <div class="field"><label>Data de aquisição</label><input type="date" id="taAq" value="${esc(timD(v.DataAquisicao))}"></div>
+    <div class="field"><label>Garantia até</label><input type="date" id="taGar" value="${esc(timD(v.GarantiaAte))}"></div>
+    <div class="field"><label>Fornecedor</label><input id="taForn" maxlength="120" value="${esc(v.Fornecedor || "")}"></div>
+    <div class="field"><label>Valor de aquisição (R$)</label><input type="number" min="0" step="0.01" id="taValor" value="${v.ValorAquisicao ?? ""}"></div>
+    <div class="field"><label>Preventiva a cada (meses)</label><input type="number" min="0" max="60" id="taPer" value="${v.PeriodicidadeMeses ?? ""}"><div class="hint">0 = sem preventiva programada. Sugestão pelo tipo: <span id="taPerSug">${timPeriodoPadrao(v.Tipo)}</span>.</div></div>
+    <div class="field"><label>Última preventiva</label><input type="date" id="taUlt" value="${esc(timD(v.UltimaPreventiva))}"><div class="hint">Preenchida sozinha ao concluir uma preventiva.</div></div>
+    <div class="field full"><label>Observações</label><textarea id="taObs" rows="3">${esc(v.Observacoes || "")}</textarea></div>
+  </div><div class="err-msg" id="taErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const g = k => ($(k).value || "").trim(), err = m => { $("taErr").style.display = "block"; $("taErr").textContent = m; return false; };
+    const pat = g("taPat"); if (!pat) return err("Informe o patrimônio / etiqueta do equipamento.");
+    if (TIM.ativos.some(a => a._id !== (x && x._id) && normName(a.Title) === normName(pat))) return err(`Já existe um equipamento com o patrimônio ${pat}.`);
+    if (!g("taTipo")) return err("Informe o tipo do equipamento.");
+    const per = g("taPer") === "" ? 0 : Number(g("taPer")); if (!Number.isInteger(per) || per < 0 || per > 60) return err("Periodicidade: número inteiro de 0 a 60 meses.");
+    const val = g("taValor") === "" ? null : Number(g("taValor")); if (val != null && (isNaN(val) || val < 0)) return err("Valor de aquisição inválido.");
+    const ult = g("taUlt") || null;
+    const f = { Title: pat, Tipo: g("taTipo"), Marca: g("taMarca") || null, Modelo: g("taModelo") || null, NumeroSerie: g("taSerie") || null, Hostname: g("taHost") || null, SistemaOperacional: g("taSO") || null, Configuracao: g("taCfg") || null,
+      Responsavel: g("taResp") || null, Departamento: g("taDep") || null, Local: g("taLocal") || null, Situacao: g("taSit"), DataAquisicao: g("taAq") || null, GarantiaAte: g("taGar") || null, Fornecedor: g("taForn") || null, ValorAquisicao: val,
+      PeriodicidadeMeses: per, UltimaPreventiva: ult, ProximaPreventiva: per && ult ? timMaisMeses(ult, per) : null, Observacoes: g("taObs") || null };
+    const mud = x ? Object.keys(f).filter(k => String(f[k] ?? "") !== String((k.startsWith("Data") || /Preventiva|Garantia/.test(k) ? timD(x[k]) : x[k]) ?? "")) : [];
+    f.Historico = timHist(x && x.Historico, x ? `alterado: ${mud.join(", ") || "sem mudança"}${x.Situacao !== f.Situacao ? ` (situação ${x.Situacao} → ${f.Situacao})` : ""}` : "cadastrado");
+    const novo = await timGrava("a", x, f);
+    toast(x ? "Equipamento atualizado" : `Equipamento ${pat} cadastrado`); paintTiManut(); setTimeout(() => timAtivoAbrir(novo && novo._id || x._id), 0); return true;
+  });
+  const t = $("taTipo"); if (t) t.addEventListener("change", () => { const s = timPeriodoPadrao(t.value); $("taPerSug").textContent = s; if (!x) $("taPer").value = s; });
+  if (x && podeExcluir("ti_manut") && !TIM.mans.some(m => m.AtivoId === x._id)) document.querySelector("#modal .modal-foot").insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="timAtivoExcluir(${jsArg(x._id)})">Excluir</button>`);
+};
+window.timAtivoExcluir = async id => {
+  const a = timAtivo(id); if (!a) return;
+  if (TIM.mans.some(m => m.AtivoId === a._id)) { toast("Este equipamento tem manutenções registradas: para tirá-lo de uso, mude a situação para \"Baixado / descartado\"."); return; }
+  if (!(await erpConfirmar({ titulo: "Excluir equipamento", texto: `Excluir o cadastro de ${a.Title}? Não pode ser desfeito. Para equipamento descartado, prefira a situação "Baixado / descartado".`, sim: "Excluir", perigo: true }))) return;
+  try { await graph(`/sites/${TIM.site.id}/lists/${TIM.la.id}/items/${a._id}`, { method: "DELETE" }); TIM.ativos = TIM.ativos.filter(x => x._id !== a._id); closeModal(); paintTiManut(); toast("Equipamento excluído"); } catch (e) { toast("Erro: " + e.message, 6000); }
+};
+/* ---------- formulário da manutenção ---------- */
+window.timManForm = async (id, pre) => {
+  const x = id ? TIM.mans.find(m => m._id === String(id)) : null, ed = timPode();
+  if (!x && !ed) { toast("Seu acesso à Manutenção de Equipamentos é só de leitura."); return; }
+  if (!TIM.ativos.length) { toast('Cadastre o equipamento primeiro ("Cadastrar Equipamento").'); return; }
+  const v = Object.assign({ Tipo: "Preventiva", Status: "Agendada", Prioridade: "Média", Execucao: "Interna (TI)", DataPrevista: timHoje(), Tecnico: (session.me && session.me.displayName) || "" }, x || {}, pre || {});
+  if (!x && v.Status === "Concluída") { v.DataConclusao = v.DataConclusao || timHoje(); v.DataPrevista = v.DataPrevista || v.DataConclusao; }
+  const a0 = timAtivo(v.AtivoId), servs = x ? timJson(x.Servicos, []) : (v.Tipo === "Preventiva" && a0 ? timPreset(a0.Tipo) : []);
+  try { if (typeof loadTi === "function" && (typeof TI_STATE === "undefined" || !TI_STATE.ready)) await loadTi(false); } catch (e) {}
+  const chamados = (typeof TI_STATE !== "undefined" && TI_STATE.ready ? TI_STATE.itens : []).filter(c => !["Fechado", "Cancelado"].includes(c.Status)).map(c => [tiProtocolo(c), c.Assunto || ""]);
+  const ativosOpt = TIM.ativos.filter(a => a.Situacao !== "Baixado / descartado" || a._id === v.AtivoId).sort((p, q) => String(p.Title).localeCompare(String(q.Title), "pt-BR", { numeric: true }))
+    .map(a => `<option value="${esc(a._id)}" ${a._id === v.AtivoId ? "selected" : ""}>${esc(timAtivoRot(a))}</option>`).join("");
+  const serv = Object.entries(TIM_SERV).map(([g, its]) => `<fieldset class="tim-serv"><legend>${esc(g)}</legend>${its.map(s => `<label><input type="checkbox" value="${esc(s)}" ${servs.includes(s) ? "checked" : ""} ${ed ? "" : "disabled"}><span>${esc(s)}</span></label>`).join("")}</fieldset>`).join("");
+  const outros = servs.filter(s => !TIM_SERV_TODOS.includes(s));
+  const hist = timJson(x && x.Historico, []);
+  $("modal").className = "modal wide";
+  openModal(x ? `Manutenção ${x.Title}` : "Registrar manutenção", `<div class="form-grid">
+    <div class="field full"><label>Equipamento<span class="req">*</span></label><select id="tmAtivo" ${x ? "disabled" : ""}><option value="">— escolha —</option>${ativosOpt}</select></div>
+    <div class="field"><label>Tipo de manutenção<span class="req">*</span></label><select id="tmTipo">${opt(TIM_TIPOS_MAN, v.Tipo, false)}</select></div>
+    <div class="field"><label>Status<span class="req">*</span></label><select id="tmSt">${opt(TIM_STATUS, v.Status, false)}</select><div class="hint" id="tmStHint"></div></div>
+    <div class="field"><label>Prioridade</label><select id="tmPri">${opt(TIM_PRIOR, v.Prioridade, false)}</select></div>
+    <div class="field"><label>Data prevista</label><input type="date" id="tmPrev" value="${esc(timD(v.DataPrevista))}"></div>
+    <div class="field"><label>Início</label><input type="date" id="tmIni" value="${esc(timD(v.DataInicio))}"></div>
+    <div class="field"><label>Concluída em</label><input type="date" id="tmFim" value="${esc(timD(v.DataConclusao))}"></div>
+    <div class="field"><label>Técnico / responsável</label><input id="tmTec" maxlength="100" value="${esc(v.Tecnico || "")}"></div>
+    <div class="field"><label>Execução</label><select id="tmExec">${opt(TIM_EXEC, v.Execucao, false)}</select></div>
+    <div class="field"><label>Fornecedor / assistência</label><input id="tmForn" maxlength="120" value="${esc(v.Fornecedor || "")}"></div>
+    <div class="field"><label>Custo (R$)</label><input type="number" min="0" step="0.01" id="tmCusto" value="${v.Custo ?? ""}"></div>
+    <div class="field"><label>Chamado de TI</label><input id="tmCh" maxlength="40" list="tmChL" value="${esc(v.Chamado || "")}" placeholder="TI-AAMM-0000"><datalist id="tmChL">${chamados.map(([p, s]) => `<option value="${esc(p)}">${esc(s)}</option>`).join("")}</datalist></div>
+    <div class="field"><label class="tim-chk"><input type="checkbox" id="tmFora" ${v.ForaDeUso || (!x && !["Preventiva", "Preditiva / inspeção"].includes(v.Tipo)) ? "checked" : ""}> Equipamento fica fora de uso durante a manutenção</label><div class="hint">Marcado: enquanto a manutenção está em andamento ou aguardando, o equipamento fica "Em manutenção"; ao concluir, volta a "Em uso".</div></div>
+    <div class="field full"><label>Motivo / problema</label><textarea id="tmDesc" rows="2" placeholder="O que motivou a manutenção (ou o objetivo da preventiva)">${esc(v.Descricao || "")}</textarea></div>
+    <div class="field full"><label>Serviços realizados <button type="button" class="btn sm ghost" id="tmPreset" ${ed ? "" : "hidden"}>Marcar o checklist do tipo de equipamento</button></label><div class="tim-servs" id="tmServs">${serv}</div>
+      <input id="tmOutros" maxlength="200" value="${esc(outros.join("; "))}" placeholder="Outros serviços (separe com ;)" style="margin-top:8px"></div>
+    <div class="field full"><label>Peças trocadas</label><textarea id="tmPecas" rows="2" placeholder="Peça · quantidade · valor">${esc(v.Pecas || "")}</textarea></div>
+    <div class="field full"><label>O que foi feito / laudo técnico</label><textarea id="tmSol" rows="3">${esc(v.Solucao || "")}</textarea></div>
+    <div class="field full" id="tmAgWrap" style="display:none"><label class="tim-chk"><input type="checkbox" id="tmAgProx"> Já agendar a próxima preventiva para <b id="tmAgData"></b></label></div>
+  </div>${hist.length ? `<details class="tim-hist"><summary>Histórico (${hist.length})</summary><ul>${hist.slice().reverse().map(h => `<li><b>${esc(new Date(h.em).toLocaleString("pt-BR"))}</b> · ${esc(h.por || "")} · ${esc(h.o || "")}</li>`).join("")}</ul></details>` : ""}
+  <div class="err-msg" id="tmErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const g = k => ($(k).value || "").trim(), err = m => { $("tmErr").style.display = "block"; $("tmErr").textContent = m; return false; };
+    const a = timAtivo(g("tmAtivo")); if (!a) return err("Escolha o equipamento.");
+    const st = g("tmSt"), tipo = g("tmTipo"); let ini = g("tmIni"), fim = g("tmFim"); const prev = g("tmPrev");
+    const sv = [...document.querySelectorAll("#tmServs input:checked")].map(i => i.value).concat(g("tmOutros").split(";").map(s => s.trim()).filter(Boolean));
+    if (st === "Agendada" && !prev) return err("Informe a data prevista da manutenção agendada.");
+    if (["Em andamento", "Aguardando peça", "Aguardando terceiro"].includes(st) && !ini) ini = timHoje();
+    if (st === "Concluída") { if (!fim) fim = timHoje(); if (!ini) ini = fim; if (fim > timHoje()) return err("A data de conclusão não pode ser futura."); if (!sv.length && !g("tmSol")) return err("Para concluir, marque os serviços realizados ou descreva o que foi feito."); }
+    if (st !== "Concluída" && fim) return err(`"Concluída em" só vale para manutenção concluída (status atual: ${st}). Apague a data ou mude o status.`);
+    if (ini && fim && fim < ini) return err("A conclusão não pode ser antes do início.");
+    if (["Aguardando terceiro"].includes(st) && !g("tmForn")) return err("Informe o fornecedor / assistência que está com o equipamento.");
+    const custo = g("tmCusto") === "" ? null : Number(g("tmCusto")); if (custo != null && (isNaN(custo) || custo < 0)) return err("Custo inválido.");
+    const per = Number(a.PeriodicidadeMeses || 0), ehPrev = tipo === "Preventiva";
+    const proxCalc = st === "Concluída" && ehPrev && per ? timMaisMeses(fim, per) : null;
+    const f = { AtivoId: a._id, Ativo: a.Title || "", AtivoDesc: [a.Tipo, [a.Marca, a.Modelo].filter(Boolean).join(" ")].filter(Boolean).join(" · ").slice(0, 160), Tipo: tipo, Status: st, Prioridade: g("tmPri"),
+      DataPrevista: prev || null, DataInicio: ini || null, DataConclusao: st === "Concluída" ? fim : null, Tecnico: g("tmTec") || null, Execucao: g("tmExec"), Fornecedor: g("tmForn") || null, Custo: custo,
+      Servicos: sv.length ? JSON.stringify(sv) : null, Pecas: g("tmPecas") || null, Descricao: g("tmDesc") || null, Solucao: g("tmSol") || null, Chamado: g("tmCh") || null, ForaDeUso: $("tmFora").checked, ProximaPreventiva: proxCalc };
+    f.Historico = timHist(x && x.Historico, x ? (x.Status !== st ? `status ${x.Status} → ${st}` : "alterada") : `registrada (${st})`);
+    if (!x) f.Title = "MT-novo";
+    const ant = x ? { st: x.Status, fora: !!x.ForaDeUso } : null;   /* antes de gravar: timGrava atualiza x */
+    const reg = await timGrava("m", x, f);
+    if (!x) { const d = new Date(); const pr = `MT-${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, "0")}-${String(reg._id).padStart(4, "0")}`; try { await timGrava("m", reg, { Title: pr }); } catch (e) { reg.Title = "MT-" + reg._id; } }   /* pela mesma gravação: a marca de conflito acompanha */
+    /* reflexo no equipamento */
+    const fa = {}, notas = [];
+    const outrasAbertas = TIM.mans.some(m => m._id !== reg._id && m.AtivoId === a._id && timAberta(m) && m.ForaDeUso && m.Status !== "Agendada");
+    if (["Em andamento", "Aguardando peça", "Aguardando terceiro"].includes(st) && f.ForaDeUso && ["Em uso", "Em estoque / reserva", "Emprestado", "Defeituoso / aguardando reparo"].includes(a.Situacao)) { fa.Situacao = "Em manutenção"; notas.push("equipamento passou a Em manutenção"); }
+    if ((st === "Concluída" || st === "Cancelada" || (st === "Agendada" && ant && ant.st !== "Agendada") || (!f.ForaDeUso && ant && ant.fora)) && a.Situacao === "Em manutenção" && !outrasAbertas && !(st === "Concluída" && tipo === "Descarte / baixa")) { fa.Situacao = "Em uso"; notas.push("equipamento voltou a Em uso"); }
+    if (st === "Concluída" && tipo === "Descarte / baixa" && a.Situacao !== "Baixado / descartado") { fa.Situacao = "Baixado / descartado"; notas.push("equipamento baixado"); }
+    if (st === "Concluída" && ehPrev && (!a.UltimaPreventiva || fim >= timD(a.UltimaPreventiva))) { fa.UltimaPreventiva = fim; fa.ProximaPreventiva = proxCalc; notas.push(`última preventiva ${fmtDate(fim)}${proxCalc ? `, próxima ${fmtDate(proxCalc)}` : ""}`); }
+    if (Object.keys(fa).length) { fa.Historico = timHist(a.Historico, `${reg.Title}: ${notas.join("; ")}`); try { await timGrava("a", a, fa); } catch (e) { toast(`Manutenção gravada, mas o equipamento não foi atualizado: ${e.message}`, 9000); } }
+    if (st === "Concluída" && ehPrev && proxCalc && $("tmAgProx") && $("tmAgProx").checked && !TIM.mans.some(m => m._id !== reg._id && m.AtivoId === a._id && m.Tipo === "Preventiva" && timAberta(m))) {
+      try { const n = await timGrava("m", null, { Title: "MT-novo", AtivoId: a._id, Ativo: f.Ativo, AtivoDesc: f.AtivoDesc, Tipo: "Preventiva", Status: "Agendada", Prioridade: "Média", DataPrevista: proxCalc, Execucao: f.Execucao, Tecnico: f.Tecnico, ForaDeUso: false, Historico: timHist(null, `agendada ao concluir ${reg.Title}`) });
+        const d = new Date(), pr = `MT-${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, "0")}-${String(n._id).padStart(4, "0")}`; await timGrava("m", n, { Title: pr }); notas.push(`próxima preventiva agendada (${pr})`); } catch (e) { toast("A próxima preventiva não foi agendada: " + e.message, 8000); } }
+    toast(`${reg.Title} ${x ? "atualizada" : "registrada"}${notas.length ? " · " + notas.join(" · ") : ""}`, 7000); paintTiManut(); return true;
+  });
+  if (!ed) { document.querySelectorAll("#modal .modal-body input, #modal .modal-body select, #modal .modal-body textarea").forEach(e => { e.disabled = true; }); const s = $("mSave"); if (s) s.remove(); }
+  if (x && podeExcluir("ti_manut")) document.querySelector("#modal .modal-foot").insertAdjacentHTML("afterbegin", `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="timManExcluir(${jsArg(x._id)})">Excluir</button>`);
+  const atualiza = () => { const st = $("tmSt").value, tipo = $("tmTipo").value, a = timAtivo($("tmAtivo").value), per = a ? Number(a.PeriodicidadeMeses || 0) : 0;
+    $("tmStHint").textContent = { "Agendada": "Ainda não começou. Passa a Atrasada se a data prevista passar.", "Em andamento": "Em execução agora.", "Aguardando peça": "Parada esperando peça.", "Aguardando terceiro": "Com assistência técnica / fornecedor.", "Concluída": "Informe a data e o que foi feito.", "Cancelada": "Não será feita." }[st] || "";
+    if (st === "Concluída" && !$("tmFim").value) $("tmFim").value = timHoje();
+    const w = $("tmAgWrap"), fim = $("tmFim").value || timHoje(), prox = tipo === "Preventiva" && per && st === "Concluída" ? timMaisMeses(fim, per) : "";
+    if (w) { w.style.display = prox ? "" : "none"; if (prox) $("tmAgData").textContent = `${fmtDate(prox)} (a cada ${per} meses)`; } };
+  ["tmSt", "tmTipo", "tmAtivo", "tmFim"].forEach(k => { const e = $(k); if (e) e.addEventListener("change", atualiza); });
+  const ps = $("tmPreset"); if (ps) ps.addEventListener("click", () => { const a = timAtivo($("tmAtivo").value); if (!a) { toast("Escolha o equipamento primeiro."); return; } const l = timPreset(a.Tipo); document.querySelectorAll("#tmServs input").forEach(i => { if (l.includes(i.value)) i.checked = true; }); });
+  const marcados = () => [...document.querySelectorAll("#tmServs input:checked")].map(i => i.value).sort().join("|");
+  const ta = $("tmTipo"); if (ta && !x) ta.addEventListener("change", () => { const f = $("tmFora"); if (f) f.checked = !["Preventiva", "Preditiva / inspeção"].includes(ta.value);
+    const a = timAtivo($("tmAtivo").value); if (!a) return; const pre = timPreset(a.Tipo);   /* checklist sugerido intocado acompanha o tipo: some fora da preventiva, volta na preventiva */
+    if (ta.value !== "Preventiva" && marcados() === pre.slice().sort().join("|")) document.querySelectorAll("#tmServs input").forEach(i => { i.checked = false; });
+    else if (ta.value === "Preventiva" && !marcados()) document.querySelectorAll("#tmServs input").forEach(i => { if (pre.includes(i.value)) i.checked = true; }); });
+  const sa = $("tmAtivo"); if (sa && !x) sa.addEventListener("change", () => { const a = timAtivo(sa.value); if (a && $("tmTipo").value === "Preventiva" && !document.querySelector("#tmServs input:checked")) timPreset(a.Tipo).forEach(s => { const i = [...document.querySelectorAll("#tmServs input")].find(e => e.value === s); if (i) i.checked = true; }); });
+  atualiza();
+};
+window.timManExcluir = async id => {
+  const m = TIM.mans.find(x => x._id === String(id)); if (!m) return;
+  if (!(await erpConfirmar({ titulo: "Excluir manutenção", texto: `Excluir ${m.Title}? Não pode ser desfeito. Para manutenção que não vai acontecer, prefira o status "Cancelada".`, sim: "Excluir", perigo: true }))) return;
+  try { await graph(`/sites/${TIM.site.id}/lists/${TIM.lm.id}/items/${m._id}`, { method: "DELETE" }); TIM.mans = TIM.mans.filter(x => x._id !== m._id); closeModal(); paintTiManut(); toast("Manutenção excluída"); } catch (e) { toast("Erro: " + e.message, 6000); }
+};
+window.timExcel = async () => {
+  try {
+    const xd = v => { const d = timD(v); return d ? erpXlsxData(d) : null; };
+    if (TIM.aba === "man") { const its = timMansLista();
+      const wb = await erpXlsxModelo({ titulo: "TI › Manutenções de Equipamentos", sub: `Transportadora Nova Macabu · ERP NMB · ${its.length} manutenção(ões) · exportado em ${new Date().toLocaleDateString("pt-BR")}`, aba: "Manutenções", rodape: "TI › Manutenção de Equipamentos", nLin: its.length + 5,
+        cols: [{ h: "Protocolo", w: 15, tipo: "texto" }, { h: "Patrimônio", w: 14, tipo: "texto" }, { h: "Equipamento", w: 34, tipo: "texto" }, { h: "Tipo", w: 22, tipo: "texto" }, { h: "Status", w: 18, tipo: "texto" }, { h: "Prioridade", w: 11, tipo: "texto" }, { h: "Prevista", w: 12, tipo: "data" }, { h: "Início", w: 12, tipo: "data" }, { h: "Concluída", w: 12, tipo: "data" }, { h: "Técnico", w: 22, tipo: "texto" }, { h: "Execução", w: 18, tipo: "texto" }, { h: "Fornecedor", w: 22, tipo: "texto" }, { h: "Custo (R$)", w: 13, tipo: "moeda" }, { h: "Serviços", w: 60, tipo: "texto" }, { h: "Peças", w: 30, tipo: "texto" }, { h: "Motivo", w: 40, tipo: "texto" }, { h: "O que foi feito", w: 40, tipo: "texto" }, { h: "Chamado", w: 15, tipo: "texto" }],
+        linhas: its.map(m => [m.Title || "", m.Ativo || "", m.AtivoDesc || "", m.Tipo || "", timStatusEf(m), m.Prioridade || "", xd(m.DataPrevista), xd(m.DataInicio), xd(m.DataConclusao), m.Tecnico || "", m.Execucao || "", m.Fornecedor || "", m.Custo != null ? Number(m.Custo) : null, timJson(m.Servicos, []).join("; "), m.Pecas || "", m.Descricao || "", m.Solucao || "", m.Chamado || ""]) });
+      await xlsxBaixar(wb, `TI - Manutencoes - Nova Macabu - ${todayISO()}.xlsx`); }
+    else { const its = TIM.aba === "ativos" ? timAtivosLista() : TIM.ativos.slice().sort((x, y) => String(x.Title).localeCompare(String(y.Title), "pt-BR", { numeric: true }));
+      const wb = await erpXlsxModelo({ titulo: "TI › Ativos e Plano Preventivo", sub: `Transportadora Nova Macabu · ERP NMB · ${its.length} equipamento(s) · exportado em ${new Date().toLocaleDateString("pt-BR")}`, aba: "Ativos", rodape: "TI › Manutenção de Equipamentos", nLin: its.length + 5,
+        cols: [{ h: "Patrimônio", w: 14, tipo: "texto" }, { h: "Tipo", w: 24, tipo: "texto" }, { h: "Marca", w: 14, tipo: "texto" }, { h: "Modelo", w: 22, tipo: "texto" }, { h: "Nº de série", w: 18, tipo: "texto" }, { h: "Hostname", w: 16, tipo: "texto" }, { h: "Sistema", w: 16, tipo: "texto" }, { h: "Configuração", w: 28, tipo: "texto" }, { h: "Usuário", w: 22, tipo: "texto" }, { h: "Departamento", w: 18, tipo: "texto" }, { h: "Local", w: 24, tipo: "texto" }, { h: "Situação", w: 20, tipo: "texto" }, { h: "Aquisição", w: 12, tipo: "data" }, { h: "Garantia até", w: 12, tipo: "data" }, { h: "Valor (R$)", w: 13, tipo: "moeda" }, { h: "Preventiva (meses)", w: 11, tipo: "int" }, { h: "Última preventiva", w: 13, tipo: "data" }, { h: "Próxima preventiva", w: 13, tipo: "data" }, { h: "Plano", w: 16, tipo: "texto" }],
+        linhas: its.map(a => { const p = timPlano(a); return [a.Title || "", a.Tipo || "", a.Marca || "", a.Modelo || "", a.NumeroSerie || "", a.Hostname || "", a.SistemaOperacional || "", a.Configuracao || "", a.Responsavel || "", a.Departamento || "", a.Local || "", a.Situacao || "", xd(a.DataAquisicao), xd(a.GarantiaAte), a.ValorAquisicao != null ? Number(a.ValorAquisicao) : null, Number(a.PeriodicidadeMeses || 0), xd(a.UltimaPreventiva), p.prox ? erpXlsxData(p.prox) : null, { vencida: p.nunca ? "Nunca feita" : "Vencida", breve: "Vence em 30 dias", emdia: "Em dia", agendada: "Agendada", sem: "Sem preventiva" }[p.sit]]; }) });
+      await xlsxBaixar(wb, `TI - Ativos - Nova Macabu - ${todayISO()}.xlsx`); }
+    toast("Planilha exportada.");
+  } catch (e) { toast("Não foi possível exportar: " + e.message, 7000); }
+};
+(function () { const st = document.createElement("style"); st.id = "erp-v01478";
+  st.textContent = `#timRoot .tim-duo{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,600px),1fr));gap:20px;margin-top:20px}
+  #timRoot .cap-table tbody tr{cursor:pointer}@media (min-width:641px){#timRoot .tim-duo .cap-table{min-width:0}#timRoot .tim-duo .table-wrap{overflow-x:visible}}#timRoot .tim-chips{gap:8px}.tim-badge{display:inline-block;min-width:18px;padding:0 5px;border-radius:999px;background:#B3271E;color:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center}
+  .tim-servs{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}
+  .tim-serv{border:1px solid #E2E5E9;border-radius:2px;padding:8px 10px 10px;margin:0;min-width:0}.tim-serv legend{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);padding:0 4px}
+  .tim-serv label,.field label.tim-chk,.tim-chk{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink);padding:3px 0;cursor:pointer}
+  .tim-serv input,.tim-chk input{width:18px;height:18px;min-height:0;margin:1px 0 0;flex:none;padding:0;appearance:auto;-webkit-appearance:checkbox}
+  .tim-dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 20px;margin:12px 0 18px}.tim-dl dt{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}.tim-dl dd{margin:2px 0 0;font-size:14px;color:var(--ink)}
+  .tim-ficha-top{display:flex;gap:8px;flex-wrap:wrap}.tim-h3{font-size:16px;font-weight:800;color:var(--navy);margin:8px 0 10px}.tim-h3 .sup{font-weight:500;font-size:13px;margin-left:6px}
+  .tim-hist{margin-top:14px;font-size:13px}.tim-hist ul{margin:8px 0 0;padding-left:18px;color:var(--ink-2)}
+  @media (max-width:640px){.tim-servs{grid-template-columns:1fr}}`;
+  document.head.appendChild(st); })();
+window.pageTiManut = pageTiManut;
+{ const r0 = route;
+  route = function () {
+    const hash = (location.hash || "").split("?")[0];
+    if (hash !== "#/ti/manutencao-de-equipamentos") return r0.apply(this, arguments);
+    const m = MODULES.find(x => x.id === "ti_manut"); if (!canSee(m)) { location.hash = "#/inicio"; return; }
+    session.modAtual = "ti_manut"; session.pagAtual = ""; navAtivo("ti_manut"); document.body.classList.remove("nav-open", "lista-aberta"); document.body.classList.add("wide");
+    $("main").innerHTML = pageTiManut(); addCrumbs(m); renderTiManut(); window.scrollTo(0, 0);
+  };
+}
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -53474,6 +53929,7 @@ CONFIG.version = "v0.14.74";   /* Operacional: Horários e Tarifas na Frota (Cen
 CONFIG.version = "v0.14.75";   /* símbolo do sistema: ônibus (opção 5) no topo, no menu, na aba do navegador e no ícone do celular */
 CONFIG.version = "v0.14.76";   /* ícone da aba do navegador: ônibus de 4 colunas (opção 4); o resto segue com a opção 5 */
 CONFIG.version = "v0.14.77";   /* Passageiros × Tabela de Horários: horário sem dois-pontos, dias da semana e sentido no horário, lançamento travado pela tabela, trechos editáveis */
+CONFIG.version = "v0.14.78";   /* TI › Manutenção de Equipamentos: ativos, manutenções (preventiva, corretiva, formatação, upgrade, backup, descarte), plano preventivo */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

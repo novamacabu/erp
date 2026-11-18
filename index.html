@@ -53872,6 +53872,1120 @@ window.pageTiManut = pageTiManut;
   @media (max-width:400px){.topbar .marca .erp-simb{width:${w(34)};height:34px;margin-left:4px}.topbar .marca>:not(.erp-simb){transform:translateY(-${sobe(34)})}}`;
   document.head.appendChild(st);
 })();
+/* =====================================================================
+   v0.14.82 (18/11/2026) · Pedido do Rafael (08:40): (1) Consumíveis (RH) passa de piloto a ativo; (2) cores por status dos módulos
+   nos cards das páginas de departamento e menus e nas etiquetas do menu lateral:
+     ativo = verde · piloto = azul · prévia = roxo · em estudo / em análise / aguardando… = âmbar · previsto / próximo = cinza.
+   As etiquetas são marcadas pelo texto (data-st) logo depois de cada desenho da tela; textos que não são status (link externo,
+   consulta, "3 módulos · 2 no ar"…) ficam como estavam.
+   ===================================================================== */
+{ const m = MODULES.find(x => x.id === "rh_cons"); if (m) m.status = "ativo"; }
+const ERP_ST_COR = { ativo: ["ativo", "No ar, em uso normal"], piloto: ["piloto", "Em uso assistido: pode mudar com o retorno de quem usa"], "prévia": ["previa", "Prévia: para conhecer, ainda incompleto"],
+  "em estudo": ["estudo", "Em estudo: ainda sem data para entrar"], "em análise": ["estudo", "Em análise"], "aguardando robô": ["estudo", "Aguardando a automação"], "aguardando robôs": ["estudo", "Aguardando a automação"],
+  previsto: ["previsto", "Previsto: ainda não começou"], "próximo": ["previsto", "Próximo da fila"] };
+function erpStMarca() {
+  document.querySelectorAll(".tile .st, .nav a .tag").forEach(e => {
+    const t = (e.textContent || "").trim().toLowerCase(), c = ERP_ST_COR[t];
+    if (e.dataset.stTxt === t) return; e.dataset.stTxt = t;
+    if (c) { e.dataset.st = c[0]; e.title = c[1]; } else { delete e.dataset.st; if (e.title && Object.values(ERP_ST_COR).some(v => v[1] === e.title)) e.removeAttribute("title"); }
+  });
+}
+window.erpStMarca = erpStMarca;
+{ let pend = false; const agenda = () => { if (pend) return; pend = true; requestAnimationFrame(() => { pend = false; erpStMarca(); }); };
+  new MutationObserver(agenda).observe(document.body, { childList: true, subtree: true }); agenda(); }
+(function () { const st = document.createElement("style"); st.id = "erp-v01482";
+  const cor = { ativo: ["#1E6B43", "#2E9E5B", "#E6F4EC"], piloto: ["#1F4E99", "#3B6FD0", "#E8EFFB"], previa: ["#5B3A8E", "#8A5CC7", "#F0EAF8"], estudo: ["#8A5A00", "#D69A00", "#FBF2DC"], previsto: ["#5B6068", "#9AA0A8", "#EEF0F3"] };
+  st.textContent = Object.entries(cor).map(([k, [tx, dot, bg]]) =>
+    `.tiles .tile .st[data-st="${k}"],.tile .st[data-st="${k}"]{color:${tx};background:${bg};padding:3px 10px 3px 8px;border-radius:999px;align-self:flex-start;line-height:1.3}
+     .tiles .tile .st[data-st="${k}"] i,.tile .st[data-st="${k}"] i{background:${dot}}
+     .nav a .tag[data-st="${k}"]{color:${tx};background:${bg};padding:1px 7px;border-radius:999px;font-weight:700}`).join("\n")
+    + `\n.tile .st[data-st]{margin-top:auto}.tiles.as-list .tile .st[data-st]{margin:0;align-self:center}`;
+  document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.83 (18/11/2026) · Pedido do Rafael (13:01): menus mais compactos, em todos os menus (departamentos, hubs e Início).
+   - Lista: cada linha fica só com ícone, nome do módulo, status e estrela, e as linhas se dividem em colunas (cabem 3–4 lado a lado
+     no computador) em vez de ocupar a largura toda. A descrição sai da linha e vai para a dica ao passar o mouse.
+   - Blocos: cartões menores (menos altura e respiro), mais cartões por linha.
+   - Departamentos com "Minhas Rotinas": os módulos vêm primeiro, no alto da tela; as rotinas descem para baixo deles.
+   ===================================================================== */
+function erpTileDicas() {
+  document.querySelectorAll("#main .tiles .tile").forEach(t => { if (t.title) return; const h = t.querySelector("h3"), a = t.querySelector(".area");
+    const txt = [h && h.textContent.trim(), a && a.textContent.trim()].filter(Boolean).join(" — "); if (txt) t.title = txt; });
+  document.querySelectorAll("#main .ini-deps .ini-dep").forEach(t => { if (t.title) return; const txt = (t.innerText || "").replace(/\s*\n+\s*/g, " — ").trim(); if (txt) t.title = txt; });
+}
+{ let pend = false; const ag = () => { if (pend) return; pend = true; requestAnimationFrame(() => { pend = false; erpTileDicas(); }); };
+  const liga = () => { const m = $("main"); if (m) new MutationObserver(ag).observe(m, { childList: true, subtree: true }); else setTimeout(liga, 300); }; liga(); }
+{ const pa1 = pageArea;   /* rotinas abaixo dos módulos */
+  pageArea = function () {
+    const h = pa1.apply(this, arguments); if (!h || h.indexOf('id="rotBody"') < 0) return h;
+    const tp = document.createElement("template"); tp.innerHTML = h;
+    const rot = tp.content.querySelector("#rotBody"), tiles = tp.content.querySelector(".tiles"), sec = tp.content.querySelector(".ini-sec.rot-mods");
+    if (rot && tiles) { tiles.after(rot); if (sec) sec.classList.add("rot-mods-topo"); rot.classList.add("rot-abaixo"); }
+    return tp.innerHTML;
+  };
+}
+(function () { const st = document.createElement("style"); st.id = "erp-v01483";
+  st.textContent = `
+  /* lista compacta em colunas */
+  .tiles.as-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:8px 10px}
+  .tiles.as-list .tile{grid-template-columns:28px minmax(0,1fr) auto;column-gap:10px;padding:7px 38px 7px 10px;min-height:46px}
+  .tiles.as-list .tile .area{display:none}
+  .tiles.as-list .tile-ico{width:28px;height:28px;border-radius:7px}.tiles.as-list .tile-ico svg{width:15px;height:15px}
+  .tiles.as-list .tile h3{font-size:14.5px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tiles.as-list .tile .st{font-size:11.5px}.tiles.as-list .tile .fav-btn{right:6px;font-size:18px}
+  .ini-deps.as-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px 10px}
+  .ini-deps.as-list .ini-dep{grid-template-columns:minmax(0,1fr);padding:9px 14px}.ini-deps.as-list .ini-dep span{display:none}
+  /* blocos menores */
+  .tiles:not(.as-list){grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+  .tiles:not(.as-list) .tile{min-height:0;padding:14px 16px 12px}
+  .tiles:not(.as-list) .tile-ico{width:32px;height:32px;border-radius:8px}.tiles:not(.as-list) .tile-ico svg{width:17px;height:17px}
+  .tiles:not(.as-list) .tile h3{margin-top:10px;font-size:15px;line-height:1.25}
+  .tiles:not(.as-list) .tile .area{font-size:12.5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .tiles:not(.as-list) .tile .st{padding-top:10px}.tiles:not(.as-list) .tile .st[data-st]{margin-top:10px;padding-top:3px}
+  .ini-deps:not(.as-list){grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}.ini-deps:not(.as-list) .ini-dep{padding:12px 14px}
+  /* rotinas abaixo dos módulos */
+  .ini-card.rot.rot-abaixo{margin-top:22px}
+  @media (max-width:640px){.tiles.as-list{grid-template-columns:1fr}.ini-deps.as-list{grid-template-columns:1fr}.tiles:not(.as-list){grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}`;
+  document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.84 (18/11/2026) · Pedido do Rafael (13:19): Diretoria › Procedimentos e TI › Procedimentos.
+   Procedimentos internos (POP) que se consultam no próprio ERP, com revisão numerada, histórico e ciência de leitura.
+   - Sobe Word (.docx) ou PDF. O Word é lido pelo ERP (mammoth) e ganha o desenho padrão da empresa (cabeçalho com logo,
+     código, revisão e data; seções; passos numerados; caixas de Caminho / Atenção / Segurança / Observação / Dica;
+     figuras com legenda; rodapé de documento controlado). O conteúdo não muda: só o desenho.
+   - Edita no próprio ERP (editor com os mesmos blocos do padrão) ou baixa em Word (gerado no padrão, com o histórico de
+     revisões no fim) para editar no computador e subir de volta: a volta é lida pelos estilos do próprio Word gerado.
+   - Cada mudança é um rascunho até ser publicada; publicar cria a revisão seguinte (Rev. 01, 02…), guarda a anterior e o
+     arquivo original, e pede o motivo. Quem tem "editar" faz rascunhos e envia para aprovação; quem é proprietário do
+     módulo (ou administrador) aprova e publica.
+   - Ciência de leitura: cada pessoa confirma que leu a revisão vigente ("Li e entendi"); a lista mostra quem leu.
+   - Revisão periódica: a próxima revisão vem da periodicidade (padrão 12 meses) e a lista avisa as vencidas.
+   - Vídeo por tópico: cada seção ou subseção pode ter um vídeo curto (link do YouTube / Stream / SharePoint ou arquivo
+     enviado para a pasta do procedimento no SharePoint); aparece como "▶ Vídeo" no título do tópico e no índice.
+   - Listas novas (Configuração › Executar tudo): "Diretoria — Procedimentos", "Diretoria — Procedimentos · Leituras",
+     "TI — Procedimentos" e "TI — Procedimentos · Leituras". Arquivos na biblioteca Documentos de cada site, pasta
+     Procedimentos/{código}/ (conteúdo de cada revisão em .html, Originais/ e Vídeos/).
+   ===================================================================== */
+ICONS.pop = ICONS.pop || `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13l2 2 4-4"/><path d="M9 18h6"/></svg>`;
+ERP_LIBS.mammoth = { url: "https://cdn.jsdelivr.net/npm/mammoth@1.13.0/mammoth.browser.min.js", global: "mammoth" };
+ERP_LIBS.docx = { url: "https://cdn.jsdelivr.net/npm/docx@9.5.1/dist/index.iife.js", global: "docx" };
+const PROC_DEFS = {
+  dir_proc: { mod: "dir_proc", area: "Diretoria", siteKey: "diretoria", lk: "dir_proc", llk: "dir_proc_leit", pre: "POP-DIR", path: "#/diretoria/procedimentos", nome: "Diretoria" },
+  ti_proc:  { mod: "ti_proc",  area: "TI",        siteKey: "ti",        lk: "ti_proc",  llk: "ti_proc_leit",  pre: "POP-TI",  path: "#/ti/procedimentos",        nome: "TI" }
+};
+const PROC_CAT = ["Operacional", "Atendimento e Vendas", "Financeiro", "TI e Sistemas", "Segurança da Informação", "Pessoas", "Administrativo", "Outro"];
+const PROC_CAIXAS = { caminho: "Caminho", atencao: "Atenção", seguranca: "Segurança", obs: "Observação", dica: "Dica" };
+const PROC_CAIXA_ROT = { caminho: "Caminho:", atencao: "ATENÇÃO:", seguranca: "SEGURANÇA:", obs: "OBSERVAÇÃO:", dica: "DICA:" };
+Object.values(PROC_DEFS).forEach(D => {
+  MODULES.push({ id: D.mod, path: D.path, icon: "pop", name: "Procedimentos", area: D.area, groups: [D.area === "TI" ? "ti" : "diretoria"], status: "piloto", wide: true });
+  if (typeof AG_MOD_SITES !== "undefined") AG_MOD_SITES[D.mod] = [];
+  LISTS[D.lk] = {
+    key: D.lk, displayName: `${D.nome} — Procedimentos`, siteKey: D.siteKey, titleAs: "Código",
+    description: `${D.nome} NMB · procedimentos operacionais padrão (POP): título, revisão vigente, rascunho em andamento, aprovação, próxima revisão e histórico. O conteúdo de cada revisão fica na biblioteca Documentos, pasta Procedimentos. Editada em ${D.nome} › Procedimentos.`,
+    columns: [
+      { name: "Titulo",            displayName: "Título",                required: true, text: { allowMultipleLines: false, maxLength: 255 } },
+      { name: "Subtitulo",         displayName: "Subtítulo",             text: { allowMultipleLines: false, maxLength: 255 } },
+      { name: "Categoria",         displayName: "Categoria",             choice: choice(PROC_CAT, true) },
+      { name: "Formato",           displayName: "Formato",               choice: choice(["Documento", "PDF"]) },
+      { name: "Status",            displayName: "Situação",              required: true, choice: choice(["Rascunho", "Vigente", "Obsoleto"]) },
+      { name: "Revisao",           displayName: "Revisão",               number: integer(0, 999) },
+      { name: "DataRevisao",       displayName: "Data da revisão",       dateTime: dateOnly },
+      { name: "Responsavel",       displayName: "Responsável",           text: { allowMultipleLines: false, maxLength: 120 } },
+      { name: "Aprovador",         displayName: "Aprovado por",          text: { allowMultipleLines: false, maxLength: 120 } },
+      { name: "PeriodicidadeMeses", displayName: "Revisar a cada (meses)", number: integer(0, 60) },
+      { name: "ProximaRevisao",    displayName: "Próxima revisão",       dateTime: dateOnly },
+      { name: "Resumo",            displayName: "Objetivo / resumo",     text: { allowMultipleLines: true, textType: "plain" } },
+      { name: "PalavrasChave",     displayName: "Palavras-chave",        text: { allowMultipleLines: false, maxLength: 255 } },
+      { name: "ConteudoId",        displayName: "Conteúdo vigente (id)", text: { allowMultipleLines: false, maxLength: 80 } },
+      { name: "ArquivoId",         displayName: "Original vigente (id)", text: { allowMultipleLines: false, maxLength: 80 } },
+      { name: "ArquivoNome",       displayName: "Original vigente",      text: { allowMultipleLines: false, maxLength: 255 } },
+      { name: "RascunhoId",        displayName: "Rascunho (id)",         text: { allowMultipleLines: false, maxLength: 80 } },
+      { name: "RascunhoArqId",     displayName: "Original do rascunho (id)", text: { allowMultipleLines: false, maxLength: 80 } },
+      { name: "RascunhoArqNome",   displayName: "Original do rascunho",  text: { allowMultipleLines: false, maxLength: 255 } },
+      { name: "RascunhoFormato",   displayName: "Formato do rascunho",   choice: choice(["Documento", "PDF"]) },
+      { name: "RascunhoPor",       displayName: "Rascunho por",          text: { allowMultipleLines: false, maxLength: 120 } },
+      { name: "RascunhoEm",        displayName: "Rascunho em",           dateTime: {} },
+      { name: "RascunhoMotivo",    displayName: "O que muda no rascunho", text: { allowMultipleLines: true, textType: "plain" } },
+      { name: "RascunhoAprovacao", displayName: "Rascunho enviado para aprovação", boolean: {} },
+      { name: "Revisoes",          displayName: "Revisões (JSON)",       text: { allowMultipleLines: true, textType: "plain" } },
+      { name: "TextoBusca",        displayName: "Texto para busca",      text: { allowMultipleLines: true, textType: "plain" } },
+      { name: "Historico",         displayName: "Histórico (JSON)",      text: { allowMultipleLines: true, textType: "plain" } }
+    ]
+  };
+  LISTS[D.llk] = {
+    key: D.llk, displayName: `${D.nome} — Procedimentos · Leituras`, siteKey: D.siteKey, titleAs: "Leitura",
+    description: `${D.nome} NMB · ciência de leitura dos procedimentos: quem leu qual revisão e quando. Gravada pelo botão "Li e entendi" em ${D.nome} › Procedimentos (inclusive por quem só consulta o módulo).`,
+    columns: [
+      { name: "ProcId",      displayName: "Procedimento (id)", required: true, text: { allowMultipleLines: false, maxLength: 20 } },
+      { name: "Codigo",      displayName: "Código",            text: { allowMultipleLines: false, maxLength: 40 } },
+      { name: "Revisao",     displayName: "Revisão",           number: integer(0, 999) },
+      { name: "Pessoa",      displayName: "Pessoa",            text: { allowMultipleLines: false, maxLength: 120 } },
+      { name: "Email",       displayName: "E-mail",            text: { allowMultipleLines: false, maxLength: 160 } },
+      { name: "DataLeitura", displayName: "Lido em",           dateTime: {} }
+    ]
+  };
+  SETUP_ORDER.push(D.lk, D.llk);
+  SETUP_TEXT[D.lk] = `Cria no site ${D.nome} a lista "${D.nome} — Procedimentos" (v0.14.84): os procedimentos (POP) com revisão, rascunho, aprovação e próxima revisão. O conteúdo fica na biblioteca Documentos, pasta Procedimentos.`;
+  SETUP_TEXT[D.llk] = `Cria no site ${D.nome} a lista "${D.nome} — Procedimentos · Leituras" (v0.14.84): a ciência de leitura ("Li e entendi") de cada revisão. Quem só consulta os procedimentos também grava aqui: dê permissão de Contribuir nesta lista a quem lê.`;
+});
+{ const a = AREAS.find(x => x.name === "TI"); if (a) a.desc = "Chamados internos, manutenção de equipamentos e procedimentos"; }
+{ const a = AREAS.find(x => x.name === "Diretoria"); if (a && !/procedimentos/i.test(a.desc)) a.desc = a.desc.replace(/ e ([^,]+)$/, ", $1") + " e procedimentos"; }
+
+/* ---------- estado ---------- */
+const PROC = {};
+function procS(mod) { return PROC[mod] || (PROC[mod] = { mod, D: PROC_DEFS[mod], site: null, drive: null, list: undefined, listL: undefined, itens: [], leit: [], ready: false, erro: "", f: { q: "", cat: "", st: "" }, cache: {}, pastas: new Set(), cod: null, ver: null, editando: false, sujo: false }); }
+const procAtual = () => PROC[session.modAtual] || null;
+const procPode = S => S.ready && podeEditar(S.mod);
+const procAprova = S => S.ready && (session.n1 || podeExcluir(S.mod));
+const procRev = n => "Rev. " + String(Number(n) || 0).padStart(2, "0");
+const procJ = (v, d) => { try { const x = JSON.parse(v || ""); return x == null ? d : x; } catch (e) { return d; } };
+const procEu = () => (session.me && session.me.displayName) || "";
+const procEuEmail = () => normEmail(session.me && (session.me.mail || session.me.userPrincipalName));
+const procItem = (S, cod) => S.itens.find(x => String(x.Title || "").toUpperCase() === String(cod || "").toUpperCase());
+function procHist(v, txt) { const h = procJ(v, []); h.push({ em: new Date().toISOString(), por: procEu(), o: txt }); return JSON.stringify(h.slice(-80)); }
+function procLido(S, x, email) { const e = email || procEuEmail(); return S.leit.find(l => l.ProcId === x._id && Number(l.Revisao) === Number(x.Revisao) && normEmail(l.Email) === e) || null; }
+function procSituacao(x) {   /* rótulo e cor da situação na lista */
+  if (x.Status === "Obsoleto") return ["Obsoleto", "st-cinza"];
+  if (x.Status === "Rascunho") return x.RascunhoAprovacao ? ["Aguardando aprovação", "st-pend"] : ["Rascunho", "st-aguardando"];
+  if (x.RascunhoId || x.RascunhoArqId) return x.RascunhoAprovacao ? ["Vigente · nova revisão aguardando aprovação", "st-pend"] : ["Vigente · em revisão", "st-hoje"];
+  if (x.ProximaRevisao && ymd(x.ProximaRevisao) < todayISO()) return ["Vigente · revisão vencida", "st-venc"];
+  return ["Vigente", "st-pago"];
+}
+const procPill = ([t, c]) => `<span class="pill ${c}"><i></i>${esc(t)}</span>`;
+
+/* ---------- SharePoint: listas e arquivos ---------- */
+async function procCarregar(S, force) {
+  S.erro = "";
+  try {
+    if (!S.site) S.site = await SP.site(CONFIG.sites[S.D.siteKey]);
+    if (force || S.list === undefined) { const ls = await SP.lists(S.site.id); S.list = ls.find(l => l.displayName === LISTS[S.D.lk].displayName) || null; S.listL = ls.find(l => l.displayName === LISTS[S.D.llk].displayName) || null; }
+    if (!S.list) { S.ready = false; S.itens = []; S.leit = []; return; }
+    const map = it => Object.assign({ _id: String(it.id), _lm: it.lastModifiedDateTime || "" }, it.fields || {});
+    const [a, b] = await Promise.all([SP.items(S.site.id, S.list.id), S.listL ? SP.items(S.site.id, S.listL.id) : Promise.resolve([])]);
+    S.itens = a.map(map); S.leit = b.map(map); S.ready = true;
+  } catch (e) { S.erro = String((e && e.message) || e); S.ready = false; S.list = undefined; }
+}
+async function procDrive(S) { if (!S.drive) S.drive = await graph(`/sites/${S.site.id}/drive?$select=id,name`); return S.drive; }
+async function procPasta(S, pasta) {
+  const dr = await procDrive(S); let atual = "";
+  for (const p of pasta.split("/").filter(Boolean)) {
+    const prox = atual ? `${atual}/${p}` : p;
+    if (!S.pastas.has(prox)) {
+      try { await graph(`/drives/${dr.id}/root:/${docEncode(prox)}`); }
+      catch (e) { if (e.status !== 404) throw e;
+        try { await graph(atual ? `/drives/${dr.id}/root:/${docEncode(atual)}:/children` : `/drives/${dr.id}/root/children`, { method: "POST", body: { name: p, folder: {}, "@microsoft.graph.conflictBehavior": "fail" } }); }
+        catch (e2) { if (e2.status !== 409) throw e2; } }
+      S.pastas.add(prox);
+    }
+    atual = prox;
+  }
+}
+async function procEnviar(S, pasta, nome, blob, substituir, onProg) {
+  const dr = await procDrive(S), cb = substituir ? "replace" : "rename";
+  const envia = async () => {
+    const base = `/drives/${dr.id}/root:/${docEncode(pasta)}/${encodeURIComponent(nome)}`;
+    if (blob.size < 4000000) return graph(`${base}:/content?@microsoft.graph.conflictBehavior=${cb}`, { method: "PUT", body: blob, headers: { "Content-Type": blob.type || "application/octet-stream" } });
+    const ses = await graph(`${base}:/createUploadSession`, { method: "POST", body: { item: { "@microsoft.graph.conflictBehavior": cb } } });
+    const CH = 16 * 327680; let pos = 0, fim = null;
+    while (pos < blob.size) {
+      const ate = Math.min(pos + CH, blob.size);
+      const r = await fetch(ses.uploadUrl, { method: "PUT", headers: { "Content-Range": `bytes ${pos}-${ate - 1}/${blob.size}` }, body: blob.slice(pos, ate) });
+      if (!r.ok) throw new Error(`O envio foi interrompido (${r.status}). Tente de novo.`);
+      if (r.status === 200 || r.status === 201) fim = await r.json();
+      pos = ate; if (onProg) onProg(pos / blob.size);
+    }
+    if (!fim || !fim.id) throw new Error("O SharePoint não confirmou o arquivo. Tente de novo.");
+    return fim;
+  };
+  try { return await envia(); } catch (e) { if (e.status !== 404) throw e; await procPasta(S, pasta); return envia(); }
+}
+async function procBaixar(S, id) { const dr = await procDrive(S); return graph(`/drives/${dr.id}/items/${encodeURIComponent(id)}/content`); }
+async function procApagar(S, id) { if (!id) return; const dr = await procDrive(S); try { await graph(`/drives/${dr.id}/items/${encodeURIComponent(id)}`, { method: "DELETE" }); } catch (e) { if (e.status !== 404) throw e; } }
+async function procRenomear(S, id, nome) { const dr = await procDrive(S); return graph(`/drives/${dr.id}/items/${encodeURIComponent(id)}?@microsoft.graph.conflictBehavior=rename`, { method: "PATCH", body: { name: nome } }); }
+const procPastaDe = x => `Procedimentos/${docNomeSeguro(x.Title || "sem código")}`;
+/* gravação com conferência de conflito (outra pessoa alterou depois que a tela leu) */
+async function procGrava(S, x, fields) {
+  if (x && x._id) {
+    try { const at = await graph(`/sites/${S.site.id}/lists/${S.list.id}/items/${x._id}?$select=id,lastModifiedDateTime,lastModifiedBy`);
+      if (x._lm && at && at.lastModifiedDateTime && at.lastModifiedDateTime !== x._lm) { const quem = at.lastModifiedBy && at.lastModifiedBy.user && at.lastModifiedBy.user.displayName; throw new Error(`Este procedimento foi alterado por ${quem || "outra pessoa"} em ${new Date(at.lastModifiedDateTime).toLocaleString("pt-BR")} depois que você o abriu. Clique em Atualizar e refaça a alteração.`); } }
+    catch (e) { if (/foi alterado/.test(e.message)) throw e; }
+    await SP.update(S.site.id, S.list.id, x._id, fields);
+    Object.assign(x, fields); try { const at = await graph(`/sites/${S.site.id}/lists/${S.list.id}/items/${x._id}?$select=id,lastModifiedDateTime`); x._lm = at.lastModifiedDateTime || x._lm; } catch (e) {}
+    return x;
+  }
+  const it = await SP.create(S.site.id, S.list.id, fields);
+  const novo = Object.assign({ _id: String(it.id), _lm: it.lastModifiedDateTime || "" }, it.fields || fields);
+  S.itens.push(novo); return novo;
+}
+/* a ciência de leitura é gravada também por quem só consulta o módulo (só criar, só na lista de leituras) */
+{ const g0 = guardaEscrita;
+  guardaEscrita = function (method, path, body) {
+    if (/^POST$/i.test(method || "") && !(typeof vcAtivo === "function" && vcAtivo()))
+      for (const S of Object.values(PROC)) if (S.listL && String(path || "").includes(`/lists/${S.listL.id}/items`) && !/\/items\/./.test(String(path).split(`/lists/${S.listL.id}`)[1] || "") && canSee(MODULES.find(m => m.id === S.mod))) return;
+    return g0.apply(this, arguments);
+  };
+}
+
+/* ---------- conteúdo: limpeza, padrão e arquivo ---------- */
+const PROC_TAGS = new Set(["H1", "H2", "H3", "H4", "P", "STRONG", "B", "EM", "I", "U", "S", "BR", "UL", "OL", "LI", "TABLE", "THEAD", "TBODY", "TR", "TD", "TH", "IMG", "A", "DIV", "SPAN", "SUP", "SUB", "BLOCKQUOTE", "HR"]);
+const PROC_FORA = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "FORM", "INPUT", "BUTTON", "SELECT", "TEXTAREA", "SVG", "MATH", "NOSCRIPT", "TEMPLATE", "VIDEO", "AUDIO", "CANVAS", "HEAD", "TITLE"]);
+const PROC_CLASSES = /^(passo|legenda|pop-caixa|caminho|atencao|seguranca|obs|dica|pop-num|pop-video-tag)$/;
+function procLimpar(html) {
+  const doc = new DOMParser().parseFromString(`<div id="procR">${html || ""}</div>`, "text/html"), r = doc.getElementById("procR");
+  const anda = el => [...el.childNodes].forEach(c => {
+    if (c.nodeType === 8) { c.remove(); return; }
+    if (c.nodeType !== 1) return;
+    const t = c.tagName;
+    if (PROC_FORA.has(t)) { c.remove(); return; }
+    anda(c);
+    if (!PROC_TAGS.has(t)) { c.replaceWith(...c.childNodes); return; }
+    [...c.attributes].forEach(a => {
+      const n = a.name.toLowerCase(), v = a.value || "";
+      if (n === "class") { const cl = v.split(/\s+/).filter(k => PROC_CLASSES.test(k)); if (cl.length) c.setAttribute("class", cl.join(" ")); else c.removeAttribute("class"); return; }
+      let ok = false;
+      if (t === "IMG" && n === "src") ok = /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=\s]+$/i.test(v);
+      else if (t === "IMG" && n === "alt") ok = true;
+      else if (t === "A" && n === "href") ok = /^https?:\/\//i.test(v.trim());
+      else if ((t === "TD" || t === "TH") && (n === "colspan" || n === "rowspan")) ok = /^\d{1,2}$/.test(v);
+      else if (/^H[1-4]$/.test(t) && n === "data-video") ok = /^https?:\/\//i.test(v.trim());
+      else if (/^H[1-4]$/.test(t) && (n === "data-video-nome" || n === "data-video-id")) ok = v.length < 300;
+      if (!ok) c.removeAttribute(a.name);
+    });
+    if (t === "A") { c.setAttribute("target", "_blank"); c.setAttribute("rel", "noopener noreferrer"); }
+    if (t === "IMG" && !c.getAttribute("src")) c.remove();
+  });
+  anda(r); return r.innerHTML;
+}
+const PROC_RX_CAIXA = /^\s*(caminho|aten[cç][aã]o|importante|aviso|cuidado|seguran[cç]a|observa[cç][aã]o|obs\.?|nota|dica)\s*:/i;
+function procTipoCaixa(txt) {
+  const m = String(txt || "").match(PROC_RX_CAIXA); if (!m) return "";
+  const k = normName(m[1]).replace(/\.$/, "");
+  return k === "caminho" ? "caminho" : /^seguranca/.test(k) ? "seguranca" : /^(observacao|obs|nota)$/.test(k) ? "obs" : k === "dica" ? "dica" : "atencao";
+}
+const procTxt = el => (el.textContent || "").replace(/\s+/g, " ").trim();
+/* aplica o padrão: passos, legendas, caixas, vídeos por tópico; tira o que é do arquivo e não do conteúdo */
+function procNormalizar(html) {
+  const doc = new DOMParser().parseFromString(`<div id="procN">${procLimpar(html)}</div>`, "text/html"), r = doc.getElementById("procN");
+  const vazio = el => !procTxt(el) && !el.querySelector("img");
+  /* tabelas de diagramação (uma coluna com conteúdo) viram conteúdo corrido; tabelas vazias saem */
+  r.querySelectorAll("table").forEach(tb => {
+    if (vazio(tb)) { tb.remove(); return; }
+    const linhas = [...tb.rows], cheias = new Set(); let comMais = false;
+    linhas.forEach(tr => { const cs = [...tr.cells].filter(c => !vazio(c)); if (cs.length > 1) comMais = true; cs.forEach(c => cheias.add(c.cellIndex)); });
+    if (!comMais && cheias.size <= 1) { const frag = doc.createDocumentFragment(); linhas.forEach(tr => [...tr.cells].forEach(c => { if (!vazio(c)) [...c.childNodes].forEach(n => frag.appendChild(n)); })); tb.replaceWith(frag); }
+  });
+  /* blockquote (recuo do Word) vira conteúdo corrido */
+  r.querySelectorAll("blockquote").forEach(b => b.replaceWith(...b.childNodes));
+  /* histórico de revisões gerado pelo ERP no Word sai: é refeito a cada revisão */
+  const hh = [...r.querySelectorAll("h1,h2")].find(h => /^hist[oó]rico de revis[oõ]es$/i.test(procTxt(h)));
+  if (hh) { let n = hh; while (n) { const p = n.nextSibling; n.remove(); n = p; } }
+  /* "▶ Vídeo do tópico" (Word gerado pelo ERP) volta para o título anterior */
+  r.querySelectorAll("p").forEach(p => {
+    const t = procTxt(p);
+    if (p.classList.contains("pop-video-tag") || /^▶\s*v[ií]deo/i.test(t)) {
+      const a = p.querySelector("a[href]"), url = a ? a.getAttribute("href") : (t.match(/https?:\/\/\S+/) || [])[0];
+      let h = p.previousElementSibling; while (h && !/^H[1-4]$/.test(h.tagName)) h = h.previousElementSibling;
+      if (h && url) { h.setAttribute("data-video", url); const nm = t.replace(/^▶\s*v[ií]deo( do t[oó]pico)?\s*:?\s*/i, "").replace(/\s*[—-]\s*https?:\/\/\S+$/, "").trim(); if (nm && !/^https?:/.test(nm)) h.setAttribute("data-video-nome", nm.slice(0, 120)); }
+      p.remove();
+    }
+  });
+  /* parágrafos: passo, legenda, caixa */
+  r.querySelectorAll("p").forEach(p => {
+    const t = procTxt(p);
+    if (!t && !p.querySelector("img")) { p.remove(); return; }
+    if (/^figura\s+\d+/i.test(t)) { p.className = "legenda"; return; }
+    if (p.closest(".pop-caixa")) return;
+    const tipo = procTipoCaixa(t);
+    if (tipo && !p.querySelector("img")) { const d = doc.createElement("div"); d.className = `pop-caixa ${tipo}`; p.replaceWith(d); d.appendChild(p); return; }
+    if (/^\d+(\.\d+){1,4}\.?\s/.test(t) && (p.classList.contains("passo") || (p.firstElementChild && /^(STRONG|B)$/.test(p.firstElementChild.tagName)) || /^\d+(\.\d+){1,4}\.?\s/.test(p.textContent.trimStart()))) p.classList.add("passo");
+  });
+  /* caixas: tipo pela classe; caixas iguais seguidas viram uma só */
+  r.querySelectorAll("div.pop-caixa").forEach(d => { if (!Object.keys(PROC_CAIXAS).some(k => d.classList.contains(k))) d.classList.add(procTipoCaixa(procTxt(d)) || "obs"); if (vazio(d)) d.remove(); });
+  r.querySelectorAll("div.pop-caixa + div.pop-caixa").forEach(d => { const a = d.previousElementSibling; if (a && a.className === d.className && !procTipoCaixa(procTxt(d.firstElementChild || d))) { while (d.firstChild) a.appendChild(d.firstChild); d.remove(); } });
+  /* número do passo em destaque */
+  r.querySelectorAll("p.passo").forEach(p => {
+    if (p.querySelector(".pop-num")) return;
+    const f = p.firstChild, alvo = f && f.nodeType === 1 && /^(STRONG|B)$/.test(f.tagName) ? f : null;
+    if (alvo && /^\s*\d+(\.\d+){1,4}\.?\s*$/.test(alvo.textContent)) { const s = doc.createElement("span"); s.className = "pop-num"; s.textContent = alvo.textContent.trim(); alvo.replaceWith(s); return; }
+    const w = doc.createTreeWalker(p, NodeFilter.SHOW_TEXT); const tn = w.nextNode(); if (!tn) return;
+    const m = tn.nodeValue.match(/^(\s*)(\d+(\.\d+){1,4}\.?)(\s+)/); if (!m) return;
+    const s = doc.createElement("span"); s.className = "pop-num"; s.textContent = m[2];
+    tn.nodeValue = tn.nodeValue.slice(m[0].length); tn.parentNode.insertBefore(s, tn); tn.parentNode.insertBefore(doc.createTextNode(" "), tn);
+  });
+  r.querySelectorAll(".pop-num").forEach(s => { const n = s.nextSibling; if (n && n.nodeType === 3 && !/^\s/.test(n.nodeValue)) n.nodeValue = " " + n.nodeValue; });
+  /* título só com imagem vira parágrafo (no Word, imagem colada numa linha de título) */
+  r.querySelectorAll("h1,h2,h3,h4").forEach(h => { if (!procTxt(h) && h.querySelector("img")) { const p = doc.createElement("p"); while (h.firstChild) p.appendChild(h.firstChild); h.replaceWith(p); } });
+  /* listas e títulos vazios saem */
+  r.querySelectorAll("li,h1,h2,h3,h4,ul,ol").forEach(e => { if (vazio(e)) e.remove(); });
+  return r.innerHTML;
+}
+function procTextoBusca(html) { const d = document.createElement("div"); d.innerHTML = html; return (d.textContent || "").replace(/\s+/g, " ").trim().slice(0, 30000); }
+/* folha no padrão (vale para a tela, para o arquivo salvo e para a impressão) */
+const PROC_CSS = `.pop-folha{background:#fff;color:#1B2230;font-family:Inter,Calibri,Arial,sans-serif;font-size:14.5px;line-height:1.55}
+.pop-cab{display:grid;grid-template-columns:118px minmax(0,1fr) 196px;border:1px solid #C9D0D8;margin:0 0 22px}
+.pop-cab>div{padding:8px 12px;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.pop-cab .pop-logo{border-right:1px solid #C9D0D8;align-items:center}.pop-cab .pop-logo img{max-width:88px;max-height:66px}
+.pop-cab .pop-tit{border-right:1px solid #C9D0D8;text-align:center;align-items:center}
+.pop-cab .pop-k{color:#D6421F;font-weight:800;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase}
+.pop-cab .pop-t{margin:4px 0 0;font-size:17px;font-weight:800;color:#1D1E4A;line-height:1.25}
+.pop-cab .pop-s{font-size:12.5px;color:#5B6068;margin-top:2px}
+.pop-cab .pop-meta{padding:0}.pop-cab .pop-meta div{padding:5px 10px;border-bottom:1px solid #C9D0D8;font-size:12px}.pop-cab .pop-meta div:last-child{border-bottom:0}.pop-cab .pop-meta b{color:#1D1E4A}
+.pop-corpo h1{font-size:16px;font-weight:800;color:#1D1E4A;text-transform:uppercase;border-bottom:2px solid #D6421F;padding-bottom:4px;margin:26px 0 12px;letter-spacing:.02em}
+.pop-corpo h1:first-child{margin-top:4px}
+.pop-corpo h2{font-size:15px;font-weight:800;color:#1D1E4A;margin:22px 0 8px}
+.pop-corpo h3,.pop-corpo h4{font-size:14px;font-weight:700;color:#34376F;margin:16px 0 6px}
+.pop-corpo p{margin:6px 0}.pop-corpo p.passo{margin:14px 0 6px}
+.pop-corpo .pop-num{color:#D6421F;font-weight:800}
+.pop-corpo img{display:block;max-width:100%;height:auto;margin:10px auto;border:1px solid #E2E5E9}
+.pop-corpo p.legenda{text-align:center;font-size:12.5px;color:#5B6068;font-style:italic;margin:2px 0 16px}
+.pop-corpo p.legenda strong,.pop-corpo p.legenda b{font-style:normal;color:#1D1E4A}
+.pop-corpo .pop-caixa{border-left:4px solid #8A9099;padding:8px 14px;margin:10px 0;background:#F1F3F5}
+.pop-corpo .pop-caixa p{margin:3px 0}
+.pop-corpo .pop-caixa.caminho{background:#EEF2F8;border-color:#1D1E4A}.pop-corpo .pop-caixa.atencao{background:#FDF0EA;border-color:#D6421F}
+.pop-corpo .pop-caixa.seguranca{background:#FBEAEA;border-color:#B3271E}.pop-corpo .pop-caixa.obs{background:#F1F3F5;border-color:#8A9099}.pop-corpo .pop-caixa.dica{background:#E6F4EC;border-color:#2E9E5B}
+.pop-corpo .pop-caixa.atencao strong:first-child{color:#B3381A}.pop-corpo .pop-caixa.caminho strong:first-child{color:#1D1E4A}.pop-corpo .pop-caixa.seguranca strong:first-child{color:#B3271E}
+.pop-corpo table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px;table-layout:fixed}
+.pop-corpo td,.pop-corpo th{border:1px solid #C9D0D8;padding:6px 8px;vertical-align:top}.pop-corpo th{background:#F4F6FA;color:#1D1E4A;text-align:left}
+.pop-corpo ul,.pop-corpo ol{margin:6px 0 6px 22px;padding:0}.pop-corpo li{margin:3px 0}
+.pop-corpo a{color:#1F4E99}
+.pop-hist h1{font-size:16px;font-weight:800;color:#1D1E4A;text-transform:uppercase;border-bottom:2px solid #D6421F;padding-bottom:4px;margin:30px 0 12px}
+.pop-hist table{border-collapse:collapse;width:100%;font-size:12.5px}.pop-hist td,.pop-hist th{border:1px solid #C9D0D8;padding:5px 8px;text-align:left;vertical-align:top}.pop-hist th{background:#F4F6FA;color:#1D1E4A}
+.pop-rod{margin-top:26px;border-top:1px solid #E2E5E9;padding-top:8px;text-align:center;font-size:11.5px;color:#8A9099}
+@media (max-width:640px){.pop-cab{grid-template-columns:1fr}.pop-cab .pop-logo,.pop-cab .pop-tit{border-right:0;border-bottom:1px solid #C9D0D8}.pop-cab .pop-logo img{max-height:48px}}`;
+const PROC_RODAPE = "Transportadora Nova Macabu Ltda. • Documento controlado – cópias impressas não são controladas";
+function procCabHtml(m) {
+  return `<header class="pop-cab"><div class="pop-logo"><img src="${LOGO_NMB}" alt="Nova Macabu"></div><div class="pop-tit"><div class="pop-k">Procedimento Operacional Padrão</div><div class="pop-t">${esc(m.titulo || "")}</div>${m.sub ? `<div class="pop-s">${esc(m.sub)}</div>` : ""}</div>
+    <div class="pop-meta"><div><b>Código:</b> ${esc(m.cod || "")}</div><div><b>Revisão:</b> ${m.rascunho ? `${esc(String(m.rev).padStart(2, "0"))} <i>(rascunho)</i>` : esc(String(m.rev).padStart(2, "0"))}</div><div><b>Data:</b> ${esc(m.data ? fmtDate(m.data) : "—")}</div>${m.aprov ? `<div><b>Aprovação:</b> ${esc(m.aprov)}</div>` : ""}</div></header>`;
+}
+function procHistHtml(revs) {
+  if (!revs || !revs.length) return "";
+  return `<section class="pop-hist"><h1>Histórico de revisões</h1><table><thead><tr><th>Rev.</th><th>Data</th><th>O que mudou</th><th>Elaborado por</th><th>Aprovado por</th></tr></thead><tbody>${revs.slice().sort((a, b) => a.rev - b.rev).map(r => `<tr><td>${esc(String(r.rev).padStart(2, "0"))}</td><td>${esc(r.data ? fmtDate(r.data) : "")}</td><td>${esc(r.motivo || "")}</td><td>${esc(r.por || "")}</td><td>${esc(r.aprov || "")}</td></tr>`).join("")}</tbody></table></section>`;
+}
+function procMeta(x, ras, rev) {   /* cabeçalho da folha: vigente, rascunho ou revisão antiga */
+  const revs = procJ(x.Revisoes, []);
+  if (rev) { const r = revs.find(v => Number(v.rev) === Number(rev)) || {}; return { cod: x.Title, titulo: x.Titulo, sub: x.Subtitulo, rev: rev, data: r.data, aprov: r.aprov, revs: revs.filter(v => Number(v.rev) <= Number(rev)) }; }
+  if (ras) return { cod: x.Title, titulo: x.Titulo, sub: x.Subtitulo, rev: x.Status === "Rascunho" ? Math.max(1, Number(x.Revisao) || 0) : (Number(x.Revisao) || 0) + 1, data: ymd(x.RascunhoEm || new Date().toISOString()), rascunho: true, revs };
+  return { cod: x.Title, titulo: x.Titulo, sub: x.Subtitulo, rev: Number(x.Revisao) || 0, data: x.DataRevisao ? ymd(x.DataRevisao) : "", aprov: x.Aprovador, revs };
+}
+/* arquivo .html da revisão: página completa (abre sozinha no SharePoint) com o conteúdo em <main class="pop-corpo"> */
+function procArquivoHtml(m, corpo) {
+  return `<!DOCTYPE html>\n<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(m.cod)} ${esc(procRev(m.rev))} · ${esc(m.titulo || "")}</title><meta name="erp-pop" content="${esc(m.cod)};${esc(String(m.rev))}">
+<style>body{margin:0;background:#EEF1F5}.pop-folha{max-width:860px;margin:24px auto;padding:28px 40px 36px;box-shadow:0 2px 12px rgba(0,0,0,.08)}${PROC_CSS}@media print{body{background:#fff}.pop-folha{box-shadow:none;margin:0;max-width:none;padding:0}@page{size:A4;margin:14mm}}</style></head>
+<body><article class="pop-folha">${procCabHtml(m)}<main class="pop-corpo">\n${corpo}\n</main>${procHistHtml(m.revs)}<footer class="pop-rod">${esc(PROC_RODAPE)}</footer></article></body></html>`;
+}
+function procCorpoDoArquivo(txt) {
+  const d = new DOMParser().parseFromString(txt || "", "text/html"), m = d.querySelector("main.pop-corpo");
+  return procLimpar(m ? m.innerHTML : (d.body ? d.body.innerHTML : ""));
+}
+async function procConteudo(S, id, ver) {   /* ver: marca de versão do arquivo (o rascunho é regravado no mesmo arquivo) */
+  if (!id) return "";
+  const k = id + "|" + (ver || "");
+  if (S.cache[k] != null) return S.cache[k];
+  const b = await procBaixar(S, id), txt = typeof b === "string" ? b : await b.text();
+  return (S.cache[k] = procCorpoDoArquivo(txt));
+}
+const PROC_MODELO = `<h1>1. Objetivo</h1><p>Descreva para que serve este procedimento.</p><h1>2. Aplicação</h1><p>Onde, quando e para quem ele vale.</p><h1>3. Responsabilidades</h1><ul><li>Quem executa: …</li><li>Quem confere: …</li></ul><h1>4. Procedimento</h1><h2>4.1 Primeira etapa</h2><div class="pop-caixa caminho"><p><strong>Caminho:</strong> Menu Principal › …</p></div><p class="passo"><span class="pop-num">4.1.1</span> Descreva o primeiro passo.</p><div class="pop-caixa atencao"><p><strong>ATENÇÃO:</strong> o ponto que não pode passar.</p></div><p class="passo"><span class="pop-num">4.1.2</span> Descreva o passo seguinte.</p><h1>5. Registros</h1><p>Onde ficam os registros gerados pelo procedimento.</p>`;
+
+/* ---------- Word: leitura (mammoth) ---------- */
+const PROC_ESTILOS = ["p[style-name='Passo'] => p.passo:fresh", "p[style-name='Legenda'] => p.legenda:fresh", "p[style-name='Caption'] => p.legenda:fresh",
+  "p[style-name='Caixa Caminho'] => div.pop-caixa.caminho > p:fresh", "p[style-name='Caixa Atenção'] => div.pop-caixa.atencao > p:fresh", "p[style-name='Caixa Segurança'] => div.pop-caixa.seguranca > p:fresh",
+  "p[style-name='Caixa Observação'] => div.pop-caixa.obs > p:fresh", "p[style-name='Caixa Dica'] => div.pop-caixa.dica > p:fresh", "p[style-name='Vídeo do tópico'] => p.pop-video-tag:fresh",
+  "p[style-name='Title'] => h1:fresh", "p[style-name='Heading 4'] => h3:fresh"];
+async function procImgReduz(src, max) {   /* imagem do Word: até 1400 px de largura; formatos que o navegador não mostra (EMF/WMF) saem */
+  if (!/^data:image\/(png|jpe?g|gif|webp)/i.test(src)) return "";
+  try {
+    const im = new Image(); im.src = src; await im.decode();
+    const lim = max || 1400; if (im.naturalWidth <= lim && src.length < 900000) return src;
+    const k = Math.min(1, lim / im.naturalWidth), c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(im.naturalWidth * k)); c.height = Math.max(1, Math.round(im.naturalHeight * k));
+    c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
+    const png = c.toDataURL("image/png"), jpg = /^data:image\/jpe?g/i.test(src) || png.length > 700000 ? c.toDataURL("image/jpeg", 0.86) : "";
+    return jpg && jpg.length < png.length ? jpg : png;
+  } catch (e) { return src; }
+}
+async function procLerWord(buf, nomeArq) {
+  const M = await erpLib("mammoth", "Lendo o Word…");
+  const r = await M.convertToHtml({ arrayBuffer: buf }, { styleMap: PROC_ESTILOS, convertImage: M.images.imgElement(img => img.read("base64").then(b => procImgReduz(`data:${img.contentType};base64,${b}`)).then(src => ({ src }))) });
+  const corpo = procNormalizar(r.value);
+  /* dados do cabeçalho do Word (código, revisão, data, título) */
+  const meta = {};
+  try {
+    const Z = await erpLib("jszip"), zip = await Z.loadAsync(buf);
+    const hs = Object.keys(zip.files).filter(n => /^word\/header\d*\.xml$/.test(n)).sort();
+    let txt = "";
+    for (const n of hs) txt += "\n" + (await zip.file(n).async("string")).replace(/<\/w:p>/g, "\n").replace(/<w:tab\/>/g, " ").replace(/<w:br\/>/g, "\n").replace(/<[^>]+>/g, "");
+    txt = txt.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+    const cod = txt.match(/C[óo]digo:\s*([A-Za-z]{2,6}-[A-Za-z]{1,8}-\d{1,4})/i); if (cod) meta.cod = cod[1].toUpperCase();
+    const rv = txt.match(/Revis[ãa]o:\s*(\d{1,3})/i); if (rv) meta.rev = Number(rv[1]);
+    const dt = txt.match(/Data:\s*(\d{2})\/(\d{2})\/(\d{4})/); if (dt) meta.data = `${dt[3]}-${dt[2]}-${dt[1]}`;
+    const linhas = [...new Set(txt.split("\n").map(s => s.replace(/\s+/g, " ").trim()).filter(s => s && !/:/.test(s) && !/procedimento operacional padr[ãa]o/i.test(s) && !/^p[áa]gina/i.test(s) && s.length > 2))];
+    if (linhas[0]) meta.titulo = linhas[0]; if (linhas[1]) meta.sub = linhas[1];
+  } catch (e) {}
+  const fn = String(nomeArq || "").replace(/\.[^.]+$/, "");
+  if (!meta.cod) { const m = fn.match(/([A-Za-z]{2,6}-[A-Za-z]{1,8}-\d{1,4})/); if (m) meta.cod = m[1].toUpperCase(); }
+  if (!meta.rev) { const m = fn.match(/rev\.?\s*(\d{1,3})/i); if (m) meta.rev = Number(m[1]); }
+  if (!meta.titulo) meta.titulo = fn.replace(/([A-Za-z]{2,6}-[A-Za-z]{1,8}-\d{1,4})/, "").replace(/rev\.?\s*\d{1,3}/i, "").replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
+  return { corpo, meta, avisos: (r.messages || []).filter(m => m.type === "warning").length };
+}
+
+/* ---------- Word: geração (docx) no padrão ---------- */
+async function procImgInfo(src) {
+  const im = new Image(); im.src = src; await im.decode();
+  let tipo = (src.match(/^data:image\/(png|jpe?g|gif)/i) || [])[1], dado = src;
+  if (!tipo) { const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext("2d").drawImage(im, 0, 0); dado = c.toDataURL("image/png"); tipo = "png"; }
+  tipo = /jpe?g/i.test(tipo) ? "jpg" : tipo.toLowerCase();
+  const bin = atob(dado.split(",")[1]), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return { u8, tipo, w: im.naturalWidth || 1, h: im.naturalHeight || 1 };
+}
+async function procWordBlob(m, corpo) {
+  const X = await erpLib("docx", "Montando o Word…");
+  const { Document, Packer, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType, HeadingLevel, Header, Footer, PageNumber, ShadingType, ExternalHyperlink, VerticalAlign, LevelFormat, LineRuleType } = X;
+  const NAVY = "1D1E4A", LARANJA = "D6421F", CINZA = "5B6068", LINHA = "C9D0D8";
+  const root = document.createElement("div"); root.innerHTML = corpo;
+  const imgs = new Map();
+  for (const im of root.querySelectorAll("img")) { const s = im.getAttribute("src"); if (s && !imgs.has(s)) { try { imgs.set(s, await procImgInfo(s)); } catch (e) {} } }
+  const logo = await ctbLogoPng(); let logoInfo = null; if (logo) { try { logoInfo = await procImgInfo(logo.url); } catch (e) {} }
+  const MAXW = 600;
+  const imgRun = (src, maxw) => { const I = imgs.get(src); if (!I) return null; const k = Math.min(1, (maxw || MAXW) / I.w); return new ImageRun({ type: I.tipo, data: I.u8, transformation: { width: Math.round(I.w * k), height: Math.round(I.h * k) } }); };
+  const runs = (node, f) => {
+    const out = [];
+    node.childNodes.forEach(n => {
+      if (n.nodeType === 3) { const t = n.nodeValue.replace(/\s+/g, " "); if (t) out.push(new TextRun(Object.assign({ text: t }, f))); return; }
+      if (n.nodeType !== 1) return;
+      const t = n.tagName;
+      if (t === "BR") { out.push(new TextRun({ break: 1 })); return; }
+      if (t === "IMG") { const r = imgRun(n.getAttribute("src"), 560); if (r) out.push(r); return; }
+      if (t === "A") { const kids = runs(n, Object.assign({}, f, { style: "Hyperlink" })); if (kids.length) out.push(new ExternalHyperlink({ link: n.getAttribute("href") || "", children: kids })); return; }
+      const g = Object.assign({}, f);
+      if (t === "STRONG" || t === "B") g.bold = true;
+      if (t === "EM" || t === "I") g.italics = true;
+      if (t === "U") g.underline = {};
+      if (t === "S") g.strike = true;
+      if (t === "SUP") g.superScript = true;
+      if (t === "SUB") g.subScript = true;
+      if (t === "SPAN" && n.classList.contains("pop-num")) { g.bold = true; g.color = LARANJA; }
+      out.push(...runs(n, g));
+    });
+    return out;
+  };
+  const so_img = el => el.querySelector("img") && !procTxt(el);
+  let olN = 0;
+  const blocos = (el, ctx) => {
+    const out = [];
+    el.childNodes.forEach(n => {
+      if (n.nodeType === 3) { if (n.nodeValue.trim()) out.push(new Paragraph({ children: [new TextRun(n.nodeValue.trim())], style: ctx && ctx.estilo })); return; }
+      if (n.nodeType !== 1) return;
+      const t = n.tagName;
+      if (/^H[1-4]$/.test(t)) {
+        out.push(new Paragraph({ heading: t === "H1" ? HeadingLevel.HEADING_1 : t === "H2" ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3, children: runs(n, {}) }));
+        const v = n.getAttribute("data-video"); if (v) out.push(new Paragraph({ style: "Video", children: [new TextRun({ text: `▶ Vídeo do tópico: ${n.getAttribute("data-video-nome") || "assistir"} — ` }), new ExternalHyperlink({ link: v, children: [new TextRun({ text: v, style: "Hyperlink" })] })] }));
+        return;
+      }
+      if (t === "P") {
+        if (so_img(n)) { out.push(new Paragraph({ alignment: AlignmentType.CENTER, style: ctx && ctx.estilo, spacing: { before: 120, after: 60 }, children: runs(n, {}) })); return; }
+        const est = n.classList.contains("passo") ? "Passo" : n.classList.contains("legenda") ? "Legenda" : (ctx && ctx.estilo) || undefined;
+        out.push(new Paragraph({ style: est, children: runs(n, {}) })); return;
+      }
+      if (t === "DIV" && n.classList.contains("pop-caixa")) {
+        const k = Object.keys(PROC_CAIXAS).find(c => n.classList.contains(c)) || "obs";
+        out.push(...blocos(n, { estilo: "Caixa" + { caminho: "Caminho", atencao: "Atencao", seguranca: "Seguranca", obs: "Obs", dica: "Dica" }[k] })); return;
+      }
+      if (t === "UL" || t === "OL") {
+        const inst = ++olN;
+        [...n.children].filter(li => li.tagName === "LI").forEach(li => out.push(new Paragraph(t === "UL" ? { bullet: { level: 0 }, children: runs(li, {}) } : { numbering: { reference: "pop-ol", level: 0, instance: inst }, children: runs(li, {}) })));
+        return;
+      }
+      if (t === "TABLE") {
+        const rows = [...n.querySelectorAll(":scope > tr, :scope > thead > tr, :scope > tbody > tr")];
+        if (!rows.length) return;
+        out.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: rows.map(tr => new TableRow({ children: [...tr.cells].map(c => new TableCell({ columnSpan: Number(c.getAttribute("colspan")) || undefined, rowSpan: Number(c.getAttribute("rowspan")) || undefined, shading: c.tagName === "TH" ? { type: ShadingType.CLEAR, fill: "F4F6FA" } : undefined, children: (() => { const b = blocos(c, {}); return b.length ? b : [new Paragraph("")]; })() })) })) }));
+        out.push(new Paragraph(""));
+        return;
+      }
+      if (t === "HR") { out.push(new Paragraph({ border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: LINHA, space: 1 } }, children: [] })); return; }
+      if (t === "DIV" || t === "BLOCKQUOTE") { out.push(...blocos(n, ctx)); return; }
+      const rr = runs(n, {}); if (rr.length) out.push(new Paragraph({ children: rr, style: ctx && ctx.estilo }));
+    });
+    return out;
+  };
+  const corpoDocx = blocos(root, null);
+  /* histórico de revisões no fim (refeito a cada revisão; na volta do Word ele é ignorado) */
+  const revs = (m.revs || []).slice().sort((a, b) => a.rev - b.rev);
+  if (revs.length) {
+    corpoDocx.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Histórico de revisões")] }));
+    const cel = (txt, th) => new TableCell({ shading: th ? { type: ShadingType.CLEAR, fill: "F4F6FA" } : undefined, children: [new Paragraph({ children: [new TextRun({ text: String(txt || ""), bold: !!th, size: 18 })] })] });
+    corpoDocx.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [new TableRow({ tableHeader: true, children: ["Rev.", "Data", "O que mudou", "Elaborado por", "Aprovado por"].map(h => cel(h, true)) }),
+      ...revs.map(r => new TableRow({ children: [String(r.rev).padStart(2, "0"), r.data ? fmtDate(r.data) : "", r.motivo || "", r.por || "", r.aprov || ""].map(v => cel(v)) }))] }));
+  }
+  const borda = { style: BorderStyle.SINGLE, size: 6, color: LINHA };
+  const bordas = { top: borda, bottom: borda, left: borda, right: borda };
+  const pMeta = (rot, val) => new Paragraph({ children: [new TextRun({ text: rot, bold: true, color: NAVY, size: 17 }), ...(Array.isArray(val) ? val : [new TextRun({ text: String(val || ""), size: 17 })])] });
+  const cab = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [new TableRow({ children: [
+    new TableCell({ width: { size: 18, type: WidthType.PERCENTAGE }, borders: bordas, verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: logoInfo ? [new ImageRun({ type: logoInfo.tipo, data: logoInfo.u8, transformation: { width: 74, height: Math.round(74 * logoInfo.h / logoInfo.w) } })] : [new TextRun("Nova Macabu")] })] }),
+    new TableCell({ width: { size: 56, type: WidthType.PERCENTAGE }, borders: bordas, verticalAlign: VerticalAlign.CENTER, children: [
+      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "PROCEDIMENTO OPERACIONAL PADRÃO", bold: true, color: LARANJA, size: 17 })] }),
+      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: m.titulo || "", bold: true, color: NAVY, size: 24 })] }),
+      ...(m.sub ? [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: m.sub, color: CINZA, size: 18 })] })] : [])] }),
+    new TableCell({ width: { size: 26, type: WidthType.PERCENTAGE }, borders: bordas, verticalAlign: VerticalAlign.CENTER, children: [
+      pMeta("Código: ", m.cod), pMeta("Revisão: ", String(m.rev).padStart(2, "0") + (m.rascunho ? " (rascunho)" : "")), pMeta("Data: ", m.data ? fmtDate(m.data) : "—"),
+      pMeta("Página: ", [new TextRun({ children: [PageNumber.CURRENT], size: 17 }), new TextRun({ text: " de ", size: 17 }), new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 17 })])] })
+  ] })] });
+  const caixa = (fill, cor) => ({ basedOn: "Normal", next: "Normal", paragraph: { shading: { type: ShadingType.CLEAR, color: "auto", fill }, border: { left: { style: BorderStyle.SINGLE, size: 24, color: cor, space: 8 } }, indent: { left: 200, right: 120 }, spacing: { before: 40, after: 40 } } });
+  const doc = new Document({
+    creator: "ERP NMB", title: `${m.cod} ${procRev(m.rev)} · ${m.titulo || ""}`, description: "Procedimento Operacional Padrão · Transportadora Nova Macabu",
+    styles: {
+      default: { document: { run: { font: "Calibri", size: 21, color: "1B2230" }, paragraph: { spacing: { after: 80, line: 276, lineRule: LineRuleType.AUTO } } },   /* sem lineRule o LibreOffice/Word podem tratar como altura exata e cortar as imagens */
+        heading1: { run: { font: "Calibri", size: 26, bold: true, color: NAVY, allCaps: true }, paragraph: { spacing: { before: 360, after: 160 }, border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: LARANJA, space: 4 } } } },
+        heading2: { run: { font: "Calibri", size: 23, bold: true, color: NAVY }, paragraph: { spacing: { before: 280, after: 100 } } },
+        heading3: { run: { font: "Calibri", size: 21, bold: true, color: "34376F" }, paragraph: { spacing: { before: 200, after: 80 } } } },
+      paragraphStyles: [
+        { id: "Passo", name: "Passo", basedOn: "Normal", next: "Normal", quickFormat: true, paragraph: { spacing: { before: 200, after: 80 } } },
+        { id: "Legenda", name: "Legenda", basedOn: "Normal", next: "Normal", quickFormat: true, run: { italics: true, size: 18, color: CINZA }, paragraph: { alignment: AlignmentType.CENTER, spacing: { after: 200 } } },
+        Object.assign({ id: "CaixaCaminho", name: "Caixa Caminho", quickFormat: true }, caixa("EEF2F8", NAVY)),
+        Object.assign({ id: "CaixaAtencao", name: "Caixa Atenção", quickFormat: true }, caixa("FDF0EA", LARANJA)),
+        Object.assign({ id: "CaixaSeguranca", name: "Caixa Segurança", quickFormat: true }, caixa("FBEAEA", "B3271E")),
+        Object.assign({ id: "CaixaObs", name: "Caixa Observação", quickFormat: true }, caixa("F1F3F5", "8A9099")),
+        Object.assign({ id: "CaixaDica", name: "Caixa Dica", quickFormat: true }, caixa("E6F4EC", "2E9E5B")),
+        { id: "Video", name: "Vídeo do tópico", basedOn: "Normal", next: "Normal", quickFormat: true, run: { size: 19, color: "1F4E99" }, paragraph: { spacing: { after: 120 } } }
+      ]
+    },
+    numbering: { config: [{ reference: "pop-ol", levels: [{ level: 0, format: LevelFormat.DECIMAL, text: "%1.", alignment: AlignmentType.START, style: { paragraph: { indent: { left: 540, hanging: 300 } } } }] }] },
+    sections: [{
+      properties: { page: { margin: { top: 1000, bottom: 900, left: 1000, right: 1000, header: 360, footer: 360 } } },
+      headers: { default: new Header({ children: [cab, new Paragraph({ spacing: { after: 120 }, children: [] })] }) },
+      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, border: { top: { style: BorderStyle.SINGLE, size: 4, color: "E2E5E9", space: 4 } }, children: [new TextRun({ text: PROC_RODAPE, size: 16, color: "8A9099" })] })] }) },
+      children: corpoDocx.length ? corpoDocx : [new Paragraph("")]
+    }]
+  });
+  return Packer.toBlob(doc);
+}
+function procBaixarBlob(blob, nome) { const u = URL.createObjectURL(blob), a = document.createElement("a"); a.href = u; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); }
+const procNomeArq = (m, ext) => `${m.cod} ${procRev(m.rev)}${m.rascunho ? " (rascunho)" : ""} - ${docNomeSeguro(m.titulo || "Procedimento")}${ext}`;
+
+/* ---------- página ---------- */
+function pageProc(S) {
+  return `<div class="page" id="procRoot" data-mod="${esc(S.mod)}">
+    <div class="cap-topo"><div><h1 style="margin:0">Procedimentos</h1><p class="sup" style="margin:2px 0 0">Procedimentos operacionais padrão de ${esc(S.D.nome)}: consulte, assista aos vídeos, baixe em Word e acompanhe as revisões</p></div><span class="grow"></span><div id="procActions" class="page-actions"></div></div>
+    <div id="procBody"><div class="cap-empty"><h3>Carregando…</h3><p>Buscando os procedimentos no SharePoint.</p></div></div></div>`;
+}
+async function renderProc(S, force) {
+  if (force || !S.ready) await procCarregar(S, force);
+  procPintar(S);
+}
+window.procAtualizar = async () => { const S = procAtual(); if (!S) return; if (S.editando && S.sujo && !(await erpConfirmar({ titulo: "Sair da edição", texto: "As alterações não salvas serão perdidas.", sim: "Sair sem salvar", perigo: true }))) return; S.editando = false; S.cache = {}; await renderProc(S, true); };
+function procPintar(S) {
+  const body = $("procBody"), acts = $("procActions"); if (!body) return;
+  if (!S.ready) {
+    if (acts) acts.innerHTML = `<button class="btn" onclick="procAtualizar()">Atualizar</button>`;
+    body.innerHTML = S.erro ? `<div class="cap-empty"><h3>Não foi possível ler os procedimentos</h3><p>${esc(S.erro)}</p><button class="btn" onclick="procAtualizar()">Tentar de Novo</button></div>`
+      : `<div class="cap-empty"><h3>A lista "${esc(LISTS[S.D.lk].displayName)}" ainda não existe</h3><p>Rode Sistema › Configuração › "Executar tudo na ordem" (é preciso ser proprietário do site ${esc(S.D.nome)}).</p></div>`;
+    return;
+  }
+  if (S.cod) { const x = procItem(S, S.cod); if (x) { procDocPintar(S, x); return; } toast(`Procedimento ${S.cod} não encontrado.`); S.cod = null; }
+  procListaPintar(S);
+}
+function procLista(S) {
+  const f = S.f, q = normName(f.q);
+  const ed = procPode(S);
+  return S.itens.filter(x => {
+    if (!ed && x.Status === "Rascunho") return false;   /* quem só consulta não vê o que nunca foi publicado */
+    const st = procSituacao(x)[0];
+    if (f.st === "obsoletos") { if (x.Status !== "Obsoleto") return false; }
+    else if (x.Status === "Obsoleto") return false;
+    if (f.st === "vigentes" && x.Status !== "Vigente") return false;
+    if (f.st === "revisao" && !(x.RascunhoId || x.RascunhoArqId)) return false;
+    if (f.st === "aprovacao" && !x.RascunhoAprovacao) return false;
+    if (f.st === "vencida" && !/vencida/.test(st)) return false;
+    if (f.st === "ler" && !(x.Status === "Vigente" && !procLido(S, x))) return false;
+    if (f.cat && x.Categoria !== f.cat) return false;
+    return !q || normName([x.Title, x.Titulo, x.Subtitulo, x.Categoria, x.PalavrasChave, x.Resumo, x.Responsavel, x.TextoBusca].join(" ")).includes(q);
+  }).sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR", { numeric: true }));
+}
+function procListaPintar(S) {
+  const body = $("procBody"), acts = $("procActions"), ed = procPode(S);
+  if (acts) acts.innerHTML = `<button class="btn" onclick="procAtualizar()">Atualizar</button>${ed ? `<button class="btn primary" onclick="procNovo()">Novo Procedimento</button>` : ""}`;
+  const ativos = S.itens.filter(x => x.Status !== "Obsoleto" && (ed || x.Status !== "Rascunho")), vig = ativos.filter(x => x.Status === "Vigente");
+  const n = { vig: vig.length, rev: ativos.filter(x => x.RascunhoId || x.RascunhoArqId).length, apr: ativos.filter(x => x.RascunhoAprovacao).length, venc: vig.filter(x => /vencida/.test(procSituacao(x)[0])).length, ler: vig.filter(x => !procLido(S, x)).length };
+  const kpi = (k, lbl, v, sub, cls) => `<button type="button" class="kpi ${cls || ""} ${S.f.st === k ? "on" : ""}" onclick="procFiltro('st','${S.f.st === k ? "" : k}')"><div class="lbl">${esc(lbl)}</div><div class="val">${v}</div><div class="sub">${esc(sub)}</div></button>`;
+  const its = procLista(S), cats = [...new Set(S.itens.map(x => x.Categoria).filter(Boolean))].sort();
+  const lin = x => { const lido = x.Status === "Vigente" ? procLido(S, x) : null;
+    return `<tr onclick="procAbrir(${jsArg(x.Title)})"><td class="nw"><b>${esc(x.Title || "")}</b></td><td><b class="proc-tit">${esc(x.Titulo || "")}</b>${x.Subtitulo ? `<div class="sup">${esc(x.Subtitulo)}</div>` : ""}</td><td>${esc(x.Categoria || "—")}</td><td class="nw">${x.Status === "Rascunho" ? "—" : esc(procRev(x.Revisao))}<div class="sup">${x.DataRevisao ? fmtDate(x.DataRevisao) : ""}</div></td><td>${procPill(procSituacao(x))}</td><td class="nw">${x.Status === "Vigente" && x.ProximaRevisao ? fmtDate(x.ProximaRevisao) : "—"}</td><td class="nw">${x.Status !== "Vigente" ? "" : lido ? `<span class="pill st-pago"><i></i>Lido</span>` : `<span class="pill st-aguardando"><i></i>Ler</span>`}</td></tr>`; };
+  body.innerHTML = `<div class="cap-kpis cap-kpis-5">${kpi("vigentes", "Vigentes", n.vig, `${S.itens.filter(x => x.Status === "Obsoleto").length} obsoleto(s)`, "pago")}${kpi("ler", "Para você ler", n.ler, "revisões vigentes sem a sua ciência", n.ler ? "hoje" : "")}${kpi("revisao", "Em revisão", n.rev, "rascunhos em andamento", "")}${kpi("aprovacao", "Aguardando aprovação", n.apr, procAprova(S) ? "você pode aprovar" : "com o proprietário do módulo", n.apr ? "hoje" : "")}${kpi("vencida", "Revisão vencida", n.venc, "passou da próxima revisão", n.venc ? "venc" : "")}</div>
+    <div class="filters" role="search"><input type="search" id="procQ" class="span-2" placeholder="Buscar: código, título, palavra-chave ou qualquer trecho do texto" value="${esc(S.f.q)}">
+      <select id="procCat" aria-label="Categoria"><option value="">Todas as categorias</option>${cats.map(c => `<option ${S.f.cat === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+      <select id="procSt" aria-label="Situação"><option value="">Em uso (sem obsoletos)</option>${[["vigentes", "Vigentes"], ["ler", "Para você ler"], ["revisao", "Em revisão"], ["aprovacao", "Aguardando aprovação"], ["vencida", "Revisão vencida"], ["obsoletos", "Obsoletos"]].map(([k, l]) => `<option value="${k}" ${S.f.st === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <button class="btn ghost" onclick="procFiltro('limpar')">Limpar</button></div>
+    ${its.length ? `<div class="table-wrap"><table class="cap-table proc-tab"><thead><tr><th>Código</th><th>Procedimento</th><th>Categoria</th><th>Revisão</th><th>Situação</th><th>Próxima Revisão</th><th>Sua Leitura</th></tr></thead><tbody>${its.map(lin).join("")}</tbody></table></div><p class="hint">${its.length} procedimento(s). A busca procura também dentro do texto dos procedimentos vigentes.</p>`
+      : `<div class="cap-empty"><h3>${S.itens.length ? "Nenhum procedimento neste filtro" : "Nenhum procedimento cadastrado"}</h3><p>${S.itens.length ? "Troque ou limpe os filtros." : ed ? 'Use "Novo Procedimento": suba o Word ou o PDF do procedimento, ou comece pelo modelo padrão.' : "Os procedimentos aparecem aqui quando forem publicados."}</p></div>`}`;
+  const q = $("procQ"); if (q) q.addEventListener("input", e => { S.f.q = e.target.value; erpDeb("procQ", () => keepFocus(() => procListaPintar(S))); });
+  ["procCat", "procSt"].forEach(id => { const e = $(id); if (e) e.addEventListener("change", () => procFiltro(id === "procCat" ? "cat" : "st", e.value)); });
+}
+window.procFiltro = (k, v) => { const S = procAtual(); if (!S) return; if (k === "limpar") S.f = { q: "", cat: "", st: "" }; else S.f[k] = v; procListaPintar(S); };
+window.procAbrir = cod => { const S = procAtual(); if (!S) return; location.hash = `${S.D.path}?c=${encodeURIComponent(cod)}`; };
+window.procVoltar = () => { const S = procAtual(); if (!S) return; location.hash = S.D.path; };
+
+/* ---------- documento ---------- */
+async function procDocPintar(S, x) {
+  const body = $("procBody"), acts = $("procActions"), ed = procPode(S), apr = procAprova(S);
+  const temRas = !!(x.RascunhoId || x.RascunhoArqId) && ed, nunca = x.Status === "Rascunho";
+  if (nunca && !ed) { if (acts) acts.innerHTML = `<button class="btn" onclick="procVoltar()">← Procedimentos</button>`; body.innerHTML = `<div class="cap-empty"><h3>${esc(x.Title)} ainda não foi publicado</h3><p>Ele aparece aqui depois da aprovação.</p></div>`; return; }
+  if (!S.ver) S.ver = nunca || (temRas && ed && x.Status !== "Vigente") ? "ras" : "vig";
+  if (S.ver === "ras" && !temRas) S.ver = "vig";
+  const revs = procJ(x.Revisoes, []), verRev = typeof S.ver === "number" ? S.ver : null;
+  const m = procMeta(x, S.ver === "ras", verRev);
+  const formato = S.ver === "ras" ? (x.RascunhoFormato || "Documento") : verRev ? ((revs.find(r => Number(r.rev) === verRev) || {}).formato || "Documento") : (x.Formato || "Documento");
+  if (acts) acts.innerHTML = `<button class="btn" onclick="procVoltar()">← Procedimentos</button><button class="btn" onclick="procAtualizar()">Atualizar</button>`;
+  const lido = x.Status === "Vigente" ? procLido(S, x) : null;
+  const tabs = (temRas && !nunca) || verRev ? `<div class="seg-tabs" role="tablist"><button class="${S.ver === "vig" ? "on" : ""}" onclick="procVer('vig')">Vigente · ${esc(procRev(x.Revisao))}</button>${temRas && !nunca ? `<button class="${S.ver === "ras" ? "on" : ""}" onclick="procVer('ras')">Rascunho · ${esc(procRev((Number(x.Revisao) || 0) + 1))}</button>` : ""}${verRev ? `<button class="on">${esc(procRev(verRev))} (antiga)</button>` : ""}</div>` : "";
+  /* avisos do topo */
+  let aviso = "";
+  if (verRev) aviso = `<div class="proc-aviso cinza"><b>${esc(procRev(verRev))} — revisão substituída.</b> Só para consulta: a vigente é a ${esc(procRev(x.Revisao))}. <button class="btn sm" onclick="procVer('vig')">Ver a Vigente</button></div>`;
+  else if (S.ver === "ras") aviso = `<div class="proc-aviso ${x.RascunhoAprovacao ? "pend" : "azul"}"><b>${x.RascunhoAprovacao ? "Aguardando aprovação" : "Rascunho"}${nunca ? "" : ` da ${esc(procRev((Number(x.Revisao) || 0) + 1))}`}</b> · ${esc(x.RascunhoPor || "")}${x.RascunhoEm ? ` em ${esc(new Date(x.RascunhoEm).toLocaleString("pt-BR"))}` : ""}${x.RascunhoMotivo ? ` · <i>${esc(x.RascunhoMotivo)}</i>` : ""}. Quem consulta continua vendo ${nunca ? "nada até a publicação" : `a ${esc(procRev(x.Revisao))}`}.
+      <span class="grow"></span>${ed && formato === "Documento" ? `<button class="btn sm" onclick="procEditar()">Editar</button>` : ""}${apr ? `<button class="btn sm primary" onclick="procPublicar()">Aprovar e Publicar</button>` : ed && !x.RascunhoAprovacao ? `<button class="btn sm primary" onclick="procEnviarAprov()">Enviar para Aprovação</button>` : ""}${ed && !nunca ? `<button class="btn sm" onclick="procDescartar()">Descartar Rascunho</button>` : ""}</div>`;
+  else if (x.Status === "Vigente") aviso = lido ? `<div class="proc-aviso ok">Você confirmou a leitura da ${esc(procRev(x.Revisao))} em ${esc(new Date(lido.DataLeitura || lido.Created || Date.now()).toLocaleString("pt-BR"))}.</div>`
+      : `<div class="proc-aviso pend"><b>Leia este procedimento e confirme a leitura.</b> A ciência fica registrada com o seu nome, a revisão e a data.<span class="grow"></span><button class="btn sm primary" onclick="procLi()">Li e Entendi</button></div>`;
+  else if (x.Status === "Obsoleto") aviso = `<div class="proc-aviso cinza"><b>Procedimento obsoleto.</b> Não vale mais; fica guardado para consulta.</div>`;
+  const botoes = [];
+  if (formato === "Documento") botoes.push(`<button class="btn" onclick="procWord()">Baixar Word</button>`);
+  const arqId = S.ver === "ras" ? x.RascunhoArqId : verRev ? (revs.find(r => Number(r.rev) === verRev) || {}).arq : x.ArquivoId;
+  if (arqId) botoes.push(`<button class="btn" onclick="procOriginal()">${formato === "PDF" ? "Baixar PDF" : "Baixar Original"}</button>`);
+  if (formato === "Documento") botoes.push(`<button class="btn" onclick="procImprimir()">Imprimir / PDF</button>`);
+  if (ed && !verRev && x.Status !== "Obsoleto") botoes.push(`<button class="btn" onclick="procSubir()">${temRas ? "Substituir o Rascunho" : "Enviar Nova Versão"}</button>`, ...(temRas || formato !== "Documento" ? [] : [`<button class="btn primary" onclick="procEditar()">Editar</button>`]));
+  body.innerHTML = `<div class="proc-doc-top"><div data-sem-titulo><div class="proc-cod">${esc(x.Title || "")} · ${esc(x.Categoria || "Sem categoria")}</div><h2 class="proc-h">${esc(x.Titulo || "")}</h2>${x.Subtitulo ? `<div class="sup">${esc(x.Subtitulo)}</div>` : ""}<div class="proc-pills">${procPill(procSituacao(x))}${x.Status !== "Rascunho" ? `<span class="pill st-cinza"><i></i>${esc(procRev(x.Revisao))} · ${x.DataRevisao ? fmtDate(x.DataRevisao) : ""}</span>` : ""}</div></div><span class="grow"></span>${tabs}</div>
+    ${aviso}<div class="proc-botoes">${botoes.join("")}<span class="grow"></span>${ed ? `<button class="btn ghost" onclick="procDados()">Dados do Procedimento</button>` : ""}${apr && x.Status === "Vigente" ? `<button class="btn ghost" onclick="procObsoletar()">Tornar Obsoleto</button>` : ""}${apr && x.Status === "Obsoleto" ? `<button class="btn ghost" onclick="procReativar()">Reativar</button>` : ""}${podeExcluir(S.mod) && nunca ? `<button class="btn ghost" style="color:var(--err)" onclick="procExcluir()">Excluir</button>` : ""}</div>
+    <div class="proc-grade"><aside class="proc-lado"><div class="proc-ficha">${[["Responsável", x.Responsavel], ["Aprovado por", x.Status === "Rascunho" ? "" : x.Aprovador], ["Próxima revisão", x.Status === "Vigente" && x.ProximaRevisao ? fmtDate(x.ProximaRevisao) + (Number(x.PeriodicidadeMeses) ? ` (a cada ${Number(x.PeriodicidadeMeses)} meses)` : "") : ""], ["Objetivo", x.Resumo], ["Palavras-chave", x.PalavrasChave]].filter(([, v]) => v).map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</div><nav class="proc-toc" id="procToc" aria-label="Tópicos" data-sem-titulo></nav></aside>
+      <div class="proc-centro" id="procCentro"><div class="cap-empty"><h3>Abrindo o documento…</h3></div></div></div>
+    <div class="proc-rodape" id="procRodape"></div>`;
+  /* conteúdo */
+  const centro = $("procCentro");
+  try {
+    if (formato === "PDF") {
+      if (!arqId) { centro.innerHTML = `<div class="cap-empty"><h3>Sem arquivo</h3></div>`; }
+      else { const b = await procBaixar(S, arqId), u = URL.createObjectURL(new Blob([b], { type: "application/pdf" })); if (S._pdfUrl) URL.revokeObjectURL(S._pdfUrl); S._pdfUrl = u;
+        centro.innerHTML = `<div class="proc-pdf-cab" data-sem-titulo>${procCabHtml(m)}</div><iframe class="proc-pdf" src="${u}" title="${esc(x.Title)}"></iframe><p class="hint">Procedimento em PDF: para editar no ERP, envie a nova versão em Word.</p>`; }
+    } else {
+      const id = S.ver === "ras" ? x.RascunhoId : verRev ? (revs.find(r => Number(r.rev) === verRev) || {}).html : x.ConteudoId;
+      const corpo = id ? await procConteudo(S, id, S.ver === "ras" ? x.RascunhoEm : "") : "";
+      if ($("procCentro") !== centro) return;
+      S._corpo = corpo; S._meta = m;
+      centro.innerHTML = `<article class="pop-folha proc-folha" data-sem-titulo>${procCabHtml(m)}<main class="pop-corpo" id="procCorpo">${corpo || `<p class="sup">Sem conteúdo.</p>`}</main>${procHistHtml(m.revs)}<footer class="pop-rod">${esc(PROC_RODAPE)}</footer></article>`;
+      procTopicos(S);
+    }
+  } catch (e) { centro.innerHTML = `<div class="cap-empty"><h3>Não foi possível abrir o documento</h3><p>${esc(e.message || e)}</p></div>`; }
+  procRodapePintar(S, x);
+}
+window.procVer = v => { const S = procAtual(); if (!S) return; S.ver = v; S.editando = false; const x = procItem(S, S.cod); if (x) procDocPintar(S, x); };
+/* índice de tópicos e botões de vídeo nos títulos */
+function procTopicos(S) {
+  const corpo = $("procCorpo"), toc = $("procToc"); if (!corpo) return;
+  corpo.querySelectorAll(".pop-vid").forEach(b => b.remove());
+  const hs = [...corpo.querySelectorAll("h1,h2")];
+  hs.forEach((h, i) => { h.id = "pop-t" + i; const v = h.getAttribute("data-video"); if (v && !S.editando) h.insertAdjacentHTML("beforeend", ` <button type="button" class="pop-vid" contenteditable="false" onclick="procVideo(${i})" title="${esc(h.getAttribute("data-video-nome") || "Vídeo do tópico")}">▶ Vídeo</button>`); });
+  if (toc) toc.innerHTML = hs.length ? `<div class="proc-toc-h">Tópicos</div>${hs.map((h, i) => `<a href="javascript:void 0" class="${h.tagName === "H2" ? "n2" : ""}" onclick="procIrTopico(${i})">${esc(procTxt(h).replace(/▶ Vídeo$/, "").trim())}${h.getAttribute("data-video") ? ` <span class="proc-toc-v" title="Tem vídeo">▶</span>` : ""}</a>`).join("")}` : "";
+}
+window.procIrTopico = i => { const h = $("pop-t" + i); if (h) h.scrollIntoView({ behavior: "smooth", block: "start" }); };
+function procRodapePintar(S, x) {
+  const r = $("procRodape"); if (!r) return;
+  const revs = procJ(x.Revisoes, []).slice().sort((a, b) => b.rev - a.rev), ed = procPode(S);
+  const leit = S.leit.filter(l => l.ProcId === x._id && Number(l.Revisao) === Number(x.Revisao)).sort((a, b) => String(b.DataLeitura || "").localeCompare(String(a.DataLeitura || "")));
+  const hist = procJ(x.Historico, []).slice().reverse();
+  r.innerHTML = `<div class="tim-duo proc-duo">
+    <section class="cap-card"><div class="cap-card-h"><h3>Revisões</h3></div>${revs.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Rev.</th><th>Data</th><th>O que mudou</th><th>Por / Aprovação</th><th></th></tr></thead><tbody>${revs.map(v => `<tr><td class="nw"><b>${esc(procRev(v.rev))}</b>${Number(v.rev) === Number(x.Revisao) && x.Status === "Vigente" ? ` <span class="pill st-pago"><i></i>vigente</span>` : ""}</td><td class="nw">${v.data ? fmtDate(v.data) : ""}</td><td>${esc(v.motivo || "")}</td><td>${esc(v.por || "")}<div class="sup">${esc(v.aprov ? "aprovado por " + v.aprov : "")}</div></td><td class="nw">${Number(v.rev) === Number(x.Revisao) ? "" : `<button class="btn sm" onclick="procVer(${Number(v.rev)})">Ver</button>`}</td></tr>`).join("")}</tbody></table></div>` : `<p class="sup" style="padding:12px 16px">Ainda não publicado.</p>`}</section>
+    <section class="cap-card"><div class="cap-card-h"><h3>Leituras da ${esc(procRev(x.Revisao))} <span class="sup">${leit.length} pessoa(s)</span></h3></div>${x.Status !== "Vigente" ? `<p class="sup" style="padding:12px 16px">A ciência vale para a revisão vigente.</p>` : leit.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Pessoa</th><th>Lido em</th></tr></thead><tbody>${leit.map(l => `<tr><td>${esc(l.Pessoa || l.Email || "")}</td><td class="nw">${l.DataLeitura ? esc(new Date(l.DataLeitura).toLocaleString("pt-BR")) : ""}</td></tr>`).join("")}</tbody></table></div>` : `<p class="sup" style="padding:12px 16px">Ninguém confirmou a leitura desta revisão ainda.</p>`}${S.listL ? "" : `<p class="hint" style="padding:0 16px 12px">A lista de leituras ainda não existe: rode a Configuração.</p>`}</section>
+  </div>${ed && hist.length ? `<details class="tim-hist"><summary>Histórico de alterações (${hist.length})</summary><ul>${hist.map(h => `<li><b>${esc(new Date(h.em).toLocaleString("pt-BR"))}</b> · ${esc(h.por || "")} · ${esc(h.o || "")}</li>`).join("")}</ul></details>` : ""}`;
+}
+window.procLi = async () => {
+  const S = procAtual(); if (!S) return; const x = procItem(S, S.cod); if (!x) return;
+  if (!S.listL) { toast('A lista de leituras ainda não existe: peça para rodar Sistema › Configuração.', 6000); return; }
+  if (procLido(S, x)) { toast("Leitura já registrada."); return; }
+  try {
+    const f = { Title: `${x.Title} · ${procRev(x.Revisao)} · ${procEu()}`.slice(0, 255), ProcId: x._id, Codigo: x.Title, Revisao: Number(x.Revisao) || 0, Pessoa: procEu() || null, Email: procEuEmail() || null, DataLeitura: new Date().toISOString() };
+    const it = await SP.create(S.site.id, S.listL.id, f); S.leit.push(Object.assign({ _id: String(it.id) }, it.fields || f));
+    toast(`Leitura da ${procRev(x.Revisao)} registrada.`); procDocPintar(S, x);
+  } catch (e) { toast("Não foi possível registrar a leitura: " + e.message + (e.status === 403 ? " (peça permissão de Contribuir na lista de leituras)" : ""), 9000); }
+};
+/* vídeo do tópico */
+window.procVideo = async i => {
+  const S = procAtual(); const h = $("pop-t" + i); if (!S || !h) return;
+  const url = h.getAttribute("data-video") || "", id = h.getAttribute("data-video-id") || "", nome = h.getAttribute("data-video-nome") || procTxt(h).replace(/▶ Vídeo$/, "").trim();
+  const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{6,20})/i), vm = url.match(/vimeo\.com\/(?:video\/)?(\d{5,12})/i);
+  let player = "";
+  if (id) { try { const dr = await procDrive(S), it = await graph(`/drives/${dr.id}/items/${encodeURIComponent(id)}?$select=id,name,file,@microsoft.graph.downloadUrl`); const dl = it && it["@microsoft.graph.downloadUrl"]; if (dl) player = `<video class="proc-video" controls autoplay playsinline src="${esc(dl)}"></video>`; } catch (e) {} }
+  if (!player && yt) player = `<iframe class="proc-video" src="https://www.youtube-nocookie.com/embed/${esc(yt[1])}?rel=0" title="${esc(nome)}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+  if (!player && vm) player = `<iframe class="proc-video" src="https://player.vimeo.com/video/${esc(vm[1])}" title="${esc(nome)}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+  if (!player) { if (url) window.open(url, "_blank", "noopener"); else toast("Vídeo não encontrado."); return; }
+  $("modal").className = "modal wide";
+  modal(`<div class="modal-head"><h2>▶ ${esc(nome)}</h2><button class="x" onclick="closeModal()">×</button></div><div class="modal-body">${player}${url ? `<p class="hint"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Abrir o vídeo em outra aba</a></p>` : ""}</div>`);
+};
+
+/* ---------- novo, enviar versão, dados ---------- */
+function procProxCod(S) { const re = new RegExp("^" + S.D.pre.replace(/-/g, "\\-") + "-(\\d+)$", "i"); const n = Math.max(0, ...S.itens.map(x => { const m = String(x.Title || "").match(re); return m ? Number(m[1]) : 0; })); return `${S.D.pre}-${String(n + 1).padStart(3, "0")}`; }
+async function procLerArquivo(file) {
+  const nome = file.name || "", ext = (nome.match(/\.([a-z0-9]+)$/i) || [])[1] || "";
+  if (/^pdf$/i.test(ext)) return { formato: "PDF", corpo: "", meta: (() => { const fn = nome.replace(/\.[^.]+$/, ""), m = {}; const c = fn.match(/([A-Za-z]{2,6}-[A-Za-z]{1,8}-\d{1,4})/); if (c) m.cod = c[1].toUpperCase(); const r = fn.match(/rev\.?\s*(\d{1,3})/i); if (r) m.rev = Number(r[1]); m.titulo = fn.replace(/([A-Za-z]{2,6}-[A-Za-z]{1,8}-\d{1,4})/, "").replace(/rev\.?\s*\d{1,3}/i, "").replace(/[_]+/g, " ").replace(/\s+/g, " ").trim(); return m; })() };
+  if (/^docx$/i.test(ext)) { const r = await procLerWord(await file.arrayBuffer(), nome); return Object.assign({ formato: "Documento" }, r); }
+  if (/^doc$/i.test(ext)) throw new Error('Arquivo .doc (Word antigo): abra no Word e salve como .docx ("Word Document"), depois envie de novo.');
+  throw new Error("Envie um arquivo do Word (.docx) ou um PDF.");
+}
+/* grava o rascunho (conteúdo .html e/ou original) e atualiza o procedimento */
+async function procSalvarRascunho(S, x, { corpo, formato, file, motivo }) {
+  const pasta = procPastaDe(x), mm = Object.assign({}, procMeta(x, true), { rascunho: true });
+  const f = { RascunhoFormato: formato, RascunhoPor: procEu() || null, RascunhoEm: new Date().toISOString(), RascunhoAprovacao: false };
+  if (motivo != null) f.RascunhoMotivo = motivo || null;
+  if (formato === "Documento") {
+    const it = await procEnviar(S, pasta, `${x.Title} rascunho.html`, new Blob([procArquivoHtml(mm, corpo)], { type: "text/html" }), true);
+    f.RascunhoId = it.id; S.cache[it.id + "|" + f.RascunhoEm] = procLimpar(corpo);
+  } else { if (x.RascunhoId) await procApagar(S, x.RascunhoId); f.RascunhoId = null; }
+  if (file) {
+    const it = await procEnviar(S, `${pasta}/Originais`, `${x.Title} rascunho - ${docNomeSeguro(file.name)}`, file, false);
+    if (x.RascunhoArqId && x.RascunhoArqId !== it.id) await procApagar(S, x.RascunhoArqId);
+    f.RascunhoArqId = it.id; f.RascunhoArqNome = file.name;
+  } else if (formato === "Documento" && x.RascunhoArqId && motivo === undefined) { /* edição no ERP: o original do rascunho continua */ }
+  f.Historico = procHist(x.Historico, file ? `rascunho enviado (${file.name})` : "rascunho editado no ERP");
+  return procGrava(S, x, f);
+}
+window.procNovo = () => {
+  const S = procAtual(); if (!S || !procPode(S)) { toast("Seu acesso aos Procedimentos é só de leitura."); return; }
+  let lido = null;
+  $("modal").className = "modal wide";
+  openModal("Novo procedimento", `<div class="form-grid">
+    <div class="field full"><label>Conteúdo</label><div class="proc-orig"><label class="tim-chk"><input type="radio" name="procOr" value="arq" checked> Enviar o Word (.docx) ou o PDF do procedimento</label><label class="tim-chk"><input type="radio" name="procOr" value="modelo"> Começar pelo modelo padrão (Objetivo, Aplicação, Responsabilidades, Procedimento, Registros)</label></div>
+      <input type="file" id="procArq" accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf"><div class="hint" id="procArqH">O Word ganha o desenho padrão da empresa; o texto, as imagens e a ordem não mudam. O PDF fica como está (só consulta e download).</div></div>
+    <div class="field"><label>Código<span class="req">*</span></label><input id="procCod" maxlength="30" value="${esc(procProxCod(S))}"><div class="hint">Padrão ${esc(S.D.pre)}-000. Vem do cabeçalho do Word, se houver.</div></div>
+    <div class="field"><label>Categoria</label><input id="procCatN" list="procCatL" value=""><datalist id="procCatL">${PROC_CAT.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
+    <div class="field full"><label>Título<span class="req">*</span></label><input id="procTit" maxlength="255"></div>
+    <div class="field full"><label>Subtítulo</label><input id="procSub" maxlength="255"></div>
+    <div class="field"><label>Responsável</label><input id="procResp" maxlength="120" value="${esc(procEu())}"></div>
+    <div class="field"><label>Revisar a cada (meses)</label><input type="number" id="procPer" min="0" max="60" value="12"><div class="hint">0 = sem revisão periódica.</div></div>
+    <div class="field full"><label>Objetivo / resumo</label><textarea id="procRes" rows="2" placeholder="Em uma ou duas frases: para que serve"></textarea></div>
+    <div class="field full"><label>Palavras-chave</label><input id="procPal" maxlength="255" placeholder="Ex.: PagBank, venda embarcada, BP-e"></div>
+  </div><div class="err-msg" id="procErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const g = k => ($(k).value || "").trim(), err = m => { $("procErr").style.display = "block"; $("procErr").textContent = m; return false; };
+    const modelo = document.querySelector("input[name=procOr]:checked").value === "modelo", file = ($("procArq").files || [])[0];
+    if (!modelo && !file) return err("Escolha o arquivo do procedimento (Word ou PDF), ou marque o modelo padrão.");
+    const cod = g("procCod").toUpperCase(); if (!/^[A-Z0-9][A-Z0-9-]{2,29}$/.test(cod)) return err("Código: letras, números e hífen (ex.: POP-TI-002).");
+    if (procItem(S, cod)) return err(`Já existe o procedimento ${cod}.`);
+    if (!g("procTit")) return err("Informe o título.");
+    const per = g("procPer") === "" ? 0 : Number(g("procPer")); if (!Number.isInteger(per) || per < 0 || per > 60) return err("Revisar a cada: número inteiro de 0 a 60 meses.");
+    if (!modelo && !lido) { try { lido = await procLerArquivo(file); } catch (e) { return err(e.message); } }
+    const x = await procGrava(S, null, { Title: cod, Titulo: g("procTit"), Subtitulo: g("procSub") || null, Categoria: g("procCatN") || null, Status: "Rascunho", Revisao: (lido && lido.meta.rev) || 0, Responsavel: g("procResp") || null, PeriodicidadeMeses: per, Resumo: g("procRes") || null, PalavrasChave: g("procPal") || null, Revisoes: "[]", Historico: procHist(null, modelo ? "criado pelo modelo padrão" : `criado a partir de ${file.name}`) });
+    try { await procSalvarRascunho(S, x, modelo ? { corpo: PROC_MODELO, formato: "Documento", motivo: "Emissão inicial" } : { corpo: lido.corpo, formato: lido.formato, file, motivo: "Emissão inicial" }); }
+    catch (e) { toast("O procedimento foi criado, mas o arquivo não foi gravado: " + e.message, 9000); }
+    toast(`${cod} criado como rascunho. Confira o desenho e publique.`, 6000);
+    setTimeout(() => procAbrir(cod), 0); return true;
+  });
+  const arq = $("procArq");
+  arq.addEventListener("change", async () => {
+    const file = (arq.files || [])[0]; lido = null; if (!file) return;
+    const h = $("procArqH"); h.textContent = "Lendo o arquivo…";
+    try { lido = await procLerArquivo(file); const m = lido.meta || {};
+      if (m.cod && !procItem(S, m.cod)) $("procCod").value = m.cod;
+      if (m.titulo && !$("procTit").value) $("procTit").value = m.titulo;
+      if (m.sub && !$("procSub").value) $("procSub").value = m.sub;
+      h.textContent = lido.formato === "PDF" ? "PDF: fica como está (consulta e download). Para editar no ERP, prefira o Word." : `Word lido: ${(lido.corpo.match(/<h[12]/g) || []).length} tópico(s), ${(lido.corpo.match(/class="passo/g) || []).length} passo(s), ${(lido.corpo.match(/<img/g) || []).length} imagem(ns)${m.rev ? `, revisão ${String(m.rev).padStart(2, "0")} no cabeçalho` : ""}.`;
+    } catch (e) { h.textContent = e.message; }
+  });
+  document.querySelectorAll("input[name=procOr]").forEach(r => r.addEventListener("change", () => { arq.disabled = r.value === "modelo" && r.checked; }));
+};
+window.procSubir = () => {
+  const S = procAtual(); if (!S || !procPode(S)) return; const x = procItem(S, S.cod); if (!x) return;
+  let lido = null;
+  openModal(`Enviar nova versão · ${x.Title}`, `<div class="form-grid">
+    <div class="field full"><label>Arquivo<span class="req">*</span></label><input type="file" id="procArq" accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf"><div class="hint" id="procArqH">Word (.docx), de preferência o que você baixou em "Baixar Word" e editou; ou PDF. Vira o rascunho da ${esc(procRev(x.Status === "Rascunho" ? Math.max(1, Number(x.Revisao) || 0) : (Number(x.Revisao) || 0) + 1))}: quem consulta continua vendo a revisão vigente até a publicação.</div></div>
+    <div class="field full"><label>O que mudou<span class="req">*</span></label><textarea id="procMot" rows="2" placeholder="Ex.: novo passo para habilitar a linha; telas atualizadas">${esc(x.RascunhoMotivo || "")}</textarea></div>
+  </div><div class="err-msg" id="procErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const err = m => { $("procErr").style.display = "block"; $("procErr").textContent = m; return false; };
+    const file = ($("procArq").files || [])[0]; if (!file) return err("Escolha o arquivo.");
+    const mot = ($("procMot").value || "").trim(); if (!mot) return err("Conte em poucas palavras o que mudou (vai para o histórico de revisões).");
+    if (!lido) { try { lido = await procLerArquivo(file); } catch (e) { return err(e.message); } }
+    if (lido.meta && lido.meta.cod && lido.meta.cod !== x.Title && !(await erpConfirmar({ titulo: "Código diferente", texto: `O cabeçalho do arquivo diz ${lido.meta.cod}, mas este procedimento é ${x.Title}. Usar mesmo assim?`, sim: "Usar" }))) return false;
+    await procSalvarRascunho(S, x, { corpo: lido.corpo, formato: lido.formato, file, motivo: mot });
+    S.ver = "ras"; toast("Rascunho gravado. Confira e publique (ou envie para aprovação).", 6000); procDocPintar(S, x); return true;
+  });
+  const arq = $("procArq");
+  arq.addEventListener("change", async () => { const file = (arq.files || [])[0]; lido = null; if (!file) return; const h = $("procArqH"); h.textContent = "Lendo o arquivo…"; try { lido = await procLerArquivo(file); h.textContent = lido.formato === "PDF" ? "PDF: fica como está (consulta e download)." : `Word lido: ${(lido.corpo.match(/<h[12]/g) || []).length} tópico(s), ${(lido.corpo.match(/class="passo/g) || []).length} passo(s), ${(lido.corpo.match(/<img/g) || []).length} imagem(ns).`; } catch (e) { h.textContent = e.message; } });
+};
+window.procDados = () => {
+  const S = procAtual(); if (!S || !procPode(S)) return; const x = procItem(S, S.cod); if (!x) return;
+  const nunca = x.Status === "Rascunho";
+  openModal(`Dados · ${x.Title}`, `<div class="form-grid">
+    <div class="field"><label>Código</label><input id="procCod" maxlength="30" value="${esc(x.Title || "")}" ${nunca ? "" : "disabled"}><div class="hint">${nunca ? "Pode mudar até a primeira publicação." : "Fixo depois de publicado."}</div></div>
+    <div class="field"><label>Categoria</label><input id="procCatN" list="procCatL" value="${esc(x.Categoria || "")}"><datalist id="procCatL">${PROC_CAT.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
+    <div class="field full"><label>Título<span class="req">*</span></label><input id="procTit" maxlength="255" value="${esc(x.Titulo || "")}"></div>
+    <div class="field full"><label>Subtítulo</label><input id="procSub" maxlength="255" value="${esc(x.Subtitulo || "")}"></div>
+    <div class="field"><label>Responsável</label><input id="procResp" maxlength="120" value="${esc(x.Responsavel || "")}"></div>
+    <div class="field"><label>Revisar a cada (meses)</label><input type="number" id="procPer" min="0" max="60" value="${Number(x.PeriodicidadeMeses) || 0}"></div>
+    <div class="field full"><label>Objetivo / resumo</label><textarea id="procRes" rows="2">${esc(x.Resumo || "")}</textarea></div>
+    <div class="field full"><label>Palavras-chave</label><input id="procPal" maxlength="255" value="${esc(x.PalavrasChave || "")}"></div>
+  </div><div class="err-msg" id="procErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const g = k => ($(k).value || "").trim(), err = m => { $("procErr").style.display = "block"; $("procErr").textContent = m; return false; };
+    if (!g("procTit")) return err("Informe o título.");
+    const per = g("procPer") === "" ? 0 : Number(g("procPer")); if (!Number.isInteger(per) || per < 0 || per > 60) return err("Revisar a cada: número inteiro de 0 a 60 meses.");
+    const f = { Titulo: g("procTit"), Subtitulo: g("procSub") || null, Categoria: g("procCatN") || null, Responsavel: g("procResp") || null, PeriodicidadeMeses: per, Resumo: g("procRes") || null, PalavrasChave: g("procPal") || null };
+    if (nunca) { const cod = g("procCod").toUpperCase(); if (!/^[A-Z0-9][A-Z0-9-]{2,29}$/.test(cod)) return err("Código: letras, números e hífen."); if (cod !== x.Title) { if (procItem(S, cod)) return err(`Já existe o procedimento ${cod}.`); f.Title = cod; } }
+    if (x.Status === "Vigente" && per !== Number(x.PeriodicidadeMeses || 0)) f.ProximaRevisao = per && x.DataRevisao ? timMaisMeses(ymd(x.DataRevisao), per) : null;
+    const mud = Object.keys(f).filter(k => String(f[k] ?? "") !== String(x[k] ?? ""));
+    f.Historico = procHist(x.Historico, `dados alterados: ${mud.join(", ") || "sem mudança"}`);
+    await procGrava(S, x, f); if (f.Title) S.cod = f.Title;
+    toast("Dados atualizados."); if (f.Title) location.hash = `${S.D.path}?c=${encodeURIComponent(f.Title)}`; else procDocPintar(S, x); return true;
+  });
+};
+
+/* ---------- aprovação, publicação, obsoletar ---------- */
+window.procEnviarAprov = async () => {
+  const S = procAtual(); if (!S || !procPode(S)) return; const x = procItem(S, S.cod); if (!x) return;
+  if (!x.RascunhoMotivo) { toast('Antes, conte o que mudou: use "Substituir o Rascunho" ou "Editar" e preencha o motivo.', 7000); }
+  try { await procGrava(S, x, { RascunhoAprovacao: true, Historico: procHist(x.Historico, "rascunho enviado para aprovação") }); toast("Enviado para aprovação: o proprietário do módulo vê em \"Aguardando aprovação\"."); procDocPintar(S, x); } catch (e) { toast(e.message, 8000); }
+};
+window.procPublicar = () => {
+  const S = procAtual(); if (!S || !procAprova(S)) { toast("Só o proprietário do módulo (ou um administrador) aprova e publica."); return; }
+  const x = procItem(S, S.cod); if (!x || !(x.RascunhoId || x.RascunhoArqId)) { toast("Não há rascunho para publicar."); return; }
+  const nunca = x.Status === "Rascunho", rev = nunca ? Math.max(1, Number(x.Revisao) || 0) : (Number(x.Revisao) || 0) + 1;
+  openModal(`Publicar ${x.Title} · ${procRev(rev)}`, `<p>O rascunho vira a <b>${esc(procRev(rev))}</b>, vigente a partir de hoje${nunca ? "" : `, e a ${esc(procRev(x.Revisao))} fica guardada no histórico`}. Todos passam a ver a nova revisão, e a ciência de leitura recomeça.</p>
+    <div class="form-grid"><div class="field full"><label>O que mudou<span class="req">*</span></label><textarea id="procMot" rows="2">${esc(x.RascunhoMotivo || (nunca ? "Emissão inicial" : ""))}</textarea></div>
+    <div class="field"><label>Data da revisão</label><input type="date" id="procDt" value="${esc(todayISO())}"></div><div class="field"><label>Próxima revisão</label><input type="date" id="procProx" value="${esc(Number(x.PeriodicidadeMeses) ? timMaisMeses(todayISO(), Number(x.PeriodicidadeMeses)) : "")}"><div class="hint">pela periodicidade (${Number(x.PeriodicidadeMeses) || 0} meses)</div></div></div>
+    <div class="err-msg" id="procErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const err = m => { $("procErr").style.display = "block"; $("procErr").textContent = m; return false; };
+    const mot = ($("procMot").value || "").trim(), dt = $("procDt").value || todayISO(), prox = $("procProx").value || null;
+    if (!mot) return err("Conte o que mudou (vai para o histórico de revisões).");
+    if (dt > todayISO()) return err("A data da revisão não pode ser futura.");
+    const pasta = procPastaDe(x), formato = x.RascunhoFormato || "Documento";
+    const revs = procJ(x.Revisoes, []).filter(r => Number(r.rev) !== rev);
+    const entrada = { rev, data: dt, por: x.RascunhoPor || procEu(), aprov: procEu(), motivo: mot, formato };
+    const m = { cod: x.Title, titulo: x.Titulo, sub: x.Subtitulo, rev, data: dt, aprov: procEu(), revs: revs.concat([entrada]) };
+    let corpo = "", htmlId = null, arqId = null, arqNome = null;
+    if (formato === "Documento") {
+      corpo = await procConteudo(S, x.RascunhoId, x.RascunhoEm);
+      const it = await procEnviar(S, pasta, `${x.Title} ${procRev(rev)}.html`, new Blob([procArquivoHtml(m, corpo)], { type: "text/html" }), true);
+      htmlId = it.id; S.cache[it.id + "|"] = corpo;
+    }
+    if (x.RascunhoArqId) { const ext = docExt(x.RascunhoArqNome || "") || (formato === "PDF" ? ".pdf" : ".docx");
+      try { const it = await procRenomear(S, x.RascunhoArqId, `${x.Title} ${procRev(rev)} - ${docNomeSeguro((x.RascunhoArqNome || "original").replace(/\.[^.]+$/, ""))}${ext}`); arqId = it.id || x.RascunhoArqId; } catch (e) { arqId = x.RascunhoArqId; }
+      arqNome = x.RascunhoArqNome || null; }
+    entrada.html = htmlId; entrada.arq = arqId; entrada.arqNome = arqNome;
+    const f = { Status: "Vigente", Revisao: rev, DataRevisao: dt, Aprovador: procEu() || null, Formato: formato, ProximaRevisao: prox, ConteudoId: htmlId, ArquivoId: arqId, ArquivoNome: arqNome,
+      RascunhoId: null, RascunhoArqId: null, RascunhoArqNome: null, RascunhoFormato: null, RascunhoPor: null, RascunhoEm: null, RascunhoMotivo: null, RascunhoAprovacao: false,
+      Revisoes: JSON.stringify(revs.concat([entrada]).slice(-60)), TextoBusca: formato === "Documento" ? procTextoBusca(corpo) : null, Historico: procHist(x.Historico, `${procRev(rev)} publicada: ${mot}`) };
+    const rasId = x.RascunhoId;
+    await procGrava(S, x, f);
+    if (rasId) { try { await procApagar(S, rasId); } catch (e) {} }
+    S.ver = "vig"; toast(`${x.Title} ${procRev(rev)} publicada.`, 6000); procDocPintar(S, x); return true;
+  });
+};
+window.procDescartar = async () => {
+  const S = procAtual(); if (!S || !procPode(S)) return; const x = procItem(S, S.cod); if (!x) return;
+  if (!(await erpConfirmar({ titulo: "Descartar rascunho", texto: `Descartar o rascunho de ${x.Title}? A revisão vigente não muda.`, sim: "Descartar", perigo: true }))) return;
+  try { const a = x.RascunhoId, b = x.RascunhoArqId;
+    await procGrava(S, x, { RascunhoId: null, RascunhoArqId: null, RascunhoArqNome: null, RascunhoFormato: null, RascunhoPor: null, RascunhoEm: null, RascunhoMotivo: null, RascunhoAprovacao: false, Historico: procHist(x.Historico, "rascunho descartado") });
+    await procApagar(S, a); await procApagar(S, b); S.ver = "vig"; S.editando = false; toast("Rascunho descartado."); procDocPintar(S, x);
+  } catch (e) { toast(e.message, 8000); }
+};
+window.procObsoletar = () => {
+  const S = procAtual(); if (!S || !procAprova(S)) return; const x = procItem(S, S.cod); if (!x) return;
+  openModal(`Tornar obsoleto · ${x.Title}`, `<p>O procedimento deixa de valer e sai da lista principal (continua no filtro "Obsoletos", com todas as revisões).</p><div class="form-grid"><div class="field full"><label>Motivo<span class="req">*</span></label><textarea id="procMot" rows="2"></textarea></div></div><div class="err-msg" id="procErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const mot = ($("procMot").value || "").trim(); if (!mot) { $("procErr").style.display = "block"; $("procErr").textContent = "Informe o motivo."; return false; }
+    await procGrava(S, x, { Status: "Obsoleto", Historico: procHist(x.Historico, `tornado obsoleto: ${mot}`) }); toast(`${x.Title} obsoleto.`); procDocPintar(S, x); return true;
+  });
+};
+window.procReativar = async () => { const S = procAtual(); if (!S || !procAprova(S)) return; const x = procItem(S, S.cod); if (!x) return; try { await procGrava(S, x, { Status: x.ConteudoId || x.ArquivoId ? "Vigente" : "Rascunho", Historico: procHist(x.Historico, "reativado") }); toast("Reativado."); procDocPintar(S, x); } catch (e) { toast(e.message, 8000); } };
+window.procExcluir = async () => {
+  const S = procAtual(); if (!S || !podeExcluir(S.mod)) return; const x = procItem(S, S.cod); if (!x) return;
+  if (x.Status !== "Rascunho") { toast('Procedimento já publicado não é excluído: use "Tornar Obsoleto".'); return; }
+  if (!(await erpConfirmar({ titulo: "Excluir procedimento", texto: `Excluir ${x.Title} (nunca publicado)? O rascunho e os arquivos vão junto.`, sim: "Excluir", perigo: true }))) return;
+  try { await graph(`/sites/${S.site.id}/lists/${S.list.id}/items/${x._id}`, { method: "DELETE" }); await procApagar(S, x.RascunhoId); await procApagar(S, x.RascunhoArqId); S.itens = S.itens.filter(i => i._id !== x._id); toast("Excluído."); procVoltar(); } catch (e) { toast(e.message, 8000); }
+};
+
+/* ---------- baixar, imprimir ---------- */
+window.procWord = async () => {
+  const S = procAtual(); if (!S) return; const x = procItem(S, S.cod); if (!x) return;
+  try { const m = S._meta || procMeta(x, S.ver === "ras"), corpo = S.editando ? procNormalizar($("procCorpo").innerHTML) : S._corpo || "";
+    const b = await procWordBlob(m, corpo); procBaixarBlob(b, procNomeArq(m, ".docx")); toast("Word baixado. Para mudar: edite no Word e use \"Enviar Nova Versão\".", 6000);
+  } catch (e) { toast("Não foi possível montar o Word: " + e.message, 8000); }
+};
+window.procOriginal = async () => {
+  const S = procAtual(); if (!S) return; const x = procItem(S, S.cod); if (!x) return;
+  const revs = procJ(x.Revisoes, []), r = typeof S.ver === "number" ? revs.find(v => Number(v.rev) === S.ver) || {} : null;
+  const id = S.ver === "ras" ? x.RascunhoArqId : r ? r.arq : x.ArquivoId, nome = S.ver === "ras" ? x.RascunhoArqNome : r ? r.arqNome : x.ArquivoNome;
+  if (!id) { toast("Sem arquivo original."); return; }
+  try { const b = await procBaixar(S, id); procBaixarBlob(b, `${x.Title} ${S.ver === "ras" ? "rascunho" : procRev(r ? r.rev : x.Revisao)} - ${docNomeSeguro(nome || "original")}`); } catch (e) { toast("Não foi possível baixar: " + e.message, 8000); }
+};
+window.procImprimir = () => {
+  const S = procAtual(); if (!S || !S._meta) return;
+  const fr = document.createElement("iframe"); fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0"; document.body.appendChild(fr);
+  fr.onload = () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) {} setTimeout(() => fr.remove(), 60000); };
+  fr.srcdoc = procArquivoHtml(S._meta, S._corpo || "");
+};
+
+/* ---------- editor no ERP ---------- */
+window.procEditar = async () => {
+  const S = procAtual(); if (!S || !procPode(S)) return; const x = procItem(S, S.cod); if (!x) return;
+  const temRas = !!(x.RascunhoId || x.RascunhoArqId);
+  if (temRas && (x.RascunhoFormato || "Documento") === "PDF") { toast("O rascunho é PDF: para editar no ERP, envie a versão em Word."); return; }
+  if (!temRas && (x.Formato || "Documento") === "PDF") { toast("Procedimento em PDF: para editar no ERP, envie a versão em Word."); return; }
+  const corpo = temRas ? await procConteudo(S, x.RascunhoId, x.RascunhoEm) : await procConteudo(S, x.ConteudoId);
+  S.ver = "ras"; S.editando = true; S.sujo = false;
+  const m = procMeta(x, true);
+  const centro = $("procCentro"); if (!centro) { await procDocPintar(S, x); return procEditar(); }
+  document.querySelectorAll("#procBody .proc-botoes, #procBody .proc-aviso, #procBody .seg-tabs").forEach(e => e.remove());
+  const tb = (cmd, rot, tit) => `<button type="button" class="proc-tb" data-c="${cmd}" title="${esc(tit || rot)}">${rot}</button>`;
+  centro.innerHTML = `<div class="proc-barra" id="procBarra" role="toolbar" aria-label="Editor do procedimento">
+      ${tb("h1", "Seção", "Título de seção (1. PROCEDIMENTO)")}${tb("h2", "Subseção", "Subtítulo (1.1 …)")}${tb("passo", "Passo", "Passo numerado (1.1.1 …)")}${tb("p", "Texto", "Parágrafo comum")}${tb("legenda", "Legenda", "Legenda de figura (Figura 1 – …)")}
+      <span class="proc-sep"></span>${tb("bold", "<b>N</b>", "Negrito")}${tb("italic", "<i>I</i>", "Itálico")}${tb("underline", "<u>S</u>", "Sublinhado")}${tb("ul", "• Lista", "Lista com marcadores")}${tb("ol", "1. Lista", "Lista numerada")}
+      <span class="proc-sep"></span><select id="procCaixaSel" title="Caixa de destaque"><option value="">Caixa…</option>${Object.entries(PROC_CAIXAS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}<option value="sem">Tirar da caixa</option></select>
+      ${tb("img", "Imagem", "Inserir imagem (também dá para colar)")}${tb("link", "Link", "Link")}${tb("video", "▶ Vídeo", "Vídeo do tópico (no título onde está o cursor)")}${tb("renum", "Renumerar", "Renumera seções, subseções e passos (1., 1.1, 1.1.1)")}${tb("undo", "↶", "Desfazer")}${tb("redo", "↷", "Refazer")}
+      <span class="grow"></span><button type="button" class="btn sm" id="procEdCanc">Cancelar</button><button type="button" class="btn sm primary" id="procEdSalvar">Salvar Rascunho</button></div>
+    <div class="proc-ed-motivo"><label>O que muda nesta revisão<span class="req">*</span> <input id="procEdMot" maxlength="300" value="${esc(x.RascunhoMotivo || (x.Status === "Rascunho" ? "Emissão inicial" : ""))}" placeholder="Ex.: incluído o passo de sincronizar operadores"></label></div>
+    <article class="pop-folha proc-folha editando" data-sem-titulo>${procCabHtml(m)}<main class="pop-corpo" id="procCorpo" contenteditable="true" spellcheck="true">${corpo || "<p></p>"}</main><footer class="pop-rod">${esc(PROC_RODAPE)}</footer></article>
+    <input type="file" id="procImgF" accept="image/*" hidden>`;
+  procTopicos(S);
+  const ed = $("procCorpo");
+  ed.addEventListener("input", () => { S.sujo = true; clearTimeout(S._tt); S._tt = setTimeout(() => procTopicos(S), 600); });
+  ed.addEventListener("paste", async ev => {
+    const cd = ev.clipboardData; if (!cd) return;
+    const img = [...(cd.files || [])].find(f => /^image\//.test(f.type));
+    if (img) { ev.preventDefault(); procInserirImagem(img); return; }
+    const h = cd.getData("text/html");
+    if (h) { ev.preventDefault(); const lim = procNormalizar(h); document.execCommand("insertHTML", false, lim); S.sujo = true; return; }
+  });
+  ed.addEventListener("drop", ev => { const img = [...((ev.dataTransfer && ev.dataTransfer.files) || [])].find(f => /^image\//.test(f.type)); if (img) { ev.preventDefault(); procInserirImagem(img); } });
+  $("procBarra").addEventListener("mousedown", ev => { if (ev.target.closest(".proc-tb")) ev.preventDefault(); });   /* o cursor não sai do texto */
+  $("procBarra").addEventListener("click", ev => { const b = ev.target.closest(".proc-tb"); if (b) procCmd(b.dataset.c); });
+  $("procCaixaSel").addEventListener("change", ev => { procCaixa(ev.target.value); ev.target.value = ""; });
+  $("procImgF").addEventListener("change", ev => { const f = (ev.target.files || [])[0]; if (f) procInserirImagem(f); ev.target.value = ""; });
+  $("procEdCanc").addEventListener("click", async () => { if (S.sujo && !(await erpConfirmar({ titulo: "Cancelar edição", texto: "As alterações não salvas serão perdidas.", sim: "Descartar alterações", perigo: true }))) return; S.editando = false; S.sujo = false; S.ver = x.RascunhoId ? "ras" : "vig"; procDocPintar(S, x); });
+  $("procEdSalvar").addEventListener("click", () => procSalvarEdicao(S, x));
+  try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch (e) {}
+  ed.focus();
+};
+function procBlocoAtual() {
+  const ed = $("procCorpo"), sel = window.getSelection(); if (!ed || !sel || !sel.rangeCount) return null;
+  let n = sel.anchorNode; if (!n || !ed.contains(n)) return null;
+  while (n && n !== ed) { if (n.nodeType === 1 && /^(P|H1|H2|H3|H4|LI|DIV)$/.test(n.tagName) && (n.parentNode === ed || n.parentNode.classList && n.parentNode.classList.contains("pop-caixa") || n.tagName === "LI")) return n; n = n.parentNode; }
+  return null;
+}
+function procCmd(c) {
+  const S = procAtual(), ed = $("procCorpo"); if (!S || !ed) return; ed.focus();
+  const bloco = () => procBlocoAtual();
+  if (/^h[1-3]$|^p$/.test(c)) { document.execCommand("formatBlock", false, c === "p" ? "p" : c); const b = bloco(); if (b && b.tagName === "P") b.classList.remove("passo", "legenda"); }
+  else if (c === "passo" || c === "legenda") { document.execCommand("formatBlock", false, "p"); const b = bloco(); if (b && b.tagName === "P") { b.classList.remove("passo", "legenda"); b.classList.add(c); if (c === "legenda" && !/^figura/i.test(procTxt(b))) b.insertAdjacentHTML("afterbegin", "<strong>Figura – </strong>"); } }
+  else if (c === "bold" || c === "italic" || c === "underline" || c === "undo" || c === "redo") document.execCommand(c);
+  else if (c === "ul") document.execCommand("insertUnorderedList");
+  else if (c === "ol") document.execCommand("insertOrderedList");
+  else if (c === "img") $("procImgF").click();
+  else if (c === "link") { const u = prompt("Endereço do link (https://…):", "https://"); if (u && /^https?:\/\//i.test(u.trim())) document.execCommand("createLink", false, u.trim()); }
+  else if (c === "video") procVideoEditar(S);
+  else if (c === "renum") procRenumerar(ed);
+  S.sujo = true; clearTimeout(S._tt); S._tt = setTimeout(() => procTopicos(S), 300);
+}
+function procCaixa(tipo) {
+  const ed = $("procCorpo"); if (!ed || !tipo) return; ed.focus();
+  const b = procBlocoAtual(); if (!b) { toast("Coloque o cursor no parágrafo que vai para a caixa."); return; }
+  const cx = b.closest(".pop-caixa");
+  if (tipo === "sem") { if (cx) cx.replaceWith(...cx.childNodes); }
+  else if (cx) { cx.className = `pop-caixa ${tipo}`; }
+  else { const d = document.createElement("div"); d.className = `pop-caixa ${tipo}`; const p = b.tagName === "P" ? b : null; b.replaceWith(d); if (p) { d.appendChild(p); p.classList.remove("passo", "legenda"); } else { const np = document.createElement("p"); np.innerHTML = b.innerHTML; d.appendChild(np); } }
+  const alvo = (tipo === "sem" ? null : (b.closest(".pop-caixa") || b).querySelector("p")) || null;
+  if (alvo && !procTipoCaixa(procTxt(alvo))) alvo.insertAdjacentHTML("afterbegin", `<strong>${esc(PROC_CAIXA_ROT[tipo])}</strong> `);
+  const S = procAtual(); if (S) S.sujo = true;
+}
+async function procInserirImagem(file) {
+  try { const src = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+    const red = await procImgReduz(String(src), 1400); if (!red) { toast("Formato de imagem não suportado."); return; }
+    $("procCorpo").focus(); document.execCommand("insertHTML", false, `<p><img src="${red}" alt=""></p>`); const S = procAtual(); if (S) S.sujo = true;
+  } catch (e) { toast("Não foi possível inserir a imagem: " + e.message); }
+}
+function procRenumerar(ed) {   /* só renumera o que já tem número (títulos sem número, como "REGISTRO DE LINHAS", ficam como estão) */
+  let a = 0, b = 0, c = 0; const temNum = el => /^\s*\d+(\.\d+)*\.?(\s|$)/.test(el.textContent);
+  const tira = el => { const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let t; while ((t = w.nextNode())) { if (t.parentNode.classList && t.parentNode.classList.contains("pop-num")) continue; if (t.nodeValue.trim()) { t.nodeValue = t.nodeValue.replace(/^\s*\d+(\.\d+)*\.?\s*/, ""); break; } } };
+  [...ed.querySelectorAll("h1,h2,p.passo")].forEach(e => {
+    if (e.tagName === "H1") { if (!temNum(e)) return; a++; b = 0; c = 0; tira(e); e.insertAdjacentText("afterbegin", `${a}. `); }
+    else if (e.tagName === "H2") { if (!temNum(e)) return; b++; c = 0; tira(e); e.insertAdjacentText("afterbegin", `${a || 1}.${b} `); }
+    else { c++; const n = `${a || 1}.${b || 1}.${c}`; let s = e.querySelector(".pop-num"); if (!s) { tira(e); s = document.createElement("span"); s.className = "pop-num"; e.insertBefore(document.createTextNode(" "), e.firstChild); e.insertBefore(s, e.firstChild); } s.textContent = n; }
+  });
+  toast("Seções, subseções e passos renumerados.");
+}
+function procVideoEditar(S) {
+  const ed = $("procCorpo"); const b = procBlocoAtual(); let h = b && /^H[1-4]$/.test(b.tagName) ? b : null;
+  if (!h && b) { let n = b; while (n && n.parentNode !== ed) n = n.parentNode; while (n && !(n.nodeType === 1 && /^H[1-4]$/.test(n.tagName))) n = n.previousElementSibling; h = n; }
+  if (!h) { toast("Coloque o cursor no tópico (seção ou subseção) que vai ter o vídeo."); return; }
+  const atual = h.getAttribute("data-video") || "", nomeAt = h.getAttribute("data-video-nome") || "", rot = procTxt(h).replace(/▶ Vídeo$/, "").trim();
+  openModal(`Vídeo do tópico · ${rot}`, `<div class="form-grid">
+    <div class="field full"><label>Link do vídeo</label><input id="procVUrl" value="${esc(atual)}" placeholder="YouTube (não listado), Microsoft Stream ou SharePoint: https://…"></div>
+    <div class="field full"><label>Ou enviar o arquivo do vídeo</label><input type="file" id="procVArq" accept="video/*"><div class="hint">Vai para a pasta do procedimento no SharePoint (Vídeos). Até 500 MB; vídeos curtos (1 a 3 minutos) por tópico funcionam melhor.</div><div class="hint" id="procVProg"></div></div>
+    <div class="field full"><label>Nome do vídeo</label><input id="procVNome" maxlength="120" value="${esc(nomeAt || rot)}"></div>
+  </div><div class="err-msg" id="procErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const err = m => { $("procErr").style.display = "block"; $("procErr").textContent = m; return false; };
+    const x = procItem(S, S.cod), file = ($("procVArq").files || [])[0]; let url = ($("procVUrl").value || "").trim(), id = "";
+    if (file) { if (file.size > 500 * 1048576) return err("Vídeo maior que 500 MB: reduza ou use um link.");
+      const it = await procEnviar(S, `${procPastaDe(x)}/Vídeos`, `${x.Title} - ${docNomeSeguro(file.name)}`, file, false, p => { const e = $("procVProg"); if (e) e.textContent = `Enviando… ${Math.round(p * 100)}%`; });
+      url = it.webUrl || url; id = it.id; }
+    if (!url) { h.removeAttribute("data-video"); h.removeAttribute("data-video-id"); h.removeAttribute("data-video-nome"); }
+    else { if (!/^https?:\/\//i.test(url)) return err("O link precisa começar com https://"); h.setAttribute("data-video", url); if (id) h.setAttribute("data-video-id", id); else h.removeAttribute("data-video-id"); h.setAttribute("data-video-nome", ($("procVNome").value || "").trim() || rot); }
+    S.sujo = true; procTopicos(S); toast(url ? "Vídeo ligado ao tópico. Salve o rascunho." : "Vídeo retirado do tópico."); return true;
+  });
+}
+async function procSalvarEdicao(S, x) {
+  clearTimeout(S._tt);
+  const mot = ($("procEdMot").value || "").trim(); if (!mot) { toast("Conte o que muda nesta revisão (campo acima do documento)."); $("procEdMot").focus(); return; }
+  const ed = $("procCorpo"); ed.querySelectorAll(".pop-vid").forEach(b => b.remove());
+  const corpo = procNormalizar(ed.innerHTML);
+  const bt = $("procEdSalvar"); if (bt) { bt.disabled = true; bt.textContent = "Salvando…"; }
+  try { await procSalvarRascunho(S, x, { corpo, formato: "Documento", motivo: mot }); S.editando = false; S.sujo = false; S.ver = "ras"; toast("Rascunho salvo.", 4000); procDocPintar(S, x); }
+  catch (e) { toast("Não foi possível salvar: " + e.message, 9000); if (bt) { bt.disabled = false; bt.textContent = "Salvar Rascunho"; } }
+}
+window.addEventListener("beforeunload", ev => { const S = procAtual(); if (S && S.editando && S.sujo) { ev.preventDefault(); ev.returnValue = ""; } });
+
+/* ---------- rota e estilo ---------- */
+{ const r0 = route;
+  route = function () {
+    const [hash, q] = (location.hash || "").split("?");
+    const D = Object.values(PROC_DEFS).find(d => d.path === hash); if (!D) return r0.apply(this, arguments);
+    const m = MODULES.find(x => x.id === D.mod); if (!canSee(m)) { location.hash = "#/inicio"; return; }
+    const S = procS(D.mod), c = new URLSearchParams(q || "").get("c");
+    if (S.editando && S.sujo && !confirm("Sair da edição sem salvar? As alterações serão perdidas.")) { history.replaceState(null, "", `${D.path}?c=${encodeURIComponent(S.cod || "")}`); return; }
+    session.modAtual = D.mod; session.pagAtual = ""; navAtivo(D.mod); document.body.classList.remove("nav-open", "lista-aberta"); document.body.classList.add("wide");
+    if ((S.cod || "") !== (c || "")) S.ver = null;
+    S.cod = c || null; S.editando = false; S.sujo = false;
+    $("main").innerHTML = pageProc(S); addCrumbs(m);
+    if (c) { const cr = document.querySelector("#main nav.crumbs"); if (cr) { const b = cr.querySelector("b"); if (b) b.outerHTML = `<a href="${esc(D.path)}">Procedimentos</a>`; cr.insertAdjacentHTML("beforeend", `<span>›</span><b>${esc(c)}</b>`); } }
+    renderProc(S, !S.ready); window.scrollTo(0, 0);
+  };
+}
+(function () { const st = document.createElement("style"); st.id = "erp-v01484";
+  st.textContent = PROC_CSS + `
+  #procRoot .proc-tab tbody tr{cursor:pointer}#procRoot .proc-tit{color:var(--navy)}
+  #procRoot .cap-kpis-5{grid-template-columns:repeat(5,minmax(0,1fr))}#procRoot .kpi.on{outline:2px solid var(--navy);outline-offset:-2px}
+  .proc-doc-top{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin:4px 0 12px}.proc-cod{font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--ink-2);text-transform:uppercase}
+  #procRoot .proc-h{margin:4px 0 2px;font-size:22px;line-height:1.25;color:var(--navy)}#procRoot .proc-doc-top .sup{margin:0}.proc-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .proc-aviso{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-radius:2px;margin:0 0 12px;font-size:13.5px;border:1px solid;border-left-width:4px}
+  .proc-aviso.pend{background:#FBF2DC;border-color:#E9CF8F;border-left-color:#D69A00}.proc-aviso.ok{background:#E6F4EC;border-color:#BFE0CC;border-left-color:#2E9E5B}
+  .proc-aviso.azul{background:#E8EFFB;border-color:#C3D3F0;border-left-color:#3B6FD0}.proc-aviso.cinza{background:#F1F3F5;border-color:#DDE1E6;border-left-color:#8A9099}
+  .proc-botoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px}
+  .proc-grade{display:grid;grid-template-columns:250px minmax(0,1fr);gap:22px;align-items:start}.proc-centro{min-width:0}
+  .proc-lado{position:sticky;top:76px;display:flex;flex-direction:column;gap:14px;max-height:calc(100vh - 96px);overflow:auto}
+  .proc-ficha{background:#fff;border:1px solid var(--line);padding:12px 14px;display:flex;flex-direction:column;gap:8px}.proc-ficha:empty{display:none}
+  .proc-ficha dt{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}.proc-ficha dd{margin:1px 0 0;font-size:13px;color:var(--ink)}
+  .proc-toc{background:#fff;border:1px solid var(--line);padding:10px 8px;display:flex;flex-direction:column}.proc-toc:empty{display:none}
+  .proc-toc-h{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);padding:0 6px 6px}
+  .proc-toc a{display:block;padding:5px 6px;font-size:13px;color:var(--navy);text-decoration:none;border-radius:2px;line-height:1.35}.proc-toc a.n2{padding-left:18px;font-size:12.5px;color:var(--ink)}.proc-toc a:hover{background:#EEF2F8}
+  .proc-toc-v{color:#D6421F;font-size:10px}
+  .proc-folha{border:1px solid var(--line);box-shadow:var(--shadow);max-width:900px;margin:0 auto;padding:28px 40px 34px}
+  .proc-folha .pop-corpo h1,.proc-folha .pop-corpo h2{scroll-margin-top:80px}
+  .pop-vid{margin-left:8px;border:1px solid #F1C8B9;background:#FDF0EA;color:#B3381A;border-radius:999px;font-size:11.5px;font-weight:700;padding:2px 9px;cursor:pointer;vertical-align:middle;text-transform:none;letter-spacing:0}
+  .pop-vid:hover{background:#FBE1D6}
+  .proc-folha.editando .pop-corpo{outline:2px dashed #C3D3F0;outline-offset:8px;min-height:300px}
+  .proc-folha.editando .pop-corpo h1[data-video]::after,.proc-folha.editando .pop-corpo h2[data-video]::after{content:" ▶ vídeo";color:#B3381A;font-size:11px;text-transform:none}
+  .proc-barra{position:sticky;top:64px;z-index:5;display:flex;flex-wrap:wrap;gap:4px;align-items:center;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);padding:6px 8px;margin:0 auto 10px;max-width:900px}
+  .proc-tb{border:1px solid transparent;background:none;border-radius:2px;padding:5px 8px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer}.proc-tb:hover{background:#EEF2F8;border-color:#D5DCE6}
+  .proc-barra select{width:auto;min-height:0;padding:4px 6px;font-size:12.5px}.proc-sep{width:1px;height:20px;background:var(--line);margin:0 4px}
+  .proc-ed-motivo{max-width:900px;margin:0 auto 12px}.proc-ed-motivo label{display:flex;gap:10px;align-items:center;font-size:12.5px;font-weight:700;color:var(--ink-2)}.proc-ed-motivo input{flex:1}
+  .proc-pdf{width:100%;height:78vh;border:1px solid var(--line);background:#fff}.proc-pdf-cab{background:#fff;padding:12px;border:1px solid var(--line);border-bottom:0}.proc-pdf-cab .pop-cab{margin:0}
+  .proc-video{width:100%;aspect-ratio:16/9;border:0;background:#000;display:block}
+  .proc-orig{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+  .proc-rodape{margin-top:22px}.proc-duo{margin-top:0}
+  @media (max-width:980px){.proc-grade{grid-template-columns:minmax(0,1fr)}.proc-lado{position:static;max-height:none}#procRoot .cap-kpis-5{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:640px){.proc-folha{padding:14px 14px 20px}.proc-barra{top:56px}}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -53958,6 +55072,9 @@ CONFIG.version = "v0.14.78";   /* TI › Manutenção de Equipamentos: ativos, m
 CONFIG.version = "v0.14.79";   /* ícone do app no celular: ônibus + rastro de quadrados vermelhos (ponta a ponta) + letras NMB, fundo branco. Aba do computador sem mudança. */
 CONFIG.version = "v0.14.80";   /* ícone do celular: rastro invertido (cresce da traseira até a frente do ônibus) */
 CONFIG.version = "v0.14.81";   /* topo: "NMB | Nova Macabu" e depois o ônibus com o rastro (opção D) */
+CONFIG.version = "v0.14.82";   /* Consumíveis ativo; cores por status dos módulos (ativo, piloto, prévia, em estudo, previsto) */
+CONFIG.version = "v0.14.83";   /* menus compactos (lista em colunas, blocos menores) e módulos acima das rotinas */
+CONFIG.version = "v0.14.84";   /* Diretoria e TI › Procedimentos: POP com desenho padrão, revisões, aprovação, Word, ciência de leitura e vídeos por tópico */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

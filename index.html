@@ -37269,7 +37269,7 @@ window.rjEditarLista = () => {
 window.rjForm = (id, chave) => {
   if (!rjPode() || !RJ.list) return;
   const it = id ? RJ.itens.find(x => x._id === String(id)) : null, card = RJ_CARDS.find(c => c.chave === (chave || (it && it.Chave)));
-  const v = it || { Title: card ? card.nome : "", Descricao: card ? card.desc : "", Chave: card ? card.chave : "", Ativo: true };
+  const v = it || { Title: card ? card.nome : "", Descricao: card ? card.desc : "", Chave: card ? card.chave : "", Url: card && card.url ? card.url : "", Ativo: true };
   openModal(it ? `Link · ${it.Title || ""}` : card ? `Cadastrar endereço · ${card.nome}` : "Novo link", `<div class="form-grid">
       <div class="field full"><label>Nome do card<span class="req">*</span></label><input id="rjNome" maxlength="120" value="${esc(v.Title || "")}"></div>
       <div class="field full"><label>Endereço<span class="req">*</span></label><input id="rjUrl" type="url" maxlength="255" autocomplete="off" spellcheck="false" value="${esc(v.Url || "")}" placeholder="https://"><div class="hint">Fica só na lista restrita "${esc(LISTS.di_links.displayName)}" (site Diretoria) — nunca no código do ERP.</div></div>
@@ -54986,6 +54986,792 @@ window.addEventListener("beforeunload", ev => { const S = procAtual(); if (S && 
   @media (max-width:980px){.proc-grade{grid-template-columns:minmax(0,1fr)}.proc-lado{position:static;max-height:none}#procRoot .cap-kpis-5{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media (max-width:640px){.proc-folha{padding:14px 14px 20px}.proc-barra{top:56px}}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.85 (18/11/2026) · Pedido do Rafael (15:07): Diretoria › RJ Consultores
+   - O card "Administração Venta" passa a se chamar "Sistema RJ". O nome vem da lista "Diretoria — Links seguros"; o nome antigo
+     (padrão de antes) passa a aparecer como "Sistema RJ" sem mexer no SharePoint. Um nome dado à mão pela tela continua valendo.
+   - Novo card "Chamados RJ": portal público de chamados da RJ Consultores (RJDesk). Por ser a página pública do fornecedor
+     (não um endereço interno), o endereço padrão fica no código; um link cadastrado na lista com a chave rj_chamados tem prioridade.
+   - Lista compacta (v0.14.83): o nome do card quebra em até 2 linhas em vez de cortar com "…".
+   - Pedido das 15:08: no Início, os Departamentos sobem para o alto (logo abaixo da saudação), acima dos indicadores e do
+     "Precisa de você", como os módulos acima das rotinas nos departamentos (v0.14.83).
+   ===================================================================== */
+RJ_CARDS[0].nome = "Sistema RJ";
+RJ_CARDS.push({ chave: "rj_chamados", nome: "Chamados RJ", desc: "Abertura e acompanhamento de chamados com a RJ Consultores (RJDesk)", url: "https://rjdesk.rjconsultores.com.br/rjdesk/" });
+{ const c0 = rjCartoes;
+  rjCartoes = function () {
+    return c0.apply(this, arguments).map(c => {
+      const card = RJ_CARDS.find(k => k.chave === c.chave);
+      if (c.chave === "rj_venta_adm" && c.it && /^administra[cç][aã]o venta$/i.test(String(c.it.Title || "").trim())) c.nome = "Sistema RJ";
+      if (card && card.url && !(c.it && rjUrlOk(c.it.Url))) c.it = Object.assign({ _id: c.it ? c.it._id : "", Url: card.url, Ativo: true, _padrao: true }, c.it && c.it.Ativo === false ? { Ativo: false } : {});
+      return c;
+    });
+  };
+}
+{ const a0 = window.rjAbrir;
+  window.rjAbrir = (chave, id) => {
+    const card = RJ_CARDS.find(k => k.chave === chave), it = (id && RJ.itens.find(x => x._id === String(id))) || RJ.itens.find(x => x.Chave === chave);
+    if (card && card.url && !(it && rjUrlOk(it.Url)) && !(it && it.Ativo === false)) { const w = window.open(card.url, "_blank", "noopener,noreferrer"); if (w) try { w.opener = null; } catch (e) {} return; }
+    return a0(chave, id);
+  };
+}
+/* Início: Departamentos no alto, acima dos indicadores e do "Precisa de você" (pedido das 15:08, como nos demais menus na v0.14.83) */
+{ const ph1 = pageHome;
+  pageHome = function () {
+    const h = ph1.apply(this, arguments); if (!h || h.indexOf('class="ini-deps"') < 0) return h;
+    const tp = document.createElement("template"); tp.innerHTML = h;
+    const pg = tp.content.querySelector(".page.ini"), deps = tp.content.querySelector(".ini-deps"), sec = deps && deps.previousElementSibling;
+    const topo = pg && (pg.querySelector(".banner:last-of-type") || pg.querySelector(".ini-topo"));
+    if (!pg || !deps || !topo) return h;
+    const lead = pg.querySelector(".ini-topo .lead"); if (lead) lead.innerHTML = lead.innerHTML.replace("o que precisa de você hoje está primeiro.", "o que precisa de você hoje está logo abaixo dos departamentos.");
+    const box = document.createElement("section"); box.className = "ini-deps-topo"; box.setAttribute("aria-label", "Departamentos");
+    if (sec && sec.classList.contains("ini-sec")) box.appendChild(sec); box.appendChild(deps);
+    topo.after(box);
+    return tp.innerHTML;
+  };
+}
+(function () { const st = document.createElement("style"); st.id = "erp-v01485";
+  st.textContent = `.tiles.as-list .tile h3{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:clip}
+  .page.ini .ini-deps-topo{margin:4px 0 22px}.page.ini .ini-deps-topo .ini-sec{margin-top:0}`;
+  document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.86 (18/11/2026) · Pedido do Rafael (20:02): Estatística de Passageiros › Lançamentos e Banco de Dados; Diário Oficial.
+   LANÇAMENTOS (folha do dia refeita)
+   - Visão por linha (Todas · 1000 · 1001 · 2000 · Fretamento); colunas: Relatório (5 números, "00000") · Linha · Origem ·
+     Destino · Horário · Sentido · Ticket Agência · Fechamento do Motorista · Gratuidades · Total · Trechos · Obs. · Situação.
+   - Trechos por horário: caixa com os trechos da linha no Diário Oficial (oficiais e não oficiais), cada um com Ticket Agência,
+     Fechamento do Motorista e Gratuidades; a linha da folha passa a mostrar a soma. Sem trechos, a linha continua digitável.
+   - Observações por horário (quem, dia e hora), guardadas no registro do dia; valem mesmo sem viagem gravada.
+   - Rascunho no SharePoint (registro do dia), salvo sozinho enquanto se digita; nada fica só no navegador. Rascunho antigo
+     guardado no navegador é levado para o SharePoint ao abrir o dia. Sai o botão "Desfazer o que Digitei".
+   - Aprovação por dia: Em lançamento → Enviado → Aprovado (ou Devolvido). Aprova o administrador ou o proprietário do módulo;
+     dia enviado ou aprovado só é alterado/reaberto por eles (trava também no Banco de Dados, na importação e na exclusão).
+   - Pendências: faixa no alto da página com os dias e o motivo, bolinha vermelha na aba Lançamentos, nas linhas e nas viagens
+     não gravadas; e linha no "Precisa de Você" do Início.
+   - Como fica gravado: Pagantes (o número das análises) = Ticket Agência + Fechamento do Motorista.
+   BANCO DE DADOS
+   - Editar trechos: a mesma caixa (campos no padrão do ERP, total no fim, "Adicionar trecho" por Ponto A → Ponto B do Diário
+     Oficial da linha). Segunda visão "Por Trecho": uma linha por trecho de cada horário, com o total do horário.
+   DIÁRIO OFICIAL
+   - Aba Localidades (depois de Publicações): ID, nome, outros nomes e ordem na rota; Ponto A / Ponto B dos cadastros de linhas
+     e trechos passam a ser lista das localidades.
+   - Trechos Não Oficiais: conferência com a lista de trechos operados (anexo de 18/11) e botão para registrar os que faltam.
+   Listas e colunas novas (Configuração › Executar tudo): "Financeiro — Passageiros · Dias", "Diário Oficial — Localidades" e,
+   em "Financeiro — Passageiros", as colunas Nº do relatório, Ticket Agência e Trechos · detalhe.
+   ===================================================================== */
+LISTS.pax.columns.push(
+  { name: "Relatorio",     displayName: "Nº do relatório",          text: { allowMultipleLines: false, maxLength: 5 } },
+  { name: "TicketAgencia", displayName: "Ticket Agência",           number: integer(0, null) },
+  { name: "TrechosDet",    displayName: "Trechos · detalhe (JSON)", text: { allowMultipleLines: true, textType: "plain" } });
+const PX2_ST = ["Em lançamento", "Enviado", "Aprovado", "Devolvido"];
+LISTS.pax_dias = {
+  key: "pax_dias", displayName: "Financeiro — Passageiros · Dias", siteKey: "financeiro", titleAs: "Dia",
+  description: "Financeiro NMB · um registro por dia da Estatística de Passageiros: situação do lançamento (em lançamento, enviado, aprovado, devolvido), quem enviou e aprovou, as observações por horário e o rascunho da folha ainda não gravada. Editada em Financeiro › Estatística de Passageiros › Lançamentos.",
+  columns: [
+    { name: "Status",      displayName: "Situação",            choice: choice(PX2_ST) },
+    { name: "EnviadoPor",  displayName: "Enviado por",         text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "EnviadoEm",   displayName: "Enviado em",          dateTime: {} },
+    { name: "AprovadoPor", displayName: "Aprovado por",        text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "AprovadoEm",  displayName: "Aprovado em",         dateTime: {} },
+    { name: "Motivo",      displayName: "Motivo (devolução / reabertura)", text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Comentarios", displayName: "Observações por horário (JSON)", text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Rascunho",    displayName: "Rascunho da folha (JSON)", text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "RascunhoPor", displayName: "Rascunho por",        text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "RascunhoEm",  displayName: "Rascunho em",         dateTime: {} },
+    { name: "Historico",   displayName: "Histórico (JSON)",    text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+LISTS.do_local = {
+  key: "do_local", displayName: "Diário Oficial — Localidades", siteKey: "financeiro", titleAs: "ID",
+  description: "Diretoria NMB · localidades (pontos) das linhas: ID curto, nome, outros nomes usados e ordem na rota. Base das listas de Ponto A / Ponto B no Diário Oficial e dos trechos da Estatística de Passageiros. Editada em Diretoria › Diário Oficial › Localidades.",
+  columns: [
+    { name: "Nome",     displayName: "Nome",          required: true, text: { allowMultipleLines: false, maxLength: 100 } },
+    { name: "Apelidos", displayName: "Outros nomes",  text: { allowMultipleLines: false, maxLength: 255 } },
+    { name: "Ordem",    displayName: "Ordem na rota", number: integer(0, 9999) },
+    { name: "Ativo",    displayName: "Ativo",         boolean: {} }
+  ]
+};
+SETUP_ORDER.push("pax_dias", "do_local");
+SETUP_TEXT.pax_dias = `Cria no site Financeiro a lista "Financeiro — Passageiros · Dias" (v0.14.86): situação e aprovação do lançamento de cada dia, observações por horário e rascunho da folha.`;
+SETUP_TEXT.do_local = `Cria no site Financeiro a lista "Diário Oficial — Localidades" (v0.14.86): os pontos das linhas (ID, nome, outros nomes, ordem na rota).`;
+
+/* ---------- localidades ---------- */
+const PX2_LOC_PADRAO = [   /* ordem na rota, de Santa Maria Madalena a Macaé (a Ida vai neste sentido) */
+  ["MAD", "Santa Maria Madalena", "Madalena; Santa Madalena; S. Maria Madalena; Sta. Maria Madalena; St Mª Madalena"],
+  ["IMB", "Visconde de Imbé", "Imbé; Visc. Imbé; Visconde do Imbé"],
+  ["TRJ", "Trajano de Moraes", "Trajano; Trajano de Morais; Trrajano"],
+  ["LOR", "Loreti", "Dr. Loreti; Doutor Loreti"],
+  ["TRI", "Triunfo", "TRIU"],
+  ["CM", "Conceição de Macabu", "Conceição; Macabu; C. de Macabu; C.de Macabu; Conc. de Macabu"],
+  ["CUR", "Curato", "Curata; CURAT"],
+  ["BG", "Brejo Grande", "BR"],
+  ["T.40", "Trevo dos 40", "Trevo 40; Trevo do 40; T40"],
+  ["LAG", "Lagomar", "LG"],
+  ["MC", "Macaé", ""]
+].map(([id, nome, ap], i) => ({ id, nome, apelidos: ap, ordem: (i + 1) * 10, padrao: true }));
+const LOC = { itens: [], cache: null, ver: 0 };
+const px2N = s => normName(String(s || "").replace(/\s*-\s*rj\s*$/i, "")).replace(/[.\s]/g, "");
+function px2Locais(todas) {
+  const its = (LOC.itens || []).filter(x => todas || x.Ativo !== false).map(x => ({ id: String(x.Title || "").trim().toUpperCase(), nome: String(x.Nome || x.Title || "").trim(), apelidos: x.Apelidos || "", ordem: Number(x.Ordem) || 9999, _id: x._id, ativo: x.Ativo !== false })).filter(x => x.id);
+  return (its.length ? its : PX2_LOC_PADRAO).slice().sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome, "pt-BR"));
+}
+function px2Loc(txt) {   /* localidade pelo ID, nome ou outro nome; a lista do SharePoint vem antes do padrão */
+  const k = px2N(txt); if (!k) return null;
+  if (!LOC.cache || LOC.cache.ver !== LOC.ver) {
+    const m = new Map(), cad = px2Locais(true), poe = (chave, l) => { const c = px2N(chave); if (c && !m.has(c)) m.set(c, l); };
+    cad.forEach(l => { poe(l.id, l); poe(l.nome, l); String(l.apelidos || "").split(/[;,]/).forEach(a => poe(a, l)); });
+    PX2_LOC_PADRAO.forEach(p => { const l = cad.find(c => c.id === p.id) || cad.find(c => px2N(c.nome) === px2N(p.nome)) || (cad === PX2_LOC_PADRAO || !LOC.itens.length ? p : null); if (!l) return; poe(p.id, l); poe(p.nome, l); p.apelidos.split(";").forEach(a => poe(a, l)); });
+    LOC.cache = { ver: LOC.ver, m };
+  }
+  return LOC.cache.m.get(k) || null;
+}
+function px2KeyPartes(k) { const m = String(k || "").match(PAX_TRECHO_RE); if (!m) return null; const a = px2Loc(m[1]) || px2Loc(paxTrechoNome(m[1])), b = px2Loc(m[2]) || px2Loc(paxTrechoNome(m[2])); return a && b ? { a, b } : null; }
+function px2KeyCanon(k) { const p = px2KeyPartes(k); return p ? `${p.a.id} X ${p.b.id}` : String(k || "").trim(); }
+function px2KeyNome(k) { const p = px2KeyPartes(k); return p ? `${p.a.nome} × ${p.b.nome}` : paxTrechoLegivel(k); }
+/* trechos da linha no Diário Oficial (oficiais + não oficiais), já no sentido da viagem: [{ k, o, d, of }] */
+function px2TrechosDaLinha(serv, sent) {
+  let ts = []; try { ts = doTrechosConhecidos(paxLinhaNum(serv)) || []; } catch (e) { ts = []; }
+  const m = new Map(), volta = sent === "Volta";
+  ts.forEach(t => { const a = px2Loc(t.Origem), b = px2Loc(t.Destino); if (!a || !b || a === b) return;
+    let o = a, d = b; if ((a.ordem > b.ordem) !== volta) { o = b; d = a; }
+    const k = `${o.id} X ${d.id}`, of = String(t.PubId) !== DO_NO && String(t.PubId) !== (typeof DO_PEND === "string" ? DO_PEND : "PEND");
+    if (!m.has(k)) m.set(k, { k, o, d, of }); else if (of) m.get(k).of = true; });
+  const s = volta ? -1 : 1;
+  return [...m.values()].sort((x, y) => s * (x.o.ordem - y.o.ordem) || s * (x.d.ordem - y.d.ordem));
+}
+function px2Hist(serv, sent) { try { return [...new Set(paxTrechosConhecidos(serv, sent).map(px2KeyCanon))]; } catch (e) { return []; } }
+function px2OD(serv, sent) {   /* origem e destino da linha no sentido da viagem */
+  const cod = String((serv === "Fretamento" ? PAX_SERVICO_INFO.Direto : paxServInfo(serv)).sentidoIda || "").split(/\s+x\s+/i);
+  const a = px2Loc(cod[0]), b = px2Loc(cod[1]); if (!a || !b) return ["—", "—"];
+  return sent === "Volta" ? [b.nome, a.nome] : [a.nome, b.nome];
+}
+const px2LinhaChave = serv => serv === "Fretamento" ? "F" : paxLinhaNum(serv);
+const PX2_LINHAS = [["", "Todas"], ["1000", "1000"], ["1001", "1001"], ["2000", "2000"], ["F", "Fretamento"]];
+
+/* ---------- registro do dia (situação, observações, rascunho) ---------- */
+const PXD = { list: undefined, itens: [], faltam: [] };
+const px2Eu = () => (session.me && session.me.displayName) || "";
+const px2Aprova = () => !!(session.n1 || permModulo("pax") === "proprietario");
+const px2Dia = data => PXD.itens.find(d => d.Title === data) || null;
+const px2DiaSt = data => { const d = px2Dia(data); return (d && PX2_ST.includes(d.Status) && d.Status) || "Em lançamento"; };
+function px2Travado(data) { const s = px2DiaSt(data); return (s === "Enviado" || s === "Aprovado") && !px2Aprova(); }
+function px2TravaMsg(data) { const s = px2DiaSt(data); return `O lançamento de ${fmtDate(data)} está ${s === "Aprovado" ? "aprovado" : "enviado para aprovação"}: só um administrador ou o proprietário do módulo pode alterar ou reabrir.`; }
+const px2J = (v, d) => { try { const x = JSON.parse(v || ""); return x == null ? d : x; } catch (e) { return d; } };
+function px2Hst(v, txt) { const h = px2J(v, []); h.push({ em: new Date().toISOString(), por: px2Eu(), o: txt }); return JSON.stringify(h.slice(-60)); }
+async function px2Carregar() {
+  try {
+    const ls = await SP.lists(PAX_STATE.site.id);
+    PXD.list = ls.find(l => l.displayName === LISTS.pax_dias.displayName) || null;
+    PXD.itens = PXD.list ? (await SP.items(PAX_STATE.site.id, PXD.list.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+  } catch (e) { PXD.list = PXD.list || null; }
+  try { if (PAX_STATE.list && !PXD.colsOk) { const r = await graph(`/sites/${PAX_STATE.site.id}/lists/${PAX_STATE.list.id}/columns?$select=name`); const nomes = r && Array.isArray(r.value) ? new Set(r.value.map(c => c.name)) : null;
+      PXD.faltam = nomes ? ["Relatorio", "TicketAgencia", "TrechosDet"].filter(c => !nomes.has(c)) : []; PXD.colsOk = !!nomes && !PXD.faltam.length; } } catch (e) { PXD.faltam = []; }
+  try { await doCarregar(); await doGarantirLinhas(); } catch (e) {}
+}
+{ const l0 = loadPax; loadPax = async function () { const r = await l0.apply(this, arguments); if (PAX_STATE.list) await px2Carregar(); return r; }; window.loadPax = loadPax; }
+async function px2DiaGrava(data, fn) {   /* lê o registro de novo antes de gravar: observações e rascunho de outra pessoa não se perdem */
+  if (!PXD.list) throw new Error(`A lista "${LISTS.pax_dias.displayName}" ainda não existe: ${session.n1 ? "rode Sistema › Configuração › Executar tudo" : "peça a um administrador para rodar a Configuração"}.`);
+  let d = px2Dia(data); const sid = PAX_STATE.site.id;
+  if (d) { try { const it = await graph(`/sites/${sid}/lists/${PXD.list.id}/items/${d._id}?$expand=fields`); if (it && it.fields) Object.assign(d, it.fields); } catch (e) {} }
+  const f = fn(d || {}); if (!f) return d;
+  if (d) { await SP.update(sid, PXD.list.id, d._id, f); Object.assign(d, f); }
+  else { const it = await SP.create(sid, PXD.list.id, Object.assign({ Title: data }, f)); d = Object.assign({ _id: String(it.id), Title: data }, f); PXD.itens.push(d); }
+  return d;
+}
+/* trava de gravação: dia enviado ou aprovado só muda pelas mãos de quem aprova */
+{ const c1 = SP.create, u1 = SP.update, eh = l => PAX_STATE.list && l === PAX_STATE.list.id;
+  SP.create = function (s, l, f) { if (eh(l) && f && f.Data) { const d = ymd(f.Data); if (px2Travado(d)) return Promise.reject(new Error(px2TravaMsg(d))); } return c1.apply(SP, arguments); };
+  SP.update = function (s, l, id, f) { if (eh(l)) { const x = PAX_STATE.itens.find(i => i._id === String(id)), ds = [x && x.Data, f && f.Data ? ymd(f.Data) : ""].filter(Boolean), t = ds.find(px2Travado); if (t) return Promise.reject(new Error(px2TravaMsg(t))); } return u1.apply(SP, arguments); };
+}
+{ const g0 = guardaEscrita;
+  guardaEscrita = function (method, path) {
+    if (/^DELETE$/i.test(method || "") && PAX_STATE.list) { const m = String(path || "").match(new RegExp(`/lists/${PAX_STATE.list.id}/items/(\\d+)`)); const x = m && PAX_STATE.itens.find(i => i._id === m[1]);
+      if (x && px2Travado(x.Data)) { const e = new Error(px2TravaMsg(x.Data)); e.status = 403; e.semAcesso = true; throw e; } }
+    return g0.apply(this, arguments);
+  };
+}
+
+/* ---------- valores de uma viagem: ticket, fechamento, gratuidades e trechos ---------- */
+const px2Int = v => { const s = String(v == null ? "" : v).trim(); if (s === "") return null; return /^\d{1,5}$/.test(s) ? Number(s) : NaN; };
+function px2DetDe(x) {   /* { "CM X MC": { t, f, g } } a partir do detalhe novo ou do JSON antigo de trechos (tudo como fechamento) */
+  const out = {}, d = px2J(x.TrechosDet, null);
+  if (d && typeof d === "object" && Object.keys(d).length) { Object.entries(d).forEach(([k, v]) => { const t = Number(v && v.t) || 0, f = Number(v && v.f) || 0, g = Number(v && v.g) || 0; if (t || f || g) out[px2KeyCanon(k)] = { t, f, g }; }); return out; }
+  Object.entries(paxTrechos(x)).forEach(([k, v]) => { if (/gratuid/i.test(k) || !(Number(v) > 0)) return; const kk = px2KeyCanon(k); out[kk] = { t: 0, f: (out[kk] ? out[kk].f : 0) + Number(v), g: 0 }; });
+  return out;
+}
+const px2DetTem = det => !!det && Object.values(det).some(v => Number(v.t) || Number(v.f) || Number(v.g));
+function px2DetSoma(det) { const s = { t: 0, f: 0, g: 0 }; Object.values(det || {}).forEach(v => { s.t += Number(v.t) || 0; s.f += Number(v.f) || 0; s.g += Number(v.g) || 0; }); return s; }
+const px2DetTxt = det => JSON.stringify(Object.keys(det || {}).sort().map(k => [k, Number(det[k].t) || 0, Number(det[k].f) || 0, Number(det[k].g) || 0]).filter(a => a[1] || a[2] || a[3]));
+function px2Vals(l) {   /* valores atuais da linha da folha: { rel, t, f, g, det, erro } */
+  const rel = String(l.rel || "").trim(), tem = px2DetTem(l.det);
+  if (tem) { const s = px2DetSoma(l.det), gx = px2Int(l.gx); return { rel, t: s.t, f: s.f, g: s.g + (gx || 0), det: l.det, gx: gx || 0, erro: Number.isNaN(gx) || (rel !== "" && !/^\d{5}$/.test(rel)), vazio: false }; }
+  const t = px2Int(l.tk), f = px2Int(l.pag), g = px2Int(l.grat);
+  return { rel, t: t || 0, f: f || 0, g: g || 0, det: null, gx: 0, erro: [t, f, g].some(Number.isNaN) || (rel !== "" && !/^\d{5}$/.test(rel)), vazio: t == null && f == null && g == null && rel === "" };
+}
+function px2Efet(l) {   /* o que vale para a linha agora: digitado, soma dos trechos ou, em branco, o que está gravado */
+  const v = px2Vals(l), b = l.b || { rel: "", t: 0, f: 0, g: 0 }; if (px2DetTem(l.det)) return { rel: v.rel, t: v.t, f: v.f, g: v.g, det: l.det };
+  const t = px2Int(l.tk), f = px2Int(l.pag), g = px2Int(l.grat), id = !!l.id;
+  return { rel: v.rel, t: t == null ? (id ? b.t : 0) : (t || 0), f: f == null ? (id ? b.f : 0) : (f || 0), g: g == null ? (id ? b.g : 0) : (g || 0), det: null };
+}
+paxLoteSt = function (l) {   /* "" vazio · novo · igual · alt · erro */
+  const v = px2Vals(l);
+  if (v.erro) return "erro";
+  if (l.livre && !v.vazio && !/^\d{2}:\d{2}$/.test(l.hora || "")) return "erro";
+  if (!l.id) return v.vazio ? "" : "novo";
+  const b = l.b || {}, at = px2Efet(l);
+  return at.rel === (b.rel || "") && at.t === b.t && at.f === b.f && at.g === b.g && px2DetTxt(at.det) === (b.det || "[]") ? "igual" : "alt";
+};
+function px2Visivel(l) { const f = PAX_UI.loteLinha || ""; return !f || px2LinhaChave(l.serv) === f; }
+paxLoteTot = function (soVisiveis) { const L = PAX_UI.lote, t = { n: 0, tk: 0, p: 0, g: 0, novo: 0, alt: 0, erro: 0 }; if (!L) return t;
+  L.linhas.forEach(l => { if (soVisiveis && !px2Visivel(l)) return; const st = paxLoteSt(l); if (st === "erro") { t.erro++; return; } if (!st) return; const e = px2Efet(l);
+    t.n++; t.tk += e.t; t.p += e.f; t.g += e.g; if (st === "novo") t.novo++; if (st === "alt") t.alt++; }); return t; };
+paxLoteSujo = function () { const t = paxLoteTot(); return !!(t.novo || t.alt); };
+/* a folha: junta ao que as versões anteriores montam (grade da Tabela de Horários + gravado) os campos novos e o rascunho do SharePoint */
+{ const m0 = paxLoteMontar;
+  paxLoteMontar = function (data) {
+    const L = m0.apply(this, arguments); let local = false;
+    L.linhas.forEach(l => { const x = l.id ? PAX_STATE.itens.find(i => i._id === String(l.id)) : null, dig = !x || (l.pag !== String(Number(x.Pagantes || 0)) || l.grat !== String(Number(x.Gratuidade || 0)));
+      if (x) { const tk = Number(x.TicketAgencia || 0), g = Number(x.Gratuidade || 0); let det = px2DetDe(x), s = px2DetSoma(det);
+        if (s.t + s.f !== Number(x.Pagantes || 0) || s.t !== tk || s.g > g) { det = {}; s = px2DetSoma(det); }   /* trechos antigos que não fecham com os totais da viagem: a linha vale pelos totais (os trechos continuam no Banco de Dados) */
+        l.b = { rel: String(x.Relatorio || ""), t: tk, f: Math.max(0, Number(x.Pagantes || 0) - tk), g, det: px2DetTxt(det) };
+        if (!dig || !l.id) { l.rel = l.b.rel; l.tk = tk ? String(tk) : ""; l.pag = String(l.b.f); l.grat = String(g); l.det = px2DetTem(det) ? det : null; l.gx = l.det && g > s.g ? String(g - s.g) : ""; }
+        else { l.rel = l.b.rel; l.tk = tk ? String(tk) : ""; l.det = null; l.gx = ""; local = true; } }
+      else { l.b = null; l.rel = l.rel || ""; l.tk = l.tk || ""; l.det = l.det || null; l.gx = l.gx || ""; if (l.pag !== "" || l.grat !== "") local = true; } });
+    const dia = px2Dia(data), r = dia ? px2J(dia.Rascunho, null) : null;
+    if (r && Array.isArray(r.linhas)) { r.linhas.forEach(d => { let at = L.linhas.find(x => x.serv === d.serv && x.hora === d.hora && x.sent === d.sent);
+        if (!at) { at = { serv: d.serv, hora: d.hora, sent: d.sent, id: null, b: null, livre: true }; L.linhas.push(at); }
+        Object.assign(at, { rel: d.rel || "", tk: d.tk || "", pag: d.pag || "", grat: d.grat || "", det: d.det && typeof d.det === "object" ? d.det : null, gx: d.gx || "" }); });
+      L.rasc = dia.RascunhoEm || null; L.rascPor = dia.RascunhoPor || ""; local = false; }
+    L.migrar = !!(local && L.rasc);   /* havia rascunho só neste navegador (versões anteriores): vai para o SharePoint na primeira gravação automática */
+    return L;
+  };
+}
+/* ---------- rascunho no SharePoint ---------- */
+function px2RascColhe() { const L = PAX_UI.lote; if (!L) return null;
+  return { data: L.data, linhas: L.linhas.filter(l => ["novo", "alt", "erro"].includes(paxLoteSt(l))).map(l => ({ serv: l.serv, hora: l.hora, sent: l.sent, rel: l.rel || "", tk: l.tk || "", pag: l.pag || "", grat: l.grat || "", det: px2DetTem(l.det) ? l.det : null, gx: l.gx || "", livre: !!l.livre })) }; }
+function px2RascPode(data) { return !!PXD.list && !px2Travado(data); }
+function px2RascFila(p) {   /* uma gravação por vez, na ordem */
+  PAX_UI.rascSt = "salvando"; px2RascPinta();
+  const ant = PAX_UI._rascP || Promise.resolve();
+  const prox = ant.catch(() => {}).then(async () => {
+    const d = px2Dia(p.data); if (!p.linhas.length && !(d && d.Rascunho)) return;
+    const em = new Date().toISOString();
+    await px2DiaGrava(p.data, () => p.linhas.length ? { Rascunho: JSON.stringify({ linhas: p.linhas }), RascunhoPor: px2Eu() || null, RascunhoEm: em } : { Rascunho: null, RascunhoPor: null, RascunhoEm: null });
+    try { paxRascTira(p.data); } catch (e) {}
+    if (PAX_UI.lote && PAX_UI.lote.data === p.data) { PAX_UI.lote.rasc = p.linhas.length ? em : null; PAX_UI.lote.rascPor = px2Eu(); PAX_UI.lote.migrar = false; }
+  });
+  PAX_UI._rascP = prox;
+  prox.then(() => { if (PAX_UI._rascP === prox) { PAX_UI.rascSt = "salvo"; PAX_UI.rascErro = ""; px2RascPinta(); px2AlertaPinta(); } }, e => { if (PAX_UI._rascP === prox) { PAX_UI.rascSt = "erro"; PAX_UI.rascErro = (e && e.message) || String(e); px2RascPinta(); } });
+  return prox;
+}
+function px2RascAgendar() { const L = PAX_UI.lote; if (!L || !px2RascPode(L.data)) return; PAX_UI.rascSt = "pendente"; px2RascPinta(); clearTimeout(PAX_UI._rascT); PAX_UI._rascT = setTimeout(() => { const p = px2RascColhe(); if (p) px2RascFila(p); }, 2500); }
+async function px2RascAgora() { clearTimeout(PAX_UI._rascT); const p = px2RascColhe(); if (!p) return; if (!px2RascPode(p.data)) { if (p.linhas.length) throw new Error(PXD.list ? px2TravaMsg(p.data) : `a lista "${LISTS.pax_dias.displayName}" ainda não existe`); return; } return px2RascFila(p); }
+function px2RascPinta() {
+  const el = $("px2RascSt"), L = PAX_UI.lote; if (!el || !L) return;
+  const hora = iso => iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  const st = PAX_UI.rascSt, suja = paxLoteSujo();
+  el.className = "px2-rasc-st " + (st === "erro" ? "err" : st === "pendente" || st === "salvando" ? "pend" : "");
+  el.innerHTML = !PXD.list ? (suja ? `<i class="px2-dot"></i>O rascunho <b>não está sendo guardado</b>: falta criar a lista de dias (Configuração). Grave antes de sair.` : "")
+    : st === "erro" ? `<i class="px2-dot"></i>Não foi possível salvar o rascunho (${esc(String(PAX_UI.rascErro || "").slice(0, 90))}). <a href="#" onclick="event.preventDefault();paxRascSalvar()">Tentar de novo</a>`
+    : st === "salvando" ? "Salvando o rascunho no SharePoint…" : st === "pendente" ? "Alterações ainda não salvas no rascunho…"
+    : suja && L.rasc ? `Rascunho salvo no SharePoint em ${esc(hora(L.rasc))}${L.rascPor && L.rascPor !== px2Eu() ? ` por ${esc(L.rascPor)}` : ""}. Ainda <b>não está gravado</b> nas viagens.` : "";
+}
+paxRascSalva = function (quieto) {   /* chamado também pelas versões anteriores ao trocar de aba ou sair do módulo */
+  const p = px2RascColhe(); if (!p || !p.linhas.length) { if (!quieto) toast("Nada digitado para guardar."); return false; }
+  if (!px2RascPode(p.data)) { if (!quieto) toast(PXD.list ? px2TravaMsg(p.data) : "O rascunho não pôde ser guardado: falta criar a lista de dias (Sistema › Configuração).", 7000); return false; }
+  clearTimeout(PAX_UI._rascT); px2RascFila(p); return true;
+};
+window.paxRascSalvar = async () => { try { const p = px2RascColhe(); if (!p || !p.linhas.length) { toast("Nada digitado para guardar."); return; } await px2RascAgora(); toast(`Rascunho de ${fmtDate(p.data)} salvo no SharePoint. Ainda não está gravado nas viagens.`, 5000); } catch (e) { toast("Não foi possível salvar o rascunho: " + e.message, 8000); } };
+window.addEventListener("beforeunload", ev => { try { if (PAX_STATE.tab === "lancar" && PAX_UI.lote && paxLoteSujo() && (PAX_UI.rascSt === "pendente" || PAX_UI.rascSt === "salvando" || PAX_UI.rascSt === "erro" || !PXD.list)) { ev.preventDefault(); ev.returnValue = ""; } } catch (e) {} });
+
+{ const t0 = window.paxTab; window.paxTab = function (t) { try { if (PAX_STATE.tab === "lancar" && t !== "lancar" && PAX_UI.lote && paxLoteSujo() && !px2RascPode(PAX_UI.lote.data) && !confirm("Há viagens digitadas e ainda não gravadas, e o rascunho não pode ser guardado. Sair da folha e perder o que foi digitado?")) return; } catch (e) {} return t0.apply(this, arguments); }; }
+/* ---------- pendências ---------- */
+function px2Pend() {
+  const out = []; if (!PAX_STATE.ready || !podeEditar("pax")) return out; const ap = px2Aprova(), hoje = todayISO(), comViagem = new Set(PAX_STATE.itens.map(x => x.Data));
+  PXD.itens.forEach(d => { const data = d.Title; if (!/^\d{4}-\d{2}-\d{2}$/.test(data || "")) return; const st = px2DiaSt(data);
+    if (st === "Enviado") out.push({ data, k: ap ? "aprovar" : "aguarda", txt: ap ? "para aprovar" : "aguardando aprovação", det: d.EnviadoPor ? `enviado por ${d.EnviadoPor}` : "" });
+    else if (st === "Devolvido") out.push({ data, k: "dev", txt: "devolvido", det: d.Motivo || "" });
+    if (d.Rascunho) out.push({ data, k: "rasc", txt: "rascunho não gravado", det: d.RascunhoPor ? `de ${d.RascunhoPor}` : "" });
+    else if (st === "Em lançamento" && data < hoje && comViagem.has(data)) out.push({ data, k: "enviar", txt: "falta enviar para aprovação", det: "" });
+  });
+  return out.sort((a, b) => a.data.localeCompare(b.data));
+}
+const px2PendN = () => px2Pend().filter(p => p.k !== "aguarda").length;
+function px2AlertaHtml() {
+  const ps = px2Pend(); if (!ps.length) return "";
+  const n = ps.filter(p => p.k !== "aguarda").length;
+  return `<div class="px2-alerta${n ? "" : " info"}" id="px2Alerta" data-sem-titulo><span class="px2-al-t">${n ? `<i class="px2-dot"></i><b>${n} pendência(s) nos lançamentos</b>` : "<b>Lançamentos aguardando aprovação</b>"} · aba Lançamentos, no dia indicado:</span>
+    ${ps.slice(0, 14).map(p => `<button type="button" class="chip px2-al-c" onclick="px2IrDia('${p.data}')" title="${esc(p.det || "")}">${p.k !== "aguarda" ? '<i class="px2-dot"></i>' : ""}<b>${esc(fmtDate(p.data))}</b> · ${esc(p.txt)}</button>`).join("")}${ps.length > 14 ? `<span class="sup">e mais ${ps.length - 14}</span>` : ""}</div>`;
+}
+function px2AlertaPinta() {
+  const body = $("paxBody"); if (!body) return; const velho = $("px2Alerta"); if (velho) velho.remove();
+  const h = px2AlertaHtml(); if (h) body.insertAdjacentHTML("afterbegin", h);
+  const n = px2PendN(); body.querySelectorAll(".op-topo .seg-tabs button").forEach(b => { if (!/^Lançamentos/.test(b.textContent.trim())) return; const d = b.querySelector(".px2-dot"); if (d) d.remove(); if (n) b.insertAdjacentHTML("beforeend", `<i class="px2-dot" title="${n} pendência(s)"></i>`); });
+}
+window.px2IrDia = async d => { if (PAX_STATE.tab === "lancar" && PAX_UI.lote) return paxLoteDia(0, d); PAX_UI._abrirDia = d; paxTab("lancar"); };
+{ const p0 = paintPax;
+  paintPax = function () {
+    if (PAX_UI._abrirDia && PAX_STATE.ready) { const d = PAX_UI._abrirDia; PAX_UI._abrirDia = null; if (/^\d{4}-\d{2}-\d{2}$/.test(d)) { PAX_STATE.mes = d.slice(0, 7); PAX_UI.lote = paxLoteMontar(d); } }
+    const sy = window.scrollY, r = p0.apply(this, arguments);
+    try { px2AlertaPinta(); if (PAX_STATE.tab === "lancar") { px2RascPinta(); const L = PAX_UI.lote; if (L && L.migrar && paxLoteSujo()) px2RascAgendar(); } if (PAX_UI._mantemRolagem) { PAX_UI._mantemRolagem = false; window.scrollTo(0, sy); } } catch (e) {}
+    return r;
+  };
+  window.paintPax = paintPax;
+}
+
+/* ---------- a folha do dia ---------- */
+const px2Pill = st => `<span class="pill ${{ "Em lançamento": "st-aguardando", "Enviado": "st-pend", "Aprovado": "st-pago", "Devolvido": "st-venc" }[st] || "st-cinza"}"><i></i>${esc(st)}</span>`;
+function px2ComDe(data) { const d = px2Dia(data), c = d ? px2J(d.Comentarios, {}) : {}; return c && typeof c === "object" ? c : {}; }
+const px2ComK = l => `${l.serv}|${l.hora}|${l.sent}`;
+paxLoteHtml = function () {
+  const L = PAX_UI.lote, d = dLocal(L.data), fer = feriadoNome(L.data), tipo = { util: "Dia Útil", sab: "Sábado", dom: fer ? "Feriado" : "Domingo" }[paxTipoDia(L.data)] || "";
+  const st = px2DiaSt(L.data), dia = px2Dia(L.data) || {}, trav = px2Travado(L.data), ap = px2Aprova(), coms = px2ComDe(L.data), filtro = PAX_UI.loteLinha || "";
+  const optS = v => PAX_LOTE_SERV.map(([k, r]) => `<option value="${k}" ${k === v ? "selected" : ""}>${esc(r)}</option>`).join("");
+  const dis = trav ? "disabled" : "";
+  let grupo = "";
+  const rows = L.linhas.map((l, i) => {
+    if (!px2Visivel(l)) return "";
+    let cab = ""; const [ori, des] = px2OD(l.serv, l.sent);
+    if (!l.livre) { const gk = `${l.serv}|${l.sent}`; if (gk !== grupo) { grupo = gk; cab = `<div class="pl-grupo px2-grupo"><b>${esc(paxLoteServRot(l.serv))}</b> · ${esc(l.sent)} <span class="sup">${esc(ori)} → ${esc(des)}</span></div>`; } }
+    else if (grupo !== "livre") { grupo = "livre"; cab = `<div class="pl-grupo px2-grupo"><b>Outras Viagens</b> · fora da grade do dia</div>`; }
+    const tem = px2DetTem(l.det), v = px2Vals(l), nTr = tem ? Object.values(l.det).filter(x => Number(x.t) || Number(x.f) || Number(x.g)).length : 0, nCom = (coms[px2ComK(l)] || []).length;
+    const fixo = l.livre
+      ? `<div class="lanc-cell"><select class="lanc-in lanc-sel" data-k="serv" aria-label="Linha" ${dis}>${optS(l.serv)}</select></div><div class="lanc-cell pl-fixo px2-od">${esc(ori)}</div><div class="lanc-cell pl-fixo px2-od">${esc(des)}</div><div class="lanc-cell"><input class="lanc-in" data-k="hora" value="${esc(l.hora)}" placeholder="05:20" maxlength="5" aria-label="Horário" ${dis}></div><div class="lanc-cell"><select class="lanc-in lanc-sel" data-k="sent" aria-label="Sentido" ${dis}><option ${l.sent !== "Volta" ? "selected" : ""}>Ida</option><option ${l.sent === "Volta" ? "selected" : ""}>Volta</option></select></div>`
+      : `<div class="lanc-cell pl-fixo">${esc(paxLoteServRot(l.serv))}</div><div class="lanc-cell pl-fixo px2-od" title="${esc(ori)}">${esc(ori)}</div><div class="lanc-cell pl-fixo px2-od" title="${esc(des)}">${esc(des)}</div><div class="lanc-cell pl-fixo pl-hora">${esc(l.hora)}${l.serv === "Fretamento" ? " (F)" : ""}</div><div class="lanc-cell pl-fixo">${esc(l.sent)}</div>`;
+    const num = (k, val, rot) => `<div class="lanc-cell"><input class="lanc-in num px2-n${tem ? " px2-soma" : ""}" inputmode="numeric" maxlength="4" data-k="${k}" value="${esc(tem ? String(val) : (l[k] || ""))}" ${tem ? 'readonly tabindex="-1" title="Soma dos trechos: altere em Trechos"' : ""} ${dis} aria-label="${rot} ${esc(l.hora)}"></div>`;
+    return `${cab}<div class="lanc-row pl-row px2-row" data-i="${i}">
+      <div class="lanc-cell"><input class="lanc-in px2-rel" inputmode="numeric" maxlength="5" data-k="rel" value="${esc(l.rel || "")}" placeholder="00000" ${dis} aria-label="Nº do relatório ${esc(l.hora)}"></div>${fixo}
+      ${num("tk", v.t, "Ticket Agência")}${num("pag", v.f, "Fechamento do Motorista")}${num("grat", v.g, "Gratuidades")}
+      <div class="lanc-calc pl-tot">—</div>
+      <div class="lanc-cell"><button type="button" class="btn sm px2-btr${tem ? " on" : ""}" onclick="px2TrechosDaFolha(${i})" title="Lançar por trecho (Ticket Agência, Fechamento do Motorista e Gratuidades)">${tem ? `${nTr} ${nTr === 1 ? "trecho" : "trechos"}` : "+ Trechos"}</button></div>
+      <div class="lanc-cell"><button type="button" class="btn sm px2-bcom${nCom ? " on" : ""}" onclick="px2Coment(${i})" title="${nCom ? `${nCom} observação(ões) neste horário` : "Registrar uma observação neste horário"}">Obs.${nCom ? ` <b>${nCom}</b>` : ""}</button></div>
+      <div class="lanc-cell"><span class="pl-st vz"></span></div>
+      <div class="lanc-cell">${l.livre && !trav ? `<button type="button" class="lanc-x" onclick="paxLoteTira(${i})" title="Remover esta linha" aria-label="Remover">×</button>` : ""}</div></div>`;
+  }).join("");
+  const chips = PX2_LINHAS.map(([k, r]) => { const n = L.linhas.filter(l => !k || px2LinhaChave(l.serv) === k).length; return `<button type="button" class="chip${filtro === k ? " on" : ""}" data-l="${k}" onclick="px2LoteLinha('${k}')">${esc(r)} <span class="sup">${n}</span></button>`; }).join("");
+  const hst = px2J(dia.Historico, []);
+  const quando = iso => iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  const stTxt = st === "Enviado" ? `Enviado por ${esc(dia.EnviadoPor || "—")} em ${esc(quando(dia.EnviadoEm))}.` : st === "Aprovado" ? `Aprovado por ${esc(dia.AprovadoPor || "—")} em ${esc(quando(dia.AprovadoEm))}.` : st === "Devolvido" ? `Devolvido${dia.Motivo ? `: <i>${esc(dia.Motivo)}</i>` : "."}` : "";
+  const bts = [];
+  if (PXD.list) {
+    if ((st === "Em lançamento" || st === "Devolvido")) bts.push(`<button class="btn primary" id="px2Enviar" onclick="px2Enviar()">Enviar para Aprovação</button>`);
+    if (st === "Enviado") { if (ap) bts.push(`<button class="btn primary" onclick="px2Aprovar()">Aprovar</button><button class="btn" onclick="px2Devolver('Devolvido')">Devolver</button>`); else bts.push(`<button class="btn" onclick="px2Retirar()">Retirar o Envio</button>`); }
+    if (st === "Aprovado" && ap) bts.push(`<button class="btn" onclick="px2Devolver('Em lançamento')">Reabrir</button>`);
+  }
+  const avisos = [];
+  if (!PXD.list) avisos.push(`<div class="import-help pax-tab-aviso"><b>Falta rodar a Configuração.</b> A lista "${esc(LISTS.pax_dias.displayName)}" ainda não existe: sem ela não há rascunho no SharePoint, observações nem aprovação. ${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › Executar tudo</a>.` : "Peça a um administrador."}</div>`);
+  if (PXD.faltam.length) avisos.push(`<div class="import-help pax-tab-aviso"><b>Faltam colunas na lista de passageiros</b> (${esc(PXD.faltam.join(", "))}): Relatório, Ticket Agência e o detalhe dos trechos só são gravados depois de rodar Sistema › Configuração › Executar tudo.</div>`);
+  if (trav) avisos.push(`<div class="import-help pax-tab-aviso">${esc(px2TravaMsg(L.data))} As observações continuam liberadas.</div>`);
+  if (st === "Aprovado" && ap) avisos.push(`<div class="import-help pax-tab-aviso">Dia <b>aprovado</b>: o que você alterar aqui fica registrado no histórico do dia. Para devolver ao lançamento, use "Reabrir".</div>`);
+  if (!L.tab) avisos.push(`<div class="import-help pax-tab-aviso">Tabela de Horários indisponível (${esc(PAXH.erro || "não lida")}): a grade foi montada pelos dias parecidos e os lançamentos <b>não são conferidos</b> com a tabela.</div>`);
+  else { const nf = L.linhas.filter(l => l.fora).length; if (nf) avisos.push(`<div class="import-help pax-tab-aviso"><b>${nf} viagem(ns) gravada(s) neste dia fora da Tabela de Horários</b> (marcadas "Fora da Tabela"). Corrija no Banco de Dados ou cadastre o horário na Tabela de Horários.</div>`); }
+  return `<div class="lanc-ed pax-lanc px2" data-sem-titulo>
+    <div class="lanc-card"><div class="lanc-card-h"><h3>Lançamento do Dia</h3><span class="row" style="gap:8px"><button class="btn" onclick="paxExcelMes()" title="Excel no padrão da empresa com as viagens gravadas do mês deste dia">Exportar Excel do Mês</button></span></div>
+      <div class="pl-dia"><button class="btn" onclick="paxLoteDia(-1)" aria-label="Dia anterior">‹ Dia Anterior</button>
+        <input type="date" class="lanc-in" id="paxLoteData" value="${esc(L.data)}" onchange="paxLoteDia(0, this.value)" aria-label="Dia do lançamento">
+        <button class="btn" onclick="paxLoteDia(1)" aria-label="Próximo dia">Próximo Dia ›</button>
+        <span class="pl-dow"><b>${esc(DIAS_SEMANA[d.getDay()])}</b> · ${esc(tipo)}${fer ? ` (${esc(fer)})` : ""}</span><span class="grow"></span><span class="px2-dia-st" id="px2DiaSt">${px2Pill(st)}</span>${bts.join("")}</div>
+      ${stTxt ? `<p class="hint" style="margin:10px 0 0">${stTxt}</p>` : ""}
+      <p class="hint" style="margin:10px 0 0">${L.tab ? `A grade traz os horários da <b>Tabela de Horários</b> para ${esc(paxHorDiaRot(L.data))} e o que já está gravado. ` : ""}Em cada horário, use <b>Trechos</b> para lançar Ticket Agência, Fechamento do Motorista e Gratuidades por trecho (a linha mostra a soma), ou digite direto na linha. Linha em branco não é gravada. <b>Enter</b> desce para a linha de baixo.${hst.length ? ` <a href="#" onclick="event.preventDefault();px2Historico()">Histórico do dia (${hst.length})</a>` : ""}</p></div>
+    ${avisos.join("")}
+    <div class="lanc-card"><div class="lanc-card-h"><h3>Viagens</h3><span class="px2-chips" role="group" aria-label="Linha">${chips}</span><span class="grow"></span><span class="cap-card-s" id="paxLoteRes"></span></div>
+      <div class="px2-rola"><div class="lanc-grid px2-grid" id="paxLoteGrid"><div class="lanc-row lanc-head pl-row px2-row"><div>Relatório</div><div>Linha</div><div>Origem</div><div>Destino</div><div>Horário</div><div>Sentido</div><div>Ticket Agência</div><div>Fechamento do Motorista</div><div>Gratuidades</div><div>Total</div><div>Trechos</div><div>Obs.</div><div>Situação</div><div></div></div>${rows || `<div class="px2-vazio">Nenhum horário ${filtro ? "desta linha " : ""}na grade deste dia.</div>`}</div></div>
+      ${trav ? "" : `<button type="button" class="lanc-add" onclick="paxLoteAdd()">+ Adicionar Viagem (outro serviço ou sentido da tabela)</button>`}</div>
+    <div class="lanc-tots eq" id="paxLoteTots"></div>
+    <div class="pl-acoes"><span class="px2-rasc-st" id="px2RascSt"></span><span class="grow"></span>${trav ? "" : `<button class="btn" id="paxLoteRasc" onclick="paxRascSalvar()" title="Guarda no SharePoint o que foi digitado, sem gravar nas viagens, para continuar depois (também é salvo sozinho)">Salvar Rascunho</button><button class="btn primary" id="paxLoteGo" onclick="paxLoteSalvar()">Gravar</button>`}</div></div>`;
+};
+paxLoteRodape = function () {
+  const L = PAX_UI.lote, el = $("paxLoteTots"); if (!el || !L) return;
+  const filtro = PAX_UI.loteLinha || "", t = paxLoteTot(true), g = paxLoteTot(false);
+  const c = (l, v, forte) => `<div class="lanc-tot${forte ? " forte" : ""}"><div class="l">${l}</div><div class="v">${v}</div></div>`, nf = n => n.toLocaleString("pt-BR");
+  el.innerHTML = c(`Viagens Preenchidas${filtro ? ` · ${filtro === "F" ? "Fretamento" : filtro}` : ""}`, t.n) + c("Ticket Agência", nf(t.tk)) + c("Fechamento do Motorista", nf(t.p)) + c("Gratuidades", nf(t.g)) + c("Total de Passageiros", nf(t.tk + t.p + t.g), true);
+  const b = $("paxLoteGo"); if (b) { b.disabled = !(g.novo || g.alt) || !!g.erro; b.textContent = g.erro ? `Corrija ${g.erro} linha(s)` : g.novo || g.alt ? `Gravar ${g.novo + g.alt} Viagem(ns)` : "Nada a Gravar"; }
+  const br = $("paxLoteRasc"); if (br) br.disabled = !(g.novo || g.alt || g.erro);
+  const be = $("px2Enviar"); if (be) { const tem = PAX_STATE.itens.some(x => x.Data === L.data); be.disabled = !!(g.novo || g.alt || g.erro) || !tem; be.title = g.novo || g.alt || g.erro ? "Grave as viagens digitadas antes de enviar" : tem ? "" : "Não há viagem gravada neste dia"; }
+  const r = $("paxLoteRes"); if (r) r.textContent = g.novo || g.alt ? `${g.novo} nova(s) · ${g.alt} alterada(s) · ainda não gravadas` : "";
+  const sujas = new Set();
+  L.linhas.forEach((l, i) => { const st = paxLoteSt(l); if (st === "novo" || st === "alt" || st === "erro") sujas.add(px2LinhaChave(l.serv));
+    const row = document.querySelector(`#paxLoteGrid [data-i="${i}"]`); if (!row) return;
+    const e = px2Efet(l), tt = row.querySelector(".pl-tot");
+    if (tt) tt.textContent = !st || st === "erro" ? "—" : String(e.t + e.f + e.g);
+    const ch = row.querySelector(".pl-st"); if (ch) { const fora = l.fora && (st === "igual" || !st);
+      ch.className = "pl-st " + (fora ? "igual fora" : st || "vz"); ch.innerHTML = fora ? "Fora da Tabela" : st === "novo" || st === "alt" || st === "erro" ? `<i class="px2-dot"></i>${{ novo: "Nova", alt: "Alterada", erro: "Confira" }[st]}` : st === "igual" ? "Gravada" : "";
+      ch.title = fora ? "Gravada, mas não existe na Tabela de Horários para este dia" : st === "erro" ? "Use números inteiros; relatório com 5 números; horário HH:MM" : st === "novo" || st === "alt" ? "Ainda não gravada" : ""; }
+    const rl = row.querySelector(".px2-rel"); if (rl) rl.classList.toggle("ruim", !!(l.rel && !/^\d{5}$/.test(l.rel))); });
+  document.querySelectorAll(".px2-chips .chip").forEach(ch => { const k = ch.dataset.l, tem = k ? sujas.has(k) : sujas.size > 0, d = ch.querySelector(".px2-dot"); if (d) d.remove(); if (tem) ch.insertAdjacentHTML("afterbegin", `<i class="px2-dot" title="Há viagem digitada e ainda não gravada"></i>`); });
+  px2RascPinta();
+};
+paxLoteWire = function () {
+  const gridEl = $("paxLoteGrid"); if (!gridEl) return;
+  const pega = e => { const el = e.target, row = el.closest("[data-i]"); if (!row || !el.dataset || !el.dataset.k) return null; return { el, l: PAX_UI.lote.linhas[Number(row.dataset.i)], row }; };
+  const muda = e => { const o = pega(e); if (!o || !o.l || o.el.readOnly) return; const k = o.el.dataset.k;
+    if (k === "rel" || k === "tk" || k === "pag" || k === "grat") { const lim = o.el.value.replace(/\D+/g, ""); if (lim !== o.el.value) o.el.value = lim; }
+    o.l[k] = o.el.value.trim(); if ((k === "serv" || k === "sent") && e.type === "change") { PAX_UI._mantemRolagem = true; paintPax(); } else paxLoteRodape(); px2RascAgendar(); };
+  gridEl.addEventListener("input", muda); gridEl.addEventListener("change", muda);
+  gridEl.addEventListener("focusout", e => { const o = pega(e); if (!o || !o.l || o.el.dataset.k !== "rel") return; const v = o.el.value.trim(); if (v && v.length < 5 && /^\d+$/.test(v)) { o.el.value = o.l.rel = v.padStart(5, "0"); paxLoteRodape(); px2RascAgendar(); } });
+  gridEl.addEventListener("keydown", e => { if (e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp") return; const o = pega(e); if (!o || o.el.tagName !== "INPUT") return;
+    const todos = [...gridEl.querySelectorAll(`input[data-k="${o.el.dataset.k}"]:not([readonly]):not([disabled])`)], i = todos.indexOf(o.el), nx = todos[i + (e.key === "ArrowUp" ? -1 : 1)]; if (nx) { e.preventDefault(); nx.focus(); nx.select(); } });
+  paxLoteRodape();
+};
+window.px2LoteLinha = k => { PAX_UI.loteLinha = k || ""; PAX_UI._mantemRolagem = true; paintPax(); };
+window.paxLoteAdd = () => { const f = PAX_UI.loteLinha || "", serv = { "1000": "Parador", "1001": "Direto", "2000": "Madalena", F: "Fretamento" }[f] || "Parador";
+  PAX_UI.lote.linhas.push({ serv, hora: "", sent: "Ida", rel: "", tk: "", pag: "", grat: "", det: null, gx: "", id: null, b: null, livre: true }); PAX_UI._mantemRolagem = true; paintPax(); const ins = document.querySelectorAll('#paxLoteGrid input[data-k="hora"]'); if (ins.length) ins[ins.length - 1].focus(); };
+window.paxLoteTira = i => { PAX_UI.lote.linhas.splice(i, 1); PAX_UI._mantemRolagem = true; paintPax(); px2RascAgendar(); };
+window.paxLoteDia = async (passo, valor) => {
+  const L = PAX_UI.lote; let d = valor || (L && L.data); if (!/^\d{4}-\d{2}-\d{2}$/.test(d || "")) return;
+  if (passo) { const x = dLocal(d); x.setDate(x.getDate() + passo); d = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; }
+  if (L && d === L.data) return;
+  if (L && paxLoteSujo()) {
+    let ok = false; if (px2RascPode(L.data)) { try { await px2RascAgora(); ok = true; toast(`Rascunho de ${fmtDate(L.data)} salvo no SharePoint. Ele volta quando esse dia for aberto.`, 5000); } catch (e) { PAX_UI.rascErro = e.message; } }
+    if (!ok && !confirm("Há viagens digitadas e ainda não gravadas neste dia, e o rascunho não pôde ser salvo. Trocar de dia e perder o que foi digitado?")) { const i = $("paxLoteData"); if (i) i.value = L.data; return; }
+  }
+  PAX_UI.rascSt = ""; PAX_UI.lote = paxLoteMontar(d); PAX_STATE.mes = d.slice(0, 7); paintPax();
+};
+function px2Campos(f) {   /* enquanto a Configuração não criar as colunas novas, elas só saem do pedido se estiverem vazias */
+  PXD.faltam.forEach(c => { if (!(c in f)) return; if (f[c] == null || f[c] === 0 || f[c] === "") delete f[c]; else throw new Error(`A coluna "${c}" ainda não existe na lista de passageiros. ${session.n1 ? "Rode Sistema › Configuração › Executar tudo" : "Peça a um administrador para rodar a Configuração"} e grave de novo (o rascunho fica guardado).`); });
+  return f;
+}
+function px2CamposDe(v) {   /* valores → colunas da lista */
+  const tem = px2DetTem(v.det), f = { Relatorio: v.rel || null, TicketAgencia: v.t, Pagantes: v.t + v.f, Gratuidade: v.g };
+  if (tem) { const tr = {}, det = {}; Object.keys(v.det).forEach(k => { const x = v.det[k], t = Number(x.t) || 0, ff = Number(x.f) || 0, g = Number(x.g) || 0; if (!(t || ff || g)) return; det[k] = { t, f: ff, g }; if (t + ff) tr[k] = t + ff; }); if (v.g) tr.Gratuidade = v.g; f.Trechos = JSON.stringify(tr); f.TrechosDet = JSON.stringify(det); }
+  return f;
+}
+window.paxLoteSalvar = async () => {
+  if (!podeEditar("pax")) { toast("Seu acesso à Estatística de Passageiros é só de leitura."); return; }
+  const L = PAX_UI.lote; if (!L) return; if (px2Travado(L.data)) { toast(px2TravaMsg(L.data), 8000); return; }
+  clearTimeout(PAX_UI._rascT);
+  const cria = [], muda = [], chaves = new Set(PAX_STATE.itens.map(x => `${x.Data}|${x.Servico}|${paxHoraPura(x)}|${x.Sentido || "Ida"}`));
+  try {
+    for (const l of L.linhas) { if (l.livre && l.hora) l.hora = erpHoraNorm(l.hora); const st = paxLoteSt(l);
+      if (st === "erro") { toast("Há linha para conferir: use números inteiros, relatório com 5 números e horário HH:MM."); return; }
+      if (st !== "novo" && st !== "alt") continue; const v = px2Vals(l), b = l.b || {};
+      if (st === "novo") { const c = paxHorConfere({ Data: L.data, Servico: l.serv, Horario: l.hora, Sentido: l.sent }); if (!c.ok) { toast(c.msg, 10000); return; }
+        const f = Object.assign({ Data: L.data, Servico: l.serv, Horario: l.hora, Sentido: l.sent, Lugares: PAX_LUGARES, Origem: "Manual" }, px2CamposDe(px2Efet(l))); f.Title = paxChave(f);
+        if (chaves.has(`${L.data}|${l.serv}|${l.hora}|${l.sent}`)) { toast(`Já existe viagem gravada para ${paxLoteServRot(l.serv)} ${l.hora} ${l.sent} neste dia: altere a linha da grade.`, 7000); return; } chaves.add(`${L.data}|${l.serv}|${l.hora}|${l.sent}`); cria.push({ l, f: px2Campos(f) }); }
+      else { const at = px2Efet(l), tem = !!at.det;
+        const ff = px2CamposDe(at); if (!tem && b.det && b.det !== "[]") { ff.Trechos = null; ff.TrechosDet = null; }
+        muda.push({ l, id: l.id, f: px2Campos(ff) }); } }
+  } catch (e) { toast(e.message, 10000); return; }
+  if (!cria.length && !muda.length) { toast("Nada a gravar."); return; }
+  if (!(await erpConfirmar({ titulo: "Gravar o lançamento", texto: `Gravar em ${fmtDate(L.data)}: ${cria.length} viagem(ns) nova(s)${muda.length ? ` e ${muda.length} alterada(s)` : ""}?`, sim: "Gravar" }))) return;
+  const b = $("paxLoteGo"); if (b) b.disabled = true; let ok = 0, n = 0; const tot = cria.length + muda.length, falhas = []; let erro1 = "";
+  const passo = () => { n++; if ($("paxLoteGo")) $("paxLoteGo").textContent = `Gravando ${n} de ${tot}…`; };
+  for (const c of cria) { try { await SP.create(PAX_STATE.site.id, PAX_STATE.list.id, c.f); ok++; } catch (e) { falhas.push(c.l); erro1 = erro1 || e.message; } passo(); }
+  for (const m of muda) { try { await SP.update(PAX_STATE.site.id, PAX_STATE.list.id, m.id, m.f); ok++; } catch (e) { falhas.push(m.l); erro1 = erro1 || e.message; } passo(); }
+  if (ok && px2DiaSt(L.data) === "Aprovado") { try { await px2DiaGrava(L.data, at => ({ Historico: px2Hst(at.Historico, `alterado depois de aprovado: ${ok} viagem(ns)`) })); } catch (e) {} }
+  try { await loadPax(); } catch (e) { toast("Gravado, mas a lista não foi recarregada: " + e.message, 7000); }
+  const guard = falhas.map(l => ({ serv: l.serv, hora: l.hora, sent: l.sent, rel: l.rel, tk: l.tk, pag: l.pag, grat: l.grat, det: l.det, gx: l.gx, livre: !!l.livre }));
+  try { if (PXD.list) await px2DiaGrava(L.data, at => guard.length ? { Rascunho: JSON.stringify({ linhas: guard }), RascunhoPor: px2Eu() || null, RascunhoEm: new Date().toISOString() } : (at.Rascunho ? { Rascunho: null, RascunhoPor: null, RascunhoEm: null } : null)); } catch (e) {}
+  try { paxRascTira(L.data); } catch (e) {}
+  PAX_UI.rascSt = ""; PAX_UI.lote = paxLoteMontar(L.data); PAX_UI._mantemRolagem = true; paintPax();
+  toast(falhas.length ? `${ok} viagem(ns) gravada(s) · ${falhas.length} falharam e continuam na folha (${erro1.slice(0, 140)})` : `${ok} viagem(ns) gravada(s) em ${fmtDate(L.data)}`, falhas.length ? 11000 : 5000);
+};
+/* ---------- aprovação do dia ---------- */
+async function px2DiaAcao(data, fn, msg) { try { await px2DiaGrava(data, fn); if (PAX_UI.lote && PAX_UI.lote.data === data) PAX_UI.lote = paxLoteSujo() ? PAX_UI.lote : paxLoteMontar(data); PAX_UI._mantemRolagem = true; paintPax(); toast(msg, 5000); return true; } catch (e) { toast("Não foi possível gravar: " + e.message, 9000); return false; } }
+window.px2Enviar = async () => {
+  const L = PAX_UI.lote; if (!L || !podeEditar("pax")) return;
+  if (paxLoteSujo()) { toast("Grave as viagens digitadas antes de enviar para aprovação."); return; }
+  const its = PAX_STATE.itens.filter(x => x.Data === L.data); if (!its.length) { toast("Não há viagem gravada neste dia."); return; }
+  const tk = its.reduce((s, x) => s + Number(x.TicketAgencia || 0), 0), pg = its.reduce((s, x) => s + Number(x.Pagantes || 0), 0), gr = its.reduce((s, x) => s + Number(x.Gratuidade || 0), 0);
+  if (!(await erpConfirmar({ titulo: "Enviar para aprovação", texto: `Enviar o lançamento de ${fmtDate(L.data)} para aprovação? São ${its.length} viagem(ns): ${tk} de Ticket Agência, ${pg - tk} do Fechamento do Motorista e ${gr} gratuidade(s). Depois de enviado, só um administrador ou o proprietário do módulo altera.`, sim: "Enviar" }))) return;
+  await px2DiaAcao(L.data, at => ({ Status: "Enviado", EnviadoPor: px2Eu() || null, EnviadoEm: new Date().toISOString(), Motivo: null, Historico: px2Hst(at.Historico, `enviado para aprovação (${its.length} viagens, ${pg + gr} passageiros)`) }), `Lançamento de ${fmtDate(L.data)} enviado para aprovação.`);
+};
+window.px2Retirar = async () => { const L = PAX_UI.lote; if (!L || !podeEditar("pax") || px2DiaSt(L.data) !== "Enviado") return;
+  await px2DiaAcao(L.data, at => at.Status === "Enviado" || !at.Status ? { Status: "Em lançamento", Historico: px2Hst(at.Historico, "envio retirado") } : null, "Envio retirado: o dia voltou para lançamento."); };
+window.px2Aprovar = async () => { const L = PAX_UI.lote; if (!L || !px2Aprova()) { toast("Só um administrador ou o proprietário do módulo aprova."); return; }
+  if (paxLoteSujo()) { toast("Grave (ou apague) o que foi digitado antes de aprovar."); return; }
+  if (!(await erpConfirmar({ titulo: "Aprovar o lançamento", texto: `Aprovar o lançamento de ${fmtDate(L.data)}? Depois de aprovado, só um administrador ou o proprietário do módulo altera ou reabre.`, sim: "Aprovar" }))) return;
+  await px2DiaAcao(L.data, at => ({ Status: "Aprovado", AprovadoPor: px2Eu() || null, AprovadoEm: new Date().toISOString(), Motivo: null, Historico: px2Hst(at.Historico, "aprovado") }), `Lançamento de ${fmtDate(L.data)} aprovado.`); };
+window.px2Devolver = para => { const L = PAX_UI.lote; if (!L || !px2Aprova()) { toast("Só um administrador ou o proprietário do módulo devolve ou reabre."); return; }
+  const reabre = para === "Em lançamento";
+  openModal(reabre ? `Reabrir ${fmtDate(L.data)}` : `Devolver ${fmtDate(L.data)}`, `<p>${reabre ? "O dia volta para lançamento e quem lança pode alterar de novo." : "O dia volta para quem lançou, marcado como devolvido, com o motivo."}</p><div class="form-grid"><div class="field full"><label>Motivo<span class="req">*</span></label><textarea id="px2Mot" rows="3" maxlength="600"></textarea></div></div><div class="err-msg" id="px2Err" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const mot = ($("px2Mot").value || "").trim(); if (!mot) { $("px2Err").style.display = "block"; $("px2Err").textContent = "Informe o motivo."; return false; }
+    return px2DiaAcao(L.data, at => ({ Status: para, Motivo: mot, AprovadoPor: null, AprovadoEm: null, Historico: px2Hst(at.Historico, `${reabre ? "reaberto" : "devolvido"}: ${mot}`) }), reabre ? "Dia reaberto para lançamento." : "Lançamento devolvido."); });
+};
+window.px2Historico = () => { const L = PAX_UI.lote, d = L && px2Dia(L.data), h = d ? px2J(d.Historico, []).slice().reverse() : [];
+  $("modal").className = "modal"; modal(`<div class="modal-head"><h2>Histórico · ${esc(fmtDate(L.data))}</h2><button class="x" onclick="closeModal()">×</button></div><div class="modal-body"><ul class="px2-hist">${h.map(x => `<li><b>${esc(new Date(x.em).toLocaleString("pt-BR"))}</b> · ${esc(x.por || "")}<div>${esc(x.o || "")}</div></li>`).join("") || "<li>Sem registros.</li>"}</ul></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Fechar</button></div>`); };
+/* ---------- observações por horário ---------- */
+window.px2Coment = i => {
+  const L = PAX_UI.lote, l = L && L.linhas[i]; if (!l) return; if (!/^\d{2}:\d{2}$/.test(l.hora || "")) { toast("Informe o horário da viagem antes de registrar a observação."); return; }
+  const k = px2ComK(l), lista = (px2ComDe(L.data)[k] || []).slice().reverse(), pode = podeEditar("pax");
+  openModal(`Observações · ${fmtDate(L.data)} · ${paxLoteServRot(l.serv)} ${l.hora} ${l.sent}`, `<div class="px2-coms">${lista.map(c => `<div class="px2-com"><div class="px2-com-h"><b>${esc(c.por || "—")}</b> · ${esc(new Date(c.em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }))}</div><div class="px2-com-t">${esc(c.txt || "")}</div></div>`).join("") || `<p class="sup">Nenhuma observação neste horário.</p>`}</div>
+    ${pode ? `<div class="form-grid" style="margin-top:14px"><div class="field full"><label>Nova observação</label><textarea id="px2ComTxt" rows="3" maxlength="800" placeholder="Ex.: carro quebrou em Curato; relatório com rasura no trecho CM × MC"></textarea><div class="hint">Fica registrada com o seu nome, o dia e a hora. Não pode ser apagada.</div></div></div><div class="err-msg" id="px2Err" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>` : ""}`, async () => {
+    const txt = ($("px2ComTxt") ? $("px2ComTxt").value : "").trim(); if (!txt) { $("px2Err").style.display = "block"; $("px2Err").textContent = "Escreva a observação."; return false; }
+    try { await px2DiaGrava(L.data, at => { const c = px2J(at.Comentarios, {}); (c[k] = Array.isArray(c[k]) ? c[k] : []).push({ em: new Date().toISOString(), por: px2Eu(), txt }); return { Comentarios: JSON.stringify(c) }; }); }
+    catch (e) { $("px2Err").style.display = "block"; $("px2Err").textContent = "Não foi possível gravar: " + e.message; return false; }
+    PAX_UI._mantemRolagem = true; paintPax(); toast("Observação registrada."); return true;
+  });
+  if (!pode) { const s = $("mSave"); if (s) s.remove(); } else { const s = $("mSave"); if (s) s.textContent = "Registrar"; }
+};
+/* ---------- caixa de trechos (folha do dia e Banco de Dados) ---------- */
+function px2TrechosModal(c) {   /* c: { titulo, serv, sent, det, gx, ro, info, onOk(det, gx) → true fecha } */
+  const linha = px2TrechosDaLinha(c.serv, c.sent), porK = new Map(linha.map(t => [t.k, t]));
+  const det = {}; Object.entries(c.det || {}).forEach(([k, v]) => { det[px2KeyCanon(k)] = { t: Number(v.t) ? String(v.t) : "", f: Number(v.f) ? String(v.f) : "", g: Number(v.g) ? String(v.g) : "" }; });
+  const vis = new Set(Object.keys(det)); let todos = linha.length <= 16;
+  if (todos) linha.forEach(t => vis.add(t.k)); else px2Hist(c.serv, c.sent).filter(k => porK.has(k)).slice(0, 8).forEach(k => vis.add(k));
+  if (!vis.size && linha.length) linha.slice(0, 8).forEach(t => vis.add(t.k));
+  const ordK = k => { const i = linha.findIndex(t => t.k === k); return i < 0 ? 999 : i; }, dis = c.ro ? "disabled" : "";
+  const colhe = () => { document.querySelectorAll("#px2TrRows .px2-tr-row").forEach(r => { const k = r.dataset.k, o = det[k] || (det[k] = {}); r.querySelectorAll("input").forEach(i => { o[i.dataset.f] = i.value.trim(); }); }); };
+  const rowsHtml = () => [...vis].sort((a, b) => ordK(a) - ordK(b) || a.localeCompare(b)).map(k => { const d = det[k] || {}, t = porK.get(k);
+    return `<div class="px2-tr-row" data-k="${esc(k)}"><div class="px2-tr-n"><b>${esc(px2KeyNome(k))}</b><span class="sup">${esc(k)}${t ? (t.of ? "" : " · não oficial") : " · fora do Diário Oficial desta linha"}</span></div>${[["t", "Ticket Agência"], ["f", "Fechamento do Motorista"], ["g", "Gratuidades"]].map(([f, r]) => `<input class="lanc-in num px2-n" inputmode="numeric" maxlength="4" data-f="${f}" value="${esc(d[f] || "")}" placeholder="0" ${dis} aria-label="${r} · ${esc(px2KeyNome(k))}">`).join("")}<div class="px2-tr-tot">—</div></div>`; }).join("");
+  const origens = () => { const m = new Map(); (linha.length ? linha.map(t => t.o) : px2Locais()).forEach(o => m.set(o.id, o)); return [...m.values()]; };
+  const destinos = a => linha.length ? linha.filter(t => t.o.id === a).map(t => t.d) : px2Locais().filter(l => l.id !== a);
+  $("modal").className = "modal wide";
+  openModal(c.titulo, `<p class="hint" style="margin:0 0 12px">${c.info || ""}Informe, em cada trecho, os passageiros com <b>Ticket Agência</b>, os do <b>Fechamento do Motorista</b> e as <b>Gratuidades</b>. ${linha.length ? `Trechos da linha ${esc(paxLinhaNum(c.serv))} no Diário Oficial (oficiais e não oficiais), no sentido ${esc(c.sent)}.` : "O Diário Oficial não tem trechos desta linha: escolha os pontos abaixo."}</p>
+    <div class="px2-tr" id="px2Tr"><div class="px2-tr-row px2-tr-head"><div>Trecho</div><div>Ticket Agência</div><div>Fechamento do Motorista</div><div>Gratuidades</div><div>Total</div></div>
+      <div id="px2TrRows">${rowsHtml()}</div>
+      <div class="px2-tr-row px2-tr-gx"><div class="px2-tr-n"><b>Gratuidades sem trecho informado</b><span class="sup">só para lançamentos antigos</span></div><div></div><div></div><input class="lanc-in num px2-n" inputmode="numeric" maxlength="4" id="px2TrGx" value="${esc(c.gx || "")}" placeholder="0" ${dis} aria-label="Gratuidades sem trecho"><div class="px2-tr-tot" id="px2TrGxT">—</div></div>
+      <div class="px2-tr-row px2-tr-total"><div><b>Total do horário</b></div><div id="px2TotT">0</div><div id="px2TotF">0</div><div id="px2TotG">0</div><div id="px2TotX">0</div></div></div>
+    ${c.ro ? "" : `<div class="px2-tr-add"><b>Adicionar trecho</b><select class="lanc-in lanc-sel" id="px2TrA" aria-label="Ponto A"><option value="">Ponto A…</option>${origens().map(o => `<option value="${esc(o.id)}">${esc(o.nome)}</option>`).join("")}</select><select class="lanc-in lanc-sel" id="px2TrB" aria-label="Ponto B" disabled><option value="">Ponto B…</option></select><button type="button" class="btn" id="px2TrAdd" disabled>Adicionar</button>${!todos && linha.length ? `<button type="button" class="btn ghost" id="px2TrTodos">Mostrar os ${linha.length} trechos da linha</button>` : ""}</div><div class="hint">O Ponto B só mostra os pares que existem no Diário Oficial para a linha (oficiais e não oficiais). Trecho que não aparece: cadastre em Diretoria › Diário Oficial › Trechos Não Oficiais.</div>`}
+    <div class="err-msg" id="px2TrErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const err = m => { $("px2TrErr").style.display = "block"; $("px2TrErr").textContent = m; return false; };
+    colhe(); const out = {}; let ruim = false;
+    Object.entries(det).forEach(([k, v]) => { const t = px2Int(v.t), f = px2Int(v.f), g = px2Int(v.g); if ([t, f, g].some(Number.isNaN)) { ruim = true; return; } if (t || f || g) out[k] = { t: t || 0, f: f || 0, g: g || 0 }; });
+    const gx = px2Int($("px2TrGx").value); if (ruim || Number.isNaN(gx)) return err("Use números inteiros (zero ou mais).");
+    if (gx && !Object.keys(out).length) return err("Informe os passageiros em pelo menos um trecho (ou apague as gratuidades sem trecho).");
+    try { return (await c.onOk(out, gx ? String(gx) : "")) !== false; } catch (e) { return err(e.message || String(e)); }
+  });
+  const soma = () => { let T = 0, F = 0, G = 0; document.querySelectorAll("#px2TrRows .px2-tr-row").forEach(r => { const v = f => { const i = r.querySelector(`input[data-f="${f}"]`); const n = px2Int(i.value); i.classList.toggle("ruim", Number.isNaN(n)); return n || 0; }; const t = v("t"), f = v("f"), g = v("g"); T += t; F += f; G += g; r.querySelector(".px2-tr-tot").textContent = t + f + g ? String(t + f + g) : "—"; r.classList.toggle("tem", !!(t + f + g)); });
+    const gx = px2Int($("px2TrGx").value) || 0; $("px2TrGxT").textContent = gx ? String(gx) : "—"; G += gx;
+    $("px2TotT").textContent = T; $("px2TotF").textContent = F; $("px2TotG").textContent = G; $("px2TotX").textContent = T + F + G; };
+  const tr = $("px2Tr");
+  tr.addEventListener("input", e => { if (e.target.matches("input")) { const lim = e.target.value.replace(/\D+/g, ""); if (lim !== e.target.value) e.target.value = lim; soma(); } });
+  tr.addEventListener("keydown", e => { if (e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp") return; const el = e.target; if (!el.matches("#px2TrRows input")) return; const todosI = [...tr.querySelectorAll(`#px2TrRows input[data-f="${el.dataset.f}"]`)], nx = todosI[todosI.indexOf(el) + (e.key === "ArrowUp" ? -1 : 1)]; if (nx) { e.preventDefault(); e.stopPropagation(); nx.focus(); nx.select(); } }, true);
+  if (c.ro) { const s = $("mSave"); if (s) s.remove(); soma(); return; }
+  const selA = $("px2TrA"), selB = $("px2TrB"), add = $("px2TrAdd");
+  selA.addEventListener("change", () => { const ds = selA.value ? destinos(selA.value) : []; selB.innerHTML = `<option value="">Ponto B…</option>${ds.map(d => `<option value="${esc(d.id)}">${esc(d.nome)}</option>`).join("")}`; selB.disabled = !ds.length; add.disabled = true; });
+  selB.addEventListener("change", () => { add.disabled = !(selA.value && selB.value); });
+  const repinta = foco => { colhe(); $("px2TrRows").innerHTML = rowsHtml(); soma(); if (foco) { const r = [...document.querySelectorAll("#px2TrRows .px2-tr-row")].find(x => x.dataset.k === foco); if (r) { r.scrollIntoView({ block: "nearest" }); r.querySelector("input").focus(); } } };
+  add.addEventListener("click", () => { if (!selA.value || !selB.value) return; const k = `${selA.value} X ${selB.value}`; vis.add(k); selA.value = ""; selB.innerHTML = `<option value="">Ponto B…</option>`; selB.disabled = true; add.disabled = true; repinta(k); });
+  const bt = $("px2TrTodos"); if (bt) bt.addEventListener("click", () => { linha.forEach(t => vis.add(t.k)); todos = true; bt.remove(); repinta(); });
+  soma(); const p = document.querySelector("#px2TrRows input"); if (p) p.focus();
+}
+window.px2TrechosDaFolha = i => {
+  const L = PAX_UI.lote, l = L && L.linhas[i]; if (!l) return; const trav = px2Travado(L.data);
+  if (!/^\d{2}:\d{2}$/.test(l.hora || "")) { toast("Informe o horário da viagem antes de lançar os trechos."); return; }
+  const v = px2Vals(l), semDet = !px2DetTem(l.det) && (v.t || v.f || v.g);
+  px2TrechosModal({ titulo: `Trechos · ${fmtDate(L.data)} · ${paxLoteServRot(l.serv)} ${l.hora} ${l.sent}`, serv: l.serv, sent: l.sent, det: l.det, gx: l.gx, ro: trav,
+    info: semDet ? `Esta linha tem ${v.t + v.f + v.g} passageiro(s) digitados sem trecho: ao confirmar os trechos, a linha passa a valer pela soma deles. ` : "",
+    onOk: (det, gx) => { const tem = Object.keys(det).length > 0; l.det = tem ? det : null; l.gx = tem ? gx : "";
+      if (tem) { const s = px2DetSoma(det); l.tk = s.t ? String(s.t) : ""; l.pag = String(s.f); l.grat = String(s.g + (Number(gx) || 0)); }
+      PAX_UI._mantemRolagem = true; paintPax(); px2RascAgendar(); return true; } });
+};
+/* Banco de Dados: editar os trechos de uma viagem gravada (substitui a caixa da v0.14.77) */
+window.paxTrechosEditar = id => {
+  const x = PAX_STATE.itens.find(i => i._id === String(id)); if (!x) return;
+  const pode = podeEditar("pax") && !px2Travado(x.Data), sent = x.Sentido || "Ida", det = px2DetDe(x), s = px2DetSoma(det), tk0 = Number(x.TicketAgencia || 0), pag0 = Number(x.Pagantes || 0), g0 = Number(x.Gratuidade || 0);
+  px2TrechosModal({ titulo: `Trechos · ${fmtDate(x.Data)} · ${paxServRot(x.Servico)} ${paxHoraPura(x)} ${sent}`, serv: x.Servico, sent, det, gx: px2DetTem(det) && g0 > s.g ? String(g0 - s.g) : "", ro: !pode,
+    info: `Gravado nesta viagem: <b>${tk0}</b> de Ticket Agência, <b>${Math.max(0, pag0 - tk0)}</b> do Fechamento do Motorista e <b>${g0}</b> gratuidade(s). ${!podeEditar("pax") ? "" : px2Travado(x.Data) ? esc(px2TravaMsg(x.Data)) + " " : ""}`,
+    onOk: async (novo, gx) => {
+      const tem = Object.keys(novo).length > 0, f = {};
+      if (tem) { const sm = px2DetSoma(novo), g = sm.g + (Number(gx) || 0); Object.assign(f, px2CamposDe({ rel: x.Relatorio || "", t: sm.t, f: sm.f, g, det: novo })); delete f.Relatorio;
+        if ((sm.t + sm.f !== pag0 || g !== g0) && !(await erpConfirmar({ titulo: "Totais da viagem", texto: `Pelos trechos, a viagem passa de ${pag0} pagante(s) e ${g0} gratuidade(s) para ${sm.t + sm.f} pagante(s) (${sm.t} de Ticket Agência + ${sm.f} do Fechamento do Motorista) e ${g} gratuidade(s). Gravar?`, sim: "Gravar" }))) return false; }
+      else { f.Trechos = null; f.TrechosDet = null; }
+      await SP.update(PAX_STATE.site.id, PAX_STATE.list.id, x._id, px2Campos(f)); Object.assign(x, f);
+      if (PAX_UI.lote && PAX_UI.lote.data === x.Data && !paxLoteSujo()) PAX_UI.lote = paxLoteMontar(x.Data);
+      if ($("paxBancoBox")) paxBancoPinta(); else paintPax(); toast("Trechos gravados."); return true; } });
+};
+/* ---------- Banco de Dados: segunda visão, por trecho ---------- */
+window.px2BancoVis = v => { PAX_UI.bVis = v === "trecho" ? "trecho" : "viagem"; paxBancoPinta(); };
+function px2BancoTrechoHtml() {
+  const its = paxBancoLista(), nf = n => Number(n || 0).toLocaleString("pt-BR"); let TT = 0, TF = 0, TG = 0;
+  const rows = its.map(x => { const det = px2DetDe(x), ks = Object.keys(det), tk = Number(x.TicketAgencia || 0), pag = Number(x.Pagantes || 0), g = Number(x.Gratuidade || 0), s = px2DetSoma(det), sent = x.Sentido || "Ida";
+    TT += tk; TF += pag - tk; TG += g;
+    const ordem = px2TrechosDaLinha(x.Servico, sent).map(t => t.k), oi = k => { const i = ordem.indexOf(k); return i < 0 ? 999 : i; };
+    const cab = `<td class="nw">${esc(fmtDate(x.Data))}</td><td class="nw">${DIAS_SEMANA[dLocal(x.Data).getDay()]}</td><td class="nw"><b>${esc(paxLinhaNum(x.Servico))}</b></td><td class="nw">${esc(paxServRot(x.Servico))}</td><td class="nw pb-h">${esc(String(x.Horario || ""))}</td><td>${esc(sent)}</td><td class="nw">${esc(x.Relatorio || "—")}</td>`;
+    const faltaP = (pag - tk) + tk - (s.t + s.f), faltaG = g - s.g;
+    const linhas = ks.sort((a, b) => oi(a) - oi(b) || a.localeCompare(b)).map(k => { const d = det[k]; return `<tr data-id="${esc(x._id)}" class="px2-bt">${cab}<td class="px2-bt-tr">${esc(px2KeyNome(k))} <span class="sup">${esc(k)}</span></td><td class="n">${d.t || "—"}</td><td class="n">${d.f || "—"}</td><td class="n">${d.g || "—"}</td><td class="n"><b>${d.t + d.f + d.g}</b></td></tr>`; }).join("");
+    const sem = !ks.length ? `<tr data-id="${esc(x._id)}" class="px2-bt">${cab}<td class="px2-bt-tr"><span class="pb-tr-vz">sem trechos informados</span></td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>` : "";
+    return `${linhas}${sem}<tr data-id="${esc(x._id)}" class="px2-bt px2-bt-tot"><td colspan="7"></td><td class="px2-bt-tr"><b>Total do horário ${esc(String(x.Horario || ""))}</b>${ks.length && (faltaP || faltaG) ? ` <span class="pb-tr-vz" title="A soma dos trechos é diferente do total da viagem">${faltaP ? `${faltaP > 0 ? faltaP : -faltaP} pagante(s) ${faltaP > 0 ? "sem trecho" : "a mais nos trechos"}` : ""}${faltaP && faltaG ? " · " : ""}${faltaG ? `${Math.abs(faltaG)} gratuidade(s) ${faltaG > 0 ? "sem trecho" : "a mais nos trechos"}` : ""}</span>` : ""}</td><td class="n"><b>${nf(tk)}</b></td><td class="n"><b>${nf(pag - tk)}</b></td><td class="n"><b>${nf(g)}</b></td><td class="n"><b>${nf(pag + g)}</b></td></tr>`; }).join("");
+  return `<div class="table-wrap pax-banco px2-banco-tr"><table class="cap-table pax-t pb-t"><thead><tr><th>Data</th><th>Dia</th><th>Linha</th><th>Serviço</th><th>Horário</th><th>Sentido</th><th>Relatório</th><th>Trecho</th><th>Ticket Agência</th><th>Fechamento do Motorista</th><th>Gratuid.</th><th>Total</th></tr></thead><tbody>${rows || `<tr><td colspan="12" class="cap-muted" style="padding:18px">Nenhuma viagem neste mês com esse filtro.</td></tr>`}</tbody>${its.length ? `<tfoot><tr class="px2-bt-tot"><td colspan="8"><b>Total · ${its.length} viagem(ns)</b></td><td class="n"><b>${nf(TT)}</b></td><td class="n"><b>${nf(TF)}</b></td><td class="n"><b>${nf(TG)}</b></td><td class="n"><b>${nf(TT + TF + TG)}</b></td></tr></tfoot>` : ""}</table></div>
+    <p class="hint">Uma linha por trecho de cada horário, com o total do horário logo abaixo. ${podeEditar("pax") ? "Clique numa linha para editar os trechos da viagem." : ""} Os filtros do alto da página e a busca valem aqui; para editar data, horário ou sentido, use a visão Por Viagem.</p>`;
+}
+{ const h0 = paxBancoHtml;
+  paxBancoHtml = function () {
+    let h = h0.apply(this, arguments); const vis = PAX_UI.bVis === "trecho" ? "trecho" : "viagem";
+    const chips = `<div class="pax-chips px2-bvis"><span class="rot">Visão</span><button type="button" class="chip${vis === "viagem" ? " on" : ""}" onclick="px2BancoVis('viagem')">Por Viagem</button><button type="button" class="chip${vis === "trecho" ? " on" : ""}" onclick="px2BancoVis('trecho')">Por Trecho</button></div>`;
+    const i = h.indexOf('<div class="table-wrap pax-banco">'); if (i < 0) return h;
+    if (vis === "trecho") { const j = h.lastIndexOf("</div>"), l = h.indexOf('<div class="pax-lote'); return h.slice(0, l >= 0 && l < i ? l : i) + chips + px2BancoTrechoHtml() + h.slice(j); }
+    return h.slice(0, i) + chips + h.slice(i);
+  };
+}
+document.addEventListener("click", e => { const tr = e.target.closest && e.target.closest(".px2-banco-tr tr[data-id]"); if (tr) paxTrechosEditar(tr.dataset.id); });
+
+/* ---------- Início: "Precisa de Você" ---------- */
+INI_NOMES.pax = "Estatística de Passageiros";
+{ const f0 = iniFontes; iniFontes = function () { const F = f0.apply(this, arguments); try { if (iniVe("pax") && podeEditar("pax") && !F.includes("pax")) F.push("pax"); } catch (e) {} return F; }; }
+INI_LER.pax = async function () {
+  const its = await iniItens("pax_dias"); if (!its) return { n: 0, itens: [] };
+  const ap = !!(session.n1 || permModulo("pax") === "proprietario"), itens = [];
+  its.forEach(d => { const data = d.Title; if (!/^\d{4}-\d{2}-\d{2}$/.test(data || "")) return;
+    if (d.Status === "Enviado" && ap) itens.push({ data, k: "aprovar" }); else if (d.Status === "Devolvido") itens.push({ data, k: "dev" });
+    if (d.Rascunho) itens.push({ data, k: "rasc" }); });
+  itens.sort((a, b) => a.data.localeCompare(b.data));
+  return { n: itens.length, itens };
+};
+{ const h0 = iniPrecisaHtml;
+  iniPrecisaHtml = function () {
+    let h = h0.apply(this, arguments);
+    try { const d = (INI.dados || {}).pax; if (!d || d.erro || !d.n) return h;
+      const por = k => d.itens.filter(x => x.k === k), dias = l => l.slice(0, 4).map(x => iniDM(x.data)).join(", ") + (l.length > 4 ? "…" : "");
+      const a = por("aprovar"), v = por("dev"), r = por("rasc"), partes = [];
+      if (a.length) partes.push(`${a.length} ${iniPl(a.length, "dia para aprovar", "dias para aprovar")} (${dias(a)})`);
+      if (v.length) partes.push(`${v.length} ${iniPl(v.length, "devolvido", "devolvidos")} (${dias(v)})`);
+      if (r.length) partes.push(`${r.length} com rascunho não gravado (${dias(r)})`);
+      const row = `<button type="button" class="ini-row" data-k="pax" onclick="iniIr('pax')"><span class="ini-ico">${INI_ICO.dia}</span><span class="txt"><b>${esc(`${d.n} ${iniPl(d.n, "pendência", "pendências")} nos lançamentos de passageiros`)}</b><span>${esc(`Financeiro › Estatística de Passageiros › Lançamentos · ${partes.join(" · ")}`)}</span></span><span class="ini-pill ${a.length ? "nav" : "warn"}">${a.length ? "Para aprovar" : "Pendente"}</span></button>`;
+      h = h.replace(/<div class="ini-vazio"><b>Nada esperando por você hoje\.<\/b>[\s\S]*?<\/div>/, "");
+      return row + h; } catch (e) { return h; }
+  };
+}
+INI_IR.pax = () => { const d = INI.dados && INI.dados.pax && INI.dados.pax.itens && INI.dados.pax.itens[0]; iniAbrir("#/financeiro/estatistica-de-passageiros", "pax", () => { PAX_STATE.tab = "lancar"; PAX_UI.lote = null; PAX_UI._abrirDia = d ? d.data : null; }); };
+
+/* ---------- Diário Oficial: Localidades ---------- */
+DO.lists.loc = undefined;
+{ const c0 = doCarregar;
+  doCarregar = async function (force) {
+    const r = await c0.apply(this, arguments);
+    try { if (DO.site && (force || DO.lists.loc === undefined || !LOC.em || Date.now() - LOC.em > 5 * 60 * 1000)) {
+        if (force || DO.lists.loc === undefined) { const ls = await SP.lists(DO.site.id); DO.lists.loc = ls.find(l => l.displayName === LISTS.do_local.displayName) || null; }
+        LOC.itens = DO.lists.loc ? (await SP.items(DO.site.id, DO.lists.loc.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : []; LOC.em = Date.now(); LOC.ver++; } } catch (e) {}
+    return r;
+  };
+}
+{ const i = DO_ABAS.findIndex(x => x[0] === "pubs"); if (!DO_ABAS.some(x => x[0] === "local")) DO_ABAS.splice(i + 1, 0, ["local", "Localidades"]); }
+function px2LocUso(l) { let of = 0, no = 0; const v = doVigente(), eh = p => { const x = px2Loc(p); return !!x && x.id === l.id; };
+  (DO.trechos || []).forEach(t => { if (!eh(t.Origem) && !eh(t.Destino)) return; if (String(t.PubId) === DO_NO) no++; else if (v && String(t.PubId) === String(v._id)) of++; }); return { of, no }; }
+function doAbaLocal() {
+  const ed = doEd();
+  if (!DO.lists.loc) return `<div class="cap-empty"><h3>A lista "${esc(LISTS.do_local.displayName)}" ainda não existe</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › Executar tudo</a>.` : "Peça a um administrador para rodar a Configuração."} Enquanto isso, o ERP usa as ${PX2_LOC_PADRAO.length} localidades padrão: ${esc(PX2_LOC_PADRAO.map(l => `${l.id} ${l.nome}`).join(" · "))}.</p></div>`;
+  const cad = px2Locais(true), temLista = LOC.itens.length > 0, mostra = temLista ? cad : PX2_LOC_PADRAO;
+  const conhecidos = new Map(); (DO.trechos || []).forEach(t => [t.Origem, t.Destino].forEach(p => { const s = String(p || "").trim(); if (s && !px2Loc(s) && !conhecidos.has(px2N(s))) conhecidos.set(px2N(s), s); }));
+  const rows = mostra.map(l => { const u = px2LocUso(l); return `<tr class="${ed && temLista ? "bil-dbl" : ""}" ${ed && temLista ? `ondblclick="if (!event.target.closest('button')) doLocForm(${esc(jsArg(l._id))})" title="Duplo clique para editar"` : ""}><td class="nw"><b>${esc(l.id)}</b></td><td>${esc(l.nome)}</td><td class="sup">${esc(l.apelidos || "")}</td><td>${esc(String(l.ordem))}</td><td class="nw">${u.of} oficial(is) · ${u.no} não oficial(is)</td><td>${temLista ? (l.ativo === false ? `<span class="pill st-cinza"><i></i>Inativa</span>` : `<span class="pill st-pago"><i></i>Ativa</span>`) : `<span class="sup">padrão</span>`}</td>${ed ? `<td class="nw">${temLista ? `<button class="btn sm" onclick="doLocForm(${esc(jsArg(l._id))})">Editar</button> <button class="btn sm danger-ghost" onclick="doLocExcluir(${esc(jsArg(l._id))})">Excluir</button>` : ""}</td>` : ""}</tr>`; }).join("");
+  return `${temLista ? "" : `<div class="import-help" style="margin-bottom:12px"><b>Nenhuma localidade cadastrada ainda.</b> O ERP está usando as ${PX2_LOC_PADRAO.length} localidades padrão abaixo. ${ed ? `<button class="btn sm primary" onclick="doLocPadrao()">Cadastrar as ${PX2_LOC_PADRAO.length} Localidades Padrão</button>` : ""}</div>`}
+    <div class="table-wrap"><table class="cap-table do-t do-c">${doColg(["90px", "24%", "auto", "110px", "200px", "100px", ed ? "150px" : "0"])}<thead><tr><th>ID</th><th>Localidade</th><th>Outros Nomes</th><th>Ordem na Rota</th><th>Trechos</th><th>Situação</th>${ed ? "<th></th>" : ""}</tr></thead><tbody>${rows}</tbody></table></div>
+    ${conhecidos.size ? `<div class="import-help" style="margin-top:12px"><b>${conhecidos.size} nome(s) usados nos trechos e ainda sem localidade:</b> ${esc([...conhecidos.values()].join(" · "))}. Cadastre a localidade ou inclua o nome em "Outros nomes" de uma existente.</div>` : ""}
+    <p class="sup" style="margin-top:8px">O <b>ID</b> é o código curto da localidade (ex.: CM, MC) usado nos trechos da Estatística de Passageiros. A <b>ordem na rota</b> vai de Santa Maria Madalena (menor) a Macaé (maior): é ela que diz o sentido de cada trecho (Ida = ordem crescente). As localidades ativas formam a lista de Ponto A / Ponto B nos cadastros de linhas e trechos.</p>`;
+}
+window.doLocForm = id => {
+  if (!doEd() || !DO.lists.loc) return; const x = id ? LOC.itens.find(i => i._id === String(id)) : null, v = x || { Ativo: true, Ordem: (Math.max(0, ...LOC.itens.map(i => Number(i.Ordem) || 0)) + 10) };
+  openModal(x ? `Localidade ${x.Title || ""}` : "Nova localidade", `<div class="form-grid">
+    <div class="field"><label>ID<span class="req">*</span></label><input id="lcId" maxlength="8" value="${esc(v.Title || "")}" placeholder="Ex.: CM" style="text-transform:uppercase"><div class="hint">Código curto, sem espaço. É o que fica gravado nos trechos.</div></div>
+    <div class="field"><label>Ordem na rota<span class="req">*</span></label><input id="lcOrd" type="number" min="0" max="9999" value="${esc(v.Ordem ?? "")}"><div class="hint">Madalena = menor · Macaé = maior</div></div>
+    <div class="field full"><label>Nome<span class="req">*</span></label><input id="lcNome" maxlength="100" value="${esc(v.Nome || "")}" placeholder="Ex.: Conceição de Macabu"></div>
+    <div class="field full"><label>Outros nomes</label><input id="lcAp" maxlength="255" value="${esc(v.Apelidos || "")}" placeholder="Separados por ponto e vírgula. Ex.: Conceição; C. de Macabu"><div class="hint">Grafias que aparecem nas portarias, nas planilhas e nos relatórios.</div></div>
+    <div class="field"><label>Situação</label><select id="lcAt"><option value="1" ${v.Ativo !== false ? "selected" : ""}>Ativa</option><option value="0" ${v.Ativo === false ? "selected" : ""}>Inativa</option></select></div>
+  </div><div class="err-msg" id="lcErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const g = k => ($(k) ? $(k).value.trim() : ""), err = m => { $("lcErr").style.display = "block"; $("lcErr").textContent = m; return false; };
+    const sid = g("lcId").toUpperCase(); if (!/^[A-Z0-9][A-Z0-9.]{0,7}$/.test(sid)) return err("ID: até 8 letras, números ou ponto, sem espaço (ex.: CM, T.40).");
+    if (LOC.itens.some(i => (!x || i._id !== x._id) && String(i.Title || "").toUpperCase() === sid)) return err(`Já existe a localidade ${sid}.`);
+    const nome = g("lcNome"); if (!nome) return err("Informe o nome.");
+    if (LOC.itens.some(i => (!x || i._id !== x._id) && px2N(i.Nome) === px2N(nome))) return err(`Já existe uma localidade com o nome ${nome}.`);
+    const ord = Number(g("lcOrd")); if (g("lcOrd") === "" || !Number.isInteger(ord) || ord < 0) return err("Informe a ordem na rota (número inteiro).");
+    const f = { Title: sid, Nome: nome, Apelidos: g("lcAp") || null, Ordem: ord, Ativo: g("lcAt") === "1" };
+    try { if (x) await SP.update(DO.site.id, DO.lists.loc.id, x._id, f); else await SP.create(DO.site.id, DO.lists.loc.id, f); await doCarregar(true); DO.aba = "local"; doPintar(); toast(x ? "Localidade gravada" : "Localidade cadastrada"); return true; }
+    catch (e) { return err("Não foi possível gravar: " + e.message); }
+  });
+};
+window.doLocExcluir = async id => { if (!doEd() || !DO.lists.loc) return; const x = LOC.itens.find(i => i._id === String(id)); if (!x) return;
+  const u = px2LocUso(px2Loc(x.Title) || { id: String(x.Title || "").toUpperCase() });
+  if (!(await erpConfirmar({ titulo: "Excluir localidade", texto: `Excluir ${x.Title} · ${x.Nome}?${u.of + u.no ? ` Ela aparece em ${u.of + u.no} trecho(s): prefira deixar Inativa.` : ""}`, sim: "Excluir", perigo: true }))) return;
+  try { await graph(`/sites/${DO.site.id}/lists/${DO.lists.loc.id}/items/${x._id}`, { method: "DELETE" }); await doCarregar(true); doPintar(); toast("Localidade excluída"); } catch (e) { toast("Erro: " + e.message, 7000); } };
+window.doLocPadrao = async () => { if (!doEd() || !DO.lists.loc || LOC.itens.length) return;
+  if (!(await erpConfirmar({ titulo: "Localidades padrão", texto: `Cadastrar as ${PX2_LOC_PADRAO.length} localidades padrão (de Santa Maria Madalena a Macaé)? Depois dá para editar cada uma.`, sim: "Cadastrar" }))) return;
+  let ok = 0; for (const l of PX2_LOC_PADRAO) { try { await SP.create(DO.site.id, DO.lists.loc.id, { Title: l.id, Nome: l.nome, Apelidos: l.apelidos || null, Ordem: l.ordem, Ativo: true }); ok++; } catch (e) { toast(`Parou em ${l.id}: ${e.message}`, 8000); break; } }
+  await doCarregar(true); doPintar(); toast(`${ok} localidade(s) cadastrada(s).`); };
+{ const p0 = doPintar;
+  doPintar = function () {
+    const r = p0.apply(this, arguments); const body = $("doBody");
+    if (body && DO.aba === "local" && !DO.erro && DO.lists.pub && DO.lists.tr) {
+      const sg = body.querySelector(".seg-tabs[role=tablist]"), tabs = sg ? sg.closest(".cap-tools") : body.querySelector(".cap-tools"); [...body.children].forEach(c => { if (c !== tabs && !c.classList.contains("do-pend")) c.remove(); });
+      body.insertAdjacentHTML("beforeend", doAbaLocal());
+      const a = $("doActions"); if (a) a.innerHTML = doEd() && DO.lists.loc && LOC.itens.length ? `<button class="btn primary" onclick="doLocForm('')">+ Localidade</button>` : "";
+    }
+    return r;
+  };
+}
+/* Ponto A / Ponto B dos cadastros do Diário Oficial: lista das localidades (o que já está gravado com outro nome continua na lista) */
+function px2PontoSelect(id) {
+  const el = $(id); if (!el || el.tagName !== "INPUT") return; const val = el.value.trim(), ls = px2Locais(), at = px2Loc(val);
+  const igual = at && ls.find(l => l.id === at.id && l.nome === val);   /* só troca a grafia gravada se a pessoa escolher outra opção */
+  const sel = document.createElement("select"); sel.id = id;
+  sel.innerHTML = `<option value=""></option>${val && !igual ? `<option value="${esc(val)}" selected>${esc(val)}${at ? ` (como está gravado · ${esc(at.id)})` : " (fora das Localidades)"}</option>` : ""}${ls.map(l => `<option value="${esc(l.nome)}" ${igual && igual.id === l.id ? "selected" : ""}>${esc(l.nome)}</option>`).join("")}`;
+  el.replaceWith(sel);
+  const campo = sel.closest(".field"); if (campo && !campo.querySelector(".px2-loc-h")) campo.insertAdjacentHTML("beforeend", `<div class="hint px2-loc-h">Lista da aba Localidades</div>`);
+}
+{ const f0 = doTrForm; doTrForm = function () { const r = f0.apply(this, arguments); try { px2PontoSelect("dtOri"); px2PontoSelect("dtDes"); } catch (e) {} return r; }; window.doTrForm = doTrForm; }
+{ const f0 = window.dolForm; window.dolForm = function () { const r = f0.apply(this, arguments); try { px2PontoSelect("dlA"); px2PontoSelect("dlB"); } catch (e) {} return r; }; }
+/* ---------- Trechos Não Oficiais: conferência com a lista de trechos operados (anexo de 18/11/2026) ---------- */
+const PX2_OPERADOS = { "1000": ["CM", "CUR", "BG", "T.40", "LAG", "MC"], "1001": ["CM", "MC"], "2000": ["MAD", "IMB", "TRJ", "LOR", "TRI", "CM", "CUR", "BG", "T.40", "LAG", "MC"] };   /* todos os pares entre os pontos de cada linha */
+function px2OperadosFaltam() {
+  const out = [];
+  Object.entries(PX2_OPERADOS).forEach(([erp, ids]) => {
+    const tem = new Set(); let ts = []; try { ts = doTrechosConhecidos(erp) || []; } catch (e) {}
+    ts.forEach(t => { const a = px2Loc(t.Origem), b = px2Loc(t.Destino); if (a && b) tem.add([a.id, b.id].sort().join("|")); });
+    const ls = ids.map(i => px2Loc(i)).filter(Boolean).sort((a, b) => a.ordem - b.ordem);
+    for (let i = 0; i < ls.length; i++) for (let j = i + 1; j < ls.length; j++) if (!tem.has([ls[i].id, ls[j].id].sort().join("|"))) out.push({ erp, a: ls[i], b: ls[j] });
+  });
+  return out;
+}
+{ const a0 = doAbaNao;
+  doAbaNao = function () {
+    let h = a0.apply(this, arguments);
+    try { const fal = px2OperadosFaltam(), tot = Object.values(PX2_OPERADOS).reduce((s, v) => s + v.length * (v.length - 1) / 2, 0), porL = {}; fal.forEach(f => { (porL[f.erp] = porL[f.erp] || []).push(f); });
+      h += `<h3 style="margin:22px 0 6px">Trechos operados × Diário Oficial <span class="sup">${fal.length} sem cadastro</span></h3><p class="sup" style="margin-top:0">Conferência com a lista de trechos operados (Origem × Destino por linha, recebida em 18/11/2026): ${tot} trechos — todos os pares entre os pontos das linhas 1000 e 2000, e Conceição de Macabu × Macaé na 1001. Abaixo, os que não estão nem na portaria vigente nem nos não oficiais da linha.</p>`;
+      h += fal.length ? `<div class="import-help">${Object.entries(porL).map(([erp, l]) => `<div style="margin-bottom:6px"><b>Linha ${esc(erp)}</b> · ${l.length}: <span class="sup">${esc(l.map(f => `${f.a.nome} × ${f.b.nome}`).join(" · "))}</span></div>`).join("")}${doEd() ? `<button class="btn primary" id="px2OpBt" onclick="px2OperadosRegistrar()">Registrar os ${fal.length} como Não Oficiais</button>` : ""}</div>` : `<div class="import-help">Todos os trechos operados já estão no Diário Oficial (oficiais ou não oficiais).</div>`;
+    } catch (e) {}
+    return h;
+  };
+}
+window.px2OperadosRegistrar = async () => {
+  if (!doEd() || !DO.lists.tr) return; const fal = px2OperadosFaltam(); if (!fal.length) return;
+  if (!(await erpConfirmar({ titulo: "Trechos não oficiais", texto: `Registrar ${fal.length} trecho(s) como não oficiais (sem tarifa)? Eles passam a aparecer nos lançamentos de passageiros da linha. Depois dá para editar ou excluir cada um.`, sim: "Registrar" }))) return;
+  const bt = $("px2OpBt"); let ok = 0, ord = Math.max(0, ...doTrechosDe(DO_NO).map(t => Number(t.Ordem) || 0));
+  for (const f of fal) { try { await SP.create(DO.site.id, DO.lists.tr.id, { Title: `${f.a.nome} - ${f.b.nome}`, PubId: DO_NO, Linha: f.erp, Origem: f.a.nome, Destino: f.b.nome, Ordem: ++ord, Observacao: "Lista de trechos operados (18/11/2026)" }); ok++; if (bt) bt.textContent = `Registrando ${ok} de ${fal.length}…`; } catch (e) { toast(`Parou em ${f.a.nome} × ${f.b.nome}: ${e.message}`, 9000); break; } }
+  await doCarregar(true); doPintar(); toast(`${ok} trecho(s) não oficial(is) registrado(s).`, 6000);
+};
+
+(function () { const st = document.createElement("style"); st.id = "erp-v01486";
+  st.textContent = `.px2-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#C62B22;margin:0 6px 1px 0;vertical-align:middle;flex:none}
+  .seg-tabs button .px2-dot{margin:0 0 6px 5px}
+  .px2-alerta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:10px 14px;margin:0 0 14px;border:1px solid #F1C8C3;border-left:4px solid #C62B22;background:#FDF3F2;border-radius:var(--radius);font-size:13.5px}
+  .px2-alerta.info{border-color:#E9CF8F;border-left-color:#D69A00;background:#FBF2DC}.px2-alerta .px2-al-c{font-weight:500}.px2-alerta .px2-al-c b{font-weight:700}
+  .px2 .px2-rola{overflow-x:auto;margin:0 -4px;padding:0 4px 4px}
+  .px2 .px2-grid{min-width:1310px}
+  .px2 .lanc-row.px2-row{display:grid;grid-template-columns:78px 126px minmax(140px,1fr) minmax(140px,1fr) 64px 58px 88px 118px 96px 54px 96px 60px 96px 24px;gap:6px;align-items:center}
+  .px2 .lanc-head.px2-row>div{text-align:center;line-height:1.2;white-space:normal}
+  .px2 .px2-row .lanc-in{text-align:center;padding:0 6px}.px2 .px2-row .pl-fixo,.px2 .px2-row .pl-tot{text-align:center}
+  .px2 .px2-od{font-size:12.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .px2 .px2-rel{font-variant-numeric:tabular-nums;letter-spacing:.06em}.px2 .px2-rel::placeholder{color:#B4BAC2;letter-spacing:.06em}
+  .px2 .lanc-in.ruim,.px2-tr .lanc-in.ruim{border-color:#C62B22;box-shadow:0 0 0 3px rgba(198,43,34,.12)}
+  .px2 .px2-soma{background:#F4F6FA;color:var(--navy);font-weight:700;cursor:default}
+  .px2 .px2-btr,.px2 .px2-bcom{width:100%;justify-content:center;white-space:nowrap;padding-left:6px;padding-right:6px}
+  .px2 .px2-btr.on{border-color:var(--navy);color:var(--navy);font-weight:700;background:#EEF2F8}.px2 .px2-bcom.on{border-color:#D69A00;background:#FBF2DC;color:#7A5200}
+  .px2 .px2-grupo .sup{margin-left:8px;font-weight:500}
+  .px2 .px2-chips{display:inline-flex;flex-wrap:wrap;gap:6px;margin-left:14px}.px2 .px2-chips .chip .sup{margin-left:4px}
+  .px2 .px2-vazio{padding:18px;color:var(--ink-2);font-size:13.5px}
+  .px2 .pl-dia{flex-wrap:wrap}.px2 .pl-dia .grow{flex:1}.px2 .px2-dia-st{margin-right:4px}
+  .px2 .pl-acoes{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.px2 .pl-acoes .grow{flex:1}
+  .px2-rasc-st{font-size:13px;color:var(--ink-2)}.px2-rasc-st.pend{color:#7A5200}.px2-rasc-st.err{color:#B3271E}
+  .px2 .pl-st .px2-dot{margin-right:5px}
+  .px2-tr{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .px2-tr-row{display:grid;grid-template-columns:minmax(200px,1fr) 124px 150px 124px 70px;gap:10px;align-items:center;padding:6px 12px;border-top:1px solid #EEF0F3}
+  .px2-tr-row.tem{background:#F7FAFF}
+  .px2-tr-head{border-top:0;background:#F4F6FA;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);text-align:center;padding:9px 12px}.px2-tr-head>div:first-child{text-align:left}
+  .px2-tr-n{display:flex;flex-direction:column;min-width:0}.px2-tr-n b{font-size:14px;color:var(--ink);font-weight:600}.px2-tr-n .sup{font-size:11.5px}
+  .px2-tr .lanc-in{height:38px;text-align:center}.px2-tr-tot{text-align:center;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums}
+  #px2TrRows{max-height:46vh;overflow:auto}
+  .px2-tr-gx{background:#FAFBFC}
+  .px2-tr-total{background:var(--navy);color:#fff;font-weight:800;text-align:center;font-size:15px;font-variant-numeric:tabular-nums;padding:10px 12px}.px2-tr-total>div:first-child{text-align:left;font-size:13.5px}
+  .px2-tr-add{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 6px}.px2-tr-add .lanc-in{width:auto;min-width:200px;height:40px}.px2-tr-add b{font-size:13px;margin-right:4px}
+  .px2-coms{display:flex;flex-direction:column;gap:8px;max-height:40vh;overflow:auto}.px2-com{border:1px solid var(--line);border-left:3px solid #D69A00;border-radius:var(--radius);padding:8px 12px;background:#fff}
+  .px2-com-h{font-size:12px;color:var(--ink-2)}.px2-com-h b{color:var(--navy)}.px2-com-t{font-size:14px;white-space:pre-wrap;margin-top:2px}
+  .px2-hist{margin:0;padding-left:18px;font-size:13.5px}.px2-hist li{margin:0 0 8px}
+  .px2-bvis{margin:0 0 10px}
+  .px2-banco-tr tr.px2-bt{cursor:pointer}.px2-banco-tr tr.px2-bt:hover td{background:#F1F5FB}
+  .px2-banco-tr td.px2-bt-tr{text-align:left!important}.px2-banco-tr tr.px2-bt-tot td{background:#F4F6FA;border-bottom:2px solid #C9D0D8}
+  .px2-banco-tr tfoot tr.px2-bt-tot td{background:var(--navy);color:#fff}
+  @media (max-width:640px){.px2-tr-row{grid-template-columns:1fr 1fr 1fr 1fr;row-gap:4px}.px2-tr-row .px2-tr-n,.px2-tr-total>div:first-child{grid-column:1/-1}.px2-tr-head>div:first-child{display:none}.px2-tr-add .lanc-in{min-width:0;flex:1 1 140px}}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -55075,6 +55861,8 @@ CONFIG.version = "v0.14.81";   /* topo: "NMB | Nova Macabu" e depois o ônibus c
 CONFIG.version = "v0.14.82";   /* Consumíveis ativo; cores por status dos módulos (ativo, piloto, prévia, em estudo, previsto) */
 CONFIG.version = "v0.14.83";   /* menus compactos (lista em colunas, blocos menores) e módulos acima das rotinas */
 CONFIG.version = "v0.14.84";   /* Diretoria e TI › Procedimentos: POP com desenho padrão, revisões, aprovação, Word, ciência de leitura e vídeos por tópico */
+CONFIG.version = "v0.14.85";   /* RJ Consultores: card "Sistema RJ" e novo card "Chamados RJ" (RJDesk); nome do card em até 2 linhas na lista; Início com os Departamentos no alto */
+CONFIG.version = "v0.14.86";   /* Passageiros: folha do dia refeita (linha, relatório, ticket agência, trechos, observações, rascunho no SharePoint, aprovação, pendências); Banco por trecho; Diário Oficial com Localidades */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

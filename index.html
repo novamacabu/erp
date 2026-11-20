@@ -55772,6 +55772,120 @@ window.px2OperadosRegistrar = async () => {
   .px2-banco-tr tfoot tr.px2-bt-tot td{background:var(--navy);color:#fff}
   @media (max-width:640px){.px2-tr-row{grid-template-columns:1fr 1fr 1fr 1fr;row-gap:4px}.px2-tr-row .px2-tr-n,.px2-tr-total>div:first-child{grid-column:1/-1}.px2-tr-head>div:first-child{display:none}.px2-tr-add .lanc-in{min-width:0;flex:1 1 140px}}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.87 (20/11/2026) · Pedido do Rafael (18:36–18:41): código de acesso no celular — PIN de 6 números, com Face ID / biometria.
+   - Só no celular (toque + tela pequena). No computador nada muda.
+   - Depois do login Microsoft, o ERP pede para criar o PIN (duas vezes) e oferece ligar o Face ID / biometria do aparelho.
+   - O ERP fica escondido atrás da tela do PIN ao abrir e ao voltar depois de 5 minutos fora da tela.
+   - 5 erros seguidos: o PIN é apagado e a sessão Microsoft é encerrada neste aparelho (volta só com usuário, senha e verificação).
+     "Esqueci o PIN" faz o mesmo.
+   - O PIN fica só no aparelho, por pessoa, embaralhado (PBKDF2-SHA-256 com sal, 150 mil voltas): nunca vai para o SharePoint
+     nem aparece no código. A biometria usa a chave do próprio aparelho (WebAuthn); o ERP só guarda o identificador dela.
+   - É uma trava de tela do app: em caso de roubo, continue revogando a sessão da conta Microsoft e trocando a senha.
+   ===================================================================== */
+const PIN = { min: 5, max: 5, k: "", st: "", buf: "", novo1: "", aberto: false, saiu: 0, ocupado: false };
+const pinCelular = () => { try { return matchMedia("(pointer:coarse)").matches && Math.min(screen.width, screen.height) <= 820; } catch (e) { return false; } };
+const pinChave = () => "erp.pin." + normEmail((session.me && (session.me.mail || session.me.userPrincipalName)) || (account && account.username) || "");
+function pinLer() { try { const o = JSON.parse(localStorage.getItem(pinChave()) || "null"); return o && o.h && o.s ? o : null; } catch (e) { return null; } }
+function pinGuardar(o) { try { localStorage.setItem(pinChave(), JSON.stringify(o)); return true; } catch (e) { return false; } }
+const pinB64 = u8 => btoa(String.fromCharCode.apply(null, new Uint8Array(u8))), pinU8 = b => Uint8Array.from(atob(b), c => c.charCodeAt(0));
+async function pinHash(pin, salB64) {
+  const ch = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveBits"]);
+  return pinB64(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: pinU8(salB64), iterations: 150000 }, ch, 256));
+}
+const pinBioPode = () => !!(window.PublicKeyCredential && navigator.credentials && window.isSecureContext);
+function pinTela() {
+  let el = document.getElementById("erpPin");
+  if (!el) { el = document.createElement("div"); el.id = "erpPin"; el.setAttribute("role", "dialog"); el.setAttribute("aria-modal", "true"); el.setAttribute("aria-label", "Código de acesso do ERP"); el.setAttribute("data-sem-titulo", ""); document.body.appendChild(el);
+    el.addEventListener("click", e => { const b = e.target.closest("[data-d],[data-a]"); if (!b || PIN.ocupado) return; if (b.dataset.d != null) pinDigito(b.dataset.d); else pinAcao(b.dataset.a); }); }
+  return el;
+}
+function pinPintar(msg, erro) {
+  const el = pinTela(), r = pinLer(), criando = PIN.st === "novo" || PIN.st === "novo2";
+  const tit = PIN.st === "novo" ? "Crie o código de acesso" : PIN.st === "novo2" ? "Repita o código" : PIN.st === "bio" ? "Desbloqueio pelo aparelho" : "Código de acesso";
+  const sub = msg || (PIN.st === "novo" ? "Escolha 6 números. Ele será pedido sempre que o ERP for aberto neste celular." : PIN.st === "novo2" ? "Digite de novo os 6 números para confirmar." : PIN.st === "bio" ? "Quer desbloquear o ERP com o Face ID ou a biometria deste aparelho? O código continua valendo como reserva." : "Digite os 6 números para abrir o ERP.");
+  const teclas = PIN.st === "bio" ? `<div class="pin-bio-q"><button type="button" class="btn primary" data-a="bioLigar">Ativar Face ID / Biometria</button><button type="button" class="btn" data-a="bioNao">Agora Não</button></div>`
+    : `<div class="pin-pts" aria-live="polite" aria-label="${PIN.buf.length} de 6 números">${[0, 1, 2, 3, 4, 5].map(i => `<i class="${i < PIN.buf.length ? "on" : ""}"></i>`).join("")}</div>
+       <div class="pin-tec">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button type="button" data-d="${n}">${n}</button>`).join("")}${!criando && r && r.bio && pinBioPode() ? `<button type="button" class="pin-aux" data-a="bio" aria-label="Desbloquear com Face ID ou biometria">Face ID</button>` : `<span></span>`}<button type="button" data-d="0">0</button><button type="button" class="pin-aux" data-a="apaga" aria-label="Apagar">⌫</button></div>
+       <div class="pin-rod">${criando ? (PIN.st === "novo2" ? `<button type="button" class="pin-link" data-a="recomeca">Escolher outro código</button>` : "") : `<button type="button" class="pin-link" data-a="esqueci">Esqueci o código</button>`}<button type="button" class="pin-link" data-a="sair">Sair da conta</button></div>`;
+  el.innerHTML = `<div class="pin-cx"><svg class="pin-logo" viewBox="0 0 247 100" aria-hidden="true"><use href="#erp-marca"/></svg><h2>${esc(tit)}</h2><p class="pin-sub${erro ? " err" : ""}">${esc(sub)}</p>${teclas}</div>`;
+  el.classList.add("on"); document.body.classList.add("pin-travado");
+}
+function pinAbrir() { PIN.aberto = true; PIN.buf = ""; const el = document.getElementById("erpPin"); if (el) el.classList.remove("on"); document.body.classList.remove("pin-travado"); const r = pinLer(); if (r && r.e) { r.e = 0; pinGuardar(r); } }
+function pinTravar() { if (!pinCelular() || !APP_PRONTO || !account) return; PIN.aberto = false; PIN.buf = ""; const r = pinLer(); PIN.st = r ? "pede" : "novo"; pinPintar(); if (r && r.bio && pinBioPode()) setTimeout(() => { if (!PIN.aberto && PIN.st === "pede") pinBio(true); }, 350); }
+async function pinExpulsar(motivo) {   /* apaga o PIN deste aparelho e encerra a sessão Microsoft */
+  try { localStorage.removeItem(pinChave()); } catch (e) {}
+  pinPintar(motivo || "Saindo da conta…", true); PIN.ocupado = true;
+  try { await pca.logoutRedirect({ account, postLogoutRedirectUri: redirectUri }); }
+  catch (e) { try { Object.keys(localStorage).filter(k => /msal|login\.windows\.net|login\.microsoftonline/i.test(k)).forEach(k => localStorage.removeItem(k)); sessionStorage.clear(); } catch (e2) {} location.reload(); }
+}
+async function pinDigito(d) {
+  if (PIN.buf.length >= 6) return; PIN.buf += String(d); pinPintar(); if (PIN.buf.length < 6) return;
+  const pin = PIN.buf; PIN.ocupado = true;
+  try {
+    if (PIN.st === "novo") { if (/^(\d)\1{5}$/.test(pin) || "0123456789876543210".includes(pin)) { PIN.buf = ""; pinPintar("Escolha um código menos óbvio (sem repetir o mesmo número nem sequência).", true); return; } PIN.novo1 = pin; PIN.buf = ""; PIN.st = "novo2"; pinPintar(); return; }
+    if (PIN.st === "novo2") {
+      if (pin !== PIN.novo1) { PIN.buf = ""; PIN.novo1 = ""; PIN.st = "novo"; pinPintar("Os dois códigos não são iguais. Escolha de novo.", true); return; }
+      const s = pinB64(crypto.getRandomValues(new Uint8Array(16)));
+      if (!pinGuardar({ v: 1, s, h: await pinHash(pin, s), e: 0, bio: null, em: new Date().toISOString() })) { PIN.buf = ""; PIN.st = "novo"; pinPintar("Não foi possível guardar o código neste aparelho.", true); return; }
+      PIN.novo1 = ""; PIN.buf = ""; if (pinBioPode()) { PIN.st = "bio"; pinPintar(); } else { pinAbrir(); toast("Código de acesso criado."); }
+      return;
+    }
+    const r = pinLer(); if (!r) { PIN.st = "novo"; PIN.buf = ""; pinPintar(); return; }
+    if ((await pinHash(pin, r.s)) === r.h) { pinAbrir(); return; }
+    r.e = (Number(r.e) || 0) + 1; pinGuardar(r); PIN.buf = "";
+    if (r.e >= PIN.max) { PIN.ocupado = false; await pinExpulsar("Código errado 5 vezes: o acesso neste aparelho foi encerrado. Entre de novo com a conta Microsoft."); return; }
+    pinPintar(`Código incorreto. ${PIN.max - r.e === 1 ? "Resta 1 tentativa" : `Restam ${PIN.max - r.e} tentativas`} antes de encerrar o acesso neste aparelho.`, true);
+  } catch (e) { PIN.buf = ""; pinPintar("Não foi possível conferir o código neste aparelho (" + ((e && e.message) || e) + ").", true); }
+  finally { PIN.ocupado = false; }
+}
+async function pinBioCriar() {
+  const uid = new TextEncoder().encode(pinChave().slice(0, 60)), cred = await navigator.credentials.create({ publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rp: { name: "ERP NMB", id: location.hostname },
+    user: { id: uid, name: (account && account.username) || "ERP NMB", displayName: (session.me && session.me.displayName) || "ERP NMB" }, pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "discouraged" }, timeout: 60000, attestation: "none" } });
+  return pinB64(cred.rawId);
+}
+async function pinBio(quieto) {
+  const r = pinLer(); if (!r || !r.bio || !pinBioPode() || PIN.ocupado) return; PIN.ocupado = true;
+  try { const a = await navigator.credentials.get({ publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, allowCredentials: [{ type: "public-key", id: pinU8(r.bio), transports: ["internal"] }], userVerification: "required", timeout: 60000 } });
+    if (a && pinB64(a.rawId) === r.bio) pinAbrir(); else if (!quieto) pinPintar("O aparelho não confirmou. Digite o código.", true); }
+  catch (e) { if (!quieto) pinPintar("Não foi possível usar o Face ID / biometria agora. Digite o código.", true); }
+  finally { PIN.ocupado = false; }
+}
+async function pinAcao(a) {
+  if (a === "apaga") { PIN.buf = PIN.buf.slice(0, -1); pinPintar(); }
+  else if (a === "recomeca") { PIN.buf = ""; PIN.novo1 = ""; PIN.st = "novo"; pinPintar(); }
+  else if (a === "bio") pinBio(false);
+  else if (a === "bioNao") { pinAbrir(); toast("Código de acesso criado."); }
+  else if (a === "bioLigar") { PIN.ocupado = true; try { const id = await pinBioCriar(), r = pinLer(); if (r) { r.bio = id; pinGuardar(r); } pinAbrir(); toast("Código criado e Face ID / biometria ativados."); } catch (e) { pinAbrir(); toast("Código de acesso criado. Não foi possível ativar o Face ID / biometria neste aparelho.", 7000); } finally { PIN.ocupado = false; } }
+  else if (a === "esqueci") { if (confirm("Esqueceu o código? O acesso neste aparelho será encerrado e você entra de novo com a conta Microsoft para criar outro.")) pinExpulsar(); }
+  else if (a === "sair") pinExpulsar();
+}
+window.pinTrocar = () => { if (!pinCelular() || !PIN.aberto) return; if (!confirm("Trocar o código de acesso deste celular? O ERP vai pedir o código atual e depois o novo.")) return; PIN._troca = true; PIN.aberto = false; PIN.buf = ""; PIN.st = "pede"; pinPintar("Digite o código atual."); };
+{ const a0 = pinAbrir; pinAbrir = function () { if (PIN._troca) { PIN._troca = false; try { localStorage.removeItem(pinChave()); } catch (e) {} PIN.buf = ""; PIN.st = "novo"; pinPintar(); return; } return a0.apply(this, arguments); }; }
+if (pinCelular()) {
+  document.body.classList.add("pin-travado");   /* nada do ERP aparece antes do código (a tela de login da Microsoft continua visível) */
+  const espera = setInterval(() => { if (!APP_PRONTO || !account) return; clearInterval(espera); pinTravar();
+    const v = document.querySelector(".sidebar .version"); if (v && !document.getElementById("pinTrocaBt")) v.insertAdjacentHTML("beforeend", `<button type="button" class="pin-link" id="pinTrocaBt" onclick="pinTrocar()">Trocar o código de acesso</button>`); }, 150);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { if (PIN.aberto) PIN.saiu = Date.now(); } else if (PIN.aberto && PIN.saiu && Date.now() - PIN.saiu > PIN.min * 60000) pinTravar(); });
+  window.addEventListener("pageshow", e => { if (e.persisted && PIN.aberto) pinTravar(); });
+  window.addEventListener("keydown", e => { const el = document.getElementById("erpPin"); if (!el || !el.classList.contains("on") || PIN.ocupado || PIN.st === "bio") return; if (/^\d$/.test(e.key)) { e.preventDefault(); pinDigito(e.key); } else if (e.key === "Backspace") { e.preventDefault(); pinAcao("apaga"); } }, true);
+}
+(function () { const st = document.createElement("style"); st.id = "erp-v01487";
+  st.textContent = `body.pin-travado #app{visibility:hidden!important}body.pin-travado .modal-back,body.pin-travado .toast-wrap{visibility:hidden!important}
+  #erpPin{display:none;position:fixed;inset:0;z-index:2147483600;background:#F4F6FA;align-items:center;justify-content:center;padding:calc(16px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));overflow:auto}
+  #erpPin.on{display:flex}.pin-cx{width:min(340px,100%);display:flex;flex-direction:column;align-items:center;text-align:center}
+  .pin-logo{width:124px;height:50px;margin-bottom:18px}#erpPin h2{margin:0;font-size:21px;font-weight:800;color:var(--navy)}
+  .pin-sub{margin:8px 0 0;font-size:14px;line-height:1.45;color:var(--ink-2);min-height:42px}.pin-sub.err{color:#B3271E;font-weight:600}
+  .pin-pts{display:flex;gap:14px;margin:22px 0 24px}.pin-pts i{width:15px;height:15px;border-radius:50%;border:2px solid var(--navy);background:transparent}.pin-pts i.on{background:var(--navy)}
+  .pin-tec{display:grid;grid-template-columns:repeat(3,76px);gap:14px 22px;justify-content:center}
+  .pin-tec button{width:76px;height:76px;border-radius:50%;border:1px solid #C9D0D8;background:#fff;font:inherit;font-size:28px;font-weight:600;color:var(--navy);cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+  .pin-tec button:active{background:#E3E8F1}.pin-tec button.pin-aux{border-color:transparent;background:transparent;font-size:14px;font-weight:700}
+  .pin-rod{display:flex;gap:22px;justify-content:center;margin-top:22px;flex-wrap:wrap}.pin-link{border:0;background:none;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink-2);text-decoration:underline;cursor:pointer;padding:8px 4px}
+  .pin-bio-q{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:22px}.pin-bio-q .btn{width:100%;justify-content:center;min-height:48px}
+  .sidebar .version #pinTrocaBt{display:block;margin-top:6px;padding:4px 0}
+  @media (max-height:640px){.pin-tec button{width:64px;height:64px;font-size:24px}.pin-tec{grid-template-columns:repeat(3,64px);gap:10px 20px}.pin-logo{display:none}.pin-pts{margin:14px 0 16px}}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -55863,6 +55977,7 @@ CONFIG.version = "v0.14.83";   /* menus compactos (lista em colunas, blocos meno
 CONFIG.version = "v0.14.84";   /* Diretoria e TI › Procedimentos: POP com desenho padrão, revisões, aprovação, Word, ciência de leitura e vídeos por tópico */
 CONFIG.version = "v0.14.85";   /* RJ Consultores: card "Sistema RJ" e novo card "Chamados RJ" (RJDesk); nome do card em até 2 linhas na lista; Início com os Departamentos no alto */
 CONFIG.version = "v0.14.86";   /* Passageiros: folha do dia refeita (linha, relatório, ticket agência, trechos, observações, rascunho no SharePoint, aprovação, pendências); Banco por trecho; Diário Oficial com Localidades */
+CONFIG.version = "v0.14.87";   /* celular: código de acesso (PIN de 6 números) com Face ID / biometria; 5 erros encerram a sessão no aparelho */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

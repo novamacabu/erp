@@ -55886,6 +55886,41 @@ if (pinCelular()) {
   .sidebar .version #pinTrocaBt{display:block;margin-top:6px;padding:4px 0}
   @media (max-height:640px){.pin-tec button{width:64px;height:64px;font-size:24px}.pin-tec{grid-template-columns:repeat(3,64px);gap:10px 20px}.pin-logo{display:none}.pin-pts{margin:14px 0 16px}}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.88 (20/11/2026) · Rafael (18:48): o Face ID foi oferecido mas não ativou.
+   - Quando o aparelho não ativa, o ERP agora diz o motivo (antes só dizia "não foi possível").
+   - "Ativar Face ID / Biometria" no rodapé do menu: tenta de novo a qualquer hora, sem trocar o código.
+   ===================================================================== */
+function pinBioMotivo(e) {
+  const n = (e && e.name) || "", m = (e && e.message) || String(e || "");
+  if (n === "NotAllowedError") return "o aparelho recusou ou a confirmação foi cancelada. No iPhone, confira se Ajustes › seu nome › iCloud › Senhas está ligado e se o Face ID está configurado";
+  if (n === "NotSupportedError") return "este aparelho ou navegador não oferece biometria para sites";
+  if (n === "SecurityError") return "o endereço aberto não é o do ERP (" + location.hostname + ")";
+  if (n === "InvalidStateError") return "já existe uma chave deste ERP no aparelho; apague-a em Senhas e tente de novo";
+  return (n ? n + ": " : "") + m;
+}
+function pinBioBotao() {
+  const v = document.querySelector(".sidebar .version"), r = pinLer(), b = document.getElementById("pinBioBt");
+  if (!v || !pinCelular()) return;
+  if (r && !r.bio && pinBioPode()) { if (!b) v.insertAdjacentHTML("beforeend", `<button type="button" class="pin-link" id="pinBioBt" onclick="pinBioAtivar()">Ativar Face ID / Biometria</button>`); }
+  else if (b) b.remove();
+}
+window.pinBioAtivar = async function () {
+  const r = pinLer(); if (!r || !PIN.aberto) return;
+  try { r.bio = await pinBioCriar(); pinGuardar(r); toast("Face ID / biometria ativados."); }
+  catch (e) { PIN.bioErro = pinBioMotivo(e); toast("Face ID / biometria não ativados: " + PIN.bioErro + ".", 12000); }
+  pinBioBotao();
+};
+{ const a0 = pinAcao; pinAcao = async function (a) {
+    if (a !== "bioLigar") { const x = await a0.apply(this, arguments); pinBioBotao(); return x; }
+    PIN.ocupado = true; let id = null, erro = "";
+    try { id = await pinBioCriar(); } catch (e) { erro = pinBioMotivo(e); } finally { PIN.ocupado = false; }
+    const r = pinLer(); if (id && r) { r.bio = id; pinGuardar(r); }
+    pinAbrir(); pinBioBotao();
+    if (id) toast("Código criado e Face ID / biometria ativados."); else { PIN.bioErro = erro; toast("Código criado. Face ID / biometria não ativados: " + erro + ". Para tentar de novo: menu › Ativar Face ID / Biometria.", 14000); }
+  }; }
+{ const a0 = pinAbrir; pinAbrir = function () { const x = a0.apply(this, arguments); setTimeout(pinBioBotao, 400); return x; }; }
+(function () { const st = document.createElement("style"); st.textContent = `.sidebar .version #pinBioBt{display:block;padding:4px 0}`; document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -55978,6 +56013,7 @@ CONFIG.version = "v0.14.84";   /* Diretoria e TI › Procedimentos: POP com dese
 CONFIG.version = "v0.14.85";   /* RJ Consultores: card "Sistema RJ" e novo card "Chamados RJ" (RJDesk); nome do card em até 2 linhas na lista; Início com os Departamentos no alto */
 CONFIG.version = "v0.14.86";   /* Passageiros: folha do dia refeita (linha, relatório, ticket agência, trechos, observações, rascunho no SharePoint, aprovação, pendências); Banco por trecho; Diário Oficial com Localidades */
 CONFIG.version = "v0.14.87";   /* celular: código de acesso (PIN de 6 números) com Face ID / biometria; 5 erros encerram a sessão no aparelho */
+CONFIG.version = "v0.14.88";   /* celular: Face ID diz o motivo quando não ativa; "Ativar Face ID / Biometria" no rodapé do menu */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -55348,7 +55348,7 @@ paxLoteHtml = function () {
       <div class="lanc-cell"><span class="pl-st vz"></span></div>
       <div class="lanc-cell">${l.livre && !trav ? `<button type="button" class="lanc-x" onclick="paxLoteTira(${i})" title="Remover esta linha" aria-label="Remover">×</button>` : ""}</div></div>`;
   }).join("");
-  const chips = PX2_LINHAS.map(([k, r]) => { const n = L.linhas.filter(l => !k || px2LinhaChave(l.serv) === k).length; return `<button type="button" class="chip${filtro === k ? " on" : ""}" data-l="${k}" onclick="px2LoteLinha('${k}')">${esc(r)} <span class="sup">${n}</span></button>`; }).join("");
+  const chips = PX2_LINHAS.map(([k, r]) => { const n = L.linhas.filter(l => !k || px2LinhaChave(l.serv) === k).length; return `<button type="button" class="chip${filtro === k ? " on" : ""}" data-l="${k}" onclick="px2LoteLinha('${k}')">${esc(r)}</button>`; }).join("");
   const hst = px2J(dia.Historico, []);
   const quando = iso => iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
   const stTxt = st === "Enviado" ? `Enviado por ${esc(dia.EnviadoPor || "—")} em ${esc(quando(dia.EnviadoEm))}.` : st === "Aprovado" ? `Aprovado por ${esc(dia.AprovadoPor || "—")} em ${esc(quando(dia.AprovadoEm))}.` : st === "Devolvido" ? `Devolvido${dia.Motivo ? `: <i>${esc(dia.Motivo)}</i>` : "."}` : "";
@@ -55552,7 +55552,8 @@ window.px2TrechosDaFolha = i => {
   const v = px2Vals(l), semDet = !px2DetTem(l.det) && (v.t || v.f || v.g);
   px2TrechosModal({ titulo: `Trechos · ${fmtDate(L.data)} · ${paxLoteServRot(l.serv)} ${l.hora} ${l.sent}`, serv: l.serv, sent: l.sent, det: l.det, gx: l.gx, ro: trav,
     info: semDet ? `Esta linha tem ${v.t + v.f + v.g} passageiro(s) digitados sem trecho: ao confirmar os trechos, a linha passa a valer pela soma deles. ` : "",
-    onOk: (det, gx) => { const tem = Object.keys(det).length > 0; l.det = tem ? det : null; l.gx = tem ? gx : "";
+    onOk: (det, gx) => { const tem = Object.keys(det).length > 0, tinha = px2DetTem(l.det); l.det = tem ? det : null; l.gx = tem ? gx : "";
+      if (!tem && tinha) { l.tk = ""; l.pag = ""; l.grat = ""; }   /* v0.14.89: apagou todos os trechos → os totais da linha, que vinham deles, zeram junto */
       if (tem) { const s = px2DetSoma(det); l.tk = s.t ? String(s.t) : ""; l.pag = String(s.f); l.grat = String(s.g + (Number(gx) || 0)); }
       PAX_UI._mantemRolagem = true; paintPax(); px2RascAgendar(); return true; } });
 };
@@ -55921,6 +55922,309 @@ window.pinBioAtivar = async function () {
   }; }
 { const a0 = pinAbrir; pinAbrir = function () { const x = a0.apply(this, arguments); setTimeout(pinBioBotao, 400); return x; }; }
 (function () { const st = document.createElement("style"); st.textContent = `.sidebar .version #pinBioBt{display:block;padding:4px 0}`; document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.90 (22/11/2026) · Estatística de Passageiros — pedidos do Rafael (11:29 e 11:31).
+   1. Aba "Lançamentos" é a primeira da lista.
+   2. Banco de Dados › "Exportar Base": Excel completo (aba Viagens + aba Trechos, com ID, Relatório, Ticket Agência,
+      Fechamento do Motorista e Gratuidades por trecho), do mês na tela ou de TUDO o que está gravado.
+   3. Importar › "Atualizar pela Base em Excel": lê esse mesmo arquivo (ou a folha em branco preenchida), mostra a prévia
+      do que muda e só grava com a confirmação. Não exclui viagem; dia enviado/aprovado e Tabela de Horários continuam valendo.
+   4. Lançamentos › "Folha em Branco": Excel do dia para preencher sem internet (mesmo formato da base) e PDF para imprimir.
+   5. Lançamentos: linha sem horário na Tabela para o dia (ex.: 1001 e Fretamento) abre com linhas em branco (Ida e Volta).
+   6. Filtro de linha da folha sem o número de horários.
+   7. Observações: administrador / proprietário do módulo edita e exclui (fica no histórico do dia).
+   8. Análise e Histórico numa aba só (o histórico por último).
+   ===================================================================== */
+const PX3 = { imp: null };
+const px3N = s => String(s == null ? "" : s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+const px3Ord = s => { const i = PAX_LOTE_SERV.findIndex(v => v[0] === s); return i < 0 ? 9 : i; };
+const px3SERV = { parador: "Parador", paradora: "Parador", direto: "Direto", madalena: "Madalena", fretamento: "Fretamento", "direto (f)": "Fretamento" };
+const PX3_SEM = "SEM TRECHO";
+
+/* ---------- 1 · ordem das abas ---------- */
+{ const p0 = paintPax;
+  paintPax = function () { const r = p0.apply(this, arguments);
+    try { const seg = document.querySelector("#paxBody .op-topo .seg-tabs"), b = seg && [...seg.querySelectorAll("button")].find(x => /^Lan[cç]amentos/i.test(x.textContent.trim())); if (b && seg.firstElementChild !== b) seg.insertBefore(b, seg.firstElementChild); } catch (e) {}
+    return r; };
+  window.paintPax = paintPax; }
+
+/* ---------- 5 · linha sem horário na grade do dia: linhas em branco + botão da folha em branco ---------- */
+{ const h0 = paxLoteHtml;
+  paxLoteHtml = function () {
+    const L = PAX_UI.lote, f = PAX_UI.loteLinha || ""; let aviso = "";
+    if (L) {
+      L.linhas = L.linhas.filter(l => !(l.auto && !l.id && !l.hora && paxLoteSt(l) === "" && px2LinhaChave(l.serv) !== f));
+      if (f && !px2Travado(L.data)) { const serv = { "1000": "Parador", "1001": "Direto", "2000": "Madalena", F: "Fretamento" }[f], daLinha = L.linhas.filter(l => px2LinhaChave(l.serv) === f);
+        if (serv && !daLinha.length) ["Ida", "Volta"].forEach(sent => L.linhas.push({ serv, hora: "", sent, rel: "", tk: "", pag: "", grat: "", det: null, gx: "", id: null, b: null, livre: true, auto: true }));
+        if (serv && L.linhas.filter(l => px2LinhaChave(l.serv) === f).every(l => l.livre)) aviso = `<p class="hint px3-semgrade">A Tabela de Horários não tem horário ${f === "F" ? "de Fretamento" : "da linha " + esc(f)} para ${esc(paxHorDiaRot(L.data))}. Informe o horário nas linhas abaixo (Ida e Volta) e lance os passageiros ou os trechos. ${L.tab ? "Só é gravado horário cadastrado em Operacional › Frota › Tabela de Horários (aba Especiais para viagem avulsa)." : ""}</p>`; }
+    }
+    let h = h0.apply(this, arguments);
+    if (aviso) h = h.replace('<div class="px2-rola">', aviso + '<div class="px2-rola">');
+    return h.replace('<button class="btn" onclick="paxExcelMes()"', '<button class="btn" onclick="px3FolhaBranco()" title="Excel do dia para preencher sem internet, ou PDF para imprimir e preencher à mão">Folha em Branco</button><button class="btn" onclick="paxExcelMes()"');
+  }; }
+
+/* ---------- 7 · observações: administrador edita e exclui ---------- */
+window.px2Coment = i => {
+  const L = PAX_UI.lote, l = L && L.linhas[i]; if (!l) return; if (!/^\d{2}:\d{2}$/.test(l.hora || "")) { toast("Informe o horário da viagem antes de registrar a observação."); return; }
+  const k = px2ComK(l), pode = podeEditar("pax"), adm = px2Aprova(), rot = `${paxLoteServRot(l.serv)} ${l.hora} ${l.sent}`;
+  const qd = iso => iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  const lista = () => (px2ComDe(L.data)[k] || []).slice().reverse();
+  const html = () => lista().map(c => `<div class="px2-com" data-em="${esc(c.em || "")}"><div class="px2-com-h"><b>${esc(c.por || "—")}</b> · ${esc(qd(c.em))}${c.ed ? ` <span class="sup">· editada por ${esc(c.ed.por || "—")} em ${esc(qd(c.ed.em))}</span>` : ""}${adm ? `<span class="grow"></span><button type="button" class="pin-link px3-cb" data-a="ed">Editar</button><button type="button" class="pin-link px3-cb" data-a="ex">Excluir</button>` : ""}</div><div class="px2-com-t">${esc(c.txt || "")}</div></div>`).join("") || `<p class="sup">Nenhuma observação neste horário.</p>`;
+  const erro = m => { const e = $("px2Err"); if (e) { e.style.display = m ? "block" : "none"; e.textContent = m || ""; } };
+  openModal(`Observações · ${fmtDate(L.data)} · ${rot}`, `<div class="px2-coms" id="px3Coms" data-sem-titulo>${html()}</div>
+    ${pode ? `<div class="form-grid" style="margin-top:14px"><div class="field full"><label>Nova observação</label><textarea id="px2ComTxt" rows="3" maxlength="800" placeholder="Ex.: carro quebrou em Curato; relatório com rasura no trecho CM × MC"></textarea><div class="hint">Fica registrada com o seu nome, o dia e a hora. ${adm ? "Como administrador, você pode editar ou excluir as observações (a alteração fica no histórico do dia)." : "Só um administrador pode editar ou excluir."}</div></div></div>` : ""}<div class="err-msg" id="px2Err" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const txt = ($("px2ComTxt") ? $("px2ComTxt").value : "").trim(); if (!txt) { erro("Escreva a observação."); return false; }
+    try { await px2DiaGrava(L.data, at => { const c = px2J(at.Comentarios, {}); (c[k] = Array.isArray(c[k]) ? c[k] : []).push({ em: new Date().toISOString(), por: px2Eu(), txt }); return { Comentarios: JSON.stringify(c) }; }); }
+    catch (e) { erro("Não foi possível gravar: " + e.message); return false; }
+    PAX_UI._mantemRolagem = true; paintPax(); toast("Observação registrada."); return true;
+  });
+  const s = $("mSave"); if (s) { if (!pode) s.remove(); else s.textContent = "Registrar"; }
+  const box = $("px3Coms"); if (!box || !adm) return;
+  const grava = async (em, fn, hst, msg) => { erro("");
+    try { await px2DiaGrava(L.data, at => { const c = px2J(at.Comentarios, {}), arr = Array.isArray(c[k]) ? c[k] : [], ix = arr.findIndex(x => x.em === em); if (ix < 0) throw new Error("a observação não foi encontrada (outra pessoa pode ter alterado)."); fn(arr, ix); if (arr.length) c[k] = arr; else delete c[k]; return { Comentarios: JSON.stringify(c), Historico: px2Hst(at.Historico, `${hst} · ${rot}`) }; });
+      box.innerHTML = html(); PAX_UI._mantemRolagem = true; const tx = $("px2ComTxt") ? $("px2ComTxt").value : ""; paintPax(); if ($("px2ComTxt")) $("px2ComTxt").value = tx; toast(msg); return true; }
+    catch (e) { erro("Não foi possível gravar: " + e.message); if (!document.body.contains(box)) toast("Não foi possível gravar: " + e.message, 8000); return false; } };
+  box.addEventListener("click", async e => { const b = e.target.closest("[data-a]"); if (!b) return; const card = b.closest(".px2-com"), em = card.dataset.em, a = b.dataset.a, atual = lista().find(c => c.em === em); if (!atual) return;
+    if (a === "ex") { if (await erpConfirmar({ titulo: "Excluir a observação", texto: `Excluir a observação de ${atual.por || "—"} (${qd(atual.em)})? A exclusão fica registrada no histórico do dia.`, sim: "Excluir", perigo: true })) { await grava(em, (arr, ix) => arr.splice(ix, 1), `observação de ${atual.por || "—"} excluída`, "Observação excluída."); px2Coment(i); } }   /* a confirmação fecha a caixa: reabre com a lista atualizada */
+    else if (a === "ed") { card.querySelector(".px2-com-t").innerHTML = `<textarea class="px3-ced" rows="3" maxlength="800" aria-label="Texto da observação">${esc(atual.txt || "")}</textarea><div class="row" style="gap:8px;margin-top:6px"><button type="button" class="btn sm primary" data-a="edOk">Salvar</button><button type="button" class="btn sm" data-a="edNao">Cancelar</button></div>`; card.querySelector("textarea").focus(); }
+    else if (a === "edNao") box.innerHTML = html();
+    else if (a === "edOk") { const txt = card.querySelector("textarea").value.trim(); if (!txt) { erro("Escreva a observação."); return; } if (txt === (atual.txt || "")) { box.innerHTML = html(); return; }
+      await grava(em, (arr, ix) => { arr[ix] = Object.assign({}, arr[ix], { txt, ed: { em: new Date().toISOString(), por: px2Eu() } }); }, `observação de ${atual.por || "—"} editada`, "Observação alterada."); } });
+};
+
+/* ---------- Excel no padrão da empresa (cabeçalho na linha 5) ---------- */
+async function px3Livro() {
+  const { wb } = await xlsxNovo(), NAVY = "FF0F1E3A", ORANGE = "FFD6421F", LINHA = "FFD5DAE1", CINZA = "FF5B6068", ZEBRA = "FFF4F6FA", TXT = "FF1B2230", BRANCO = "FFFFFFFF", CAMPO = "FFFFFBEA";
+  const logo = await ctbLogoPng().catch(() => null), logoId = logo ? wb.addImage({ base64: logo.url, extension: "png" }) : null, fill = c => ({ type: "pattern", pattern: "solid", fgColor: { argb: c } });
+  const rodape = `Transportadora Nova Macabu · gerado pelo ERP em ${new Date().toLocaleString("pt-BR")}`;
+  const folha = (nome, titulo, sub, cols, cor) => { const ws = wb.addWorksheet(nome, { views: [{ state: "frozen", ySplit: 5, showGridLines: false }], properties: { tabColor: { argb: cor || NAVY } },
+      pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "5:5", horizontalCentered: true, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.2, footer: 0.25 } } });
+    const N = cols.length; ws.getRow(1).height = 32; ws.getRow(2).height = 20; ws.getRow(3).height = 4; ws.getRow(4).height = 8;
+    if (logoId != null) ws.addImage(logoId, { tl: { col: 0.08, row: 0.12 }, ext: { width: Math.min(150, Math.round(52 * logo.w / Math.max(logo.h, 1))), height: 52 } });
+    ws.mergeCells(1, 3, 1, N); const t = ws.getCell(1, 3); t.value = titulo; t.font = { bold: true, size: 16, color: { argb: NAVY } }; t.alignment = { vertical: "middle", horizontal: "left" };
+    ws.mergeCells(2, 3, 2, N); const s = ws.getCell(2, 3); s.value = sub; s.font = { size: 10, color: { argb: CINZA } }; s.alignment = { vertical: "middle", horizontal: "left" };
+    for (let i = 1; i <= N; i++) ws.getCell(3, i).fill = fill(ORANGE);
+    const hr = ws.getRow(5); hr.height = 26; cols.forEach((c, i) => { const cel = hr.getCell(i + 1); cel.value = c.h; cel.font = { bold: true, size: 11, color: { argb: BRANCO } }; cel.fill = fill(NAVY); cel.alignment = { vertical: "middle", horizontal: "center" }; cel.border = { right: { style: "hair", color: { argb: "FF3A4A6B" } } }; });
+    ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5, column: N } }; ws.headerFooter = { oddFooter: `&L&8${rodape}&R&8Página &P de &N` }; ws._cols = cols; ws._z = 0; return ws; };
+  const linha = (ws, vals) => { const r = ws.addRow(vals); r.height = 20; const z = ws._z++ % 2 === 1;
+    ws._cols.forEach((c, i) => { const cel = r.getCell(i + 1); cel.font = { size: 11, bold: !!c.forte, color: { argb: TXT } }; cel.alignment = { vertical: "middle", horizontal: c.esq ? "left" : "center" }; if (c.fmt) cel.numFmt = c.fmt;
+      cel.border = { bottom: { style: "hair", color: { argb: LINHA } }, right: { style: "hair", color: { argb: LINHA } } }; if (c.campo) cel.fill = fill(CAMPO); else if (z) cel.fill = fill(ZEBRA); }); return r; };
+  return { wb, folha, linha };
+}
+const PX3_INT = "#,##0";
+const px3ColsV = campo => [{ h: "ID" }, { h: "Data", fmt: "dd/mm/yyyy" }, { h: "Dia" }, { h: "Linha", forte: true }, { h: "Serviço" }, { h: "Horário", forte: true }, { h: "Sentido" }, { h: "Relatório", fmt: "@", campo }, { h: "Ticket Agência", fmt: PX3_INT, campo }, { h: "Fechamento do Motorista", fmt: PX3_INT, campo }, { h: "Gratuidades", fmt: PX3_INT, campo }, { h: "Total", fmt: PX3_INT, forte: true }, { h: "Lugares", fmt: PX3_INT }, { h: "Ocupação", fmt: "0%" }, { h: "Lançamento" }];
+const px3ColsT = campo => [{ h: "ID" }, { h: "Data", fmt: "dd/mm/yyyy" }, { h: "Linha", forte: true }, { h: "Serviço" }, { h: "Horário", forte: true }, { h: "Sentido" }, { h: "Relatório", fmt: "@" }, { h: "Trecho", forte: true }, { h: "Nome do Trecho", esq: true }, { h: "Ticket Agência", fmt: PX3_INT, campo }, { h: "Fechamento do Motorista", fmt: PX3_INT, campo }, { h: "Gratuidades", fmt: PX3_INT, campo }, { h: "Total", fmt: PX3_INT, forte: true }];
+const px3Dt = iso => { const d = dLocal(iso); return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 12)); };
+const PX3_DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const PX3_COMO = "Para atualizar o ERP por este arquivo: altere os números, salve e use Estatística de Passageiros › Importar › Atualizar pela Base em Excel. Havendo números na aba Trechos, a viagem vale pela soma deles. Não altere ID, Data, Serviço, Horário e Sentido.";
+
+/* ---------- 2 · base completa (mês na tela ou tudo) ---------- */
+async function px3BaseGerar(escopo) {
+  const tudo = escopo === "tudo", its = PAX_STATE.itens.filter(x => x.Data && (tudo || x.Data.slice(0, 7) === PAX_STATE.mes)).slice().sort((a, b) => a.Data.localeCompare(b.Data) || px3Ord(a.Servico) - px3Ord(b.Servico) || ((a.Sentido || "Ida") === (b.Sentido || "Ida") ? 0 : (a.Sentido || "Ida") === "Ida" ? -1 : 1) || paxHoraPura(a).localeCompare(paxHoraPura(b)));
+  if (!its.length) { toast("Nenhuma viagem gravada para exportar."); return 0; }
+  const mes = mesLabel(PAX_STATE.mes), Mes = mes.charAt(0).toUpperCase() + mes.slice(1), per = tudo ? `Tudo (${fmtDate(its[0].Data)} a ${fmtDate(its[its.length - 1].Data)})` : Mes, n = v => Number(v || 0);
+  const { wb, folha, linha } = await px3Livro();
+  const w1 = folha("Viagens", `Estatística de Passageiros · Base · ${per}`, `${its.length.toLocaleString("pt-BR")} viagem(ns) gravada(s). ${PX3_COMO}`, px3ColsV(false));
+  const w2 = folha("Trechos", `Estatística de Passageiros · Base por Trecho · ${per}`, "Uma linha por viagem e trecho. \"" + PX3_SEM + "\" = gratuidades lançadas sem trecho.", px3ColsT(false), "FFD6421F");
+  let nt = 0;
+  its.forEach(x => { const tk = n(x.TicketAgencia), pg = n(x.Pagantes), g = n(x.Gratuidade), l = n(x.Lugares || PAX_LUGARES), id = Number(x._id) || x._id, sent = x.Sentido || "Ida", hora = paxHoraPura(x), rel = x.Relatorio ? String(x.Relatorio) : "";
+    linha(w1, [id, px3Dt(x.Data), PX3_DIAS[dLocal(x.Data).getDay()], paxLinhaNum(x.Servico), x.Servico || "", hora, sent, rel, tk, Math.max(0, pg - tk), g, pg + g, l || null, l ? (pg + g) / l : null, x.Origem || ""]);
+    const det = px2DetDe(x), ks = Object.keys(det); if (!ks.length) return; const s = px2DetSoma(det);
+    ks.sort().forEach(k => { const d = det[k]; nt++; linha(w2, [id, px3Dt(x.Data), paxLinhaNum(x.Servico), x.Servico || "", hora, sent, rel, k, px2KeyNome(k), d.t, d.f, d.g, d.t + d.f + d.g]); });
+    if (g > s.g) { nt++; linha(w2, [id, px3Dt(x.Data), paxLinhaNum(x.Servico), x.Servico || "", hora, sent, rel, PX3_SEM, "Gratuidades sem trecho informado", 0, 0, g - s.g, g - s.g]); } });
+  [w1, w2].forEach(ws => paxXlsAjusta(ws, 5)); wb.views = [{ activeTab: 0 }];
+  await xlsxBaixar(wb, `Base de Passageiros - ${tudo ? "Tudo" : Mes}.xlsx`); toast(`Base gerada: ${its.length.toLocaleString("pt-BR")} viagem(ns) e ${nt.toLocaleString("pt-BR")} linha(s) de trecho.`, 6000); return its.length;
+}
+window.px3BaseExportar = () => {
+  const mes = mesLabel(PAX_STATE.mes), nMes = PAX_STATE.itens.filter(x => x.Data && x.Data.slice(0, 7) === PAX_STATE.mes).length, nTudo = PAX_STATE.itens.filter(x => x.Data).length;
+  openModal("Exportar Base", `<p class="hint" style="margin:0 0 12px">Excel completo, com uma aba de <b>Viagens</b> e uma aba de <b>Trechos</b> (Ticket Agência, Fechamento do Motorista e Gratuidades por trecho). O mesmo arquivo pode ser alterado e trazido de volta em <b>Importar › Atualizar pela Base em Excel</b>.</p>
+    <div class="px3-op" data-sem-titulo><label><input type="radio" name="px3Esc" value="mes" checked> <b>${esc(mes.charAt(0).toUpperCase() + mes.slice(1))}</b> <span class="sup">· ${nMes.toLocaleString("pt-BR")} viagem(ns) · o mês que está na tela</span></label>
+    <label><input type="radio" name="px3Esc" value="tudo"> <b>Tudo</b> <span class="sup">· ${nTudo.toLocaleString("pt-BR")} viagem(ns) · todos os itens da lista, de todos os meses</span></label></div>`, async () => {
+    const e = (document.querySelector('input[name="px3Esc"]:checked') || {}).value || "mes", s = $("mSave"); if (s) { s.disabled = true; s.textContent = "Gerando…"; }
+    try { await px3BaseGerar(e); return true; } catch (err) { toast("Não foi possível gerar a base: " + err.message, 8000); if (s) { s.disabled = false; s.textContent = "Exportar"; } return false; } });
+  const s = $("mSave"); if (s) s.textContent = "Exportar";
+};
+{ const h0 = paxBancoHtml; paxBancoHtml = function () { return h0.apply(this, arguments).replace('<input type="search" id="paxBQ"', '<button type="button" class="btn" id="px3BBase" onclick="px3BaseExportar()" title="Excel completo, com os dados por trecho, do mês ou de tudo o que está gravado; pode ser alterado e importado de volta">Exportar Base</button><input type="search" id="paxBQ"'); }; }
+
+/* ---------- 4 · folha em branco do dia: Excel e PDF ---------- */
+function px3GradeDoDia(data) {
+  const dia = paxHorDoDia(data); if (!dia) throw new Error("a Tabela de Horários não está disponível.");
+  const m = new Map(); dia.forEach(v => { const serv = v.servs[0]; if (!serv) return; m.set(`${serv}|${v.hora}|${v.sent}`, { serv, hora: v.hora, sent: v.sent }); });
+  PAX_STATE.itens.filter(x => x.Data === data).forEach(x => { const k = `${x.Servico}|${paxHoraPura(x)}|${x.Sentido || "Ida"}`; if (!m.has(k)) m.set(k, { serv: x.Servico, hora: paxHoraPura(x), sent: x.Sentido || "Ida" }); });
+  return [...m.values()].sort((a, b) => px3Ord(a.serv) - px3Ord(b.serv) || (a.sent === b.sent ? 0 : a.sent === "Ida" ? -1 : 1) || a.hora.localeCompare(b.hora));
+}
+async function px3ModeloExcel(data) {
+  const g = px3GradeDoDia(data); if (!g.length) throw new Error("não há horário na Tabela de Horários para este dia.");
+  const { wb, folha, linha } = await px3Livro(), dia = PX3_DIAS[dLocal(data).getDay()];
+  const w1 = folha("Viagens", `Estatística de Passageiros · Folha do Dia · ${fmtDate(data)}`, "Preencha as colunas amarelas. Por trecho: use a aba Trechos (a viagem vale pela soma). Depois: Importar › Atualizar pela Base em Excel. Linha em branco não é gravada.", px3ColsV(true));
+  const w2 = folha("Trechos", `Estatística de Passageiros · Folha do Dia por Trecho · ${fmtDate(data)}`, "Preencha as colunas amarelas só nos trechos que tiveram passageiros. Linha em branco não é gravada.", px3ColsT(true), "FFD6421F");
+  g.forEach(v => { linha(w1, ["", px3Dt(data), dia, paxLinhaNum(v.serv), v.serv, v.hora, v.sent, "", null, null, null, null, PAX_LUGARES, null, ""]);
+    px2TrechosDaLinha(v.serv, v.sent).forEach(t => linha(w2, ["", px3Dt(data), paxLinhaNum(v.serv), v.serv, v.hora, v.sent, "", t.k, px2KeyNome(t.k), null, null, null, null])); });
+  [w1, w2].forEach(ws => paxXlsAjusta(ws, 5)); wb.views = [{ activeTab: 0 }];
+  await xlsxBaixar(wb, `Folha de Passageiros - ${data}.xlsx`); return g.length;
+}
+async function px3ModeloPdf(data) {
+  const g = px3GradeDoDia(data); if (!g.length) throw new Error("não há horário na Tabela de Horários para este dia.");
+  const J = await erpLib("jspdf"); await erpLib("jspdf_autotable"); const autoTable = window.autoTable, T = ctbPdfTxt;
+  if (!J || !J.jsPDF || typeof autoTable !== "function") throw new Error("biblioteca de PDF indisponível");
+  const doc = new J.jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true }), W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 10;
+  const NAVY = [15, 30, 58], INK = [27, 34, 48], MUT = [107, 114, 128], LINE = [120, 128, 140];
+  const logo = await ctbLogoPng().catch(() => null), dsem = DIAS_SEMANA[dLocal(data).getDay()], titulo = `Estatística de Passageiros - Folha de Lançamento - ${fmtDate(data)} (${dsem})`;
+  doc.setProperties({ title: T(titulo), creator: "ERP NMB" });
+  const topo = sub => { let x0 = M; if (logo) { const h = 11, w = Math.min(30, h * logo.w / logo.h); doc.addImage(logo.url, "PNG", M, 7, w, w * logo.h / logo.w); x0 = M + w + 4; }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...NAVY); doc.text(T(titulo), x0, 12.5);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MUT); doc.text(T(sub), x0, 17.5); doc.setDrawColor(214, 66, 31); doc.setLineWidth(0.6); doc.line(M, 21, W - M, 21); };
+  const base = { theme: "grid", margin: { left: M, right: M, top: 25, bottom: 12 }, styles: { font: "helvetica", fontSize: 9, textColor: INK, lineColor: LINE, lineWidth: 0.2, halign: "center", valign: "middle", cellPadding: 1.2 }, headStyles: { fillColor: NAVY, textColor: 255, fontStyle: "bold", fontSize: 8.5, halign: "center" } };
+  /* 1 · totais por viagem */
+  topo("Totais por viagem. Preencha à mão e lance no ERP depois (Lançamentos ou Importar). Responsável: ______________________  Assinatura: ______________________");
+  autoTable(doc, Object.assign({}, base, { startY: 25, head: [["Relatório", "Linha", "Origem - Destino", "Horário", "Sentido", "Ticket Agência", "Fechamento do Motorista", "Gratuidades", "Total", "Observações"]],
+    body: g.map(v => { const [o, d] = px2OD(v.serv, v.sent); return ["", T(paxLoteServRot(v.serv)), T(`${o} - ${d}`), v.hora, v.sent, "", "", "", "", ""]; }),
+    styles: Object.assign({}, base.styles, { minCellHeight: 8.2 }), columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 36, halign: "left" }, 2: { cellWidth: 52, halign: "left" }, 3: { cellWidth: 17, fontStyle: "bold" }, 4: { cellWidth: 16 }, 5: { cellWidth: 22 }, 6: { cellWidth: 28 }, 7: { cellWidth: 24 }, 8: { cellWidth: 18 } },
+    didDrawPage: d => { if (d.pageNumber > 1) topo("Totais por viagem (continuação)"); } }));
+  /* 2 · por trecho: uma tabela por linha e sentido, até 7 horários por tabela; cada horário com T · F · G */
+  const grupos = new Map(); g.forEach(v => { const k = `${v.serv}|${v.sent}`; (grupos.get(k) || grupos.set(k, []).get(k)).push(v.hora); });
+  for (const [k, horas] of grupos) { const [serv, sent] = k.split("|"), trs = px2TrechosDaLinha(serv, sent); if (!trs.length) continue; const [o, d] = px2OD(serv, sent);
+    for (let i = 0; i < horas.length; i += 7) { const hs = horas.slice(i, i + 7); doc.addPage();
+      topo(`Por trecho - ${paxLoteServRot(serv)} - ${sent} (${o} - ${d})${horas.length > 7 ? ` - horários ${i + 1} a ${i + hs.length} de ${horas.length}` : ""}.  T = Ticket Agência   F = Fechamento do Motorista   G = Gratuidades`);
+      const wT = 62, wC = (W - 2 * M - wT) / (hs.length * 3), cs = { 0: { cellWidth: wT, halign: "left", fontSize: 8.5 } }; for (let c = 1; c <= hs.length * 3; c++) cs[c] = { cellWidth: wC };
+      autoTable(doc, Object.assign({}, base, { startY: 25,
+        head: [[{ content: "Trecho", rowSpan: 2 }].concat(hs.map(h => ({ content: h, colSpan: 3 }))), hs.flatMap(() => ["T", "F", "G"])],
+        body: [[{ content: "Nº do relatório", styles: { fontStyle: "bold" } }].concat(hs.map(() => ({ content: "", colSpan: 3 })))].concat(trs.map(t => [T(px2KeyNome(t.k).replace("×", "x"))].concat(hs.flatMap(() => ["", "", ""])))).concat([[{ content: "Total do horário", styles: { fontStyle: "bold" } }].concat(hs.flatMap(() => ["", "", ""]))]),
+        styles: Object.assign({}, base.styles, { minCellHeight: Math.max(6.2, Math.min(9, (H - 25 - 12 - 12) / (trs.length + 2))) }), columnStyles: cs })); } }
+  const np = doc.getNumberOfPages(), agora = new Date().toLocaleString("pt-BR");
+  for (let p = 1; p <= np; p++) { doc.setPage(p); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...MUT); doc.text(T(`Transportadora Nova Macabu · gerado pelo ERP em ${agora}`), M, H - 5); doc.text(`Página ${p} de ${np}`, W - M, H - 5, { align: "right" }); }
+  doc.save(`Folha de Passageiros - ${data}.pdf`); return np;
+}
+window.px3FolhaBranco = () => {
+  const d0 = (PAX_UI.lote && PAX_UI.lote.data) || todayISO();
+  openModal("Folha em Branco", `<p class="hint" style="margin:0 0 12px">Para quando faltar internet ou luz: baixe <b>antes</b> e deixe guardado (o Excel no computador, o PDF impresso). A folha traz os horários da Tabela de Horários do dia escolhido e os trechos de cada linha.</p>
+    <div class="form-grid"><div class="field"><label>Dia da folha</label><input type="date" id="px3FbData" value="${esc(d0)}"></div></div>
+    <div class="px3-op" data-sem-titulo><div><b>Excel</b> <span class="sup">· preenche no computador sem internet; depois entra por Importar › Atualizar pela Base em Excel</span></div><div><b>PDF</b> <span class="sup">· imprime e preenche à mão; depois é digitado em Lançamentos</span></div></div>
+    <div class="row" style="gap:10px;margin-top:14px"><button type="button" class="btn primary" id="px3FbX">Baixar Excel</button><button type="button" class="btn" id="px3FbP">Baixar PDF</button></div>
+    <div class="err-msg" id="px3FbErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, () => true);
+  const s = $("mSave"); if (s) s.remove();
+  const roda = (bt, fn, rot) => async () => { const d = $("px3FbData").value, er = $("px3FbErr"); er.style.display = "none"; if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { er.style.display = "block"; er.textContent = "Escolha o dia."; return; }
+    bt.disabled = true; const t0 = bt.textContent; bt.textContent = "Gerando…"; try { await fn(d); toast(`${rot} da folha de ${fmtDate(d)} gerado.`); } catch (e) { er.style.display = "block"; er.textContent = "Não foi possível gerar: " + e.message; } finally { bt.disabled = false; bt.textContent = t0; } };
+  $("px3FbX").onclick = roda($("px3FbX"), px3ModeloExcel, "Excel"); $("px3FbP").onclick = roda($("px3FbP"), px3ModeloPdf, "PDF");
+};
+
+/* ---------- 3 · importar a base (ou a folha em branco preenchida) ---------- */
+function px3LerAba(m) {   /* matriz → { cab: {nome→coluna}, linhas } ; o cabeçalho é a linha que tem Data e Horário */
+  const ih = (m || []).findIndex(r => { const s = (r || []).map(px3N); return s.includes("data") && s.includes("horario"); }); if (ih < 0) return null;
+  const cab = {}; m[ih].forEach((c, i) => { const k = px3N(c); if (k && !(k in cab)) cab[k] = i; });
+  return { cab, linhas: m.slice(ih + 1).filter(r => r && r.some(c => c != null && String(c).trim() !== "")) };
+}
+function px3Num(v) { if (v == null || String(v).trim() === "") return null; const n = typeof v === "number" ? v : Number(String(v).trim().replace(/\./g, "").replace(",", ".")); return Number.isInteger(n) && n >= 0 && n < 100000 ? n : NaN; }
+function px3Montar(wbk, arquivo) {
+  const nomeAba = alvo => wbk.nomes.find(n => px3N(n) === alvo), aV = nomeAba("viagens"), aT = nomeAba("trechos");
+  if (!aV && !aT) throw new Error('o arquivo não tem as abas "Viagens" e "Trechos". Use o Excel de Banco de Dados › Exportar Base ou a Folha em Branco de Lançamentos.');
+  const V = aV ? px3LerAba(wbk.aba(aV)) : null, Tt = aT ? px3LerAba(wbk.aba(aT)) : null; if (!V && !Tt) throw new Error("não encontrei a linha de cabeçalho (Data, Serviço, Horário…) nas abas.");
+  const erros = [], viagens = new Map();
+  const chaveDe = (r, cab, aba, n) => { const c = k => (cab[k] == null ? null : r[cab[k]]), data = celData(c("data")), serv = px3SERV[px3N(c("servico"))], hv = c("horario"), hora = celHora(typeof hv === "string" ? hv.replace(/\s*\(F\)\s*$/i, "") : hv), sv = px3N(c("sentido")), sent = sv === "volta" ? "Volta" : sv === "ida" || !sv ? "Ida" : "";
+    if (px3N(c("data")) === "total" || px3N(c("id")) === "total") return null;
+    if (!data || !serv || !/^\d{2}:\d{2}$/.test(hora || "") || !sent) { erros.push(`Aba ${aba}, linha ${n}: Data, Serviço, Horário ou Sentido não reconhecidos.`); return null; }
+    const idv = c("id"), id = idv == null || String(idv).trim() === "" ? "" : String(idv).trim().replace(/\.0+$/, ""), k = `${data}|${serv}|${hora}|${sent}`;
+    let v = viagens.get(k); if (!v) { v = { k, data, serv, hora, sent, id: "", rel: "", tot: null, det: {}, gx: 0, ruim: "" }; viagens.set(k, v); } if (id && !v.id) v.id = id;
+    const rl = c("relatorio"), rs = rl == null ? "" : String(rl).trim().replace(/\.0+$/, ""); if (rs) { if (/^\d{1,5}$/.test(rs)) v.rel = v.rel || rs.padStart(5, "0"); else v.ruim = v.ruim || "relatório deve ter até 5 números"; }
+    return { v, c }; };
+  if (V) V.linhas.forEach((r, i) => { const o = chaveDe(r, V.cab, "Viagens", i + 1); if (!o) return; const t = px3Num(o.c("ticket agencia")), f = px3Num(o.c("fechamento do motorista")), g = px3Num(o.c("gratuidades"));
+    if ([t, f, g].some(Number.isNaN)) { o.v.ruim = "use números inteiros (zero ou mais)"; return; } if (t != null || f != null || g != null) o.v.tot = { t: t || 0, f: f || 0, g: g || 0 }; });
+  if (Tt) Tt.linhas.forEach((r, i) => { const o = chaveDe(r, Tt.cab, "Trechos", i + 1); if (!o) return; const t = px3Num(o.c("ticket agencia")), f = px3Num(o.c("fechamento do motorista")), g = px3Num(o.c("gratuidades"));
+    if ([t, f, g].some(Number.isNaN)) { o.v.ruim = "use números inteiros (zero ou mais) nos trechos"; return; } if (!(t || f || g)) return;
+    const cod = String(o.c("trecho") || "").trim(); if (px3N(cod) === px3N(PX3_SEM)) { if (t || f) { o.v.ruim = `"${PX3_SEM}" só aceita gratuidades`; return; } o.v.gx += g || 0; return; }
+    if (!px2KeyPartes(cod)) { o.v.ruim = `trecho "${cod || "em branco"}" não reconhecido`; return; } const kk = px2KeyCanon(cod), a = o.v.det[kk] || { t: 0, f: 0, g: 0 }; o.v.det[kk] = { t: a.t + (t || 0), f: a.f + (f || 0), g: a.g + (g || 0) }; });
+  const porId = new Map(PAX_STATE.itens.map(x => [String(x._id), x])), porK = new Map(PAX_STATE.itens.map(x => [`${x.Data}|${x.Servico}|${paxHoraPura(x)}|${x.Sentido || "Ida"}`, x]));
+  const regs = []; let iguais = 0, brancos = 0;
+  [...viagens.values()].sort((a, b) => a.k.localeCompare(b.k)).forEach(v => {
+    const temDet = px2DetTem(v.det); if (!temDet && !v.tot && !v.gx) { brancos++; return; }
+    const rot = `${fmtDate(v.data)} · ${paxLoteServRot(v.serv)} ${v.hora} ${v.sent}`, r = { v, rot, st: "", aviso: "", antes: null, x: null };
+    const x = porK.get(v.k) || null, xi = v.id ? porId.get(v.id) : null;
+    if (v.ruim) { r.st = "erro"; r.aviso = v.ruim; regs.push(r); return; }
+    if (v.id && xi && xi !== x) { r.st = "erro"; r.aviso = `o ID ${v.id} é de outra viagem: não altere Data, Serviço, Horário e Sentido`; regs.push(r); return; }
+    if (!temDet && v.gx) { r.st = "erro"; r.aviso = `há "${PX3_SEM}" sem nenhum trecho com passageiros`; regs.push(r); return; }
+    let nv; if (temDet) { const s = px2DetSoma(v.det); nv = { t: s.t, f: s.f, g: s.g + v.gx, det: v.det }; if (v.tot && (v.tot.t !== nv.t || v.tot.f !== nv.f || v.tot.g !== nv.g)) r.aviso = "o total da aba Viagens difere da soma dos trechos: vale a soma dos trechos"; }
+    else nv = { t: v.tot.t, f: v.tot.f, g: v.tot.g, det: null };
+    nv.rel = v.rel || (x && x.Relatorio ? String(x.Relatorio) : ""); r.nv = nv; r.x = x;
+    if (px2Travado(v.data)) { r.st = "erro"; r.aviso = px2TravaMsg(v.data); regs.push(r); return; }
+    if (x) { const tk = Number(x.TicketAgencia || 0), a = { rel: x.Relatorio ? String(x.Relatorio) : "", t: tk, f: Math.max(0, Number(x.Pagantes || 0) - tk), g: Number(x.Gratuidade || 0), det: px2DetDe(x) }; r.antes = a;
+      if (a.rel === nv.rel && a.t === nv.t && a.f === nv.f && a.g === nv.g && px2DetTxt(a.det) === px2DetTxt(nv.det || {})) { iguais++; return; } r.st = "alt"; }
+    else { const c = paxHorConfere({ Data: v.data, Servico: v.serv, Horario: v.hora, Sentido: v.sent }, true); if (!c.ok) { r.st = "erro"; r.aviso = `não está na Tabela de Horários para ${paxHorDiaRot(v.data)}`; regs.push(r); return; } r.st = "novo"; }
+    regs.push(r); });
+  return { arquivo, regs, erros, iguais, brancos, novo: regs.filter(r => r.st === "novo").length, alt: regs.filter(r => r.st === "alt").length, ruim: regs.filter(r => r.st === "erro").length };
+}
+function px3PrevHtml(imp) {
+  const tfg = o => o ? `${o.t} · ${o.f} · ${o.g}` : "—", mostra = imp.regs.slice(0, 300);
+  return `<div class="px3-res" data-sem-titulo><span class="pill st-pago"><i></i>${imp.novo} nova(s)</span><span class="pill st-pend"><i></i>${imp.alt} alterada(s)</span><span class="pill st-cinza"><i></i>${imp.iguais} igual(is), sem mudança</span>${imp.brancos ? `<span class="pill st-cinza"><i></i>${imp.brancos} em branco, ignorada(s)</span>` : ""}${imp.ruim + imp.erros.length ? `<span class="pill st-venc"><i></i>${imp.ruim + imp.erros.length} com problema, não gravada(s)</span>` : ""}</div>
+    ${imp.erros.length ? `<div class="import-help pax-tab-aviso">${imp.erros.slice(0, 8).map(esc).join("<br>")}${imp.erros.length > 8 ? `<br>… e mais ${imp.erros.length - 8}.` : ""}</div>` : ""}
+    ${mostra.length ? `<div class="px3-tw"><table class="tbl px3-t" data-sem-titulo><thead><tr><th>Situação</th><th>Viagem</th><th>Relatório</th><th>Antes<br><span class="sup">Ticket · Fechamento · Gratuidades</span></th><th>Depois<br><span class="sup">Ticket · Fechamento · Gratuidades</span></th><th>Trechos</th><th>Aviso</th></tr></thead><tbody>${mostra.map(r => `<tr class="px3-${r.st}"><td>${{ novo: "Nova", alt: "Alterada", erro: "Não grava" }[r.st]}</td><td>${esc(r.rot)}</td><td>${esc((r.nv && r.nv.rel) || r.v.rel || "—")}</td><td>${tfg(r.antes)}</td><td><b>${tfg(r.nv)}</b></td><td>${r.nv && r.nv.det ? Object.keys(r.nv.det).length : "—"}</td><td>${esc(r.aviso || "")}</td></tr>`).join("")}</tbody></table></div>${imp.regs.length > 300 ? `<p class="sup">Mostrando 300 de ${imp.regs.length} linhas.</p>` : ""}` : `<p class="hint">Nada a gravar: o arquivo está igual ao que já está no ERP.</p>`}
+    <div class="row" style="gap:10px;margin-top:12px"><button type="button" class="btn primary" id="px3Go" ${imp.novo + imp.alt ? "" : "disabled"}>${imp.novo + imp.alt ? `Gravar ${imp.novo} Nova(s) e ${imp.alt} Alterada(s)` : "Nada a Gravar"}</button><button type="button" class="btn" id="px3Limpa">Descartar o Arquivo</button></div>
+    <pre class="imp-log" id="px3Log" style="display:none;white-space:pre-wrap;margin-top:10px"></pre>`;
+}
+{ const h0 = paxImportHtml;
+  paxImportHtml = function () { return h0.apply(this, arguments) + `<div class="cap-card" style="margin-top:16px"><div class="cap-card-h"><h3>Atualizar pela Base em Excel</h3><span class="cap-card-s">o arquivo de Banco de Dados › Exportar Base, alterado, ou a Folha em Branco de Lançamentos, preenchida</span></div>
+      <p class="hint" style="margin:0 0 12px">Lê as abas <b>Viagens</b> e <b>Trechos</b>, compara com o que está gravado e mostra o que muda antes de gravar. Viagem que não está no arquivo não é alterada nem excluída. Dia enviado ou aprovado e horário fora da Tabela de Horários não são gravados.</p>
+      <label class="imp-zona" id="px3Zona"><input type="file" id="px3Arq" accept=".xlsx,.xls"><b>Escolha ou solte aqui</b> a base ou a folha preenchida (.xlsx)<br><span class="sup">nada é gravado antes da prévia</span></label>
+      <div id="px3Prev">${PX3.imp ? `<p class="sup" style="margin:10px 0 6px">Arquivo: ${esc(PX3.imp.arquivo)}</p>` + px3PrevHtml(PX3.imp) : ""}</div></div>`; };
+  const w0 = paxImportWire;
+  paxImportWire = function () { const r = w0.apply(this, arguments); px3ImportWire(); return r; }; }
+function px3ImportWire() {
+  const arq = $("px3Arq"), zona = $("px3Zona"); if (!arq) return;
+  const processa = async file => { if (!file) return; toast("Lendo o arquivo…", 2000);
+    try { PX3.imp = px3Montar(await xlsxLer(file), file.name); } catch (e) { PX3.imp = null; toast("Não foi possível ler: " + e.message, 9000); }
+    paintPax(); };
+  arq.addEventListener("change", () => processa(arq.files[0]));
+  ["dragover", "dragenter"].forEach(ev => zona.addEventListener(ev, e => { e.preventDefault(); zona.classList.add("on"); }));
+  ["dragleave", "drop"].forEach(ev => zona.addEventListener(ev, e => { e.preventDefault(); zona.classList.remove("on"); }));
+  zona.addEventListener("drop", e => processa(e.dataTransfer.files[0]));
+  const lim = $("px3Limpa"); if (lim) lim.onclick = () => { PX3.imp = null; paintPax(); };
+  const go = $("px3Go"); if (go) go.onclick = px3Gravar;
+}
+async function px3Gravar() {
+  const imp = PX3.imp; if (!imp) return; if (!podeEditar("pax")) { toast("Seu acesso à Estatística de Passageiros é só de leitura."); return; }
+  const fila = imp.regs.filter(r => r.st === "novo" || r.st === "alt"); if (!fila.length) return;
+  if (!(await erpConfirmar({ titulo: "Atualizar pela base", texto: `Gravar ${imp.novo} viagem(ns) nova(s) e alterar ${imp.alt} viagem(ns) já gravada(s), conforme o arquivo "${imp.arquivo}"?`, sim: "Gravar" }))) return;
+  const b = $("px3Go"), log = $("px3Log"); if (b) b.disabled = true; let ok = 0; const falhas = [], aprov = new Map();
+  for (let i = 0; i < fila.length; i++) { const r = fila[i], v = r.v; if (b) b.textContent = `Gravando ${i + 1} de ${fila.length}…`;
+    try { const ff = px2CamposDe(r.nv);
+      if (r.st === "novo") { const f = Object.assign({ Data: v.data, Servico: v.serv, Horario: v.hora, Sentido: v.sent, Lugares: PAX_LUGARES, Origem: "Importação" }, ff); f.Title = paxChave(f); await SP.create(PAX_STATE.site.id, PAX_STATE.list.id, px2Campos(f)); }
+      else { if (!r.nv.det && r.antes && px2DetTem(r.antes.det)) { ff.Trechos = null; ff.TrechosDet = null; } await SP.update(PAX_STATE.site.id, PAX_STATE.list.id, r.x._id, px2Campos(ff)); }
+      ok++; if (px2DiaSt(v.data) === "Aprovado") aprov.set(v.data, (aprov.get(v.data) || 0) + 1);
+    } catch (e) { falhas.push(`✗ ${r.rot}: ${e.message}`); } }
+  for (const [d, n] of aprov) { try { await px2DiaGrava(d, at => ({ Historico: px2Hst(at.Historico, `alterado depois de aprovado, pela base em Excel: ${n} viagem(ns)`) })); } catch (e) {} }
+  try { await loadPax(); } catch (e) { falhas.push("A lista não foi recarregada: " + e.message); }
+  toast(`${ok} viagem(ns) gravada(s)${falhas.length ? ` · ${falhas.length} falha(s)` : ""}`, 7000);
+  if (falhas.length) { if (log) { log.style.display = "block"; log.textContent = `Concluído: ${ok} gravada(s), ${falhas.length} falha(s).\n` + falhas.join("\n"); } if (b) { b.disabled = false; b.textContent = "Tentar de Novo as que Falharam"; } imp.regs = fila.filter(r => falhas.some(f => f.includes(r.rot))); imp.novo = imp.regs.filter(r => r.st === "novo").length; imp.alt = imp.regs.filter(r => r.st === "alt").length; return; }
+  PX3.imp = null; paintPax();
+}
+Object.assign(window, { px3BaseGerar, px3ModeloExcel, px3ModeloPdf, px3Montar, px3Gravar, PX3 });
+(function () { const st = document.createElement("style"); st.id = "erp-v01490";
+  st.textContent = `.px3-semgrade{margin:0 0 10px;padding:10px 12px;background:#FFF8E6;border-left:3px solid #C98A00;border-radius:4px}
+  .px3-op{display:flex;flex-direction:column;gap:10px;font-size:14px}.px3-op label{display:flex;gap:8px;align-items:baseline;cursor:pointer}
+  .px2-com-h{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}.px2-com-h .grow{flex:1}.px3-cb{font-size:12.5px;padding:0 4px}.px3-ced{width:100%;font:inherit;padding:8px;border:1px solid #C9D0D8;border-radius:6px}
+  .px3-res{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.px3-tw{max-height:420px;overflow:auto;border:1px solid #E1E5EB;border-radius:6px}.px3-t{width:100%;font-size:13px}.px3-t th,.px3-t td{text-align:center;padding:6px 8px}.px3-t td:nth-child(2),.px3-t td:last-child{text-align:left}
+  .px3-t tr.px3-erro td{color:#B3271E}.px3-t tr.px3-novo td:first-child{color:#17703F;font-weight:700}.px3-t tr.px3-alt td:first-child{color:#8A5A00;font-weight:700}`;
+  document.head.appendChild(st); })();
+/* ---------- 8 · (11:36) Análise e Histórico numa aba só: o histórico vem por último; os gráficos mês a mês e ano a ano aparecem uma vez ---------- */
+{ const t0 = window.paxTab; window.paxTab = function (t) { return t0.call(this, t === "hist" ? "horario" : t); }; }
+{ const p0 = paintPax;
+  paintPax = function () {
+    if (PAX_STATE.tab === "hist") PAX_STATE.tab = "horario";
+    const r = p0.apply(this, arguments);
+    try { const body = document.getElementById("paxBody"); if (!body) return r;
+      const seg = body.querySelector(".op-topo .seg-tabs"); if (seg) seg.querySelectorAll("button").forEach(b => { if (/^Hist[oó]rico$/i.test(b.textContent.trim())) b.remove(); });
+      if (PAX_STATE.tab !== "horario") return r;
+      const h2 = body.querySelector("h2.pax-sec"); if (!h2) return r;
+      const doHist = [h2]; for (let e = h2.nextElementSibling; e; e = e.nextElementSibling) doHist.push(e);
+      doHist.forEach(e => { e.hidden = false; });
+      const cards = ["paxChartMes", "paxChartAnoMes"].map(id => { const c = document.getElementById(id); return c && c.closest(".cap-card"); }).filter(Boolean);
+      let ant = doHist.find(e => e.matches(".cap-kpis")) || h2; cards.forEach(c => { if (ant.nextElementSibling !== c) ant.insertAdjacentElement("afterend", c); ant = c; });
+      const det = body.querySelector("details.pax-det"); if (det) { det.open = true; det.classList.add("pax-det-fixo"); }
+      h2.classList.add("px3-hist");
+      if (window.Chart && Chart.getChart) doHist.concat(cards).forEach(e => e.querySelectorAll && e.querySelectorAll("canvas").forEach(cv => { const ch = Chart.getChart(cv); if (ch) ch.resize(); }));
+    } catch (e) {}
+    return r; };
+  window.paintPax = paintPax; }
+(function () { const st = document.createElement("style"); st.textContent = `h2.pax-sec.px3-hist{margin-top:34px;padding-top:22px;border-top:2px solid var(--orange,#D6421F)}`; document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -56014,6 +56318,8 @@ CONFIG.version = "v0.14.85";   /* RJ Consultores: card "Sistema RJ" e novo card 
 CONFIG.version = "v0.14.86";   /* Passageiros: folha do dia refeita (linha, relatório, ticket agência, trechos, observações, rascunho no SharePoint, aprovação, pendências); Banco por trecho; Diário Oficial com Localidades */
 CONFIG.version = "v0.14.87";   /* celular: código de acesso (PIN de 6 números) com Face ID / biometria; 5 erros encerram a sessão no aparelho */
 CONFIG.version = "v0.14.88";   /* celular: Face ID diz o motivo quando não ativa; "Ativar Face ID / Biometria" no rodapé do menu */
+CONFIG.version = "v0.14.89";   /* Passageiros: apagar todos os trechos de um horário zera os totais da linha na folha */
+CONFIG.version = "v0.14.90";   /* Passageiros: Lançamentos primeiro; Exportar Base (mês ou tudo, por trecho) e importar de volta; Folha em Branco (Excel e PDF); linha sem horário abre em branco; observações editáveis pelo administrador; Análise + Histórico numa aba */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -4452,7 +4452,7 @@ function guardaEscrita(method, path, body) {
   const p0 = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0];
   if (/\/\$batch$/.test(p0)) {   /* v0.12.15: lote — cada pedido passa pela guarda; lote sem lista de pedidos não sai */
     if (!body || !Array.isArray(body.requests)) { const e = new Error("Lote inválido"); e.status = 400; throw e; }
-    body.requests.forEach(r => guardaEscrita(r.method, "/" + String(r.url || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").replace(/^\/+/, "")));
+    body.requests.forEach(r => guardaEscrita(r.method, "/" + String(r.url || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").replace(/^\/+/, ""), r.body));   /* v0.14.92: o corpo de cada pedido segue para as guardas (trava do dia de Passageiros) */
     return;
   }
   if (!/^(POST|PATCH|PUT|DELETE)$/i.test(method || "GET")) return;
@@ -5563,7 +5563,7 @@ async function loadForn(soft) {
   if (!FORN_STATE.site) FORN_STATE.site = await SP.site(CONFIG.sites[LISTS.forn.siteKey]);   /* v0.13.4: site Terceiros (não é mais o da CAP) */
   if (!FORN_STATE.list) { const lists = await SP.lists(FORN_STATE.site.id); FORN_STATE.list = lists.find(l => l.displayName === LISTS.forn.displayName) || null; }
   if (!FORN_STATE.list) { if (soft) { FORN_STATE.items = []; return []; } throw new Error(`A lista "${LISTS.forn.displayName}" ainda não existe. Vá em Sistema → Configuração.`); }
-  if (FORN_STATE.cols === undefined || FORN_STATE.cols === null) { try { FORN_STATE.cols = new Set((await graphAll(`/sites/${FORN_STATE.site.id}/lists/${FORN_STATE.list.id}/columns?$select=name`)).map(c => c.name)); } catch (_) { FORN_STATE.cols = null; } }
+  if (FORN_STATE.cols === undefined || FORN_STATE.cols === null) { try { FORN_STATE.cols = colsOuNulo(new Set((await graphAll(`/sites/${FORN_STATE.site.id}/lists/${FORN_STATE.list.id}/columns?$select=name`)).map(c => c.name))); } catch (_) { FORN_STATE.cols = null; } }
   if (!NMB_EST.lista) nmbEstabsCarregar().catch(() => {});   /* v0.13.0 · 2a (não bloqueia a carga) */
   const items = await SP.items(FORN_STATE.site.id, FORN_STATE.list.id);
   FORN_STATE.items = items.map(it => Object.assign({ _id: it.id }, it.fields || {}));
@@ -5579,7 +5579,7 @@ async function loadCAP(opts) {
   if (!CAP_STATE.list) { const lists = await SP.lists(CAP_STATE.site.id); if (_troc()) throw divTrocou(); CAP_STATE.list = lists.find(l => l.displayName === divLst("cap").displayName) || null; }
   if (!CAP_STATE.list) throw new Error(`A lista "${divLst("cap").displayName}" ainda não existe. Vá em Sistema → Configuração.`);
   if (!CAP_STATE.cols) {
-    try { const cs = new Set((await graphAll(`/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/columns?$select=name`)).map(c => c.name)); if (_troc()) throw divTrocou(); CAP_STATE.cols = cs; }
+    try { const cs = colsOuNulo(new Set((await graphAll(`/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/columns?$select=name`)).map(c => c.name))); if (_troc()) throw divTrocou(); CAP_STATE.cols = cs; }
     catch (e) { if (e && e.divTrocou) throw e; CAP_STATE.cols = null; }
   }
   if (!NMB_EST.lista) await nmbEstabsCarregar().catch(() => {});   /* v0.13.0 · 2a */
@@ -7595,7 +7595,7 @@ async function loadObr() {
   OBR_STATE.list = lists.find(l => l.displayName === divLst("obr").displayName) || null;
   if (!OBR_STATE.list) throw new Error(`A lista "${divLst("obr").displayName}" ainda não existe. Vá em Sistema → Configuração.`);
   if (!OBR_STATE.cols) {
-    try { const cs = new Set((await graphAll(`/sites/${OBR_STATE.site.id}/lists/${OBR_STATE.list.id}/columns?$select=name`)).map(c => c.name)); if (_troc()) throw divTrocou(); OBR_STATE.cols = cs; }
+    try { const cs = colsOuNulo(new Set((await graphAll(`/sites/${OBR_STATE.site.id}/lists/${OBR_STATE.list.id}/columns?$select=name`)).map(c => c.name))); if (_troc()) throw divTrocou(); OBR_STATE.cols = cs; }
     catch (e) { if (e && e.divTrocou) throw e; OBR_STATE.cols = null; }
   }
   const [items] = await Promise.all([SP.items(OBR_STATE.site.id, OBR_STATE.list.id), loadCarteiras(lists).catch(e => { if (e && e.divTrocou) throw e; console.warn("carteiras", e); })]);
@@ -9276,7 +9276,7 @@ async function loadPb(force) {
   const items = await SP.items(PB_STATE.site.id, PB_STATE.list.id);
   PB_STATE.itens = items.map(it => Object.assign({ _id: String(it.id) }, it.fields || {}));
   PB_STATE.itens.forEach(x => { if (x.ResponsavelLookupId == null && x.ResponsavelId != null && x.ResponsavelId !== "") x.ResponsavelLookupId = x.ResponsavelId; });   /* v0.14.12.3: a tela lê ResponsavelLookupId */
-  try { PB_STATE.cols = new Set((await graphAll(`/sites/${PB_STATE.site.id}/lists/${PB_STATE.list.id}/columns?$select=name`)).map(c => c.name)); } catch (e) { PB_STATE.cols = null; }
+  try { PB_STATE.cols = colsOuNulo(new Set((await graphAll(`/sites/${PB_STATE.site.id}/lists/${PB_STATE.list.id}/columns?$select=name`)).map(c => c.name))); } catch (e) { PB_STATE.cols = null; }
   try { await frotaRefsCarregar(); } catch (e) {}   /* v0.14.12.2: veículos de Frota › Geral */
   /* carrega RH — Funcionários para o seletor Responsável */
   try {
@@ -10108,7 +10108,7 @@ async function loadRc(force) {
   const its = await SP.items(RC_STATE.site.id, RC_STATE.list.id);
   RC_STATE.itens = its.map(it => Object.assign({ _id: it.id }, it.fields || {}));
   RC_STATE.itens.forEach(x => { if (x.ResponsavelLookupId == null && x.ResponsavelId != null && x.ResponsavelId !== "") x.ResponsavelLookupId = x.ResponsavelId; });   /* v0.14.12.3 */
-  try { RC_STATE.cols = new Set((await graphAll(`/sites/${RC_STATE.site.id}/lists/${RC_STATE.list.id}/columns?$select=name`)).map(c => c.name)); } catch (e) { RC_STATE.cols = null; }
+  try { RC_STATE.cols = colsOuNulo(new Set((await graphAll(`/sites/${RC_STATE.site.id}/lists/${RC_STATE.list.id}/columns?$select=name`)).map(c => c.name))); } catch (e) { RC_STATE.cols = null; }
   /* funcionários para o lookup de responsável */
   try { const siteRh = await SP.site(CONFIG.sites[LISTS.rh_func.siteKey]); const lsRh = await SP.lists(siteRh.id); const lFunc = lsRh.find(l => l.displayName === LISTS.rh_func.displayName); if (lFunc) { const fs = await SP.items(siteRh.id, lFunc.id); RC_STATE.funcs = fs.map(x => Object.assign({ _id: x.id }, x.fields || {})); } } catch (e) {}
   RC_STATE.ready = true;
@@ -34515,7 +34515,7 @@ window.capEstornar = async (id) => {
   if (filha) { toast(`Este lançamento teve pagamento parcial: o saldo está no lançamento "${filha.Title}". Cancele ou exclua o lançamento do saldo antes de desfazer o pagamento.`, 9000); return; }
   const filhaCanc = CAP_STATE.items.find(x => String(x.ParcialDe || "") === String(it._id) && capCancelada(x));
   const devolve = filhaCanc ? Math.round((Number(it.Valor || 0) + Number(filhaCanc.Valor || 0)) * 100) / 100 : null;   /* saldo cancelado: o pai volta ao valor original */
-  const motivo = prompt(`Desfazer o pagamento de "${it.Title || ""}" (${fmtBRL(capValorEfetivo(it))} em ${fmtDate(it.DataPagamento)})?\nO lançamento volta a ficar em aberto. Informe o motivo:`);
+  const motivo = await erpMotivo({ titulo: "Desfazer o pagamento", texto: `Desfazer o pagamento de "${it.Title || ""}" (${fmtBRL(capValorEfetivo(it))} em ${fmtDate(it.DataPagamento)})? O lançamento volta a ficar em aberto.`, sim: "Desfazer o Pagamento", perigo: true, vazio: "Informe o motivo para desfazer o pagamento." });
   if (motivo == null) return; if (!String(motivo).trim()) { toast("Informe o motivo para desfazer o pagamento."); return; }
   const fields = { Status: it.Vencimento && ymd(it.Vencimento) < todayISO() ? "Vencido" : "Em aberto", DataPagamento: null, ValorPago: null, Juros: null, Desconto: null, MotivoStatus: String(motivo).trim().slice(0, 255) };
   if (devolve != null) fields.Valor = devolve;
@@ -34526,7 +34526,7 @@ window.capEstornar = async (id) => {
 window.capCancelar = async (id) => {
   const it = CAP_STATE.items.find(x => String(x._id) === String(id)); if (!it || it.Status === "Pago" || it.Status === "Cancelada") return;
   if (!podeEditar("cap")) return;
-  const motivo = prompt(`Cancelar o lançamento "${it.Title || ""}" (${fmtBRL(it.Valor)})?\nEle sai de todos os totais e relatórios, mas continua na lista (riscado). Informe o motivo:`);
+  const motivo = await erpMotivo({ titulo: "Cancelar o lançamento", texto: `Cancelar o lançamento "${it.Title || ""}" (${fmtBRL(it.Valor)})? Ele sai de todos os totais e relatórios, mas continua na lista (riscado).`, sim: "Cancelar o Lançamento", perigo: true, vazio: "Informe o motivo do cancelamento." });
   if (motivo == null) return; if (!String(motivo).trim()) { toast("Informe o motivo do cancelamento."); return; }
   const fields = { Status: "Cancelada", MotivoStatus: String(motivo).trim().slice(0, 255) };
   if (hasCol("Historico")) fields.Historico = capHistAdd(it, "cancelada", `de ${it.Status} · motivo: ${String(motivo).trim()}`);
@@ -42026,7 +42026,7 @@ window.ctbReabrirMes = async c => {
   if (typeof DIV !== "undefined" && DIV.on) { toast("O fechamento do mês é da CAP, não da Gestão de Dívidas."); return; }
   if (!ctbFechPode()) { toast("Reabrir o mês é do administrador, do proprietário ou de quem edita a CAP."); return; }
   if (vcAtivo()) { toast(vcErro().message); return; }
-  const m = prompt(`Motivo para reabrir ${compLabel(c)} na Contabilidade (obrigatório):`); if (m == null) return; if (!m.trim()) { toast("Informe o motivo."); return; }
+  const m = await erpMotivo({ titulo: "Reabrir o mês", texto: `Reabrir ${compLabel(c)} na Contabilidade?`, sim: "Reabrir" }); if (m == null) return; if (!m.trim()) { toast("Informe o motivo."); return; }
   try {
     const quem = ctbFechQuem(), em = new Date().toISOString();
     await ctbFechGravar(v => { const o = v.meses[c] || {}; v.meses[c] = Object.assign({}, o, { st: "Aberto", hist: (o.hist || []).concat([{ a: "reaberto", por: quem, em, d: m.trim().slice(0, 300) }]).slice(-30) }); });
@@ -51433,12 +51433,12 @@ window.paxBancoRelatorio = async () => {
         if (total) cel.fill = fill(SUAVE); else if (z) cel.fill = fill(ZEBRA); }); return r; };
     const INT = "#,##0", PCT = "0%", DEC = "0.0";
     /* 1 · Viagens (a tabela da tela) */
-    const w1 = folha("Relatório", [{ h: "Data", fmt: "dd/mm/yyyy" }, { h: "Dia" }, { h: "Linha", forte: true }, { h: "Serviço" }, { h: "Horário", forte: true }, { h: "Sentido" }, { h: "Pagantes", fmt: INT }, { h: "Gratuidades", fmt: INT }, { h: "Total", fmt: INT, forte: true }, { h: "Lugares", fmt: INT }, { h: "Ocupação", fmt: PCT }, { h: "Trechos", esq: true }],
+    const w1 = folha("Relatório", [{ h: "Data", fmt: "dd/mm/yyyy" }, { h: "Dia" }, { h: "Linha", forte: true }, { h: "Serviço" }, { h: "Horário", forte: true }, { h: "Sentido" }, { h: "Relatório", fmt: "@" }, { h: "Ticket Agência", fmt: INT }, { h: "Fechamento do Motorista", fmt: INT }, { h: "Pagantes", fmt: INT }, { h: "Gratuidades", fmt: INT }, { h: "Total", fmt: INT, forte: true }, { h: "Lugares", fmt: INT }, { h: "Ocupação", fmt: PCT }, { h: "Trechos", esq: true }],
       `Relatório de viagens · ${its.length.toLocaleString("pt-BR")} viagem(ns)${filtros.length ? " · filtro: " + filtros.join(" · ") : " · sem filtro"}`);
-    const T = { p: 0, g: 0, l: 0 };
-    its.forEach(x => { const dt = dLocal(x.Data), p = n(x.Pagantes), g = n(x.Gratuidade), l = n(x.Lugares || PAX_LUGARES); T.p += p; T.g += g; T.l += l;
-      linha(w1, [new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12)), DIAS[dt.getDay()], paxLinhaNum(x.Servico), x.Servico || "", x.Horario || "", x.Sentido || "Ida", p, g, p + g, l || null, l ? (p + g) / l : null, Object.entries(paxTrechos(x)).filter(([k, v]) => v && !/gratuid/i.test(k)).map(([k]) => px2KeyNome(k)).join(" · ")]); });
-    linha(w1, ["Total", "", "", "", "", `${its.length.toLocaleString("pt-BR")} viagem(ns)`, T.p, T.g, T.p + T.g, T.l || null, T.l ? (T.p + T.g) / T.l : null, ""], true);
+    const T = { p: 0, g: 0, l: 0, t: 0 };
+    its.forEach(x => { const dt = dLocal(x.Data), p = n(x.Pagantes), g = n(x.Gratuidade), l = n(x.Lugares || PAX_LUGARES), tk = Math.min(p, n(x.TicketAgencia)); T.p += p; T.g += g; T.l += l; T.t += tk;
+      linha(w1, [new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12)), DIAS[dt.getDay()], paxLinhaNum(x.Servico), x.Servico || "", x.Horario || "", x.Sentido || "Ida", x.Relatorio ? String(x.Relatorio) : "", tk, p - tk, p, g, p + g, l || null, l ? (p + g) / l : null, Object.entries(paxTrechos(x)).filter(([k, v]) => v && !/gratuid/i.test(k)).map(([k]) => px2KeyNome(k)).join(" · ")]); });
+    linha(w1, ["Total", "", "", "", "", `${its.length.toLocaleString("pt-BR")} viagem(ns)`, "", T.t, T.p - T.t, T.p, T.g, T.p + T.g, T.l || null, T.l ? (T.p + T.g) / T.l : null, ""], true);
     /* 2 · Resumo por serviço e sentido */
     const w2 = folha("Resumo", [{ h: "Linha", forte: true }, { h: "Serviço", esq: true, forte: true }, { h: "Sentido" }, { h: "Viagens", fmt: INT }, { h: "Pagantes", fmt: INT }, { h: "Gratuidades", fmt: INT }, { h: "Total de Passageiros", fmt: INT, forte: true }, { h: "Média por Viagem", fmt: DEC }, { h: "Ocupação", fmt: PCT }], `Resumo por serviço e sentido das viagens do relatório${filtros.length ? " · filtro: " + filtros.join(" · ") : ""}`, ORANGE);
     const ord = s => { const i = PAX_LOTE_SERV.findIndex(v => v[0] === s); return i < 0 ? 9 : i; }, gr = new Map();
@@ -55960,7 +55960,7 @@ const PX3_SEM = "SEM TRECHO";
     }
     let h = h0.apply(this, arguments);
     if (aviso) h = h.replace('<div class="px2-rola">', aviso + '<div class="px2-rola">');
-    return h.replace('<button class="btn" onclick="paxExcelMes()"', '<button class="btn" onclick="px3FolhaBranco()" title="Excel do dia para preencher sem internet, ou PDF para imprimir e preencher à mão">Folha em Branco</button><button class="btn" onclick="paxExcelMes()"');
+    return h;
   }; }
 
 /* ---------- 7 · observações: administrador edita e exclui ---------- */
@@ -56045,68 +56045,6 @@ window.px3BaseExportar = () => {
   const s = $("mSave"); if (s) s.textContent = "Exportar";
 };
 { const h0 = paxBancoHtml; paxBancoHtml = function () { return h0.apply(this, arguments).replace('<input type="search" id="paxBQ"', '<button type="button" class="btn" id="px3BBase" onclick="px3BaseExportar()" title="Excel completo, com os dados por trecho, do mês ou de tudo o que está gravado; pode ser alterado e importado de volta">Exportar Base</button><input type="search" id="paxBQ"'); }; }
-
-/* ---------- 4 · folha em branco do dia: Excel e PDF ---------- */
-function px3GradeDoDia(data) {
-  const dia = paxHorDoDia(data); if (!dia) throw new Error("a Tabela de Horários não está disponível.");
-  const m = new Map(); dia.forEach(v => { const serv = v.servs[0]; if (!serv) return; m.set(`${serv}|${v.hora}|${v.sent}`, { serv, hora: v.hora, sent: v.sent }); });
-  PAX_STATE.itens.filter(x => x.Data === data).forEach(x => { const k = `${x.Servico}|${paxHoraPura(x)}|${x.Sentido || "Ida"}`; if (!m.has(k)) m.set(k, { serv: x.Servico, hora: paxHoraPura(x), sent: x.Sentido || "Ida" }); });
-  return [...m.values()].sort((a, b) => px3Ord(a.serv) - px3Ord(b.serv) || (a.sent === b.sent ? 0 : a.sent === "Ida" ? -1 : 1) || a.hora.localeCompare(b.hora));
-}
-async function px3ModeloExcel(data) {
-  const g = px3GradeDoDia(data); if (!g.length) throw new Error("não há horário na Tabela de Horários para este dia.");
-  const { wb, folha, linha } = await px3Livro(), dia = PX3_DIAS[dLocal(data).getDay()];
-  const w1 = folha("Viagens", `Estatística de Passageiros · Folha do Dia · ${fmtDate(data)}`, "Preencha as colunas amarelas. Por trecho: use a aba Trechos (a viagem vale pela soma). Depois: Importar › Atualizar pela Base em Excel. Linha em branco não é gravada.", px3ColsV(true));
-  const w2 = folha("Trechos", `Estatística de Passageiros · Folha do Dia por Trecho · ${fmtDate(data)}`, "Preencha as colunas amarelas só nos trechos que tiveram passageiros. Linha em branco não é gravada.", px3ColsT(true), "FFD6421F");
-  g.forEach(v => { linha(w1, ["", px3Dt(data), dia, paxLinhaNum(v.serv), v.serv, v.hora, v.sent, "", null, null, null, null, PAX_LUGARES, null, ""]);
-    px2TrechosDaLinha(v.serv, v.sent).forEach(t => linha(w2, ["", px3Dt(data), paxLinhaNum(v.serv), v.serv, v.hora, v.sent, "", t.k, px2KeyNome(t.k), null, null, null, null])); });
-  [w1, w2].forEach(ws => paxXlsAjusta(ws, 5)); wb.views = [{ activeTab: 0 }];
-  await xlsxBaixar(wb, `Folha de Passageiros - ${data}.xlsx`); return g.length;
-}
-async function px3ModeloPdf(data) {
-  const g = px3GradeDoDia(data); if (!g.length) throw new Error("não há horário na Tabela de Horários para este dia.");
-  const J = await erpLib("jspdf"); await erpLib("jspdf_autotable"); const autoTable = window.autoTable, T = ctbPdfTxt;
-  if (!J || !J.jsPDF || typeof autoTable !== "function") throw new Error("biblioteca de PDF indisponível");
-  const doc = new J.jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true }), W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 10;
-  const NAVY = [15, 30, 58], INK = [27, 34, 48], MUT = [107, 114, 128], LINE = [120, 128, 140];
-  const logo = await ctbLogoPng().catch(() => null), dsem = DIAS_SEMANA[dLocal(data).getDay()], titulo = `Estatística de Passageiros - Folha de Lançamento - ${fmtDate(data)} (${dsem})`;
-  doc.setProperties({ title: T(titulo), creator: "ERP NMB" });
-  const topo = sub => { let x0 = M; if (logo) { const h = 11, w = Math.min(30, h * logo.w / logo.h); doc.addImage(logo.url, "PNG", M, 7, w, w * logo.h / logo.w); x0 = M + w + 4; }
-    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...NAVY); doc.text(T(titulo), x0, 12.5);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MUT); doc.text(T(sub), x0, 17.5); doc.setDrawColor(214, 66, 31); doc.setLineWidth(0.6); doc.line(M, 21, W - M, 21); };
-  const base = { theme: "grid", margin: { left: M, right: M, top: 25, bottom: 12 }, styles: { font: "helvetica", fontSize: 9, textColor: INK, lineColor: LINE, lineWidth: 0.2, halign: "center", valign: "middle", cellPadding: 1.2 }, headStyles: { fillColor: NAVY, textColor: 255, fontStyle: "bold", fontSize: 8.5, halign: "center" } };
-  /* 1 · totais por viagem */
-  topo("Totais por viagem. Preencha à mão e lance no ERP depois (Lançamentos ou Importar). Responsável: ______________________  Assinatura: ______________________");
-  autoTable(doc, Object.assign({}, base, { startY: 25, head: [["Relatório", "Linha", "Origem - Destino", "Horário", "Sentido", "Ticket Agência", "Fechamento do Motorista", "Gratuidades", "Total", "Observações"]],
-    body: g.map(v => { const [o, d] = px2OD(v.serv, v.sent); return ["", T(paxLoteServRot(v.serv)), T(`${o} - ${d}`), v.hora, v.sent, "", "", "", "", ""]; }),
-    styles: Object.assign({}, base.styles, { minCellHeight: 8.2 }), columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 36, halign: "left" }, 2: { cellWidth: 52, halign: "left" }, 3: { cellWidth: 17, fontStyle: "bold" }, 4: { cellWidth: 16 }, 5: { cellWidth: 22 }, 6: { cellWidth: 28 }, 7: { cellWidth: 24 }, 8: { cellWidth: 18 } },
-    didDrawPage: d => { if (d.pageNumber > 1) topo("Totais por viagem (continuação)"); } }));
-  /* 2 · por trecho: uma tabela por linha e sentido, até 7 horários por tabela; cada horário com T · F · G */
-  const grupos = new Map(); g.forEach(v => { const k = `${v.serv}|${v.sent}`; (grupos.get(k) || grupos.set(k, []).get(k)).push(v.hora); });
-  for (const [k, horas] of grupos) { const [serv, sent] = k.split("|"), trs = px2TrechosDaLinha(serv, sent); if (!trs.length) continue; const [o, d] = px2OD(serv, sent);
-    for (let i = 0; i < horas.length; i += 7) { const hs = horas.slice(i, i + 7); doc.addPage();
-      topo(`Por trecho - ${paxLoteServRot(serv)} - ${sent} (${o} - ${d})${horas.length > 7 ? ` - horários ${i + 1} a ${i + hs.length} de ${horas.length}` : ""}.  T = Ticket Agência   F = Fechamento do Motorista   G = Gratuidades`);
-      const wT = 62, wC = (W - 2 * M - wT) / (hs.length * 3), cs = { 0: { cellWidth: wT, halign: "left", fontSize: 8.5 } }; for (let c = 1; c <= hs.length * 3; c++) cs[c] = { cellWidth: wC };
-      autoTable(doc, Object.assign({}, base, { startY: 25,
-        head: [[{ content: "Trecho", rowSpan: 2 }].concat(hs.map(h => ({ content: h, colSpan: 3 }))), hs.flatMap(() => ["T", "F", "G"])],
-        body: [[{ content: "Nº do relatório", styles: { fontStyle: "bold" } }].concat(hs.map(() => ({ content: "", colSpan: 3 })))].concat(trs.map(t => [T(px2KeyNome(t.k).replace("×", "x"))].concat(hs.flatMap(() => ["", "", ""])))).concat([[{ content: "Total do horário", styles: { fontStyle: "bold" } }].concat(hs.flatMap(() => ["", "", ""]))]),
-        styles: Object.assign({}, base.styles, { minCellHeight: Math.max(6.2, Math.min(9, (H - 25 - 12 - 12) / (trs.length + 2))) }), columnStyles: cs })); } }
-  const np = doc.getNumberOfPages(), agora = new Date().toLocaleString("pt-BR");
-  for (let p = 1; p <= np; p++) { doc.setPage(p); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...MUT); doc.text(T(`Transportadora Nova Macabu · gerado pelo ERP em ${agora}`), M, H - 5); doc.text(`Página ${p} de ${np}`, W - M, H - 5, { align: "right" }); }
-  doc.save(`Folha de Passageiros - ${data}.pdf`); return np;
-}
-window.px3FolhaBranco = () => {
-  const d0 = (PAX_UI.lote && PAX_UI.lote.data) || todayISO();
-  openModal("Folha em Branco", `<p class="hint" style="margin:0 0 12px">Para quando faltar internet ou luz: baixe <b>antes</b> e deixe guardado (o Excel no computador, o PDF impresso). A folha traz os horários da Tabela de Horários do dia escolhido e os trechos de cada linha.</p>
-    <div class="form-grid"><div class="field"><label>Dia da folha</label><input type="date" id="px3FbData" value="${esc(d0)}"></div></div>
-    <div class="px3-op" data-sem-titulo><div><b>Excel</b> <span class="sup">· preenche no computador sem internet; depois entra por Importar › Atualizar pela Base em Excel</span></div><div><b>PDF</b> <span class="sup">· imprime e preenche à mão; depois é digitado em Lançamentos</span></div></div>
-    <div class="row" style="gap:10px;margin-top:14px"><button type="button" class="btn primary" id="px3FbX">Baixar Excel</button><button type="button" class="btn" id="px3FbP">Baixar PDF</button></div>
-    <div class="err-msg" id="px3FbErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, () => true);
-  const s = $("mSave"); if (s) s.remove();
-  const roda = (bt, fn, rot) => async () => { const d = $("px3FbData").value, er = $("px3FbErr"); er.style.display = "none"; if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { er.style.display = "block"; er.textContent = "Escolha o dia."; return; }
-    bt.disabled = true; const t0 = bt.textContent; bt.textContent = "Gerando…"; try { await fn(d); toast(`${rot} da folha de ${fmtDate(d)} gerado.`); } catch (e) { er.style.display = "block"; er.textContent = "Não foi possível gerar: " + e.message; } finally { bt.disabled = false; bt.textContent = t0; } };
-  $("px3FbX").onclick = roda($("px3FbX"), px3ModeloExcel, "Excel"); $("px3FbP").onclick = roda($("px3FbP"), px3ModeloPdf, "PDF");
-};
 
 /* ---------- 3 · importar a base (ou a folha em branco preenchida) ---------- */
 function px3LerAba(m) {   /* matriz → { cab: {nome→coluna}, linhas } ; o cabeçalho é a linha que tem Data e Horário */
@@ -56213,7 +56151,7 @@ async function px3Gravar() {
   if (falhas.length) { if (log) { log.style.display = "block"; log.textContent = `Concluído: ${ok} gravada(s), ${falhas.length} falha(s).\n` + falhas.join("\n"); } if (b) { b.disabled = false; b.textContent = "Tentar de Novo as que Falharam"; } imp.regs = fila.filter(r => falhas.some(f => f.includes(r.rot))); imp.novo = imp.regs.filter(r => r.st === "novo").length; imp.alt = imp.regs.filter(r => r.st === "alt").length; return; }
   PX3.imp = null; paintPax();
 }
-Object.assign(window, { px3BaseGerar, px3ModeloExcel, px3ModeloPdf, px3Montar, px3Gravar, PX3 });
+Object.assign(window, { px3BaseGerar, px3Montar, px3Gravar, PX3 });
 (function () { const st = document.createElement("style"); st.id = "erp-v01490";
   st.textContent = `.px3-semgrade{margin:0 0 10px;padding:10px 12px;background:#FFF8E6;border-left:3px solid #C98A00;border-radius:4px}
   .px3-op{display:flex;flex-direction:column;gap:10px;font-size:14px}.px3-op label{display:flex;gap:8px;align-items:baseline;cursor:pointer}
@@ -56340,7 +56278,7 @@ window.px4AbreTodos = abre => { const L = PAX_UI.lote; if (!L) return; PX4.exp.c
 { const h0 = paxLoteHtml;
   paxLoteHtml = function () {
     let h = h0.apply(this, arguments); const L = PAX_UI.lote, temDet = L && L.linhas.some(l => px2DetTem(l.det)), todos = temDet && L.linhas.filter(l => px2DetTem(l.det)).every(l => PX4.exp.has(px4VK(l)));
-    h = h.replace(/<button class="btn" onclick="px3FolhaBranco\(\)"[^>]*>[^<]*<\/button><button class="btn" onclick="paxExcelMes\(\)"[^>]*>[^<]*<\/button>/, `<span class="px4-emg"><button class="btn" onclick="px4Planilha(this)" title="Excel em branco, de uma aba só, para lançar sem internet em qualquer dia; depois entra por Importar">Planilha de Emergência (Excel)</button><button class="btn" onclick="px4Folha(this)" title="Folha de duas páginas (frente e verso) para imprimir e preencher à mão">Folha de Emergência (PDF)</button></span>`);
+    h = h.replace(/<button class="btn" onclick="paxExcelMes\(\)"[^>]*>[^<]*<\/button>/, `<span class="px4-emg"><button class="btn" onclick="px4Planilha(this)" title="Excel em branco, de uma aba só, para lançar sem internet em qualquer dia; depois entra por Importar">Planilha de Emergência (Excel)</button><button class="btn" onclick="px4Folha(this)" title="Folha de duas páginas (frente e verso) para imprimir e preencher à mão">Folha de Emergência (PDF)</button></span>`);
     h = h.replace('<div class="px2-rola">', px4BarHtml() + (temDet ? `<div class="px4-tod"><button type="button" class="pin-link" onclick="px4AbreTodos(${todos ? "false" : "true"})">${todos ? "Fechar os trechos de todos os horários" : "Abrir os trechos de todos os horários"}</button></div>` : "") + '<div class="px2-rola">');
     h = h.replace("+ Adicionar Viagem (outro serviço ou sentido da tabela)", "+ Lançar Horário Fora da Tabela (gravado com * e enviado para aprovação)");
     return h.replace("Em cada horário, use <b>Trechos</b> para lançar Ticket Agência, Fechamento do Motorista e Gratuidades por trecho (a linha mostra a soma), ou digite direto na linha.", "Use o <b>Lançamento rápido</b> para lançar por trecho (a linha do horário mostra a soma e os trechos abrem logo abaixo dela), ou digite o total direto na linha.");
@@ -56493,6 +56431,103 @@ Object.assign(window, { PX4, px4Registrar, px4BancoPos, px4GradeHtml });
   .px4-g td.px4-gv{background:repeating-linear-gradient(135deg,#FAFBFC,#FAFBFC 6px,#F3F5F8 6px,#F3F5F8 12px)}.px4-g .px4-gtot{position:sticky;right:0;background:#F4F6FA;border-left:2px solid #C9D0D8;font-weight:700}.px4-g thead th.px4-gtot{background:var(--navy)}
   .px4-g tfoot th,.px4-g tfoot td{background:#F4F6FA;border-top:2px solid var(--navy);font-weight:700}.px4-gb{border:0;background:none;font:inherit;font-weight:700;color:var(--navy);cursor:pointer;padding:0;text-align:left}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.92 (24/11/2026) · correções da varredura de 24/11 (claude/erp-nmb/varredura-e-avaliacao-2026-11-24.md).
+   Pedido do Rafael (15:47): aplicar e publicar o que for válido.
+   1. Passageiros: dia enviado ou aprovado também fica travado nas gravações em lote (importação mensal; "Passar para Ida/Volta"
+      e "Mudar o Serviço" do Banco de Dados). Antes a trava só valia para gravação item a item e para exclusão.
+   2. Passageiros › Banco de Dados: Pagantes e Gratuidades de viagem lançada por trecho não se editam na célula (mudam pelos
+      trechos); sem trecho, Pagantes não fica abaixo do Ticket Agência.
+   3. Lista de colunas vazia do SharePoint conta como "não sei" (CAP, Terceiros, Obrigações, PagBank, Rio Card): antes, todos os
+      campos eram descartados e o registro era gravado em branco com mensagem de sucesso.
+   4. Passageiros: sai "Lançar Viagem" do topo (formulário antigo, sem Relatório, Ticket Agência e trechos); a folha do dia faz tudo.
+      "Exportar Relatório" ganha Relatório, Ticket Agência e Fechamento do Motorista. Saem as sobras da folha antiga (v0.14.90).
+   5. TI › Manutenção de Equipamentos: preventiva vencida e manutenção atrasada aparecem no Início.
+   6. CAP: motivo de "Desfazer pagamento", "Cancelar lançamento" e "Reabrir o mês" pedido em janela do ERP (era a do navegador).
+   ===================================================================== */
+function colsOuNulo(s) { return s && s.size ? s : null; }   /* conjunto de colunas vazio = resposta inválida: quem lê trata como "não sei" */
+
+/* janela do ERP para pedir um motivo (substitui o prompt do navegador): devolve o texto, ou null se a pessoa desistir */
+function erpMotivo(o) {
+  return new Promise(res => {
+    const v = document.getElementById("erpSobre"); if (v && typeof v._fim === "function") v._fim(false); else if (v) v.remove();
+    document.body.insertAdjacentHTML("beforeend", `<div class="erp-sobre-back" id="erpSobre" role="alertdialog" aria-modal="true" aria-labelledby="erpMotT"><div class="erp-sobre" data-sem-titulo><h3 id="erpMotT">${esc(o.titulo || "Motivo")}</h3><p>${esc(o.texto || "")}</p>
+      <label class="erp-mot-l" for="erpMotTxt">${esc(o.rotulo || "Motivo (obrigatório)")}</label><textarea id="erpMotTxt" class="erp-mot-t" rows="3" maxlength="${Number(o.max) || 255}"></textarea><div class="erp-mot-e" id="erpMotErr" role="alert"></div>
+      <div class="erp-sobre-pe"><button type="button" class="btn" id="erpSobreNao">${esc(o.nao || "Voltar")}</button><button type="button" class="btn ${o.perigo ? "danger" : "primary"}" id="erpSobreSim">${esc(o.sim || "Confirmar")}</button></div></div></div>`);
+    const eu = document.getElementById("erpSobre"), foco0 = document.activeElement, tx = eu.querySelector("#erpMotTxt"); let feito = false;
+    const fim = r => { if (feito) return; feito = true; document.removeEventListener("keydown", tec, true); if (eu.isConnected) eu.remove();
+      try { if (foco0 && foco0.isConnected && foco0 !== document.body && typeof foco0.focus === "function") foco0.focus({ preventScroll: true }); } catch (e) {}
+      res(r === false ? null : r); };
+    eu._fim = fim;
+    const ok = () => { const t = tx.value.trim(); if (!t) { eu.querySelector("#erpMotErr").textContent = o.vazio || "Informe o motivo."; tx.focus(); return; } fim(t); };
+    const tec = ev => { if (!eu.isConnected || document.getElementById("erpSobre") !== eu) { document.removeEventListener("keydown", tec, true); return; }
+      if (ev.key === "Escape") { ev.preventDefault(); ev.stopImmediatePropagation(); fim(null); return; }
+      if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey) && document.activeElement === tx) { ev.preventDefault(); ev.stopImmediatePropagation(); ok(); return; }
+      if (!eu.contains(document.activeElement)) { ev.preventDefault(); ev.stopImmediatePropagation(); tx.focus(); return; }
+      ev.stopPropagation(); };
+    document.addEventListener("keydown", tec, true);
+    eu.querySelector("#erpSobreNao").onclick = () => fim(null); eu.querySelector("#erpSobreSim").onclick = ok;
+    setTimeout(() => { if (eu.isConnected) tx.focus(); }, 0);
+  });
+}
+window.erpMotivo = erpMotivo;
+
+/* ---------- 1 · trava do dia também nas gravações em lote e nas diretas ---------- */
+{ const g0 = guardaEscrita;
+  guardaEscrita = function (method, path, body) {
+    try { const met = String(method || "GET").toUpperCase();
+      if ((met === "PATCH" || met === "POST") && PAX_STATE.list && typeof px2Travado === "function") {
+        const p = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0], m = p.match(new RegExp(`/lists/${PAX_STATE.list.id}/items(?:/(\\d+)(?:/fields)?)?$`));
+        if (m) { const b = body && typeof body === "string" ? (() => { try { return JSON.parse(body); } catch (e) { return null; } })() : body, f = met === "POST" ? (b && b.fields) : b;
+          const x = m[1] ? PAX_STATE.itens.find(i => i._id === m[1]) : null, ds = [x && x.Data, f && f.Data ? ymd(f.Data) : ""].filter(Boolean), t = ds.find(px2Travado);
+          if (t) { const e = new Error(px2TravaMsg(t)); e.status = 403; e.semAcesso = true; e.px2Trava = true; throw e; } } }
+    } catch (e) { if (e && e.px2Trava) throw e; }
+    return g0.apply(this, arguments);
+  }; }
+
+/* ---------- 2 · Banco de Dados: célula de Pagantes / Gratuidades não descola do detalhe ---------- */
+{ const g0 = paxBGrava;
+  paxBGrava = async function (td, x, k, bruto) {
+    if (x && (k === "Pagantes" || k === "Gratuidade")) { const volta = m => { toast(m, 8000); try { if (td && td.isConnected && !td.classList.contains("ed")) td.textContent = paxBancoTxt(x, k); } catch (e) {} };
+      const v = String(bruto == null ? "" : bruto).trim(), n = Number(v.replace(/\./g, "")), mudou = v !== "" && Number.isInteger(n) && n >= 0 && n !== Number(x[k] || 0);
+      if (mudou) { const det = px2J(x.TrechosDet, null);
+        if (det && typeof det === "object" && px2DetTem(det)) return volta(`Esta viagem foi lançada por trecho: ${k === "Pagantes" ? "os pagantes são" : "as gratuidades são"} a soma dos trechos. Altere em "N trechos › Alterar os trechos desta viagem".`);
+        if (k === "Pagantes" && n < Number(x.TicketAgencia || 0)) return volta(`Pagantes não pode ficar abaixo do Ticket Agência (${Number(x.TicketAgencia)}): Pagantes = Ticket Agência + Fechamento do Motorista.`); } }
+    return g0.apply(this, arguments);
+  }; }
+
+/* ---------- 4 · topo de Passageiros sem "Lançar Viagem" ---------- */
+{ const p0 = paintPax;
+  paintPax = function () { const r = p0.apply(this, arguments);
+    try { const a = $("paxActions"); if (a) a.querySelectorAll("button").forEach(b => { if (/^lan[cç]ar viagem$/i.test(b.textContent.trim())) b.remove(); }); } catch (e) {}
+    return r; };
+  window.paintPax = paintPax; }
+
+/* ---------- 5 · TI no Início: preventivas vencidas e manutenções atrasadas ---------- */
+{ const f0 = iniFontes; iniFontes = function () { const F = f0.apply(this, arguments); try { if (iniVe("ti_manut") && !F.includes("ti")) F.push("ti"); } catch (e) {} return F; }; }
+INI_LER.ti = async function () {
+  const [at, mn] = await Promise.all([iniItens("ti_ativos"), iniItens("ti_manut")]); if (!at || !mn) return { n: 0, venc: 0, atr: 0 };
+  const aberta = m => !["Concluída", "Cancelada"].includes(m.Status), comPrev = new Set(mn.filter(m => m.Tipo === "Preventiva" && aberta(m)).map(m => String(m.AtivoId)));
+  let venc = 0; at.forEach(a => { const per = Number(a.PeriodicidadeMeses || 0); if (!per || a.Situacao === "Baixado / descartado" || comPrev.has(String(a._id))) return;
+    const ult = timD(a.UltimaPreventiva), prox = timD(a.ProximaPreventiva) || (ult ? timMaisMeses(ult, per) : ""); if (!prox || timDias(prox) < 0) venc++; });
+  const atr = mn.filter(m => m.Status === "Agendada" && m.DataPrevista && timD(m.DataPrevista) < timHoje()).length;
+  return { n: venc + atr, venc, atr };
+};
+{ const h0 = iniPrecisaHtml;
+  iniPrecisaHtml = function () {
+    let h = h0.apply(this, arguments);
+    try { const d = (INI.dados || {}).ti; if (!d || d.erro || !d.n) return h; const partes = [];
+      if (d.venc) partes.push(`${d.venc} ${iniPl(d.venc, "preventiva vencida", "preventivas vencidas")}`); if (d.atr) partes.push(`${d.atr} ${iniPl(d.atr, "manutenção atrasada", "manutenções atrasadas")}`);
+      const row = `<button type="button" class="ini-row" data-k="ti" onclick="iniIr('ti')"><span class="ini-ico">${INI_ICO.alerta}</span><span class="txt"><b>${esc(`${d.n} ${iniPl(d.n, "pendência", "pendências")} na manutenção de equipamentos`)}</b><span>${esc(`TI › Manutenção de Equipamentos · ${partes.join(" · ")}`)}</span></span><span class="ini-pill warn">Pendente</span></button>`;
+      h = h.replace(/<div class="ini-vazio"><b>Nada esperando por você hoje\.<\/b>[\s\S]*?<\/div>/, "");
+      return h + row; } catch (e) { return h; }
+  }; }
+INI_IR.ti = () => { const d = (INI.dados || {}).ti || {}; TIM._abrirAba = d.venc ? "plano" : "man"; iniAbrir("#/ti/manutencao-de-equipamentos", "ti_manut"); };
+{ const r0 = renderTiManut; renderTiManut = function () { if (TIM._abrirAba) { TIM.aba = TIM._abrirAba; TIM._abrirAba = null; } return r0.apply(this, arguments); }; window.renderTiManut = renderTiManut; }   /* a aba pedida pelo Início vale depois da limpeza do módulo */
+
+(function () { const st = document.createElement("style"); st.id = "erp-v01492";
+  st.textContent = `.erp-mot-l{display:block;margin:12px 0 4px;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}.erp-mot-t{width:100%;box-sizing:border-box;font:inherit;padding:9px 10px;border:1px solid #C9D0D8;border-radius:6px;resize:vertical;min-height:72px}.erp-mot-t:focus{outline:2px solid var(--navy);outline-offset:1px}.erp-mot-e{min-height:18px;margin-top:4px;font-size:13px;font-weight:600;color:#B3271E}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -56589,6 +56624,7 @@ CONFIG.version = "v0.14.88";   /* celular: Face ID diz o motivo quando não ativ
 CONFIG.version = "v0.14.89";   /* Passageiros: apagar todos os trechos de um horário zera os totais da linha na folha */
 CONFIG.version = "v0.14.90";   /* Passageiros: Lançamentos primeiro; Exportar Base (mês ou tudo, por trecho) e importar de volta; Folha em Branco (Excel e PDF); linha sem horário abre em branco; observações editáveis pelo administrador; Análise + Histórico numa aba */
 CONFIG.version = "v0.14.91";   /* Passageiros: Planilha e Folha de Emergência (uma aba / 2 páginas); lançamento rápido; trechos como sublinhas; Grade do Dia no Banco; nomes por extenso */
+CONFIG.version = "v0.14.92";   /* varredura de 24/11: trava do dia nas gravações em lote; célula de Pagantes; colunas vazias; TI no Início; motivo em janela do ERP na CAP; Exportar Relatório completo */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -3969,29 +3969,7 @@ const NMB_EST = { lista: null, origem: "", prom: null };
 function nmbEstabs() { return NMB_EST.lista || []; }
 function nmbEstabOpcoes(atual) { const l = nmbEstabs().slice(); if (atual && !l.includes(atual)) l.unshift(atual); return l; }
 function nmbEstabPadrao() { return nmbEstabs()[0] || ""; }
-function nmbEstabHint() { return NMB_EST.origem === "rh" ? "Do cadastro RH › CNPJ Ativos" : nmbEstabs().length ? "Opções da coluna da CAP (sem leitura do site RH)" : "Nenhum CNPJ lido — cadastre em RH › Banco de Dados › CNPJ Ativos e rode a Configuração"; }
-async function nmbEstabsCarregar(force) {
-  if (NMB_EST.lista && !force) return NMB_EST.lista;
-  if (NMB_EST.prom && !force) return NMB_EST.prom;
-  NMB_EST.prom = (async () => {
-    let out = null, origem = "";
-    try {
-      const site = await SP.site(CONFIG.sites[LISTS.rh_cnpjs.siteKey]); const ls = await SP.lists(site.id), l = ls.find(x => x.displayName === LISTS.rh_cnpjs.displayName);
-      if (l) { const its = (await SP.items(site.id, l.id)).map(it => it.fields || {}).filter(c => c.Ativo !== false); its.sort((a, b) => (a.Natureza === "Matriz" ? 0 : 1) - (b.Natureza === "Matriz" ? 0 : 1)); out = its.map(c => rhfCnpjFmt(c.CNPJ || "")).filter(Boolean); origem = "rh"; }   /* a matriz vem primeiro (é o padrão) */
-    } catch (e) { out = null; }
-    if (!out || !out.length) {
-      try {
-        const siteCap = await SP.site(CONFIG.sites[LISTS.cap.siteKey]);
-        const listaCap = (await SP.lists(siteCap.id)).find(x => x.displayName === LISTS.cap.displayName) || null;   /* v0.13.1: variáveis locais — nunca grava CAP_STATE.list aqui (modo Dívidas) */
-        if (listaCap) { const cols = await graphAll(`/sites/${siteCap.id}/lists/${listaCap.id}/columns?$select=name,choice`); const c = cols.find(x => x.name === "Estabelecimento"); const ch = (c && c.choice && c.choice.choices) || []; if (ch.length) { out = ch.slice(); origem = "cap"; } }
-      } catch (e) {}
-    }
-    NMB_EST.lista = [...new Set(out || [])]; NMB_EST.origem = NMB_EST.lista.length ? origem : ""; NMB_EST.prom = null; return NMB_EST.lista;
-  })();
-  return NMB_EST.prom;
-}
 /* Configuração: a coluna de escolha "Estabelecimento" recebe os CNPJs ativos do RH (se o RH não puder ser lido, as opções não mudam) */
-async function nmbEstabChoices() { const l = await nmbEstabsCarregar(true); return NMB_EST.origem === "rh" && l.length ? l : null; }
 const TIPOS_LANC = ["Despesa", "Tributo / taxa / guia", "Multa", "Parcela de dívida", "Transferência entre contas"];   /* v0.14.14 · T4: o tipo define os documentos exigidos (sem tipo = Despesa) */
 const TIPO_LANC_ROT = { "Parcela de dívida": "Parcela de dívida ou acordo" };   /* valor gravado mantido (regra da Natureza do gasto); só o rótulo muda */
 function tipoLancRot(t) { return TIPO_LANC_ROT[t] || t || "Despesa"; }
@@ -5653,51 +5631,6 @@ function kpiCounts() {
 }
 
 function itemComp(it) { return it.Competencia || compFromDate(it.Vencimento); }
-function filteredItems() {
-  const f = CAP_STATE.filter; let arr = CAP_STATE.items.slice();
-  if (f.kpi) { const k = kpiCounts()[f.kpi]; if (k) arr = k.it.map(x => x.it); }
-  if (f.status)    arr = arr.filter(it => (it.Status || "") === f.status);
-  if (f.categoria) arr = arr.filter(it => (it.Categoria || "") === f.categoria);
-  if (f.comp)      arr = arr.filter(it => itemComp(it) === f.comp);
-  if (f.busca) {
-    const q = f.busca.toLowerCase();
-    arr = arr.filter(it => [it.Title, it.Fornecedor, it.CNPJ, it.Subcategoria, it.NumeroNF, it.Parcela, it.Observacoes, it.RefDocumento].some(x => (x || "").toLowerCase().includes(q)));
-  }
-  /* v0.12.6: filtros fixos de vencimento, fornecedor e banco */
-  if (f.venc) {
-    const hj = new Date(); hj.setHours(0,0,0,0);
-    const days = n => { const d = new Date(hj); d.setDate(d.getDate() + n); return d; };
-    const endWeek = days(6 - hj.getDay()), startNext = new Date(hj.getFullYear(), hj.getMonth() + 1, 1), endNext = new Date(hj.getFullYear(), hj.getMonth() + 2, 0);
-    arr = arr.filter(it => {
-      const c = classifyItem(it); if (!c.venc) return false; const v = c.venc, np = !c.pago;
-      if (f.venc.startsWith("dia:")) return ymd(v) === f.venc.slice(4);
-      switch (f.venc) {
-        case "mesab":  return np && v >= hj && v.getMonth() === hj.getMonth() && v.getFullYear() === hj.getFullYear();
-        case "atras":  return np && v < hj;
-        case "hoje":   return v.getTime() === hj.getTime();
-        case "7d":     return v >= hj && v <= days(7);
-        case "semana": return v >= hj && v <= endWeek;
-        case "mes":    return v.getMonth() === hj.getMonth() && v.getFullYear() === hj.getFullYear();
-        case "prox":   return v >= startNext && v <= endNext;
-      }
-      return true;
-    });
-  }
-  if (f.forn)  arr = arr.filter(it => (it.Fornecedor || "") === f.forn);
-  if (f.banco) arr = arr.filter(it => (it.Banco || "") === f.banco);
-  if (f.aging) arr = arr.filter(it => capAgingBucket(it) === f.aging);
-  if (f.grupo) arr = arr.filter(it => /^F:.*\|$/.test(f.grupo) ? (it.Fornecedor || "").trim() === f.grupo.slice(2, -1) : capGroupKey(it) === f.grupo);
-  if (f.obr) { const L = obrCalcular().link; arr = arr.filter(it => { const l = L.get(String(it._id)); return !!l && String(l.o._id) === String(f.obr); }); }
-  if (f.fk) { const kf = fornChaveFn(); arr = arr.filter(it => kf(it.FornecedorRefLookupId, it.Fornecedor) === f.fk); }
-  // Ordenação: "venc" (padrão) = por vencimento com as pagas no fim · "situacao" = Vencidas > Pendente > Aguardando NF > Pagas · "valor" · "forn"
-  const rank = it => { const c = classifyItem(it); if (c.pago) return 3; if (c.dias !== null && c.dias < 0) return 0; return (it.Status === "Aguardando NF") ? 2 : 1; };
-  const byVenc = (a,b) => (a.Vencimento || "").localeCompare(b.Vencimento || "");
-  if (f.ordem === "situacao")   arr.sort((a,b) => rank(a) - rank(b) || byVenc(a,b));
-  else if (f.ordem === "valor") arr.sort((a,b) => Number(b.Valor || 0) - Number(a.Valor || 0) || byVenc(a,b));
-  else if (f.ordem === "forn")  arr.sort((a,b) => (a.Fornecedor || "").localeCompare(b.Fornecedor || "", "pt-BR") || byVenc(a,b));
-  else                          arr.sort((a,b) => ((a.Status === "Pago") - (b.Status === "Pago")) || byVenc(a,b));
-  return arr;
-}
 
 function pageCAP() {
   return `<div class="page">
@@ -5708,89 +5641,7 @@ function pageCAP() {
   </div>`;
 }
 
-async function renderCAP() {
-  const body = $("capBody"); if (!body) return;
-  try { await loadCAP(); }
-  catch (e) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(e.message)}</p></div>`; return; }
-  paintCAP();
-}
 
-function paintCAP() {
-  const body = $("capBody"); if (!body) { if ($("obrBody")) paintObr(); else if ($("fornBody")) paintForn(); return; }
-  const acts = $("capActions");
-  if (acts) acts.innerHTML = `<button class="btn" onclick="capImport()">Importar</button>${session.roles.has("admin") ? `<button class="btn" onclick="capDedup()" title="Localiza lançamentos importados duas vezes (nome cru da planilha + nome do cadastro)">Duplicadas</button>` : ""}<button class="btn primary" onclick="capNew()">Novo lançamento</button>`;
-  const total = CAP_STATE.items.length;
-  if (total === 0) {
-    body.innerHTML = `<div class="cap-empty">
-      <h3>Ainda não há lançamentos cadastrados</h3>
-      <p>Você pode cadastrar um lançamento por vez ou importar vários de uma vez colando de uma planilha.${FORN_STATE.items.length ? "" : " Cadastre os fornecedores primeiro para o preenchimento automático funcionar."}</p>
-      <div class="actions"><button class="btn primary" onclick="capNew()">Cadastrar lançamento</button><button class="btn" onclick="capImport()">Importar em lote</button></div>
-    </div>`;
-    return;
-  }
-  if (CAP_STATE.view === "painel") { paintPainel(body); return; }
-  if (CAP_STATE.view === "forn") { paintCapForn(body); return; }
-  const k = kpiCounts();
-  const f = CAP_STATE.filter;
-  const comps = [...new Set(CAP_STATE.items.map(itemComp).filter(Boolean))].sort().reverse();
-  const kpi = (id, cls, lbl, data) => `<button class="kpi ${cls} ${f.kpi===id?"on":""}" onclick="capKPI('${id}')"><div class="lbl">${esc(lbl)}</div><div class="val">${data.n}</div><div class="sub">${esc(fmtBRL(data.v))}</div></button>`;
-  /* v0.12.22: paginação 45 itens — mostra os primeiros 45 e carrega mais com "Mostrar mais 45" */
-  CAP_STATE.pageN = CAP_STATE.pageN || 45;
-  const _lstTodos = filteredItems();
-  const rows = _lstTodos.slice(0, CAP_STATE.pageN).map(it => {
-    const c = classifyItem(it);
-    const marc = !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status;
-    const sup = [it.Fornecedor, it.Parcela ? `parcela ${it.Parcela}` : "", it.NumeroNF ? `NF ${it.NumeroNF}` : ""].filter(Boolean).join(" · ");
-    return `<tr onclick="capEdit('${esc(it._id)}')">
-      <td><div class="desc">${esc(it.Title || "—")}</div><div class="sup">${esc(sup)}</div></td>
-      <td>${esc(it.Categoria || "—")}${it.Subcategoria ? `<div class="sup">${esc(it.Subcategoria)}</div>` : ""}</td>
-      <td class="nw">${esc(compLabel(itemComp(it)))}</td>
-      <td class="nw">${fmtDate(it.Vencimento)}</td>
-      <td class="right">${esc(fmtBRL(it.Valor))}</td>
-      <td>${statusPill(marc)}</td>
-      <td>${esc(it.Banco || "—")}${it.FormaPagamento ? `<div class="sup">${esc(it.FormaPagamento)}</div>` : ""}</td>
-      <td class="nw act">${c.pago ? `<span class="sup">pago ${fmtDate(it.DataPagamento)}</span>` : `<button class="btn mini" onclick="event.stopPropagation(); capPagar('${esc(it._id)}')">Pagar</button>`}</td>
-    </tr>`;
-  }).join("");
-  const _rest = _lstTodos.length - CAP_STATE.pageN;
-  const moreBtn = _rest > 0 ? `<div class="cap-more"><button class="btn" onclick="capMore()">Mostrar mais ${Math.min(45, _rest)} de ${_rest} restantes</button><button class="btn ghost" onclick="capMoreAll()">Mostrar todos</button></div>` : "";
-  const lst = filteredItems(), tot = { n: lst.length, total: 0, pagar: 0, pago: 0, venc: 0 };
-  lst.forEach(it => { const c = classifyItem(it), v = Number(it.Valor || 0); tot.total += v; if (c.pago) tot.pago += v; else { tot.pagar += v; if (c.dias !== null && c.dias < 0) tot.venc += v; } });
-  const foot = `<div class="cap-foot"><span><b>${tot.n}</b> lançamento(s) no filtro</span><span>Total <b>${esc(fmtBRL(tot.total))}</b></span><span>A pagar <b>${esc(fmtBRL(tot.pagar))}</b></span><span class="venc">Vencido <b>${esc(fmtBRL(tot.venc))}</b></span><span class="pago">Pago <b>${esc(fmtBRL(tot.pago))}</b></span></div>`;
-  const forns = [...new Set(CAP_STATE.items.map(it => it.Fornecedor).filter(Boolean))].sort((a,b) => a.localeCompare(b, "pt-BR"));
-  const bancos = [...new Set(BANCOS.concat(CAP_STATE.items.map(it => it.Banco).filter(Boolean)))];
-  body.innerHTML = `
-    ${capViewsBar()}
-    <div class="cap-kpis">
-      ${kpi("venc", "venc", "Vencidas", k.venc)}
-      ${kpi("hoje", "", "Próximos 3 dias", k.hoje)}
-      ${kpi("sete", "", "De 4 a 7 dias", k.sete)}
-      ${kpi("pagas", "pago", "Pagas no mês", k.pagas)}
-    </div>
-    <div class="filters" role="search">
-      <input type="search" class="span-2" id="capBusca" placeholder="Buscar por descrição, fornecedor, NF, CNPJ, ref..." value="${esc(f.busca)}">
-      <select id="capComp"><option value="">Todas as competências</option>${comps.map(c => `<option value="${esc(c)}" ${f.comp===c?"selected":""}>${esc(compLabel(c))}</option>`).join("")}</select>
-      <select id="capStatus"><option value="">Todos os status</option>${STATUS_CAP.map(s => `<option ${f.status===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capCat"><option value="">Todas as categorias</option>${CATEGORIAS.map(s => `<option ${f.categoria===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capVenc" title="Vencimento">${[["","Qualquer vencimento"],["atras","Atrasadas"],["hoje","Vencem hoje"],["7d","Próximos 7 dias"],["semana","Esta semana"],["mes","Este mês"],["prox","Próximo mês"]].map(([v,l]) => `<option value="${v}" ${f.venc===v?"selected":""}>${l}</option>`).join("")}</select>
-      <select id="capForn" title="Fornecedor"><option value="">Todos os fornecedores</option>${forns.map(s => `<option value="${esc(s)}" ${f.forn===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capBanco" title="Banco"><option value="">Todos os bancos</option>${bancos.map(s => `<option value="${esc(s)}" ${f.banco===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capOrdem" title="Ordenação">${[["venc","Ordem: vencimento"],["situacao","Ordem: situação"],["valor","Ordem: maior valor"],["forn","Ordem: fornecedor"]].map(([v,l]) => `<option value="${v}" ${f.ordem===v?"selected":""}>${l}</option>`).join("")}</select>
-      <button class="btn ghost" onclick="capClearFilters()">Limpar filtros</button>
-    </div>
-    ${capChips()}
-    ${rows ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Descrição</th><th>Categoria</th><th>Compet.</th><th>Vencimento</th><th style="text-align:right">Valor</th><th>Status</th><th>Banco</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>${moreBtn}${foot}`
-           : `<div class="cap-empty"><h3>Nenhum lançamento encontrado</h3><p>Ajuste os filtros para ver mais resultados.</p></div>`}
-  `;
-  $("capBusca").addEventListener("input", ev => { CAP_STATE.filter.busca = ev.target.value; keepFocus(paintCAP); });
-  $("capComp").addEventListener("change", ev => { CAP_STATE.filter.comp = ev.target.value; paintCAP(); });
-  $("capStatus").addEventListener("change", ev => { CAP_STATE.filter.status = ev.target.value; paintCAP(); });
-  $("capCat").addEventListener("change", ev => { CAP_STATE.filter.categoria = ev.target.value; paintCAP(); });
-  $("capVenc").addEventListener("change", ev => { CAP_STATE.filter.venc = ev.target.value; paintCAP(); });
-  $("capForn").addEventListener("change", ev => { CAP_STATE.filter.forn = ev.target.value; paintCAP(); });
-  $("capBanco").addEventListener("change", ev => { CAP_STATE.filter.banco = ev.target.value; paintCAP(); });
-  $("capOrdem").addEventListener("change", ev => { CAP_STATE.filter.ordem = ev.target.value; paintCAP(); });
-}
 /* v0.12.6 · limpeza da importação duplicada: para cada grupo (competência + valor + vencimento) com itens sem vínculo no cadastro
    E itens vinculados, os sem vínculo são cópias cruas da planilha → excluir, levando o status Pago para o gêmeo quando só a cópia crua o tinha. */
 function capDedupMesmoForn(r, l) {   /* v0.14.17.1 (D4) */
@@ -5943,13 +5794,6 @@ function capCompAdd(c, n) { const [y, m] = c.split("-").map(Number); const d = n
 function capCompShort(c) { const [y, m] = c.split("-").map(Number); return `${CAP_MESES[m-1]}/${String(y).slice(2)}`; }
 function capMoneyShort(v) { v = Number(v || 0); if (Math.abs(v) >= 1e6) return "R$ " + (v/1e6).toLocaleString("pt-BR",{maximumFractionDigits:2}) + " mi"; if (Math.abs(v) >= 1e3) return "R$ " + (v/1e3).toLocaleString("pt-BR",{maximumFractionDigits:1}) + " mil"; return fmtBRL(v); }
 function capAgingBucket(it) { const c = classifyItem(it); if (c.pago || c.dias === null || c.dias >= 0) return null; const d = -c.dias; return d <= 7 ? "1-7" : d <= 30 ? "8-30" : d <= 60 ? "31-60" : d <= 90 ? "61-90" : "90+"; }
-function capGroupKey(it) {
-  const parc = String(it.Parcela || "").match(/(\d+)\s*\/\s*(\d+)/);
-  if (it.NumParcelamento) return "P:" + String(it.NumParcelamento).trim();
-  if (it.ObrigacaoLookupId != null && it.ObrigacaoLookupId !== "") { const o = (typeof OBR_STATE !== "undefined" ? OBR_STATE.items : []).find(x => String(x._id) === String(it.ObrigacaoLookupId)); if (o) return "O:" + String(o.Title || "").trim(); }
-  if (parc) return "F:" + String(it.Fornecedor || "").trim() + "|" + String(it.Title || "").replace(/\d+\s*\/\s*\d+/g, "").replace(/\d{2}\/\d{2,4}/g, "").trim().toLowerCase();
-  return null;
-}
 window.capSetView = (v) => { CAP_STATE.view = v; try { sessionStorage.setItem("erp.cap.view", v); } catch (e) {} paintCAP(); window.scrollTo({ top: 0, behavior: "smooth" }); };
 /* drill-down: aplica um filtro e vai para a lista */
 window.capGo = (patch) => {
@@ -5960,28 +5804,6 @@ window.capGoJSON = (json) => capGo(JSON.parse(decodeURIComponent(json)));
 const capHref = (patch) => `capGoJSON('${encodeURIComponent(JSON.stringify(patch)).replace(/'/g, "%27")}')`;
 window.capPainelComp = (c) => { CAP_STATE.painelComp = c; paintCAP(); };
 
-function capViewsBar() {
-  const v = CAP_STATE.view;
-  return `<div class="cap-views"><button class="${v==="painel"?"on":""}" onclick="capSetView('painel')">Painel</button><button class="${v==="lista"?"on":""}" onclick="capSetView('lista')">Lista</button><button class="${v==="forn"?"on":""}" onclick="capSetView('forn')">Fornecedores</button></div>`;
-}
-function capChips() {
-  const f = CAP_STATE.filter, chips = [];
-  const add = (lbl, k) => chips.push(`<span class="cap-chip">${esc(lbl)} <b onclick="CAP_STATE.filter['${k}']=${k==="kpi"?"null":"''"};paintCAP()" title="Remover filtro">×</b></span>`);
-  const VENC = { atras: "Atrasadas", hoje: "Vencem hoje", "7d": "Próximos 7 dias", semana: "Esta semana", mes: "Este mês", mesab: "Restante do mês (a pagar)", prox: "Próximo mês" };
-  if (f.kpi) add({ venc: "Vencidas", hoje: "Próximos 3 dias", sete: "De 4 a 7 dias", pagas: "Pagas no mês" }[f.kpi] || f.kpi, "kpi");
-  if (f.venc) add(f.venc.startsWith("dia:") ? "Vence em " + fmtDate(f.venc.slice(4)) : (VENC[f.venc] || f.venc), "venc");
-  if (f.aging) add("Atraso " + f.aging + " dias", "aging");
-  if (f.status) add(f.status, "status");
-  if (f.categoria) add(f.categoria, "categoria");
-  if (f.comp) add("Compet. " + compLabel(f.comp), "comp");
-  if (f.forn) add(f.forn, "forn");
-  if (f.banco) add(f.banco, "banco");
-  if (f.grupo) add("Parcelamento: " + f.grupo.slice(2).replace(/\|$/, ""), "grupo");
-  if (f.obr) { const o = (OBR_STATE.items || []).find(x => String(x._id) === String(f.obr)); add("Obrigação: " + (o ? o.Title : f.obr), "obr"); }
-  if (f.fk) add("Fornecedor: " + (f.fkNome || f.fk), "fk");
-  if (f.busca) add("“" + f.busca + "”", "busca");
-  return chips.length ? `<div class="cap-chips">${chips.join("")}<button class="btn mini" onclick="capClearFilters()">Limpar tudo</button></div>` : "";
-}
 
 /* ---- dados do painel ---- */
 function capPainelData() {
@@ -6089,50 +5911,6 @@ function capPainelData() {
 }
 
 /* ---- render ---- */
-function paintPainel(body) {
-  const D = capPainelData();
-  const K = (lbl, arr, cls, patch, sub) => `<button class="kpi ${cls||""}" onclick="${capHref(patch)}"><div class="lbl">${esc(lbl)}</div><div class="val">${arr.length}</div><div class="sub">${esc(sub || fmtBRL(D.sum(arr)))}</div></button>`;
-  const saude = `<div class="cap-kpis cap-kpis-6">
-    ${K("Vencidas", D.venc, "venc", { venc: "atras" })}
-    ${K("Vencem hoje", D.hoje, D.hoje.length ? "hoje" : "", { venc: "hoje" })}
-    ${K("Próximos 7 dias", D.sete, "", { venc: "7d" })}
-    ${K("Restante do mês", D.mesRest, "", { venc: "mesab" })}
-    ${K("Pagas no mês", D.pagasMes, "pago", { kpi: "pagas" })}
-    ${K("Aguardando NF", D.aguard, "", { status: "Aguardando NF" })}
-  </div>`;
-  const agenda = `<div class="cap-card"><div class="cap-card-h"><h3>Agenda de pagamentos</h3><span class="cap-card-s">atrasadas + próximos 14 dias · clique em Pagar para registrar o pagamento</span></div>
-    ${D.agenda.length ? D.agenda.map(g => `<div class="cap-day ${g.cls}"><div class="cap-day-h" onclick="${capHref(g.key === "atras" ? { venc: "atras" } : { venc: "dia:" + g.key })}" title="Ver na lista"><b>${esc(g.label)}</b><span>${g.items.length} lançamento(s)</span><em>${esc(fmtBRL(g.v))}</em></div>
-      ${g.items.slice(0, 8).map(it => `<div class="cap-day-r" onclick="capEdit('${esc(it._id)}')"><span class="d">${esc(it.Title || "—")}<small>${esc(it.Fornecedor || "")}${g.key === "atras" ? " · venceu " + fmtDate(it.Vencimento) : ""}</small></span><span class="v">${esc(fmtBRL(it.Valor))}</span><button class="btn mini" onclick="event.stopPropagation(); capPagar('${esc(it._id)}')">Pagar</button></div>`).join("")}
-      ${g.items.length > 8 ? `<div class="cap-day-more" onclick="${capHref(g.key === "atras" ? { venc: "atras" } : { venc: "dia:" + g.key })}">+ ${g.items.length - 8} lançamento(s) — ver na lista</div>` : ""}
-    </div>`).join("") : `<p class="cap-muted">Nada vence nos próximos 14 dias e não há atrasadas.</p>`}
-  </div>`;
-  const maxB = Math.max(1, ...D.buckets.map(b => b.v));
-  const aging = `<div class="cap-card"><div class="cap-card-h"><h3>Atraso das vencidas</h3><span class="cap-card-s">dias após o vencimento</span></div>
-    ${D.venc.length ? D.buckets.map(b => `<div class="cap-bar" onclick="${capHref({ venc: "atras", aging: b.b })}" title="Ver na lista"><span class="l">${b.b} dias</span><span class="t"><i style="width:${Math.round(100*b.v/maxB)}%"></i></span><span class="n">${b.n}</span><span class="v">${esc(fmtBRL(b.v))}</span></div>`).join("")
-      + `<div class="cap-card-h" style="margin-top:14px"><h3>Maiores atrasos por fornecedor</h3></div>` + D.topVenc.map(t => `<div class="cap-bar" onclick="${capHref({ venc: "atras", forn: t.f })}"><span class="l" title="${esc(t.f)}">${esc(t.f)}</span><span class="t"><i style="width:${Math.round(100*t.v/Math.max(1, D.topVenc[0].v))}%"></i></span><span class="n">${t.n}</span><span class="v">${esc(fmtBRL(t.v))}</span></div>`).join("")
-      : `<p class="cap-muted">Nenhum lançamento vencido. 🎉</p>`}
-  </div>`;
-  const ST = { pago: ["✓", "Pago"], pend: ["●", "Em aberto"], venc: ["✗", "Vencido"], falta: ["—", "Não lançado"], prev: ["·", "Próximo mês"], na: ["", "Antes do início"] };
-  const rec = `<div class="cap-card"><div class="cap-card-h"><h3>Recorrentes — está em dia?</h3><span class="cap-card-s">fornecedores com lançamento em 2+ meses ou com obrigação ativa · clique na célula para abrir o mês</span></div>
-    ${D.rows.length ? `<div class="table-wrap"><table class="cap-matrix"><thead><tr><th>Fornecedor</th>${D.comps.map(c => `<th class="${c === D.compAtual ? "cur" : ""}">${esc(capCompShort(c))}</th>`).join("")}</tr></thead><tbody>
-      ${D.rows.map(r => `<tr><td class="f">${esc(r.f)}${r.obr ? ` <span class="cap-tag" title="Obrigação ativa">obrig.</span>` : ""}</td>${r.cells.map(x => `<td class="c ${x.st} ${x.c === D.compAtual ? "cur" : ""}" onclick="${x.n ? capHref({ forn: r.f, comp: x.c }) : capHref({ forn: r.f })}" title="${esc(ST[x.st][1])}${x.n ? " · " + x.n + " lançamento(s) · " + fmtBRL(x.v) : ""}">${x.st === "na" ? "" : `<span>${ST[x.st][0]}</span>`}${x.n ? `<small>${esc(capMoneyShort(x.v))}</small>` : ""}</td>`).join("")}</tr>`).join("")}
-    </tbody></table></div><div class="cap-legend"><span class="pago">✓ pago</span><span class="pend">● em aberto</span><span class="venc">✗ vencido</span><span class="falta">— não lançado no mês</span><span class="prev">· próximo mês</span></div>` : `<p class="cap-muted">Ainda não há fornecedores recorrentes.</p>`}
-  </div>`;
-  const cart = `<div class="cap-card"><div class="cap-card-h"><h3>Parcelamentos</h3><span class="cap-card-s">parcelas pagas × total · clique para ver os lançamentos · <a href="#/financeiro/obrigacoes">carteiras de obrigações →</a></span></div>
-    ${D.carteiras.length ? `<div class="cap-carts">${D.carteiras.map(g => { const pct = g.N ? Math.min(100, Math.round(100 * g.pagas / g.N)) : 0; return `<div class="cap-cart ${g.vencidas ? "venc" : ""}" onclick="${capHref({ grupo: g.k })}">
-        <div class="t">${esc(g.title)}</div><div class="s">${esc(g.sub)}${g.prox ? ` · ${classifyItem(g.prox).dias < 0 ? "vencida em" : "próxima"} ${fmtDate(g.prox.Vencimento)} (${esc(fmtBRL(g.prox.Valor))})` : " · sem parcela em aberto"}</div>
-        <div class="p"><i style="width:${pct}%"></i></div>
-        <div class="n"><span><b>${g.pagas}</b>/${g.N} pagas</span>${g.vencidas ? `<span class="venc"><b>${g.vencidas}</b> vencida(s)</span>` : ""}<span>pago ${esc(capMoneyShort(g.vPago))}</span><span>aberto ${esc(capMoneyShort(g.vAberto))}</span></div>
-      </div>`; }).join("")}</div>` : `<p class="cap-muted">Nenhum lançamento com parcela (ex.: 3/12) ou nº de parcelamento ainda.</p>`}
-  </div>`;
-  const compOpts = []; for (let i = -6; i <= 1; i++) compOpts.push(capCompAdd(D.compAtual, i));
-  const charts = `<div class="cap-card"><div class="cap-card-h"><h3>Por categoria</h3><span class="cap-card-s">competência <select class="cap-sel" onchange="capPainelComp(this.value)">${compOpts.map(c => `<option value="${c}" ${c === D.comp ? "selected" : ""}>${esc(compLabel(c))}</option>`).join("")}</select> · clique na barra para filtrar</span></div>
-      <div class="cap-chart" style="height:${Math.max(240, 24 * D.catRows.length + 70)}px"><canvas id="capChartCat"></canvas></div></div>
-    <div class="cap-card"><div class="cap-card-h"><h3>Evolução — últimas 6 competências</h3><span class="cap-card-s">pago × em aberto</span></div><div class="cap-chart"><canvas id="capChartEvo" height="220"></canvas></div></div>`;
-  body.innerHTML = `${capViewsBar()}${saude}<div class="cap-grid"><div>${agenda}</div><div>${aging}</div></div>${rec}${cart}<div class="cap-grid">${charts}</div>`;
-  capPainelCharts(D);
-  if (typeof OBR_STATE !== "undefined" && !OBR_STATE.items.length && !CAP_STATE._obrTried) { CAP_STATE._obrTried = true; loadObr().then(() => { if (CAP_STATE.view === "painel") paintCAP(); }).catch(() => {}); }
-}
 function capPainelCharts(D) {
   if (!window.Chart || !Chart.getChart) return;
   const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
@@ -6184,49 +5962,6 @@ window.closeModal = closeModal;
 const opt = (arr, sel, blank) => (blank ? `<option value=""></option>` : "") + arr.map(x => `<option ${x===sel?"selected":""}>${esc(x)}</option>`).join("");
 
 /* -------- Nova / editar conta -------- */
-function capForm(it) {
-  const isNew = !it;
-  const v = it || { Status: "Em aberto" };
-  const fornOpts = fornAtivos().map(f => `<option value="${esc(f.Title)}">`).join("");
-  return `<div class="modal-head"><h2>${isNew ? "Novo lançamento" : "Editar lançamento"}</h2><button class="x" onclick="closeModal()">×</button></div>
-    <div class="modal-body"><div class="form-grid">
-      <div class="field"><label>CNPJ / CPF do favorecido${isNew ? '<span class="req">*</span>' : ""}</label><input id="fCNPJ" data-mask="doc" inputmode="numeric" value="${esc(v.CNPJ || "")}" placeholder="Digite e o cadastro é localizado" autocomplete="off"><div class="hint" id="fCNPJHint"></div>${isNew ? `<label class="check" style="margin-top:4px;font-size:12.5px"><input type="checkbox" id="fSemDoc"> Favorecido sem CNPJ/CPF (exterior)</label>` : ""}</div>
-      <div class="field"><label>Tipo de favorecido</label><select id="fTipoFav">${opt(TIPOS_FAV, v.TipoFavorecido || "Fornecedor", false)}</select><div class="hint">Funcionário sincroniza com o RH quando a lista de Funcionários existir</div></div>
-      <div class="field full"><label>Favorecido<span class="req">*</span></label><input id="fForn" list="fornList" autocomplete="off" value="${esc(v.Fornecedor || "")}" placeholder="Comece a digitar para escolher do cadastro"><datalist id="fornList">${fornOpts}</datalist><div class="hint" id="fFornHint"></div></div>
-      <div class="field full"><label>Descrição<span class="req">*</span></label><input id="fTitle" value="${esc(v.Title || "")}" placeholder="Ex.: Aluguel garagem set/26"></div>
-      <div class="field"><label>Nº da NF</label><input id="fNF" value="${esc(v.NumeroNF || "")}"></div>
-      <div class="field"><label>Categoria</label><select id="fCat">${opt(CATEGORIAS, v.Categoria, true)}</select></div>
-      <div class="field"><label>Subcategoria</label><input id="fSub" list="subList" autocomplete="off" value="${esc(v.Subcategoria || "")}"><datalist id="subList">${subcatOptions(v.Categoria)}</datalist></div>
-      <div class="field"><label>Vencimento<span class="req">*</span></label><input type="date" id="fVenc" value="${v.Vencimento ? ymd(v.Vencimento) : ""}"></div>
-      <div class="field"><label>Competência</label><input type="month" id="fComp" value="${esc(v.Competencia || "")}" placeholder="AAAA-MM"><div class="hint">Mês a que a despesa se refere; vazio = mês do vencimento</div></div>
-      <div class="field"><label>Valor (R$)<span class="req">*</span></label><input type="number" step="0.01" min="0" id="fVal" value="${v.Valor ?? ""}"></div>
-      <div class="field"><label>Parcela</label><input id="fParc" value="${esc(v.Parcela || "")}" placeholder="Ex.: 3/12"></div>
-      <div class="field"><label>Tipo do lançamento</label><select id="fTipoL">${tipoLancOpts(v.TipoLancamento || "Despesa")}</select><div class="hint">Define os documentos exigidos · transferência entre contas não conta como despesa no Fluxo</div></div>
-      <div class="field"><label>Estabelecimento</label><select id="fEstab">${opt(nmbEstabOpcoes(v.Estabelecimento), v.Estabelecimento || nmbEstabPadrao(), !nmbEstabs().length)}</select><div class="hint">${esc(nmbEstabHint())}</div></div>
-      <div class="field"><label>Nº do parcelamento</label><input id="fNumParc" value="${esc(v.NumParcelamento || "")}" placeholder="SISPAR, DARF 1124, prefeitura…"></div>
-      <div class="field"><label>Banco</label><select id="fBanco">${opt(BANCOS, v.Banco, true)}</select></div>
-      <div class="field"><label>Forma de pagamento</label><select id="fForma">${opt(FORMAS, v.FormaPagamento, true)}</select></div>
-      <div class="field"><label>Status<span class="req">*</span></label><select id="fSt" ${!capPodePagar() && v.Status === "Pago" ? "disabled" : ""}>${opt(capPodePagar() || v.Status === "Pago" ? STATUS_CAP : STATUS_CAP.filter(x => x !== "Pago"), v.Status || "Em aberto", false)}</select>${capPodePagar() ? "" : `<div class="hint">Pagar exige a permissão "Pagar lançamentos"</div>`}</div>
-      <div class="field" ${capPodePagar() || v.DataPagamento ? "" : 'style="display:none"'}><label>Data do pagamento</label><input type="date" id="fPag" value="${v.DataPagamento ? ymd(v.DataPagamento) : ""}" ${capPodePagar() ? "" : "disabled"}></div>
-      <div class="field full"><label>Ref. documento</label><input id="fRef" value="${esc(v.RefDocumento || "")}" placeholder="Nº do contrato, boleto, processo"></div>
-      <div class="field full"><label>Observações</label><textarea id="fObs">${esc(v.Observacoes || "")}</textarea></div>
-      ${(() => { if (isNew || !OBR_STATE.items.length) return ""; const l = obrCalcular().link.get(String(v._id)); return l ? `<div class="field full"><label>Obrigação</label><div class="static">${esc(l.o.Title)} <span class="sup">· ${esc(OBR_HOW[l.how] || "")}</span> · <a href="#" onclick="obrAbrir('${esc(l.o._id)}'); return false;">abrir a obrigação</a></div></div>` : ""; })()}
-    </div><div class="err-msg" id="fErr" style="display:none;color:var(--err);margin-top:12px;font-size:13px;"></div></div>
-    <div class="modal-foot">${isNew ? "" : `<button class="btn" onclick="capDelete('${esc(it._id)}')" style="margin-right:auto;color:var(--err)">Excluir</button>`}<button class="btn" onclick="closeModal()">Cancelar</button><button class="btn primary" id="fSave">${isNew ? "Cadastrar" : "Salvar"}</button></div>`;
-}
-function capWireForm(isNew) {
-  const forn = $("fForn"), cat = $("fCat"), venc = $("fVenc");
-  forn.addEventListener("change", () => capApplyForn(isNew));
-  const doc = $("fCNPJ");
-  const byDoc = () => { const h = $("fCNPJHint"); const v = doc.value; if (!docClean(v)) { h.textContent = ""; return; } const f = fornByDoc(v); if (f) { if (!forn.value) forn.value = f.Title; if (forn.value === f.Title) capApplyForn(isNew); h.textContent = `Cadastro localizado: ${f.Title}`; h.className = "hint ok"; } else { h.textContent = docValido(v) ? "Documento válido, mas sem cadastro — use \"Cadastrar fornecedor\" abaixo do nome." : (docClean(v).length >= 11 ? "CNPJ/CPF com dígitos inválidos" : ""); h.className = "hint warn"; } };
-  doc.addEventListener("input", byDoc); doc.addEventListener("blur", () => { doc.value = docFmt(doc.value); byDoc(); }); byDoc();
-  cat.addEventListener("change", () => { $("subList").innerHTML = subcatOptions(cat.value); });
-  venc.addEventListener("change", () => { if (!$("fComp").value && venc.value) $("fComp").value = venc.value.slice(0, 7); });
-  $("fSt").addEventListener("change", () => { if ($("fSt").value === "Pago" && !$("fPag").value) $("fPag").value = todayISO(); });
-  $("fNF").addEventListener("input", () => { if ($("fSt").value === "Aguardando NF" && $("fNF").value.trim()) $("fSt").value = "Em aberto"; });
-  venc.addEventListener("change", () => { const st = $("fSt").value; if (st === "Pago" || st === "Aguardando NF" || !venc.value) return; $("fSt").value = venc.value < todayISO() ? "Vencido" : (st === "Vencido" ? "Em aberto" : st); });
-  capFornHint();
-}
 function capFornHint() {
   const hint = $("fFornHint"), val = $("fForn").value.trim();
   if (!val) { hint.textContent = FORN_STATE.items.length ? "" : "Sem fornecedores no cadastro ainda — o lançamento será salvo só com o nome digitado."; hint.className = "hint"; return null; }
@@ -6273,40 +6008,6 @@ window.capCadastrarForn = () => {
 window.capNew = () => { CAP_STATE.editing = null; modal(capForm(null)); capWireForm(true); $("fSave").onclick = () => capSave(null); };
 window.capEdit = (id) => { const it = CAP_STATE.items.find(x => x._id === id); if (!it) return; CAP_STATE.editing = it; modal(capForm(it)); capWireForm(false); $("fSave").onclick = () => capSave(it); };
 
-async function capSave(existing) {
-  const g = id => $(id).value.trim();
-  const showErr = (msg) => { const e = $("fErr"); e.style.display = "block"; e.textContent = msg; };
-  const fields = {
-    Title: g("fTitle"), Fornecedor: g("fForn"), CNPJ: g("fCNPJ") || null,
-    Categoria: g("fCat") || null, Subcategoria: g("fSub") || null,
-    Vencimento: g("fVenc") || null, Competencia: g("fComp") || null,
-    Valor: g("fVal") ? Number(g("fVal")) : null, Parcela: g("fParc") || null,
-    Banco: g("fBanco") || null, FormaPagamento: g("fForma") || null,
-    Status: g("fSt"), DataPagamento: g("fPag") || null,
-    NumeroNF: g("fNF") || null, RefDocumento: g("fRef") || null, Observacoes: g("fObs") || null,
-    TipoLancamento: g("fTipoL") || "Despesa", Estabelecimento: g("fEstab") || null, NumParcelamento: g("fNumParc") || null, TipoFavorecido: g("fTipoFav") || "Fornecedor"
-  };
-  if (!capPodePagar() && (fields.Status === "Pago" || fields.DataPagamento) && !(existing && existing.Status === "Pago")) { showErr("Pagar (Status Pago / data do pagamento) exige a permissão \"Pagar lançamentos\" em Usuários e permissões."); return; }   /* v0.13.0 (revisão G1) */
-  const missing = ["Title","Fornecedor","Vencimento","Valor","Status"].filter(k => !fields[k] && fields[k] !== 0);
-  if (missing.length) { showErr("Preencha os campos obrigatórios: " + missing.map(k => ({Title:"Descrição",Fornecedor:"Fornecedor",Vencimento:"Vencimento",Valor:"Valor",Status:"Status"}[k])).join(", ")); return; }
-  if (fields.Competencia) { const c = normComp(fields.Competencia); if (!c) { showErr("Competência inválida. Use o formato AAAA-MM (ex.: 2026-09)."); return; } fields.Competencia = c; }
-  else fields.Competencia = compFromDate(fields.Vencimento);
-  if (fields.Status === "Pago" && !fields.DataPagamento) fields.DataPagamento = todayISO();
-  /* v0.12.6 · fluxo automático de status */
-  if (fields.Status === "Aguardando NF" && fields.NumeroNF) fields.Status = "Em aberto";
-  if (fields.Status === "Vencido" && fields.Vencimento && fields.Vencimento >= todayISO()) fields.Status = "Em aberto";
-  if (fields.Status !== "Pago" && fields.Status !== "Aguardando NF" && !isIsenta(fields) && fields.Vencimento && fields.Vencimento < todayISO()) fields.Status = "Vencido";   /* v0.14.17.2 (D2) */
-  const forn = fornByName(fields.Fornecedor);
-  if (forn) fields.Fornecedor = forn.Title;
-  if (hasCol("FornecedorRefId")) { if (forn) fields.FornecedorRefLookupId = Number(forn._id); else if (FORN_STATE.items.length && !CAP_STATE.fornErro) fields.FornecedorRefLookupId = null; }   /* v0.14.47 (D-A1): sem a lista de Fornecedores lida, a referência gravada fica como está */
-  for (const k of Object.keys(fields)) if (k !== "FornecedorRefLookupId" && !hasCol(k)) delete fields[k];
-  const btn = $("fSave"); btn.disabled = true; btn.textContent = "Salvando…";
-  try {
-    if (existing) await SP.update(CAP_STATE.site.id, CAP_STATE.list.id, existing._id, fields);
-    else await SP.create(CAP_STATE.site.id, CAP_STATE.list.id, fields);
-    closeModal(); toast(existing ? "Lançamento atualizado" : "Lançamento cadastrado"); await loadCAP({ soLeitura: !$("capBody") }); paintCAP(); /* fora da CAP: recarrega sem marcar vencidas */
-  } catch (e) { showErr("Erro ao salvar: " + e.message); btn.disabled = false; btn.textContent = existing ? "Salvar" : "Cadastrar"; }
-}
 window.capDelete = async (id) => {
   if (!confirm("Excluir este lançamento em definitivo? Ele sai da lista do SharePoint.")) return;
   try { await graph(`/sites/${CAP_STATE.site.id}/lists/${CAP_STATE.list.id}/items/${id}`, { method: "DELETE" }); closeModal(); toast("Lançamento excluído"); await loadCAP({ soLeitura: !$("capBody") }); paintCAP(); }
@@ -6469,15 +6170,6 @@ async function capCommitImport(items) {
    ===================================================================== */
 const OBR_STATE = { site: null, list: null, items: [], capList: null };
 
-async function loadObr() {
-  if (!OBR_STATE.site) OBR_STATE.site = CAP_STATE.site || await SP.site(CONFIG.sites[LISTS.obr.siteKey]);
-  if (!OBR_STATE.list) { const lists = await SP.lists(OBR_STATE.site.id); OBR_STATE.list = lists.find(l => l.displayName === LISTS.obr.displayName) || null; }
-  if (!OBR_STATE.list) throw new Error(`A lista "${LISTS.obr.displayName}" ainda não existe. Vá em Sistema → Configuração.`);
-  const items = await SP.items(OBR_STATE.site.id, OBR_STATE.list.id);
-  OBR_STATE.items = items.map(it => Object.assign({ _id: it.id }, it.fields || {}));
-  if (OBR_STATE.cols && OBR_STATE.cols.has("FornecedorId")) OBR_STATE.items.forEach(o => { o.FornecedorLookupId = o.FornecedorId == null || o.FornecedorId === "" ? undefined : o.FornecedorId; });   /* v0.13.4: idem CAP */
-  return OBR_STATE.items;
-}
 
 /* =====================================================================
    v0.12.12 · OBRIGAÇÕES — carteiras, situação de pagamento e parcelas (somente leitura)
@@ -6533,7 +6225,6 @@ function normNP(s) { const d = String(s || "").replace(/\D/g, ""); return d.leng
 function obrStatusPill(s) { const enc = s === "Encerrada"; return `<span class="pill ${enc ? "st-vencido" : "st-pago"}"><i></i>${esc(s || "Ativa")}</span>`; }
 function obrSitPill(k, why, o) { const m = OBR_SIT[k] || OBR_SIT.emdia; const lbl = k === "quitada" && o && o.Tipo === "Recorrente mensal" ? "Concluída" : m.lbl; return `<span class="pill ${m.cls}"${why ? ` title="${esc(why)}"` : ""}><i></i>${esc(lbl)}</span>`; }
 function obrLinhaPill(st) { const m = OBR_LINHA[st] || OBR_LINHA.prevista; return `<span class="pill ${m.cls}"><i></i>${esc(m.lbl)}</span>`; }
-function cartBadge(s) { const c = OBR_CART[s] || OBR_CART.SRV; return `<span class="cart-badge" style="--c:${c.cor}" title="${esc(c.nome)}">${esc(c.s)}</span>`; }
 
 function obrCarteiraDeduz(o) {
   const g = String(o.Carteira || "").trim().toUpperCase(); if (OBR_CART[g]) return g;
@@ -6784,14 +6475,6 @@ const ERP_VOLTAR = new Map(); let ERP_VOLTAR_N = 0;   /* "← Voltar" entre jane
 function erpVoltarReg(fn) { const id = ++ERP_VOLTAR_N; ERP_VOLTAR.set(id, fn); if (ERP_VOLTAR.size > 100) ERP_VOLTAR.delete(ERP_VOLTAR.keys().next().value); return id; }
 window.erpVoltar = i => { const f = ERP_VOLTAR.get(Number(i)); if (f) f(); };
 
-function pageObr() {
-  return `<div class="page">
-    <div class="page-head"><div><h1>Obrigações</h1>
-    <p class="lead">Contratos, apólices, parcelamentos e despesas recorrentes, agrupados por carteira. A situação de pagamento vem dos lançamentos da CAP de cada obrigação. Clique numa obrigação para ver as parcelas.</p></div>
-    <div class="page-actions"><button class="btn" onclick="renderObr()">Atualizar</button><button class="btn primary" onclick="obrGerarMes()">Gerar mês</button></div></div>
-    <div id="obrBody"><div class="cap-empty"><h3>Carregando…</h3><p>Buscando obrigações e contas no SharePoint.</p></div></div>
-  </div>`;
-}
 async function renderObr() {
   const body = $("obrBody"); if (!body) return;
   OBR_STATE.capErro = "";
@@ -6817,116 +6500,6 @@ async function obrEncerrarQuitadas() {
   if (ok) { CAP_STATE.rev = (CAP_STATE.rev || 0) + 1; toast(`${ok} obrigação(ões) encerrada(s): todas as parcelas pagas. Se ela se repete (IPTU, IPVA, aluguel), abra-a e use "Nova obrigação a partir desta".`, 8000); }
   return ok;
 }
-function obrLinha(o, D, comCart, back) {
-  const R = D.res.get(String(o._id)), S = R.sit;
-  const prog = R.N ? (() => { const k = R.ultimaPaga || R.pagas; const pct = Math.min(100, Math.round(100 * k / R.N)); return `<div class="obr-prog" title="${R.ultimaPaga ? `última paga: ${R.ultimaPaga}/${R.N}` : `${R.pagas} paga(s) no ERP`}"><div class="p"><i style="width:${pct}%"></i></div><span>${k}/${R.N}</span></div>`; })()
-    : `<span class="sup">${R.pagas ? R.pagas + " paga(s) no ERP" : "recorrente"}</span>`;
-  const nl = R.lista.find(r => r.st === "naolanc");
-  const pv = R.primeiraVencida ? R.primeiraVencida.venc : R.vencExtra;
-  const prox = pv ? `<span class="venc-txt">venceu ${obrDia(pv)}</span><div class="sup">${esc(fmtBRL(R.vVencido))} em aberto</div>`
-    : nl ? `<span class="warn-txt">sem conta · ${obrDia(nl.venc)}</span><div class="sup">${nl.valor ? esc(fmtBRL(nl.valor)) : ""}</div>`
-    : R.proxima ? `${obrDia(R.proxima.venc)}<div class="sup">${R.proxima.valor != null ? esc(fmtBRL(R.proxima.valor)) : ""}${R.proxima.st === "prevista" ? " · prevista" : " · na CAP"}</div>` : "—";
-  return `<tr onclick="obrAbrir('${esc(o._id)}'${back != null ? ", " + back : ""})" title="Abrir a obrigação e as parcelas">
-    <td><div class="desc">${esc(o.Title || "—")}${o.ModuloDestino === "Dívidas" ? `<span class="tag-div" title="Gerida na Gestão de Dívidas">Dívidas</span>` : ""}</div><div class="sup">${esc(o.FornecedorTexto || "")}</div></td>
-    ${comCart ? `<td>${cartBadge(obrCarteira(o))}</td>` : ""}
-    <td>${esc(o.Tipo || "—")}${o.DiaVencimento ? `<div class="sup">dia ${esc(String(o.DiaVencimento))}</div>` : ""}</td>
-    <td class="right">${o.ValorParcela ? esc(fmtBRL(o.ValorParcela)) : "—"}</td>
-    <td>${prog}</td>
-    <td class="nw">${prox}</td>
-    <td>${obrSitPill(S.k, S.why, o)}</td>
-    <td>${obrStatusPill(o.Status)}</td></tr>`;
-}
-function obrThead(comCart) { return `<thead><tr><th>Obrigação</th>${comCart ? "<th>Carteira</th>" : ""}<th>Tipo</th><th style="text-align:right">Parcela</th><th>Progresso</th><th>Próxima</th><th>Pagamento</th><th>Status</th></tr></thead>`; }
-function obrPorCarteira(D) { const m = new Map(OBR_CARTEIRAS.map(c => [c.s, []])); D.obrs.forEach(o => m.get(obrCarteira(o)).push(o)); return m; }
-function obrCarteirasHtml(D) {
-  const pc = obrPorCarteira(D);
-  const cards = OBR_CARTEIRAS.filter(c => pc.get(c.s).length).map(c => {
-    const os = pc.get(c.s), at = os.filter(o => o.Status !== "Encerrada"), rs = at.map(o => D.res.get(String(o._id)));
-    const ks = at.map(o => D.res.get(String(o._id)).sit.k);
-    const pior = ks.length ? ks.slice().sort((a, b) => OBR_SIT[a].ord - OBR_SIT[b].ord)[0] : "encerrada";
-    const nK = k => ks.filter(x => x === k).length;
-    const mensal = at.filter(o => o.Tipo !== "Anual").reduce((s, o) => s + Number(o.ValorParcela || 0), 0);
-    const venc = rs.reduce((s, r) => s + r.vVencido, 0), comS = rs.filter(r => r.saldo != null), saldo = comS.reduce((s, r) => s + r.saldo, 0);
-    return `<div class="obr-cart" style="--c:${c.cor}" onclick="obrCart('${c.s}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();obrCart('${c.s}')}" role="button" tabindex="0" title="Abrir a carteira">
-      <div class="t">${cartBadge(c.s)}<span class="nm">${esc(c.nome)}</span>${obrSitPill(pior)}</div>
-      <div class="m"><b>${at.length}</b> ativa(s)${os.length > at.length ? ` · ${os.length - at.length} encerrada(s)` : ""} · <b>${esc(capMoneyShort(mensal))}</b> por mês</div>
-      <div class="m">${comS.length ? `Saldo a pagar <b>${esc(capMoneyShort(saldo))}</b>` : "Recorrentes, sem saldo final"}${venc ? ` · <span class="venc-txt">vencido ${esc(capMoneyShort(venc))}</span>` : ""}</div>
-      <div class="q">${["atraso", "atencao", "emdia", "sem", "quitada"].filter(k => nK(k)).map(k => `<span><i style="background:${OBR_SIT[k].cor}"></i>${nK(k)} ${esc(OBR_SIT[k].lbl.toLowerCase())}</span>`).join("")}</div>
-    </div>`;
-  }).join("");
-  return cards ? `<div class="obr-carts">${cards}</div>` : `<div class="cap-empty"><h3>Nenhuma obrigação</h3></div>`;
-}
-function obrCarteiraHtml(D, s) {
-  const c = OBR_CART[s] || OBR_CART.SRV, os = (obrPorCarteira(D).get(c.s) || []).slice().sort(obrOrdem(D));
-  const ativ = os.filter(o => o.Status !== "Encerrada"), rs = ativ.map(o => D.res.get(String(o._id)));
-  const mensal = ativ.filter(o => o.Tipo !== "Anual").reduce((a, o) => a + Number(o.ValorParcela || 0), 0);
-  const comS = rs.filter(r => r.saldo != null), saldo = comS.reduce((a, r) => a + r.saldo, 0), venc = rs.reduce((a, r) => a + r.vVencido, 0);
-  const cnt = {}; os.forEach(o => { const k = o.SubCarteira || normName(o.FornecedorTexto); cnt[k] = (cnt[k] || 0) + 1; });
-  const grupos = new Map(), soltas = [];
-  os.forEach(o => { const k = o.SubCarteira || normName(o.FornecedorTexto); if (k && cnt[k] >= 2) { if (!grupos.has(k)) grupos.set(k, { nome: o.SubCarteira || o.FornecedorTexto, os: [] }); grupos.get(k).os.push(o); } else soltas.push(o); });
-  const nCol = 7;
-  let corpo = "";
-  grupos.forEach(g => { const m = g.os.filter(o => o.Status !== "Encerrada").reduce((a, o) => a + Number(o.ValorParcela || 0), 0); corpo += `<tr class="obr-sub"><td colspan="${nCol}">${esc(g.nome)} <span class="sup">· ${g.os.length} obrigações · ${esc(fmtBRL(m))} por mês</span></td></tr>` + g.os.map(o => obrLinha(o, D, false)).join(""); });
-  if (soltas.length) corpo += (grupos.size ? `<tr class="obr-sub"><td colspan="${nCol}">Demais obrigações</td></tr>` : "") + soltas.map(o => obrLinha(o, D, false)).join("");
-  return `<button class="obr-back" onclick="obrCart('')">← Todas as carteiras</button>
-    <div class="obr-cart-h obr-cart-h-click" style="--c:${c.cor}" role="button" tabindex="0" title="Clique para voltar a todas as carteiras" onclick="if(!event.target.closest('button,a'))obrCart('')" onkeydown="if((event.key==='Enter'||event.key===' ')&&event.target===this){event.preventDefault();obrCart('')}">${cartBadge(c.s)}<div><h2>${esc(c.nome)}</h2><p>${ativ.length} ativa(s) · ${esc(fmtBRL(mensal))} por mês${comS.length ? ` · saldo a pagar ${esc(fmtBRL(saldo))}` : ""}${venc ? ` · <span class="venc-txt">vencido ${esc(fmtBRL(venc))}</span>` : ""}</p></div></div>
-    <div class="table-wrap"><table class="cap-table">${obrThead(false)}<tbody>${corpo}</tbody></table></div>`;
-}
-function obrFiltradas(D) {
-  const U = OBR_UI, q = normName(U.q);
-  return D.obrs.filter(o => {
-    if (U.st === "ativas" && o.Status === "Encerrada") return false;
-    if (U.st === "encerradas" && o.Status !== "Encerrada") return false;
-    if (U.cartF && obrCarteira(o) !== U.cartF) return false;
-    if (U.dest && (o.ModuloDestino || "CAP") !== U.dest) return false;
-    if (U.sit && D.res.get(String(o._id)).sit.k !== U.sit) return false;
-    if (q && !normName([o.Title, o.FornecedorTexto, o.Orgao, o.RefContrato, o.NumParcelamento, o.Categoria, o.Subcategoria].join(" ")).includes(q)) return false;
-    return true;
-  }).sort(obrOrdem(D));
-}
-function obrTodasHtml(D) {
-  const U = OBR_UI, lista = obrFiltradas(D);
-  const sel = (id, opts, v, t) => `<select id="${id}" title="${t}">${opts.map(([val, l]) => `<option value="${esc(val)}" ${val === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
-  return `<div class="filters" role="search">
-      <input type="search" class="span-2" id="obrBusca" placeholder="Buscar obrigação, fornecedor, processo, nº do parcelamento…" value="${esc(U.q)}">
-      ${sel("obrCartSel", [["", "Todas as carteiras"]].concat(OBR_CARTEIRAS.map(c => [c.s, `${c.s} — ${c.nome}`])), U.cartF, "Carteira")}
-      ${sel("obrSitSel", [["", "Qualquer pagamento"]].concat(Object.keys(OBR_SIT).map(k => [k, OBR_SIT[k].lbl])), U.sit, "Situação de pagamento")}
-      ${sel("obrStSel", [["ativas", "Só ativas"], ["todas", "Ativas e encerradas"], ["encerradas", "Só encerradas"]], U.st, "Status")}
-      ${sel("obrDestSel", [["", "CAP e Dívidas"], ["CAP", "Geridas na CAP"], ["Dívidas", "Geridas em Dívidas"]], U.dest, "Onde é gerida")}
-      <button class="btn ghost" onclick="obrLimpar()">Limpar filtros</button>
-    </div>
-    ${lista.length ? `<div class="table-wrap"><table class="cap-table">${obrThead(true)}<tbody>${lista.map(o => obrLinha(o, D, true)).join("")}</tbody></table></div>
-      <div class="cap-foot"><span><b>${lista.length}</b> obrigação(ões) no filtro</span><span>Por mês <b>${esc(fmtBRL(lista.filter(o => o.Status !== "Encerrada" && o.Tipo !== "Anual").reduce((s, o) => s + Number(o.ValorParcela || 0), 0)))}</b></span><span class="venc">Vencido <b>${esc(fmtBRL(lista.reduce((s, o) => s + D.res.get(String(o._id)).vVencido, 0)))}</b></span></div>`
-      : `<div class="cap-empty"><h3>Nenhuma obrigação com esses filtros</h3><p>Ajuste os filtros para ver mais resultados.</p></div>`}`;
-}
-function paintObr() {
-  const body = $("obrBody"); if (!body) return;
-  if (!OBR_STATE.items.length) { body.innerHTML = `<div class="cap-empty"><h3>Nenhuma obrigação cadastrada</h3><p>As obrigações ficam na lista "Obrigações" do site Financeiro.</p></div>`; return; }
-  const D = obrCalcular(), U = OBR_UI, R = o => D.res.get(String(o._id));
-  const ativas = D.obrs.filter(o => o.Status !== "Encerrada");
-  const n = k => ativas.filter(o => R(o).sit.k === k).length;
-  const soma = (arr, f) => arr.reduce((s, o) => s + (f(o) || 0), 0);
-  const mensal = soma(ativas.filter(o => o.Tipo !== "Anual"), o => Number(o.ValorParcela || 0));
-  const vencido = soma(ativas, o => R(o).vVencido), naoLanc = soma(ativas.filter(o => R(o).sit.k === "atencao"), o => R(o).naoLanc);
-  const SM = capSaldoMes(), saldo = SM.v;   /* v0.14.15.1: o mesmo número da aba Lançamentos */
-  const K = (lbl, val, sub, cls, sit) => `<button class="kpi ${cls || ""} ${U.view === "todas" && sit && U.sit === sit ? "on" : ""}" onclick="obrFiltrar('${sit || ""}')"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div><div class="sub">${esc(sub)}</div></button>`;
-  const kpis = `<div class="cap-kpis">
-    ${K("Obrigações ativas", ativas.length, `${capMoneyShort(mensal)} por mês`, "", "")}
-    ${K("Em atraso", n("atraso"), vencido ? `${fmtBRL(vencido)} vencido` : "nenhuma parcela vencida", n("atraso") ? "venc" : "", "atraso")}
-    ${K("Atenção", n("atencao"), naoLanc ? `${naoLanc} parcela(s) vencida(s) sem lançamento na CAP` : "1 vencida há até 5 dias ou vence sem lançamento", "", "atencao")}
-    ${K("Em dia", n("emdia"), n("sem") ? `${n("sem")} obrigação(ões) sem lançamentos na CAP` : "parcelas pagas ou já na CAP", "pago", "emdia")}
-    ${K("Saldo a pagar", capMoneyShort(saldo), capSaldoMesSub(SM), "", "")}
-  </div>`;
-  const aviso = OBR_STATE.capErro ? `<div class="import-help" style="margin-bottom:14px">Não foi possível ler a Contas a Pagar (${esc(OBR_STATE.capErro)}). Sem as contas, a situação de pagamento fica como "Sem lançamentos".</div>` : "";
-  const views = `<div class="cap-views"><button class="${U.view === "carteiras" ? "on" : ""}" onclick="obrSetView('carteiras')">Carteiras</button><button class="${U.view === "todas" ? "on" : ""}" onclick="obrSetView('todas')">Todas as obrigações (${D.obrs.length})</button></div>`;
-  const conteudo = U.view === "todas" ? obrTodasHtml(D) : U.cart ? obrCarteiraHtml(D, U.cart) : obrCarteirasHtml(D);
-  const nota = `<p class="obr-note">A situação de pagamento é calculada com os lançamentos da CAP de cada obrigação: ${D.nLink} lançamento(s) identificado(s)${D.nOutro ? `, ${D.nOutro} deles lançado(s) em outro fornecedor` : ""}. Enquanto o vínculo não é gravado no lançamento (proposta da v0.13), o ERP reconhece o lançamento pelo fornecedor, pelo nº de parcelas, pelo valor e pela descrição — nada é alterado no SharePoint. A carteira é deduzida do nome, do órgão e da categoria.</p>`;
-  body.innerHTML = `${aviso}${kpis}${views}${conteudo}${nota}`;
-  if (U.view === "todas") {
-    $("obrBusca").addEventListener("input", ev => { OBR_UI.q = ev.target.value; erpDeb("obrBusca", () => keepFocus(paintObr)); });
-    [["obrCartSel", "cartF"], ["obrSitSel", "sit"], ["obrStSel", "st"], ["obrDestSel", "dest"]].forEach(([id, k]) => $(id).addEventListener("change", ev => { OBR_UI[k] = ev.target.value; paintObr(); }));
-  }
-}
 window.obrSetView = v => { OBR_UI.view = v; if (v === "carteiras") OBR_UI.cart = ""; try { sessionStorage.setItem("erp.obr.view", v); } catch (e) {} paintObr(); };
 window.obrCart = s => { OBR_UI.view = "carteiras"; OBR_UI.cart = s || ""; try { sessionStorage.setItem("erp.obr.view", "carteiras"); } catch (e) {} paintObr(); window.scrollTo({ top: 0, behavior: "smooth" }); };
 window.obrFiltrar = sit => { Object.assign(OBR_UI, { view: "todas", sit: sit || "", st: "ativas", cartF: "", dest: "", q: "" }); try { sessionStorage.setItem("erp.obr.view", "todas"); } catch (e) {} paintObr(); };
@@ -6934,7 +6507,6 @@ window.obrFiltrarDividas = () => { Object.assign(OBR_UI, { view: "todas", dest: 
 window.obrLimpar = () => { Object.assign(OBR_UI, { sit: "", st: "ativas", cartF: "", dest: "", q: "" }); paintObr(); };
 window.obrCronoTudo = id => { OBR_UI.full[id] = true; obrAbrir(id, OBR_UI.lastBack, true); };
 window.obrConta = id => { if (!CAP_STATE.items.some(x => String(x._id) === String(id))) { toast("Lançamento não encontrado — clique em Atualizar."); return; } $("modal").className = "modal"; capEdit(String(id)); };
-function capFiltroVazio() { return { kpi: null, status: "", categoria: "", comp: "", busca: "", venc: "", forn: "", banco: "", aging: "", grupo: "", obr: "", fk: "", fkNome: "", ordem: (CAP_STATE.filter && CAP_STATE.filter.ordem) || "venc" }; }
 function capIrParaLista() {
   CAP_STATE.view = "lista"; try { sessionStorage.setItem("erp.cap.view", "lista"); } catch (e) {}
   closeModal(); const alvo = (typeof DIV !== "undefined" && DIV.on) ? "#/diretoria/dividas" : "#/financeiro/contas-a-pagar";   /* v0.13.1 */
@@ -6950,18 +6522,6 @@ window.obrVerNaCAP = id => { CAP_STATE.filter = Object.assign(capFiltroVazio(), 
 function fornChaveFn() {
   const ids = new Set(FORN_STATE.items.map(f => String(f._id))), porNome = new Map(FORN_STATE.items.map(f => [normName(f.Title), f]));
   return (refId, nome) => { if (refId != null && refId !== "" && ids.has(String(refId))) return "id:" + refId; const f = porNome.get(normName(nome)); return f ? "id:" + f._id : "nm:" + normName(nome || "—"); };
-}
-function fornGrupos(D) {
-  const G = new Map(), chave = fornChaveFn();
-  const add = (key, nome, cad) => { let g = G.get(key); if (!g) { g = { key, nome, cad: cad || null, contas: [], obrs: new Set(), viaContas: new Set(), nomes: {} }; G.set(key, g); } return g; };
-  FORN_STATE.items.forEach(f => add("id:" + f._id, f.Title || "—", f));
-  const comGrupo = new Set();
-  D.items.forEach(it => { const g = add(chave(it.FornecedorRefLookupId, it.Fornecedor), it.Fornecedor || "—"); g.contas.push(it); if (it.Fornecedor) g.nomes[it.Fornecedor] = (g.nomes[it.Fornecedor] || 0) + 1;
-    const l = D.link.get(String(it._id)); if (!l) return; if (l.how === "outro-forn") g.viaContas.add(l.o); else { g.obrs.add(l.o); comGrupo.add(l.o); } });
-  D.obrs.forEach(o => { if (!comGrupo.has(o)) add(chave(o.FornecedorLookupId, o.FornecedorTexto), o.FornecedorTexto || "—").obrs.add(o); });
-  /* obrigação de OUTRO fornecedor com fatura lançada aqui: aparece à parte e não mexe na situação deste fornecedor */
-  G.forEach(g => { g.outras = [...g.viaContas].filter(o => !g.obrs.has(o)); });
-  return G;
 }
 function fornResumo(g, D) {
   const r = { n: g.contas.length, pagas: 0, vPago: 0, abertas: 0, vAberto: 0, vencidas: 0, vVencido: 0, atrasoMax: 0, prox: null, ultPag: null, desde: null };
@@ -7135,140 +6695,8 @@ function capGroupKey(it) {
   if (parc) return "F:" + String(it.Fornecedor || "").trim() + "|" + String(it.Title || "").replace(/\d+\s*\/\s*\d+/g, "").replace(/\d{2}\/\d{2,4}/g, "").trim().toLowerCase();
   return null;
 }
-function capFiltroVazio() { return { kpi: null, status: "", categoria: "", comp: "", busca: "", venc: "", forn: "", banco: "", aging: "", grupo: "", obr: "", fk: "", fkNome: "", cc: "", ordem: (CAP_STATE.filter && CAP_STATE.filter.ordem) || "venc" }; }
 window.capClearFilters = () => { CAP_STATE.filter = capFiltroVazio(); paintCAP(); };
 window.capGo = (patch) => { CAP_STATE.filter = Object.assign(capFiltroVazio(), patch || {}); capSetView("lista"); };
-function filteredItems() {
-  const f = CAP_STATE.filter; let arr = CAP_STATE.items.slice();
-  if (f.kpi) { const k = kpiCounts()[f.kpi]; if (k) arr = k.it.map(x => x.it); }
-  if (f.status)    arr = arr.filter(it => (it.Status || "") === f.status);
-  if (f.categoria) arr = arr.filter(it => (it.Categoria || "") === f.categoria);
-  if (f.comp)      arr = arr.filter(it => itemComp(it) === f.comp);
-  if (f.cc)        arr = arr.filter(it => ccDe(it) === f.cc);
-  if (f.busca)     arr = arr.filter(it => contaBate(it, f.busca));
-  if (f.venc) {
-    const hj = new Date(); hj.setHours(0,0,0,0);
-    const days = n => { const d = new Date(hj); d.setDate(d.getDate() + n); return d; };
-    const endWeek = days(6 - hj.getDay()), startNext = new Date(hj.getFullYear(), hj.getMonth() + 1, 1), endNext = new Date(hj.getFullYear(), hj.getMonth() + 2, 0);
-    arr = arr.filter(it => {
-      const c = classifyItem(it); if (!c.venc) return false; const v = c.venc, np = !c.pago;
-      if (f.venc.startsWith("dia:")) return ymd(v) === f.venc.slice(4);
-      switch (f.venc) {
-        case "mesab":  return np && v >= hj && v.getMonth() === hj.getMonth() && v.getFullYear() === hj.getFullYear();
-        case "atras":  return np && v < hj;
-        case "hoje":   return v.getTime() === hj.getTime();
-        case "7d":     return v >= hj && v <= days(7);
-        case "semana": return v >= hj && v <= endWeek;
-        case "mes":    return v.getMonth() === hj.getMonth() && v.getFullYear() === hj.getFullYear();
-        case "prox":   return v >= startNext && v <= endNext;
-      }
-      return true;
-    });
-  }
-  if (f.forn)  arr = arr.filter(it => (it.Fornecedor || "") === f.forn);
-  if (f.banco) arr = arr.filter(it => (it.Banco || "") === f.banco);
-  if (f.aging) arr = arr.filter(it => capAgingBucket(it) === f.aging);
-  if (f.grupo) arr = arr.filter(it => /^F:.*\|$/.test(f.grupo) ? (it.Fornecedor || "").trim() === f.grupo.slice(2, -1) : capGroupKey(it) === f.grupo);
-  if (f.obr) { const L = obrCalcular().link; arr = arr.filter(it => { const l = L.get(String(it._id)); return !!l && String(l.o._id) === String(f.obr); }); }
-  if (f.fk) { const kf = fornChaveFn(); arr = arr.filter(it => kf(it.FornecedorRefLookupId, it.Fornecedor) === f.fk); }
-  const rank = it => { const c = classifyItem(it); if (c.pago) return 3; if (c.dias !== null && c.dias < 0) return 0; return (it.Status === "Aguardando NF") ? 2 : 1; };
-  const byVenc = (a,b) => (a.Vencimento || "").localeCompare(b.Vencimento || "");
-  if (f.ordem === "situacao")   arr.sort((a,b) => rank(a) - rank(b) || byVenc(a,b));
-  else if (f.ordem === "valor") arr.sort((a,b) => Number(b.Valor || 0) - Number(a.Valor || 0) || byVenc(a,b));
-  else if (f.ordem === "forn")  arr.sort((a,b) => (a.Fornecedor || "").localeCompare(b.Fornecedor || "", "pt-BR") || byVenc(a,b));
-  else                          arr.sort((a,b) => ((a.Status === "Pago") - (b.Status === "Pago")) || byVenc(a,b));
-  return arr;
-}
-function capChips() {
-  const f = CAP_STATE.filter, chips = [];
-  const add = (lbl, k) => chips.push(`<span class="cap-chip">${esc(lbl)} <b onclick="CAP_STATE.filter['${k}']=${k==="kpi"?"null":"''"};paintCAP()" title="Remover filtro">×</b></span>`);
-  const VENC = { atras: "Atrasadas", hoje: "Vencem hoje", "7d": "Próximos 7 dias", semana: "Esta semana", mes: "Este mês", mesab: "Restante do mês (a pagar)", prox: "Próximo mês" };
-  if (f.kpi) add({ venc: "Vencidas", hoje: "Próximos 3 dias", sete: "De 4 a 7 dias", pagas: "Pagas no mês" }[f.kpi] || f.kpi, "kpi");
-  if (f.venc) add(f.venc.startsWith("dia:") ? "Vence em " + fmtDate(f.venc.slice(4)) : (VENC[f.venc] || f.venc), "venc");
-  if (f.aging) add("Atraso " + f.aging + " dias", "aging");
-  if (f.status) add(f.status, "status");
-  if (f.categoria) add(f.categoria, "categoria");
-  if (f.cc) add("Centro de custo: " + f.cc, "cc");
-  if (f.comp) add("Compet. " + compLabel(f.comp), "comp");
-  if (f.forn) add(f.forn, "forn");
-  if (f.banco) add(f.banco, "banco");
-  if (f.grupo) add("Parcelamento: " + f.grupo.slice(2).replace(/\|$/, ""), "grupo");
-  if (f.obr) { const o = (OBR_STATE.items || []).find(x => String(x._id) === String(f.obr)); add("Obrigação: " + (o && obrVisivel(o) ? o.Title : "restrita"), "obr"); }
-  if (f.fk) add("Fornecedor: " + (f.fkNome || f.fk), "fk");
-  if (f.busca) add("“" + f.busca + "”", "busca");
-  return chips.length ? `<div class="cap-chips">${chips.join("")}<button class="btn mini" onclick="capClearFilters()">Limpar tudo</button></div>` : "";
-}
-function paintCAP() {
-  const body = $("capBody"); if (!body) { if ($("obrBody")) paintObr(); else if ($("divBody")) paintDiv(); else if ($("fornBody")) paintForn(); return; }
-  const acts = $("capActions"), edita = podeEditar("cap");
-  if (acts) acts.innerHTML = edita ? `<button class="btn" onclick="capImport()">Importar</button>${ehAdm() ? `<button class="btn" onclick="capDedup()" title="Localiza lançamentos importados duas vezes (nome cru da planilha + nome do cadastro)">Duplicadas</button>` : ""}<button class="btn primary" onclick="capNew()">Novo lançamento</button>` : `<span class="sup">Acesso só de leitura</span>`;
-  const total = CAP_STATE.items.length;
-  if (total === 0) {
-    body.innerHTML = `<div class="cap-empty">
-      <h3>Ainda não há lançamentos cadastrados</h3>
-      <p>${edita ? `Você pode cadastrar um lançamento por vez ou importar vários de uma vez colando de uma planilha.${FORN_STATE.items.length ? "" : " Cadastre os fornecedores primeiro para o preenchimento automático funcionar."}` : "Seu acesso é só de leitura."}</p>
-      ${edita ? `<div class="actions"><button class="btn primary" onclick="capNew()">Cadastrar lançamento</button><button class="btn" onclick="capImport()">Importar em lote</button></div>` : ""}
-    </div>`;
-    return;
-  }
-  if (CAP_STATE.view === "painel") { paintPainel(body); return; }
-  if (CAP_STATE.view === "forn") { paintCapForn(body); return; }
-  const k = kpiCounts();
-  const f = CAP_STATE.filter;
-  const comps = [...new Set(CAP_STATE.items.map(itemComp).filter(Boolean))].sort().reverse();
-  const kpi = (id, cls, lbl, data) => `<button class="kpi ${cls} ${f.kpi===id?"on":""}" onclick="capKPI('${id}')"><div class="lbl">${esc(lbl)}</div><div class="val">${data.n}</div><div class="sub">${esc(fmtBRL(data.v))}</div></button>`;
-  const lst = filteredItems();
-  const rows = lst.map(it => {
-    const c = classifyItem(it);
-    const marc = !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status;
-    const sup = [it.Fornecedor, it.Parcela ? `parcela ${it.Parcela}` : "", it.NumeroNF ? `NF ${it.NumeroNF}` : ""].filter(Boolean).join(" · ");
-    const nA = anexosDe(it).length;
-    return `<tr onclick="capEdit(${jsArg(it._id)})">
-      <td><div class="desc">${esc(it.Title || "—")}${nA ? ` <span class="doc-tag" title="${nA} documento(s) anexado(s)">📎 ${nA}</span>` : ""}</div><div class="sup">${esc(sup)}</div></td>
-      <td>${esc(it.Categoria || "—")}${it.Subcategoria ? `<div class="sup">${esc(it.Subcategoria)}</div>` : ""}</td>
-      <td class="nw">${ccCelula(it)}</td>
-      <td class="nw">${esc(compLabel(itemComp(it)))}</td>
-      <td class="nw">${fmtDate(it.Vencimento)}</td>
-      <td class="nw dp-cell">${diasPendCel(it)}</td>
-      <td class="right">${esc(fmtBRL(it.Valor))}</td>
-      <td>${statusPill(marc)}</td>
-      <td>${esc(it.Banco || "—")}${it.FormaPagamento ? `<div class="sup">${esc(it.FormaPagamento)}</div>` : ""}</td>
-      <td class="nw act">${c.pago ? `<span class="sup">pago ${fmtDate(it.DataPagamento)}</span>` : edita ? `<button class="btn mini" onclick="event.stopPropagation(); capPagar(${jsArg(it._id)})">Pagar</button>` : ""}</td>
-    </tr>`;
-  }).join("");
-  const tot = { n: lst.length, total: 0, pagar: 0, pago: 0, venc: 0 };
-  lst.forEach(it => { const c = classifyItem(it), v = Number(it.Valor || 0); tot.total += v; if (c.pago) tot.pago += v; else { tot.pagar += v; if (c.dias !== null && c.dias < 0) tot.venc += v; } });
-  const foot = `<div class="cap-foot"><span><b>${tot.n}</b> lançamento(s) no filtro</span><span>Total <b>${esc(fmtBRL(tot.total))}</b></span><span>A pagar <b>${esc(fmtBRL(tot.pagar))}</b></span><span class="venc">Vencido <b>${esc(fmtBRL(tot.venc))}</b></span><span class="pago">Pago <b>${esc(fmtBRL(tot.pago))}</b></span></div>`;
-  const forns = [...new Set(CAP_STATE.items.map(it => it.Fornecedor).filter(Boolean))].sort((a,b) => a.localeCompare(b, "pt-BR"));
-  const bancos = [...new Set(BANCOS.concat(CAP_STATE.items.map(it => it.Banco).filter(Boolean)))];
-  const ccs = [...new Set(CENTROS_CUSTO.concat(CAP_STATE.items.map(ccDe).filter(Boolean)))];
-  body.innerHTML = `
-    ${capViewsBar()}${somenteLeituraAviso("cap")}
-    <div class="cap-kpis">
-      ${kpi("venc", "venc", "Vencidas", k.venc)}
-      ${kpi("hoje", "", "Próximos 3 dias", k.hoje)}
-      ${kpi("sete", "", "De 4 a 7 dias", k.sete)}
-      ${kpi("pagas", "pago", "Pagas no mês", k.pagas)}
-    </div>
-    <div class="filters" role="search">
-      <input type="search" class="span-2" id="capBusca" placeholder="Buscar: descrição, fornecedor, NF, obrigação, carteira, valor 1.234,56, data 05/10/2026, banco…" value="${esc(f.busca)}">
-      <select id="capComp"><option value="">Todas as competências</option>${comps.map(c => `<option value="${esc(c)}" ${f.comp===c?"selected":""}>${esc(compLabel(c))}</option>`).join("")}</select>
-      <select id="capStatus"><option value="">Todos os status</option>${STATUS_CAP.map(s => `<option ${f.status===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capCat"><option value="">Todas as categorias</option>${CATEGORIAS.map(s => `<option ${f.categoria===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capCC" title="Centro de custo"><option value="">Todos os centros de custo</option>${ccs.map(s => `<option value="${esc(s)}" ${f.cc===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capVenc" title="Vencimento">${[["","Qualquer vencimento"],["atras","Atrasadas"],["hoje","Vencem hoje"],["7d","Próximos 7 dias"],["semana","Esta semana"],["mes","Este mês"],["prox","Próximo mês"]].map(([v,l]) => `<option value="${v}" ${f.venc===v?"selected":""}>${l}</option>`).join("")}</select>
-      <select id="capForn" title="Fornecedor"><option value="">Todos os fornecedores</option>${forns.map(s => `<option value="${esc(s)}" ${f.forn===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capBanco" title="Banco"><option value="">Todos os bancos</option>${bancos.map(s => `<option value="${esc(s)}" ${f.banco===s?"selected":""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capOrdem" title="Ordenação">${[["venc","Ordem: vencimento"],["situacao","Ordem: situação"],["valor","Ordem: maior valor"],["forn","Ordem: fornecedor"]].map(([v,l]) => `<option value="${v}" ${f.ordem===v?"selected":""}>${l}</option>`).join("")}</select>
-      <button class="btn ghost" onclick="capClearFilters()">Limpar filtros</button>
-    </div>
-    ${capChips()}
-    ${rows ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Descrição</th><th>Categoria</th><th>Centro de custo</th><th>Compet.</th><th>Vencimento</th><th>Dias</th><th style="text-align:right">Valor</th><th>Status</th><th>Banco</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>${foot}`
-           : `<div class="cap-empty"><h3>Nenhum lançamento encontrado</h3><p>Ajuste os filtros para ver mais resultados.</p></div>`}
-  `;
-  $("capBusca").addEventListener("input", ev => { CAP_STATE.filter.busca = ev.target.value; keepFocus(paintCAP); });
-  [["capComp", "comp"], ["capStatus", "status"], ["capCat", "categoria"], ["capCC", "cc"], ["capVenc", "venc"], ["capForn", "forn"], ["capBanco", "banco"], ["capOrdem", "ordem"]].forEach(([id, k]) => $(id).addEventListener("change", ev => { CAP_STATE.filter[k] = ev.target.value; paintCAP(); }));
-}
 /* ---- formulário da conta: centro de custo, documentos, vínculo com a obrigação ---- */
 function capForm(it) {
   const isNew = !it, edita = podeEditar("cap");
@@ -8227,23 +7655,6 @@ function obrFiltradas(D) {
     return true;
   }).sort(obrOrdem(D));
 }
-function obrTodasHtml(D) {
-  const U = OBR_UI, lista = obrFiltradas(D);
-  const sel = (id, opts, v, t) => `<select id="${id}" title="${t}">${opts.map(([val, l]) => `<option value="${esc(val)}" ${val === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
-  const ccs = [...new Set(CENTROS_CUSTO.concat(D.obrs.map(o => o.CentroCusto).filter(Boolean)))];
-  return `<div class="filters" role="search">
-      <input type="search" class="span-2" id="obrBusca" placeholder="Filtrar obrigação, fornecedor, processo, código…" value="${esc(U.q)}">
-      ${sel("obrCartSel", [["", "Todas as carteiras"]].concat(OBR_CARTEIRAS.map(c => [c.s, `${c.s} — ${c.nome}`])), U.cartF, "Carteira")}
-      ${sel("obrCCSel", [["", "Todos os centros de custo"]].concat(ccs.map(c => [c, c])), U.cc || "", "Centro de custo")}
-      ${sel("obrSitSel", [["", "Qualquer pagamento"]].concat(Object.keys(OBR_SIT).map(k => [k, OBR_SIT[k].lbl])), U.sit, "Situação de pagamento")}
-      ${sel("obrStSel", [["ativas", "Só ativas"], ["todas", "Ativas e encerradas"], ["encerradas", "Só encerradas"]], U.st, "Status")}
-      ${veDividas() ? sel("obrDestSel", [["", "CAP e Dívidas"], ["CAP", "Geridas na CAP"], ["Dívidas", "Geridas em Dívidas"]], U.dest, "Onde é gerida") : ""}
-      <button class="btn ghost" onclick="obrLimpar()">Limpar filtros</button>
-    </div>
-    ${lista.length ? `<div class="table-wrap"><table class="cap-table">${obrThead(true)}<tbody>${lista.map(o => obrLinha(o, D, true)).join("")}</tbody></table></div>
-      <div class="cap-foot"><span><b>${lista.length}</b> obrigação(ões) no filtro</span><span>Por mês <b>${esc(fmtBRL(lista.filter(o => o.Status !== "Encerrada" && o.Tipo !== "Anual").reduce((s, o) => s + Number(o.ValorParcela || 0), 0)))}</b></span><span class="venc">Vencido <b>${esc(fmtBRL(lista.reduce((s, o) => s + D.res.get(String(o._id)).vVencido, 0)))}</b></span></div>`
-      : `<div class="cap-empty"><h3>Nenhuma obrigação com esses filtros</h3><p>Ajuste os filtros para ver mais resultados.</p></div>`}`;
-}
 function paintObr() {
   const body = $("obrBody"); if (!body) return;
   const acts = $("obrActions"), edita = podeEditar("obr");
@@ -8937,15 +8348,6 @@ function pageAlmox() {
     <div class="tiles">${tiles}</div>
   </div>`;
 }
-function pageAlmoxSub(id) {
-  const m = ALMOX_MODS.find(x => x.id === id);
-  if (!m) { location.hash = "#/operacional/almoxarifado"; return ""; }
-  return `<div class="page">
-    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><a href="#/operacional/almoxarifado">Almoxarifado</a><span>›</span><b>${esc(m.name)}</b></nav>
-    <h1>${esc(m.name)}</h1><p class="lead">${esc(m.desc)}</p>
-    <div class="empty"><h2>Em construção</h2><p>Esta tela do Almoxarifado entra nas próximas versões. A estrutura de listas no site Almoxarifado é criada pela Configuração quando o módulo for liberado.</p><div class="actions" style="margin-top:16px"><a class="btn" href="#/operacional/almoxarifado">← Voltar ao Almoxarifado</a></div></div>
-  </div>`;
-}
 
 /* =====================================================================
    v0.12.14 · SISTEMA › USUÁRIOS E PERMISSÕES (P4) — só administradores. Lista "ERP — Acessos" no site TI.
@@ -9593,20 +8995,6 @@ window.pbCadastrar14 = async () => {
 window.pbExcluir = async id => { if (!confirm("Excluir esta máquina do cadastro?")) return; try { await graph(`/sites/${PB_STATE.site.id}/lists/${PB_STATE.list.id}/items/${id}`, { method: "DELETE" }); closeModal(); await loadPb(); paintPb(); toast("Máquina excluída"); } catch (e) { toast("Erro: " + e.message, 6000); } };
 
 /* v0.12.20 · Agência Conceição (grupo em Financeiro) */
-function pageAgConc() {
-  const AGCONC_MODS = [
-    { id: "fech_caixa", name: "Movimento de Caixa", icon: "cash",      desc: "Movimento diário do caixa da agência: entrada / saída / aprovação",   status: "piloto", href: "#/financeiro/agencia-conceicao/movimento-de-caixa" },
-    { id: "vendas_ag",  name: "Bilhetagem da agência",   icon: "ticket",   desc: "Bilhetagem na agência (próximas versões)",            status: "próximo", href: null },
-    { id: "escala_ag",  name: "Escala Agência",      icon: "people",   desc: "Já disponível em Financeiro › Escala Agência",       status: "ativo", href: "#/financeiro/escala-agencia" }
-  ];
-  const tiles = AGCONC_MODS.map(m => `<a class="tile ${m.href ? "" : "disabled"}" ${m.href ? `href="${m.href}"` : "aria-disabled=\"true\""}><span class="tile-ico">${ICONS[m.icon] || ICONS.home}</span><h3>${esc(m.name)}</h3><div class="area">${esc(m.desc)}</div><span class="st ${m.status === "próximo" ? "proximo" : ""}"><i></i>${esc(m.status)}</span></a>`).join("");
-  return `<div class="page">
-    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><a href="#/financeiro/agentes">Agentes Financeiros</a><span>›</span><b>Agência</b></nav>
-    <h1>Agência</h1>
-    <p class="lead">Rotinas da agência de Conceição de Macabu: fechamento diário do caixa, bilhetagem e escala. Clique num bloco para abrir.</p>
-    <div class="tiles">${tiles}</div>
-  </div>`;
-}
 
 /* v0.12.24 · Agência › Movimento de Caixa — módulo com Novo + Histórico + aprovação por N1/N2
    Linhas: cada linha tem { h: histórico, e: entrada, s: saída } · salva como JSON no campo Linhas */
@@ -9620,46 +9008,8 @@ async function loadAgMov(force) {
   AG_MOV_STATE.itens = its.map(it => Object.assign({ _id: it.id }, it.fields || {}));
   AG_MOV_STATE.ready = true;
 }
-function pageAgMov() {
-  const crumbs = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><a href="#/financeiro/agentes">Agentes Financeiros</a><span>›</span><b>Movimento de Caixa</b></nav>`;
-  return `<div class="page" id="agMovRoot">${crumbs}<div class="cap-topo"><div><h1 style="margin:0">Movimento de Caixa</h1><p class="sup" style="margin:2px 0 0">Lançamentos diários da agência · aprovação por administrador ou proprietário do módulo</p></div><span class="grow"></span><div id="agMovActions"></div></div><div id="agMovBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`;
-}
-async function renderAgMov() {
-  const body = $("agMovBody"); if (!body) return;
-  try { await loadAgMov(true); }
-  catch (e) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(e.message)}</p></div>`; return; }
-  paintAgMov();
-}
-function agMovAprovador() { return !!(session.n1 || (session.roles && (session.roles.has("admin") || session.roles.has("diretoria")))); }
 function agMovPodeEditar() { return !!podeEditar("ag_conc"); }
 function agMovStatusCls(s) { return s === "Aprovado" ? "pago" : s === "Rejeitado" ? "venc" : "hoje"; }
-function paintAgMov() {
-  const body = $("agMovBody"); if (!body) return;
-  const acts = $("agMovActions");
-  if (acts) acts.innerHTML = `${agMovPodeEditar() ? `<button class="btn primary" onclick="agMovNovo()">+ Novo movimento</button>` : ""}`;
-  if (!AG_MOV_STATE.ready) {
-    body.innerHTML = `<div class="cap-empty"><h3>A lista "Agência — Movimentos" ainda não existe</h3><p>Vá em Sistema › Configuração e rode "Executar tudo na ordem" (ou só o setup "Agência — Movimentos").</p>${agMovPodeEditar() ? `<p class="sup">Depois dessa configuração você poderá cadastrar os primeiros movimentos.</p>` : ""}</div>`;
-    return;
-  }
-  const its = AG_MOV_STATE.itens.slice().sort((a, b) => String(b.Data || "").localeCompare(String(a.Data || "")));
-  const flt = AG_MOV_STATE.filtroStatus, filtrados = flt ? its.filter(x => x.Status === flt) : its;
-  const kpis = `<div class="cap-kpis">
-    <button class="kpi ${flt === "" ? "on" : ""}" onclick="AG_MOV_STATE.filtroStatus=''; paintAgMov()"><div class="lbl">Todos</div><div class="val">${its.length}</div><div class="sub">movimentos</div></button>
-    <button class="kpi hoje ${flt === "Pendente" ? "on" : ""}" onclick="AG_MOV_STATE.filtroStatus='Pendente'; paintAgMov()"><div class="lbl">Pendentes</div><div class="val">${its.filter(x => x.Status === "Pendente").length}</div><div class="sub">aguardando aprovação</div></button>
-    <button class="kpi pago ${flt === "Aprovado" ? "on" : ""}" onclick="AG_MOV_STATE.filtroStatus='Aprovado'; paintAgMov()"><div class="lbl">Aprovados</div><div class="val">${its.filter(x => x.Status === "Aprovado").length}</div><div class="sub">conferidos</div></button>
-    <button class="kpi venc ${flt === "Rejeitado" ? "on" : ""}" onclick="AG_MOV_STATE.filtroStatus='Rejeitado'; paintAgMov()"><div class="lbl">Rejeitados</div><div class="val">${its.filter(x => x.Status === "Rejeitado").length}</div><div class="sub">para refazer</div></button>
-  </div>`;
-  const linha = x => `<tr onclick="agMovAbrir('${esc(x._id)}')" title="Abrir">
-    <td class="nw">${fmtDate(x.Data)}</td>
-    <td><b>${esc(x.Caixa || "—")}</b>${x.Turno ? `<div class="sup">${esc(x.Turno)}</div>` : ""}</td>
-    <td class="right">${esc(fmtBRL(x.TotalEntradas || 0))}</td>
-    <td class="right">${esc(fmtBRL(x.TotalSaidas || 0))}</td>
-    <td class="right"><b>${esc(fmtBRL(x.SaldoAtual || 0))}</b></td>
-    <td><span class="pill st-${agMovStatusCls(x.Status)}"><i></i>${esc(x.Status || "—")}</span>${x.Aprovador ? `<div class="sup">por ${esc(x.Aprovador)}</div>` : ""}</td>
-  </tr>`;
-  const rows = filtrados.map(linha).join("");
-  body.innerHTML = `${kpis}${rows ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Data</th><th>Caixa</th><th class="right">Entradas</th><th class="right">Saídas</th><th class="right">Saldo</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhum movimento</h3><p>${agMovPodeEditar() ? "Clique em + Novo movimento para começar." : "Aguarde a equipe do financeiro lançar os primeiros."}</p></div>`}`;
-}
 /* --- form Novo/Editar --- */
 window.agMovNovo = () => agMovForm(null);
 window.agMovAbrir = id => { const x = AG_MOV_STATE.itens.find(y => String(y._id) === String(id)); if (!x) return; agMovForm(x); };
@@ -9781,31 +9131,7 @@ function pageRol() {
   const crumbs = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><b>Controle de Roletas</b></nav>`;   /* v0.12.71: Operacional */
   return `<div class="page" id="rolRoot">${crumbs}<div class="cap-topo"><div><h1 style="margin:0">Controle de Roletas</h1><p class="sup" style="margin:2px 0 0">Catracas por carro × horário · aprovação por administrador ou proprietário do módulo</p></div><span class="grow"></span><div id="rolActions"></div></div><div id="rolBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`;
 }
-async function renderRol() { const body = $("rolBody"); if (!body) return; try { await loadRol(true); } catch (e) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(e.message)}</p></div>`; return; } paintRol(); }
-function rolEhAprov() { return !!(session.n1 || (session.roles && (session.roles.has("admin") || session.roles.has("diretoria")))); }
 function rolPodeEditar() { return !!podeEditar("roletas"); }
-function paintRol() {
-  const body = $("rolBody"); if (!body) return;
-  const acts = $("rolActions"); if (acts) acts.innerHTML = rolPodeEditar() ? `<button class="btn primary" onclick="rolNovo()">+ Novo lançamento</button>` : "";
-  if (!ROL_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>A lista "${esc(LISTS.cx_roletas.displayName)}" ainda não existe</h3><p>Vá em Sistema › Configuração e rode "Executar tudo na ordem".</p></div>`; return; }
-  const its = ROL_STATE.itens.slice().sort((a, b) => String(b.Data || "").localeCompare(String(a.Data || "")));
-  const flt = ROL_STATE.filtroStatus, vis = flt ? its.filter(x => x.Status === flt) : its;
-  const kpis = `<div class="cap-kpis">
-    <button class="kpi ${flt === "" ? "on" : ""}" onclick="ROL_STATE.filtroStatus=''; paintRol()"><div class="lbl">Total</div><div class="val">${its.length}</div><div class="sub">lançamentos</div></button>
-    <button class="kpi hoje ${flt === "Pendente" ? "on" : ""}" onclick="ROL_STATE.filtroStatus='Pendente'; paintRol()"><div class="lbl">Pendentes</div><div class="val">${its.filter(x => x.Status === "Pendente").length}</div><div class="sub">aguardando aprovação</div></button>
-    <button class="kpi pago ${flt === "Aprovado" ? "on" : ""}" onclick="ROL_STATE.filtroStatus='Aprovado'; paintRol()"><div class="lbl">Aprovados</div><div class="val">${its.filter(x => x.Status === "Aprovado").length}</div><div class="sub">conferidos</div></button>
-    <button class="kpi venc ${flt === "Rejeitado" ? "on" : ""}" onclick="ROL_STATE.filtroStatus='Rejeitado'; paintRol()"><div class="lbl">Rejeitados</div><div class="val">${its.filter(x => x.Status === "Rejeitado").length}</div><div class="sub">para refazer</div></button>
-  </div>`;
-  const linha = x => `<tr onclick="rolAbrir('${esc(x._id)}')">
-    <td class="nw">${fmtDate(x.Data)}</td>
-    <td><b>${esc(x.Caixa || "—")}</b>${x.Agencia ? `<div class="sup">${esc(x.Agencia)}</div>` : ""}</td>
-    <td class="right">${esc(String(x.TotalCatracas || 0))}</td>
-    <td class="right">${esc(String(x.TotalViagens || 0))}</td>
-    <td><span class="pill st-${x.Status === "Aprovado" ? "pago" : x.Status === "Rejeitado" ? "venc" : "hoje"}"><i></i>${esc(x.Status || "—")}</span>${x.Aprovador ? `<div class="sup">por ${esc(x.Aprovador)}</div>` : ""}</td>
-  </tr>`;
-  const rows = vis.map(linha).join("");
-  body.innerHTML = `${kpis}${rows ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Data</th><th>Caixa</th><th class="right">Catracas</th><th class="right">Viagens</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhum lançamento</h3></div>`}`;
-}
 window.rolNovo = () => rolForm(null);
 window.rolAbrir = id => { const x = ROL_STATE.itens.find(y => String(y._id) === String(id)); if (!x) return; rolForm(x); };
 function rolLinhasFromJson(txt) { try { const v = JSON.parse(txt || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
@@ -9867,33 +9193,7 @@ function pageRec() {
   const crumbs = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Financeiro">Financeiro</a><span>›</span><a href="#/financeiro/agentes">Agentes Financeiros</a><span>›</span><b>Arrecadação</b></nav>`;
   return `<div class="page" id="recRoot">${crumbs}<div class="cap-topo"><div><h1 style="margin:0">Arrecadação</h1><p class="sup" style="margin:2px 0 0">Malotes recebidos dos motoristas · conferência e aprovação por administrador ou proprietário do módulo</p></div><span class="grow"></span><div id="recActions"></div></div><div id="recBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`;
 }
-async function renderRec() { const body = $("recBody"); if (!body) return; try { await loadRec(true); } catch (e) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível carregar</h3><p>${esc(e.message)}</p></div>`; return; } paintRec(); }
-function recEhAprov() { return rolEhAprov(); }
 function recPodeEditar() { return !!podeEditar("recebimento"); }
-function paintRec() {
-  const body = $("recBody"); if (!body) return;
-  const acts = $("recActions"); if (acts) acts.innerHTML = recPodeEditar() ? `<button class="btn primary" onclick="recNovo()">+ Novo recebimento</button>` : "";
-  if (!REC_STATE.ready) { body.innerHTML = `<div class="cap-empty"><h3>A lista "Arrecadação" ainda não existe</h3><p>Vá em Sistema › Configuração e rode "Executar tudo na ordem".</p></div>`; return; }
-  const its = REC_STATE.itens.slice().sort((a, b) => String(b.Data || "").localeCompare(String(a.Data || "")));
-  const flt = REC_STATE.filtroStatus, vis = flt ? its.filter(x => x.Status === flt) : its;
-  const kpis = `<div class="cap-kpis">
-    <button class="kpi ${flt === "" ? "on" : ""}" onclick="REC_STATE.filtroStatus=''; paintRec()"><div class="lbl">Total</div><div class="val">${its.length}</div><div class="sub">recebimentos</div></button>
-    <button class="kpi hoje ${flt === "Pendente" ? "on" : ""}" onclick="REC_STATE.filtroStatus='Pendente'; paintRec()"><div class="lbl">Pendentes</div><div class="val">${its.filter(x => x.Status === "Pendente").length}</div><div class="sub">aguardando</div></button>
-    <button class="kpi pago ${flt === "Aprovado" ? "on" : ""}" onclick="REC_STATE.filtroStatus='Aprovado'; paintRec()"><div class="lbl">Aprovados</div><div class="val">${its.filter(x => x.Status === "Aprovado").length}</div><div class="sub">conferidos</div></button>
-    <button class="kpi venc ${flt === "Rejeitado" ? "on" : ""}" onclick="REC_STATE.filtroStatus='Rejeitado'; paintRec()"><div class="lbl">Rejeitados</div><div class="val">${its.filter(x => x.Status === "Rejeitado").length}</div><div class="sub">para refazer</div></button>
-  </div>`;
-  const linha = x => `<tr onclick="recAbrir('${esc(x._id)}')">
-    <td class="nw">${fmtDate(x.Data)}</td>
-    <td><b>${esc(x.Motorista || "—")}</b>${x.Carro ? `<div class="sup">Carro ${esc(x.Carro)}</div>` : ""}</td>
-    <td>${esc(x.Caixa || "—")}</td>
-    <td class="right">${esc(fmtBRL(x.TotalRecebido || 0))}</td>
-    <td class="right">${esc(fmtBRL(x.TotalEsperado || 0))}</td>
-    <td class="right ${Number(x.Diferenca || 0) < 0 ? "venc-txt" : ""}"><b>${esc(fmtBRL(x.Diferenca || 0))}</b></td>
-    <td><span class="pill st-${x.Status === "Aprovado" ? "pago" : x.Status === "Rejeitado" ? "venc" : "hoje"}"><i></i>${esc(x.Status || "—")}</span></td>
-  </tr>`;
-  const rows = vis.map(linha).join("");
-  body.innerHTML = `${kpis}${rows ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Data</th><th>Motorista/Carro</th><th>Conferente</th><th class="right">Recebido</th><th class="right">Esperado</th><th class="right">Diferença</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhum recebimento</h3></div>`}`;
-}
 window.recNovo = () => recForm(null);
 window.recAbrir = id => { const x = REC_STATE.itens.find(y => String(y._id) === String(id)); if (!x) return; recForm(x); };
 function recLinhasFromJson(txt) { try { const v = JSON.parse(txt || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
@@ -10613,11 +9913,6 @@ document.addEventListener("keydown", e => {
 });
 
 /* ---- 7. Atualizar com carimbo (na barra de visões, ao lado de Painel · Lista · Fornecedores) ---- */
-function capViewsBar() {
-  const v = CAP_STATE.view, ocupado = !!CAP_STATE.atualizando;
-  return `<div class="cap-topo"><div class="cap-views"><button class="${v === "painel" ? "on" : ""}" onclick="capSetView('painel')">Painel</button><button class="${v === "lista" ? "on" : ""}" onclick="capSetView('lista')">Lista</button><button class="${v === "forn" ? "on" : ""}" onclick="capSetView('forn')">Fornecedores</button></div>
-    <div class="cap-atual"><span class="sup" id="capStamp">${CAP_STATE.carregadoEm ? "atualizado às " + horaCurta(CAP_STATE.carregadoEm) : ""}</span><button class="btn sm" id="capAtualizar" onclick="renderCAP()" title="Recarregar do SharePoint (atalho: r)" ${ocupado ? "disabled" : ""}>${ocupado ? "Atualizando…" : "Atualizar"}</button><button class="btn sm ghost" onclick="atalhosAjuda()" title="Atalhos de teclado (atalho: ?)">?</button></div></div>`;
-}
 async function renderCAP() {
   const body = $("capBody"); if (!body) return;
   CAP_STATE.atualizando = true;
@@ -10646,92 +9941,6 @@ async function renderCAP() {
 })();
 
 /* ---- lista da CAP (substitui a versão do cap.js): ordenação clicável, agrupamento, seleção, exportar, cartões no celular ---- */
-function paintCAP() {
-  const body = $("capBody"); if (!body) { if ($("obrBody")) paintObr(); else if ($("divBody")) paintDiv(); else if ($("fornBody")) paintForn(); return; }
-  const acts = $("capActions"), edita = podeEditar("cap");
-  if (acts) acts.innerHTML = edita ? `<button class="btn" onclick="capImport()">Importar</button>${ehAdm() ? `<button class="btn" onclick="capDedup()" title="Localiza lançamentos importados duas vezes (nome cru da planilha + nome do cadastro)">Duplicadas</button>` : ""}<button class="btn primary" onclick="capNew()" title="Atalho: n">Novo lançamento</button>` : `<span class="sup">Acesso só de leitura</span>`;
-  const total = CAP_STATE.items.length;
-  if (total === 0) {
-    body.innerHTML = `<div class="cap-empty">
-      <h3>Ainda não há lançamentos cadastrados</h3>
-      <p>${edita ? `Você pode cadastrar um lançamento por vez ou importar vários de uma vez colando de uma planilha.${FORN_STATE.items.length ? "" : " Cadastre os fornecedores primeiro para o preenchimento automático funcionar."}` : "Seu acesso é só de leitura."}</p>
-      ${edita ? `<div class="actions"><button class="btn primary" onclick="capNew()">Cadastrar lançamento</button><button class="btn" onclick="capImport()">Importar em lote</button></div>` : ""}
-    </div>`;
-    return;
-  }
-  if (CAP_STATE.view === "painel") { paintPainel(body); return; }
-  if (CAP_STATE.view === "forn") { paintCapForn(body); return; }
-  capSelPodar();
-  const k = kpiCounts();
-  const f = CAP_STATE.filter, oc = capOrdemCol();
-  const comps = [...new Set(CAP_STATE.items.map(itemComp).filter(Boolean))].sort().reverse();
-  const kpi = (id, cls, lbl, data) => `<button class="kpi ${cls} ${f.kpi === id ? "on" : ""}" onclick="capKPI('${id}')"><div class="lbl">${esc(lbl)}</div><div class="val">${data.n}</div><div class="sub">${esc(fmtBRL(data.v))}</div></button>`;
-  const lst = capOrdenar(filteredItems());
-  const nCol = 12 + (edita ? 1 : 0);   /* v0.12.70: +1 pela Classificação */   /* v0.12.19: +1 pela coluna Dias · v0.12.58: +1 pela coluna Obrigação */
-  const linha = it => {
-    const c = classifyItem(it);
-    const marc = !c.pago && c.dias !== null && c.dias < 0 ? capVencRot(it) : it.Status;
-    const sup = [it.Fornecedor, it.Parcela ? `parcela ${it.Parcela}` : "", it.NumeroNF ? `NF ${it.NumeroNF}` : ""].filter(Boolean).join(" · ");
-    const nA = anexosDe(it).length, id = String(it._id), sel = CAP_STATE.sel.has(id);
-    return `<tr data-id="${esc(id)}" class="${sel ? "sel" : ""}" onclick="capEdit(${jsArg(it._id)})">
-      ${edita ? `<td class="selc" onclick="event.stopPropagation()"><input type="checkbox" class="capSel" data-id="${esc(id)}" ${sel ? "checked" : ""} onchange="capSelToggle(this.dataset.id, this.checked)" title="Selecionar para pagar em lote ou exportar"></td>` : ""}
-      <td class="desc-cell"><div class="desc">${esc(it.Title || "—")}${nA ? ` <span class="doc-tag" title="${nA} documento(s) anexado(s)">📎 ${nA}</span>` : ""}</div><div class="sup">${esc(sup)}</div></td>
-      <td class="m-oculta cap-obr-cel">${capObrCel(it)}</td>
-      <td class="m-oculta">${esc(it.Categoria || "—")}${it.Subcategoria ? `<div class="sup">${esc(it.Subcategoria)}</div>` : ""}</td>
-      <td class="m-oculta forn-cls-cel" onclick="event.stopPropagation()">${capClsCel(it)}</td>
-      <td class="nw m-oculta">${ccCelula(it)}</td>
-      <td class="nw m-oculta">${esc(compLabel(itemComp(it)))}</td>
-      <td class="nw venc-cell" data-l="Vence">${fmtDate(it.Vencimento)}</td>
-      <td class="nw dp-cell m-oculta" data-l="Dias">${diasPendCel(it)}</td>
-      <td class="right valor-cell">${esc(fmtBRL(it.Valor))}</td>
-      <td class="status-cell">${c.isenta ? `<span class="pill isenta" title="Isenta no mês — não vence, verde na matriz"><i></i>N/A</span>` : statusPill(marc)}</td>
-      <td class="m-oculta">${esc(it.Banco || "—")}${it.FormaPagamento ? `<div class="sup">${esc(it.FormaPagamento)}</div>` : ""}</td>
-      <td class="nw act">${c.pago ? `<span class="sup">pago ${fmtDate(it.DataPagamento)}</span>` : (edita && capPodePagar() ? `<button class="btn mini" onclick="event.stopPropagation(); capPagar(${jsArg(it._id)})">Pagar</button> <button class="btn mini ghost" title="${c.isenta ? "Tirar N/A — a parcela volta a ser normal" : "Marcar como N/A (isenta no mês)"}" onclick="event.stopPropagation(); capToggleIsenta(${jsArg(it._id)})">${c.isenta ? "× N/A" : "N/A"}</button>` : "")}</td>
-    </tr>`;
-  };
-  const grupos = capGrupos(lst);
-  const rows = grupos
-    ? grupos.map(g => `<tr class="obr-sub cap-grp"><td colspan="${nCol}"><span class="g-nome">${esc(g.rot)}</span> <span class="sup">· ${g.t.n} lançamento(s) · total <b>${esc(fmtBRL(g.t.total))}</b>${g.t.pagar ? ` · a pagar <b>${esc(fmtBRL(g.t.pagar))}</b>` : ""}${g.t.venc ? ` · <span class="venc-txt">vencido ${esc(fmtBRL(g.t.venc))}</span>` : ""}${g.t.pago ? ` · pago ${esc(fmtBRL(g.t.pago))}` : ""}</span></td></tr>` + g.its.map(linha).join("")).join("")
-    : lst.map(linha).join("");
-  const tot = capTotais(lst);
-  const foot = `<div class="cap-foot"><span><b>${tot.n}</b> lançamento(s) no filtro${grupos ? ` em <b>${grupos.length}</b> grupo(s)` : ""}</span><span>Total <b>${esc(fmtBRL(tot.total))}</b></span><span>A pagar <b>${esc(fmtBRL(tot.pagar))}</b></span><span class="venc">Vencido <b>${esc(fmtBRL(tot.venc))}</b></span><span class="pago">Pago <b>${esc(fmtBRL(tot.pago))}</b></span><span class="grow"></span><button class="btn mini" id="capExportBtn" onclick="capExportar()" title="Baixa a lista filtrada em CSV (abre no Excel)">Exportar Excel</button></div>`;
-  const forns = [...new Set(CAP_STATE.items.map(it => it.Fornecedor).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
-  const bancos = [...new Set(BANCOS.concat(CAP_STATE.items.map(it => it.Banco).filter(Boolean)))];
-  const ccs = [...new Set(CENTROS_CUSTO.concat(CAP_STATE.items.map(ccDe).filter(Boolean)))];
-  const ordens = [["venc", "Ordem: vencimento"], ["situacao", "Ordem: situação"], ["valor", "Ordem: maior valor"], ["forn", "Ordem: fornecedor"]];
-  if (oc) { const col = CAP_COLS.find(c => c.k === oc.k); ordens.unshift([f.ordem, `Ordem: ${col ? col.lbl.toLowerCase() : oc.k} ${oc.asc ? "▲" : "▼"}`]); }
-  const th = c => `<th class="sortable ${oc && oc.k === c.k ? "on" : ""}" data-col="${c.k}" ${c.right ? 'style="text-align:right"' : ""} onclick="capOrdenarCol('${c.k}')" title="Ordenar por ${esc(c.lbl.toLowerCase())}">${capThLbl(c.lbl, oc && oc.k === c.k ? (oc.asc ? "▲" : "▼") : "")}</th>`;
-  body.innerHTML = `
-    ${capViewsBar()}${somenteLeituraAviso("cap")}
-    <div class="cap-kpis">
-      ${kpi("venc", "venc", "Vencidas", k.venc)}
-      ${kpi("hoje", "", "Próximos 3 dias", k.hoje)}
-      ${kpi("sete", "", "De 4 a 7 dias", k.sete)}
-      ${kpi("pagas", "pago", "Pagas no mês", k.pagas)}
-    </div>
-    <div class="filters" role="search">
-      <input type="search" class="span-2" id="capBusca" placeholder="Buscar: descrição, fornecedor, NF, obrigação, carteira, valor 1.234,56, data 05/10/2026, banco…" title="Atalho: /" value="${esc(f.busca)}">
-      <select id="capComp"><option value="">Todas as competências</option>${comps.map(c => `<option value="${esc(c)}" ${f.comp === c ? "selected" : ""}>${esc(compLabel(c))}</option>`).join("")}</select>
-      <select id="capStatus"><option value="">Todos os status</option>${STATUS_CAP.map(s => `<option ${f.status === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capCat"><option value="">Todas as categorias</option>${CATEGORIAS.map(s => `<option ${f.categoria === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capCC" title="Centro de custo"><option value="">Todos os centros de custo</option>${ccs.map(s => `<option value="${esc(s)}" ${f.cc === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capVenc" title="Vencimento">${[["", "Qualquer vencimento"], ["atras", "Atrasadas"], ["hoje", "Vencem hoje"], ["7d", "Próximos 7 dias"], ["semana", "Esta semana"], ["mes", "Este mês"], ["prox", "Próximo mês"]].map(([v, l]) => `<option value="${v}" ${f.venc === v ? "selected" : ""}>${l}</option>`).join("")}</select>
-      <select id="capForn" title="Fornecedor"><option value="">Todos os fornecedores</option>${forns.map(s => `<option value="${esc(s)}" ${f.forn === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capBanco" title="Banco"><option value="">Todos os bancos</option>${bancos.map(s => `<option value="${esc(s)}" ${f.banco === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
-      <select id="capOrdem" title="Ordenação (ou clique no cabeçalho da coluna)">${ordens.map(([v, l]) => `<option value="${esc(v)}" ${f.ordem === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
-      <select id="capAgrupar" title="Agrupar com subtotais"><option value="">Sem agrupar</option>${Object.entries(CAP_AGRUP).map(([v, g]) => `<option value="${v}" ${CAP_STATE.agrupar === v ? "selected" : ""}>Agrupar ${esc(g.lbl)}</option>`).join("")}</select>
-      <button class="btn ghost" onclick="capClearFilters()">Limpar filtros</button>
-    </div>
-    ${capChips()}
-    <div id="capSelBar">${capSelBarHtml()}</div>
-    ${rows ? `<div class="table-wrap"><table class="cap-table cap-cards"><thead><tr>${edita ? `<th class="selc"><input type="checkbox" id="capSelAll" onchange="capSelTodas(this.checked)" title="Selecionar todos os lançamentos do filtro"></th>` : ""}${CAP_COLS.map(th).join("")}<th></th></tr></thead><tbody>${rows}</tbody></table></div>${foot}`
-           : `<div class="cap-empty"><h3>Nenhum lançamento encontrado</h3><p>Ajuste os filtros para ver mais resultados.</p></div>`}
-  `;
-  $("capBusca").addEventListener("input", ev => { CAP_STATE.filter.busca = ev.target.value; keepFocus(paintCAP); });
-  [["capComp", "comp"], ["capStatus", "status"], ["capCat", "categoria"], ["capCC", "cc"], ["capVenc", "venc"], ["capForn", "forn"], ["capBanco", "banco"], ["capOrdem", "ordem"]].forEach(([id, kk]) => $(id).addEventListener("change", ev => { CAP_STATE.filter[kk] = ev.target.value; paintCAP(); }));
-  $("capAgrupar").addEventListener("change", ev => capAgruparPor(ev.target.value));
-  capSelPinta();
-}
 
 /* =====================================================================
    MÓDULO PAINEL DE INFRAÇÕES — v0.9 (migrado do repo painel-infracoes)
@@ -15052,41 +14261,6 @@ window.fornNew = () => { modal(fornForm(null)); fornWireForm(); $("gSave").oncli
   if (FORN_STATE.ccFixo && $("gCC")) { const s = $("gCC"); if ([...s.options].some(o => o.value === FORN_STATE.ccFixo)) s.value = FORN_STATE.ccFixo; } };   /* v0.12.59: no espelho do Almoxarifado o novo já vem no CC Operacional */
 window.fornEdit = (id) => { const x = FORN_STATE.items.find(i => i._id === id); if (!x) return; modal(fornForm(x)); fornWireForm(); $("gSave").onclick = () => fornSave(x); };
 
-async function fornSave(existing, inline) {
-  const g = id => $(id).value.trim();
-  const showErr = (msg) => { const e = $("gErr"); e.style.display = "block"; e.textContent = msg; };
-  const nome = g("gNome"), tipo = g("gTipo"), doc = docFmt(g("gCNPJ"));
-  if (!nome) { showErr("Preencha o nome do fornecedor."); return; }   /* v0.12.58: a classificação pode ficar vazia (a classificar) */
-  if (!doc) { showErr("CNPJ/CPF é obrigatório — é a chave que evita cadastro duplicado."); return; }
-  if (!docValido(doc)) { showErr("CNPJ/CPF com dígitos verificadores inválidos. Confira na cobrança ou na NF."); return; }
-  const dupDoc = FORN_STATE.items.find(f => docClean(f.CNPJ) === docClean(doc) && (!existing || f._id !== existing._id));
-  if (dupDoc) { showErr(`Este CNPJ/CPF já está cadastrado como "${dupDoc.Title}". Edite o existente em vez de criar outro.`); return; }
-  const dup = FORN_STATE.items.find(f => (f.Title || "").trim().toLowerCase() === nome.toLowerCase() && (!existing || f._id !== existing._id));
-  if (dup) { showErr(`Já existe um fornecedor chamado "${dup.Title}". Edite o existente ou use um nome diferente.`); return; }
-  const dia = g("gDia") ? Number(g("gDia")) : null;
-  if (dia !== null && (dia < 1 || dia > 31)) { showErr("Dia de vencimento precisa estar entre 1 e 31."); return; }
-  const fields = {
-    Title: nome, CNPJ: doc, Tipo: tipo || null,
-    CategoriaPadrao: (g("gCat") === "Outros" && $("gCatOutro") && g("gCatOutro")) ? g("gCatOutro") : (g("gCat") || null), SubcategoriaPadrao: g("gSub") || null,
-    BancoPadrao: g("gBanco") || null, FormaPadrao: g("gForma") || null, TipoLancPadrao: $("gTipoL") ? (g("gTipoL") || null) : undefined,
-    DiaVencimento: dia,   /* v0.12.59: Valor padrão saiu do cadastro (o valor guardado fica; a referência passa a ser a última conta) */
-    Contato: g("gContato") || null, Telefone: g("gTel") || null, Email: g("gEmail") || null,
-    Ativo: g("gAtivo") === "1",
-    PastaSharePoint: undefined,   /* v0.13.4.4 (pedido de 15/10 16:23): campo retirado — os anexos vão para a pasta do fornecedor no site CAP (docPastaFornecedor), não para este texto */ /* só administradores e o proprietário veem o campo; para os demais a pasta gravada não muda */
-    Estabelecimento: g("gEstab") || null,
-    CentroCustoPadrao: g("gCC") || null,
-    Observacoes: g("gObs") || null
-  };
-  if (FORN_STATE.cols && !FORN_STATE.cols.has("TipoLancPadrao")) delete fields.TipoLancPadrao;   /* v0.14.14: coluna nova, até rodar a Configuração */
-  if (FORN_STATE.cols && !FORN_STATE.cols.has("CentroCustoPadrao")) delete fields.CentroCustoPadrao; /* v0.12.14: coluna nova, até rodar a Configuração */
-  const btn = $("gSave"); btn.disabled = true; btn.textContent = "Salvando…";
-  try {
-    if (existing) await SP.update(FORN_STATE.site.id, FORN_STATE.list.id, existing._id, fields);
-    else await SP.create(FORN_STATE.site.id, FORN_STATE.list.id, fields);
-    if (inline) { toast("Fornecedor cadastrado — voltando para a conta"); return fields; }
-    closeModal(); toast(existing ? "Fornecedor atualizado" : "Fornecedor cadastrado"); await loadForn(false); paintForn();
-  } catch (e) { showErr("Erro ao salvar: " + e.message); btn.disabled = false; btn.textContent = existing ? "Salvar" : "Cadastrar"; }
-}
 window.fornDelete = async (id) => {
   if (!podeExcluir("forn")) { toast("Só o proprietário do módulo pode excluir fornecedores."); return; }
   const x = FORN_STATE.items.find(i => i._id === id);
@@ -15345,13 +14519,6 @@ function bilFech(fech, lanc) {
     b.disabled = true; try { const ex = BIL_STATE.fech.find(x=>ymd(x.Data)===fields.Data); if (ex) await SP.update(BIL_STATE.site.id, BIL_STATE.lists.bil_fech.id, ex._id, fields); else await SP.create(BIL_STATE.site.id, BIL_STATE.lists.bil_fech.id, fields); toast("Fechamento gravado"); await loadBil(); paintBil(); } catch (e) { toast("Erro: " + e.message, 6000); b.disabled = false; } }; }, 0);
   return form + table;
 }
-function bilTarifasTable() {
-  const rows = BIL_STATE.tarifas.slice().sort((a,b)=>(a.Linha||"").localeCompare(b.Linha||"")||(a.Secao||"").localeCompare(b.Secao||"")).map((t,i)=>`<tr class="${t.Ativa===false?"muted":""}"><td>${esc(t.Linha)}</td><td>${esc(t.Secao)}</td><td>${esc(t.Descricao||"")}</td><td class="right">${esc(fmtBRL(t.Valor))}</td><td>${t.Ativa===false ? "" : doSelo(doStatus(t.Linha, t.Secao, t.Descricao, t.Valor))}</td><td>${fmtDate(t.VigenciaInicio)}${t.VigenciaFim?" a "+fmtDate(t.VigenciaFim):""}</td><td>${t.Ativa===false?"encerrada":"vigente"}</td><td>${podeEditar("bilhet") ? `<button class="btn sm" onclick="bilTarifaEdit(${i})" ${BIL_STATE.ready?"":"disabled"}>Editar</button> <button class="btn sm" onclick="bilTarifaReajuste(${i})" ${BIL_STATE.ready?"":"disabled"}>Reajustar</button>` : ""}</td></tr>`).join("");   /* v0.12.72: quem só vê não tem Editar/Reajustar */
-  const doRes = doIndice() ? doLinhaResumo(doResumo(BIL_STATE.tarifas.filter(t => t.Ativa !== false).map(t => doStatus(t.Linha, t.Secao, t.Descricao, t.Valor)))) : (DO.erro ? doLinhaResumo({}) : "");   /* v0.12.97 */
-  return doRes + `<div class="cap-tools bil-tar-bar" style="margin-bottom:10px"><span class="hint">Quadro DETRO 2025/1. <b>Editar</b> corrige o valor atual; <b>Reajustar</b> encerra a tarifa de hoje e cria a nova com vigência — o BOM usa a tarifa vigente na data do lançamento.</span><div class="grow"></div><div class="bil-tar-acts"><button class="btn" onclick="bilTarModeloBaixar()" title="Planilha Excel com as colunas da tabela, já preenchida com o quadro vigente">⬇ Baixar modelo</button>${podeEditar("bilhet") ? `<button class="btn" onclick="bilTarImportar()" ${BIL_STATE.ready?"":"disabled"} title="Compara a planilha com a tabela e mostra o que é novo e o que muda antes de gravar">Importar planilha</button><button class="btn primary" onclick="bilTarifaEdit(-1)" ${BIL_STATE.ready?"":"disabled"}>Nova seção</button>` : ""}</div></div>
-    <div class="table-wrap"><table class="cap-table"><thead><tr><th>Linha</th><th>Seção</th><th>Trecho</th><th style="text-align:right">Tarifa</th><th>Diário Oficial</th><th>Vigência</th><th>Situação</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
-}
-function bilSorted() { return BIL_STATE.tarifas.slice().sort((a,b)=>(a.Linha||"").localeCompare(b.Linha||"")||(a.Secao||"").localeCompare(b.Secao||"")); }
 window.bilTarifaEdit = (i, reajuste) => {
   const t = i >= 0 ? bilSorted()[i] : { Linha: BIL_STATE.linhas[0] && BIL_STATE.linhas[0].Title, Ativa: true, VigenciaInicio: todayISO() };
   const linhas = BIL_STATE.linhas.map(l => l.Title).concat(["AGENCIA"]);
@@ -15834,31 +15001,7 @@ function mesAnoPickerWire(id, cb) {
 function fimDeSemanaOuFeriado(iso) { const d = dLocal(iso).getDay(); return d === 0 || d === 6 || !!feriadoNome(iso); }
 
 /* ---- impressão em PDF: documento próprio (A4), com a logo, dentro de um iframe — o navegador abre "Salvar como PDF" ---- */
-function printDoc(o) {
-  const css = `
-    @page { size: A4 ${o.paisagem ? "landscape" : "portrait"}; margin: 12mm 12mm 14mm; }
-    * { box-sizing: border-box; } html, body { margin: 0; padding: 0; }
-    body { font-family: "Manrope", "Segoe UI", Arial, sans-serif; color: #16181D; font-size: ${o.fonte || 12}px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .pg { page-break-after: always; } .pg:last-child { page-break-after: auto; }
-    .cab { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; margin: 0 0 10px; }
-    .cab img { height: 58px; } .cab h1 { font-size: 15px; margin: 6px 0 0; letter-spacing: .02em; color: #16181D; } .cab h1 b { color: #C4361A; }
-    .cab h2 { font-size: 14px; margin: 2px 0 0; color: #C4361A; text-decoration: underline; }
-    table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #333; padding: 3px 6px; }
-    th { background: #D9D9D9; font-weight: 800; color: #C4361A; text-align: center; } th.sub { background: #F2F2F2; color: #C4361A; font-weight: 700; font-size: 11px; }
-    th.tit { background: #BFBFBF; color: #C4361A; font-size: 13px; }
-    td.h { font-weight: 700; white-space: nowrap; width: 15%; } td.c { text-align: center; } td.r { text-align: right; white-space: nowrap; }
-    tr:nth-child(even) td { background: #F5F5F5; }
-    .rod { margin-top: 10px; font-size: 10px; color: #555; text-align: center; } .rod b { color: #C4361A; }
-    .blk { margin-top: 12px; }
-    ${o.css || ""}`;
-  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(o.titulo || "Impressão")}</title><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet"><style>${css}</style></head><body>${o.html}</body></html>`;
-  let fr = $("printFrame");
-  if (!fr) { fr = document.createElement("iframe"); fr.id = "printFrame"; fr.setAttribute("aria-hidden", "true"); fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0"; document.body.appendChild(fr); }
-  fr.srcdoc = html;
-  fr.onload = () => { setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { toast("Não foi possível abrir a impressão: " + e.message, 6000); } }, 350); };
-  return html;
-}
-function printCab(titulo, sub) { return `<div class="cab"><img src="${LOGO_NMB}" alt="${LOGO_ALT}"><h1>${titulo}</h1>${sub ? `<h2>${esc(sub)}</h2>` : ""}</div>`; }   /* titulo: HTML de constantes do próprio código; sub: texto */
+   /* titulo: HTML de constantes do próprio código; sub: texto */
 
 /* ---- Excel com formatação (ExcelJS, carregado só quando usado) ---- */
 async function xlsxNovo() { const ExcelJS = await erpLib("exceljs"); const wb = new ExcelJS.Workbook(); wb.creator = "ERP NMB"; wb.created = new Date(); return { ExcelJS, wb }; }
@@ -16895,20 +16038,6 @@ window.horVigenciaEditar = () => {
   });
 };
 /* impressão: reproduz o quadro colado nos ônibus (uma folha A4 por tipo de dia) */
-function horPrintPagina(q) {
-  const linha = (o) => horDe(q, "Linha", o), fret = o => horDe(q, "Fretamento", o), mad = o => horDe(q, "Madalena", o);
-  const semana = q === "Segunda a sexta" ? "De 2ª à 6ª Feira" : q;
-  const rot = z => (z.Observacao && /madalena/i.test(z.Observacao)) ? z.Observacao : [horServRot(z.Servico), z.Observacao].filter(Boolean).join(" · ");   /* "Vem de Madalena (2ª a sábado)" já diz tudo */
-  const par = (a, b, comServ) => { const n = Math.max(a.length, b.length); let s = ""; for (let i = 0; i < n; i++) { const x = a[i], y = b[i]; const cel = z => z ? (comServ ? `<td class="h">${esc(z.Horario)}</td><td>${esc(rot(z) || "")}</td>` : `<td class="c" colspan="2"><b>${esc(z.Horario)}</b>${z.Observacao ? " " + esc(z.Observacao) : ""}</td>`) : `<td></td><td></td>`; s += `<tr>${cel(x)}${cel(y)}</tr>`; } return s; };
-  const comServ = q === "Segunda a sexta";
-  const tabela = (tit, a, b, oa, ob) => `<table class="blk">${tit ? `<tr><th class="tit" colspan="4">${esc(tit)}</th></tr>` : ""}<tr><th colspan="2">SAÍDA DE ${esc(oa.toUpperCase())}</th><th colspan="2">SAÍDA DE ${esc(ob.toUpperCase())}</th></tr><tr><th class="sub" colspan="4">${esc(semana)}</th></tr>${par(a, b, comServ)}</table>`;
-  const vig = horVigencia();
-  return `<div class="pg">${printCab(`TABELA DE HORÁRIOS VÁLIDA A PARTIR DE <b>${vig ? fmtDate(vig).replace(/(\d{2})\/(\d{2})\/(\d{2})$/, "$1/$2/20$3") : "—"}</b>`, q.toUpperCase())}
-    ${tabela("", linha("Macabu"), linha("Macaé"), "Macabu", "Macaé")}
-    ${fret("Macabu").length || fret("Macaé").length ? tabela("FRETAMENTO", fret("Macabu"), fret("Macaé"), "Macabu", "Macaé") : ""}
-    ${mad("Madalena").length || mad("Macaé").length ? tabela("HORÁRIO DE MADALENA", mad("Madalena"), mad("Macaé"), "Madalena", "Macaé") : ""}
-    <p class="rod">Transportadora Nova Macabu · horários sujeitos a alteração · impresso pelo ERP NMB em ${new Date().toLocaleDateString("pt-BR")}</p></div>`;
-}
 window.horImprimir = tudo => { const qs = tudo ? HOR_QUADROS : [HOR_STATE.quadro]; printDoc({ titulo: "Tabela de Horários", html: qs.map(horPrintPagina).join(""), fonte: 13, css: "table.blk td{font-size:13px}table.blk td.h{width:14%}" }); };
 /* v0.12.19 · Importar quadro de horários a partir de uma planilha .xlsx.
    Formato esperado: 1ª aba com colunas Quadro | Bloco | Origem | Horario | Servico | Observacao
@@ -18268,20 +17397,6 @@ function cxYearMonthPicker() {
   const mesSel = `<select class="cx-ymsel" onchange="cxComp(${esc(JSON.stringify(y))} + '-' + this.value)" aria-label="Mês">${MESES.map((lbl, i) => { const mm = String(i + 1).padStart(2, "0"); return `<option value="${mm}" ${mm === m ? "selected" : ""}>${esc(lbl)}</option>`; }).join("")}</select>`;
   return `<div class="cx-datep"><label class="sup">Ano ${anoSel}</label><label class="sup">Mês ${mesSel}</label></div>`;
 }
-function paintCx() {
-  const body = $("cxBody"); if (!body) return;
-  const edita = cxPodeEditar();
-  const acts = $("cxActions");
-  const btnDemo = `<button class="btn ${CX.demo ? "primary" : ""}" onclick="cxDemoToggle()" title="Dados de demonstração — nada é gravado no SharePoint">${CX.demo ? "⚠ Demo ligado" : "Modo demo"}</button>`;
-  if (acts) acts.innerHTML = (edita && !cxMesFechado(CX.comp) ? `<button class="btn" onclick="cxMovForm(null,'Entrada')">Lançar entrada</button><button class="btn" onclick="cxMovForm(null,'Saída')">Lançar saída</button>` : "") + `<button class="btn primary" onclick="cxTab('boletim')">Boletim do dia</button>` + btnDemo;
-  const aviso = CX.erro ? `<div class="import-help">Não foi possível ler o caixa (${esc(CX.erro)}).</div>` : !CX.ready ? `<div class="import-help">As listas do Fluxo de Caixa ainda não existem no SharePoint. Rode Sistema › Configuração › "Executar tudo na ordem".</div>` : "";
-  const tabs = [["boletim", "Boletim do dia"], ["movimento", "Movimento"], ["mensal", "Fluxo do mês"], ["fechamento", "Fechamento do mês"], ["contas", "Contas e caixas"]].concat(edita ? [["importar", "Importar planilha"]] : [])
-    .map(([k, l]) => `<button role="tab" class="${CX.tab === k ? "on" : ""}" onclick="cxTab('${k}')">${l}</button>`).join("");
-  const meses = [...new Set(CX.mov.map(x => x._d.slice(0, 7)).concat(CX.fech.map(x => x._d.slice(0, 7)), CX.meses.map(x => x._c), [cxHoje().slice(0, 7), CX.comp]))].sort().reverse();
-  const topo = `<div class="op-topo"><div class="seg-tabs" role="tablist">${tabs}</div><span class="grow"></span>${CX.tab === "boletim" ? cxDiaPickerHtml(CX.dia) : cxYearMonthPicker()   /* v0.12.22: Ano + Mês separados, no estilo do seletor de dia do Boletim */}${cxMesFechado(CX.comp) ? `<span class="pill fechado" title="Mês fechado — sem edição">mês fechado</span>` : ""}</div>${CX.demo ? `<div class="banner" style="margin:8px 0 4px"><div><b>Modo demonstração ligado.</b> Lançamentos fictícios de fev/2026 (3 dias com entradas, saídas e boletim fechado) carregados só neste navegador para você conferir o funcionamento. Nada vai para o SharePoint; clique de novo para desligar.</div></div>` : ""}`;
-  const conteudo = CX.tab === "boletim" ? cxBoletimHtml() : CX.tab === "movimento" ? cxMovHtml() : CX.tab === "mensal" ? cxMensalHtml() : CX.tab === "fechamento" ? cxFechMesHtml() : CX.tab === "contas" ? cxContasHtml() : cxImportHtml();
-  body.innerHTML = aviso + topo + conteudo;
-}
 /* ---------- Boletim do dia ---------- */
 function cxBoletimHtml() {
   const d = CX.dia, lista = cxMovDia(d), t = cxTotais(lista), f = cxFechDe(d), st = (f && f.Status) || "Aberto", edita = cxPodeEditar() && !cxBloqueado(d) && st === "Aberto";
@@ -18517,12 +17632,6 @@ window.cxReabrirMes = async () => {
   try { await cxGravarMes({ Status: "Aberto", ReabertoPor: cxQuem(), ReabertoEm: cxAgora(), Motivo: hist.slice(0, 4000) }); toast("Mês reaberto."); paintCx(); } catch (e) { toast("Erro: " + e.message, 6000); }
 };
 /* ---------- Contas e caixas ---------- */
-function cxContasHtml() {
-  const edita = cxPodeEditar() && !!CX.lists.cx_contas;
-  return `<div class="cap-card"><div class="cap-card-h"><h3>Contas e caixas</h3><span class="cap-card-s">onde o dinheiro está: caixa, cofre, bancos, adquirentes, a receber, agências</span><span class="grow"></span>${edita ? `<button class="btn sm primary" onclick="cxContaForm()">Nova conta / caixa</button>` : ""}</div>
-    <table class="cx-t"><thead><tr><th>Nome</th><th>Tipo</th><th>Situação</th><th>Observação</th></tr></thead><tbody>${CX.contas.map(c => `<tr ${edita && !String(c._id).startsWith("seed") ? `class="p" onclick="cxContaForm(${jsArg(c._id)})"` : ""}><td>${esc(c.Title)}</td><td>${esc(c.Tipo || "")}</td><td>${c.Ativa === false ? "inativa" : "ativa"}</td><td>${esc(c.Observacao || "")}</td></tr>`).join("")}</tbody></table>
-    ${CX.lists.cx_contas ? "" : `<p class="hint">Lista "Caixa — Contas" ainda não criada: mostrando o cadastro inicial embutido.</p>`}</div>`;
-}
 window.cxContaForm = id => {
   if (!cxPodeEditar() || !CX.lists.cx_contas) return;
   const x = id ? CX.contas.find(c => c._id === String(id)) : null, v = x || { Tipo: "Banco", Ativa: true };
@@ -24342,15 +23451,6 @@ window.fornClasseSet = async (id, sel) => {
 };
 
 /* v0.12.59 · Almoxarifado › Fornecedores do Almoxarifado: espelho de Terceiros › Fornecedores só com o centro de custo Operacional */
-function pageFornAlmox() {
-  return `<div class="page">
-    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><a href="#/operacional/almoxarifado">Almoxarifado</a><span>›</span><b>Fornecedores do Almoxarifado</b></nav>
-    <div class="page-head"><div><h1>Fornecedores do Almoxarifado</h1>
-    <p class="lead">Os fornecedores do centro de custo <b>Operacional</b>, direto do cadastro de Terceiros › Fornecedores: o que mudar aqui muda lá.</p></div>
-    <div class="page-actions">${podeEditar("forn") ? `<button class="btn primary" onclick="fornNew()">Novo fornecedor</button>` : ""}</div></div>
-    <div id="fornBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
-  </div>`;
-}
 { const r3 = route;
   route = function () {
     const hash = (location.hash || "").split("?")[0];
@@ -27535,116 +26635,13 @@ const BIL_TAR_NOTAS = { "Linha": "Código da linha (lista suspensa — aba Lista
 function bilTarDia(v) { const d = v ? ymd(v) : ""; return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ""; }   /* data só-dia segura (vazio quando não há data) */
 function bilTarVigentes() { return BIL_STATE.tarifas.filter(t => t.Ativa !== false).slice().sort((a, b) => String(a.Linha || "").localeCompare(String(b.Linha || "")) || String(a.Secao || "").localeCompare(String(b.Secao || ""))); }
 function bilTarLinhas() { return [...new Set(BIL_STATE.linhas.map(l => String(l.Title)).concat(["AGENCIA"], BIL_STATE.tarifas.map(t => String(t.Linha || ""))).filter(Boolean))]; }
-async function bilTarModeloXlsx() {
-  const { wb } = await xlsxNovo();
-  const NAVY = "FF0F1E3A", ORANGE = "FFD6421F", LINHA = "FFD5DAE1", CINZA = "FF5B6068", ZEBRA = "FFF8F9FB";
-  const cols = BIL_TAR_COLS, N = cols.length, LIN0 = 6, vig = bilTarVigentes(), NLIN = Math.max(150, vig.length + 60);
-  const logo = await ctbLogoPng().catch(() => null), logoId = logo ? wb.addImage({ base64: logo.url, extension: "png" }) : null;
-  const larg = { "Linha": 11, "Seção": 14, "Trecho": 44, "Tarifa (R$)": 14, "Vigência a partir de": 20 };
-  /* Listas: linhas válidas */
-  const L = wb.addWorksheet("Listas", { views: [{ showGridLines: false }] });
-  const linhas = bilTarLinhas();
-  [["Linha", 12], ["Nome", 52]].forEach(([h, w], i) => { L.getColumn(i + 1).width = w; const c = L.getCell(1, i + 1); c.value = h; c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } }; });
-  linhas.forEach((l, k) => { const ln = BIL_STATE.linhas.find(x => String(x.Title) === l); L.getCell(k + 2, 1).value = l; L.getCell(k + 2, 2).value = ln ? ln.Nome || "" : l === "AGENCIA" ? "Taxas e promoções da agência" : ""; });
-  const refLinhas = `Listas!$A$2:$A$${Math.max(2, linhas.length + 1)}`;
-  /* Tarifas */
-  const ws = wb.addWorksheet("Tarifas", { views: [{ state: "frozen", ySplit: LIN0, showGridLines: false }], properties: { tabColor: { argb: ORANGE } }, pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: `${LIN0}:${LIN0}`, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } } });
-  cols.forEach((c, i) => { ws.getColumn(i + 1).width = larg[c] || 16; });
-  ws.getRow(1).height = 30; ws.getRow(2).height = 20; ws.getRow(3).height = 30;
-  if (logoId != null) ws.addImage(logoId, { tl: { col: 0.1, row: 0.15 }, ext: { width: Math.min(150, Math.round(60 * logo.w / Math.max(logo.h, 1))), height: 60 } });
-  ws.mergeCells(1, 3, 1, N); const t = ws.getCell(1, 3); t.value = "LevBom › Tarifas por seção — modelo de importação"; t.font = { bold: true, size: 16, color: { argb: NAVY } }; t.alignment = { vertical: "middle" };
-  ws.mergeCells(2, 3, 2, N); const st = ws.getCell(2, 3); st.value = `Transportadora Nova Macabu · ERP NMB · quadro vigente em ${new Date().toLocaleDateString("pt-BR")} (${vig.length} seções)`; st.font = { size: 10, color: { argb: CINZA } };
-  ws.mergeCells(3, 3, 3, N); const st2 = ws.getCell(3, 3); st2.value = "Altere os valores, inclua seções novas a partir da última linha e importe no ERP (LevBom › Tarifas › Importar planilha). A prévia mostra o que é novo e o que muda antes de gravar. Nada é apagado."; st2.font = { size: 9.5, color: { argb: CINZA }, italic: true }; st2.alignment = { wrapText: true, vertical: "top" };
-  ws.getRow(4).height = 8;
-  const OBRIG = ["Linha", "Seção", "Tarifa (R$)"];
-  const rn = ws.getRow(5); cols.forEach((c, i) => { const cel = rn.getCell(i + 1); const ob = OBRIG.includes(c); cel.value = ob ? "obrigatória" : "opcional"; cel.font = { size: 8, color: { argb: ob ? ORANGE : CINZA }, bold: ob }; cel.alignment = { horizontal: "center" }; });
-  const hr = ws.getRow(LIN0); hr.height = 26;
-  cols.forEach((c, i) => { const cel = hr.getCell(i + 1); cel.value = c; const ob = OBRIG.includes(c);
-    cel.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 }; cel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ob ? ORANGE : NAVY } };
-    cel.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; cel.border = { bottom: { style: "medium", color: { argb: NAVY } } }; if (BIL_TAR_NOTAS[c]) cel.note = BIL_TAR_NOTAS[c]; });
-  ws.autoFilter = { from: { row: LIN0, column: 1 }, to: { row: LIN0, column: N } };
-  for (let r = LIN0 + 1; r <= LIN0 + NLIN; r++) {
-    const row = ws.getRow(r), x = vig[r - LIN0 - 1];
-    if (x) { row.getCell(1).value = String(x.Linha || ""); row.getCell(2).value = String(x.Secao || ""); row.getCell(3).value = x.Descricao || ""; row.getCell(4).value = Number(x.Valor) || 0; const d = bilTarDia(x.VigenciaInicio); if (d) { const [a, m, dd] = d.split("-").map(Number); row.getCell(5).value = new Date(Date.UTC(a, m - 1, dd, 12)); } }
-    cols.forEach((c, i) => { const cel = row.getCell(i + 1); cel.border = { bottom: { style: "hair", color: { argb: LINHA } }, right: { style: "hair", color: { argb: LINHA } } }; if (r % 2 === 0) cel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } }; cel.font = { size: 10.5, color: { argb: "FF1B2230" }, bold: i === 0 || i === 3 }; cel.alignment = { vertical: "middle", horizontal: i === 3 ? "right" : i === 2 ? "left" : "center" }; });
-    row.getCell(1).numFmt = "@"; row.getCell(2).numFmt = "@";
-    row.getCell(1).dataValidation = { type: "list", allowBlank: true, formulae: [refLinhas], showErrorMessage: true, errorTitle: "Linha", error: "Escolha uma linha da lista (aba Listas)." };
-    const v = row.getCell(4); v.numFmt = '"R$" #,##0.00'; v.dataValidation = { type: "decimal", operator: "greaterThan", allowBlank: true, showErrorMessage: true, errorTitle: "Tarifa", error: "Use um número maior que zero (ex.: 15,90)", formulae: [0] };
-    const d = row.getCell(5); d.numFmt = "dd/mm/yyyy"; d.dataValidation = { type: "date", operator: "greaterThan", allowBlank: true, showErrorMessage: true, errorTitle: "Vigência", error: "Use uma data DD/MM/AAAA", formulae: [new Date(2000, 0, 1)] };
-  }
-  ws.headerFooter = { oddFooter: "&L&8Transportadora Nova Macabu · LevBom › Tarifas&R&8Página &P de &N" };
-  ws.pageSetup.printArea = `A1:E${LIN0 + Math.max(vig.length, 1) + 12}`;   /* impressão: o quadro e algumas linhas livres, não as 150 linhas formatadas */
-  /* Instruções */
-  const ins = wb.addWorksheet("Instruções", { views: [{ showGridLines: false }], pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
-  ins.getColumn(1).width = 4; ins.getColumn(2).width = 100;
-  if (logoId != null) ins.addImage(logoId, { tl: { col: 1, row: 0.2 }, ext: { width: Math.min(150, Math.round(56 * logo.w / Math.max(logo.h, 1))), height: 56 } });
-  const linhasTx = ["", "", "", "", "Como usar",
-    "1. A aba \"Tarifas\" já vem com o quadro vigente: uma seção por linha, com Linha, Seção, Trecho, Tarifa e Vigência. Não mude os nomes do cabeçalho (linha 6).",
-    "2. Para corrigir um valor, troque a Tarifa e deixe a Vigência como está: é um AJUSTE (a tarifa vigente é corrigida).",
-    "3. Para um reajuste do DETRO, troque a Tarifa e informe a nova \"Vigência a partir de\" (data posterior à atual): é um REAJUSTE (a tarifa atual é encerrada na véspera e a nova passa a valer na data).",
-    "4. Para uma seção nova, inclua uma linha no fim com Linha, Seção, Trecho e Tarifa (Vigência vazia = a partir de hoje).",
-    "5. No ERP: Financeiro › LevBom › Tarifas › Importar planilha → confira a prévia (novas em verde, ajustes em laranja, reajustes em azul) → Aplicar.",
-    "", "Bom saber",
-    "• Nada é apagado: seções que você tirar da planilha continuam na tabela (para encerrar uma seção, use Editar no ERP).",
-    "• Linhas iguais à tabela aparecem como \"sem alteração\" e não são gravadas. Linhas com erro (sem seção, tarifa zerada, linha fora da lista) são ignoradas e listadas na prévia.",
-    "• O BOM do mês usa a tarifa vigente; os lançamentos já gravados guardam a tarifa aplicada no dia.",
-    `• Modelo gerado pelo ERP NMB em ${new Date().toLocaleString("pt-BR")}.`];
-  linhasTx.forEach((tx, i) => { const c = ins.getCell(i + 1, 2); c.value = tx; if (tx === "Como usar" || tx === "Bom saber") c.font = { bold: true, size: 13, color: { argb: NAVY } }; else { c.alignment = { wrapText: true, vertical: "top" }; c.font = { size: 10.5, color: { argb: "FF2F3747" } }; } });
-  wb.views = [{ activeTab: 1 }];
-  wb.worksheets.forEach(w => { w.orderNo = ({ "Instruções": 0, "Tarifas": 1, "Listas": 2 })[w.name]; });
-  return wb;
-}
 window.bilTarModeloBaixar = async () => {
   try { const wb = await bilTarModeloXlsx(); await xlsxBaixar(wb, `Modelo - Tarifas LevBom - Nova Macabu - ${todayISO()}.xlsx`); toast("Modelo baixado. Altere a aba Tarifas e use Importar planilha."); }
   catch (e) { toast("Não foi possível gerar o modelo: " + e.message, 7000); }
 };
 /* leitura: .xlsx/.xls pelo SheetJS; .csv como texto (separador ; , ou tab; vírgula decimal) */
 function bilTarNum(v) { if (typeof v === "number") return isFinite(v) ? v : NaN; let t = String(v ?? "").replace(/R\$|\s/g, "").trim(); if (!t) return NaN; if (t.includes(",")) t = t.replace(/\./g, "").replace(",", "."); const n = Number(t); return isFinite(n) ? n : NaN; }
-async function bilTarLerArquivo(f) {
-  let m;
-  if (/\.(csv|txt)$/i.test(f.name)) {
-    const t = await capLerTexto(f), ls = t.split(/\r?\n/).filter(l => l.trim() !== "");
-    const sep = (ls.find(l => /linha/i.test(l)) || ls[0] || "").includes(";") ? ";" : (ls[0] || "").includes("\t") ? "\t" : ",";
-    m = ls.map(l => l.split(sep).map(c => c.replace(/^"|"$/g, "").trim()));
-  } else { const X = await xlsxLer(f), nome = X.nomes.find(n => /^tarifas$/i.test(n)) || X.nomes[0]; m = X.aba(nome); }
-  const hi = m.findIndex(r => { const n = (r || []).map(c => norm(c)); return n.includes("linha") && n.some(x => /^se[cç]ao/.test(x)) && n.some(x => /^tarifa/.test(x)); });
-  if (hi < 0) throw new Error("não encontrei o cabeçalho (Linha, Seção, Tarifa). Use o modelo ou confira a primeira linha.");
-  const cab = m[hi].map(c => norm(c)), col = re => cab.findIndex(x => re.test(x));
-  const iL = col(/^linha$/), iS = col(/^se[cç]ao/), iT = col(/^trecho|^descri/), iV = col(/^tarifa/), iD = col(/^vig/);
-  const out = [];
-  for (let r = hi + 1; r < m.length; r++) {
-    const row = m[r] || []; if (!row.some(c => c != null && String(c).trim() !== "")) continue;
-    const txt = i => i < 0 || row[i] == null ? "" : String(row[i] instanceof Date ? "" : row[i]).trim();
-    out.push({ n: r + 1, linha: txt(iL).toUpperCase(), secao: txt(iS).replace(/\s+/g, ""), trecho: txt(iT), valor: iV < 0 ? NaN : bilTarNum(row[iV]), vig: iD < 0 || row[iD] == null || row[iD] === "" ? "" : celData(row[iD]), vigBruta: iD < 0 ? "" : row[iD] });
-  }
-  return out;
-}
 /* compara as linhas lidas com as tarifas vigentes */
-function bilTarComparar(linhas) {
-  const vig = bilTarVigentes(), chave = (l, s) => `${String(l || "").toUpperCase()}|${String(s || "").toUpperCase()}`;
-  const atual = new Map(vig.map(t => [chave(t.Linha, t.Secao), t])), validas = new Set(bilTarLinhas().map(x => x.toUpperCase())), vistos = new Set();
-  const hoje = todayISO(), r2 = v => Math.round(Number(v) * 100) / 100;
-  const itens = linhas.map(x => {
-    const it = Object.assign({}, x, { k: chave(x.linha, x.secao) });
-    if (!x.linha || !x.secao) return Object.assign(it, { tipo: "erro", msg: "sem linha ou seção" });
-    if (!validas.has(x.linha)) return Object.assign(it, { tipo: "erro", msg: `linha "${x.linha}" fora da lista` });
-    if (!(x.valor > 0)) return Object.assign(it, { tipo: "erro", msg: "tarifa vazia ou zerada" });
-    if (x.vigBruta != null && x.vigBruta !== "" && !x.vig) return Object.assign(it, { tipo: "erro", msg: "vigência inválida (use DD/MM/AAAA)" });
-    if (vistos.has(it.k)) return Object.assign(it, { tipo: "erro", msg: "seção repetida na planilha" });
-    vistos.add(it.k);
-    const t = atual.get(it.k);
-    if (!t) return Object.assign(it, { tipo: "nova", vigNova: x.vig || hoje });
-    it.t = t; it.vigAtual = bilTarDia(t.VigenciaInicio);
-    if (x.vig && it.vigAtual && x.vig < it.vigAtual) return Object.assign(it, { tipo: "erro", msg: `vigência anterior à atual (${fmtDate(it.vigAtual)}): para corrigir o passado, edite a seção na tabela` });   /* v0.12.73 (revisão) */
-    const mudaValor = r2(t.Valor) !== r2(x.valor), mudaTrecho = !!x.trecho && normName(x.trecho) !== normName(t.Descricao || ""), mudaVig = !!x.vig && x.vig !== it.vigAtual;
-    if (mudaValor && x.vig && (!it.vigAtual || x.vig > it.vigAtual)) return Object.assign(it, { tipo: "reajuste", mudaTrecho, fim: (() => { const d = new Date(x.vig + "T12:00:00"); d.setDate(d.getDate() - 1); return ymd(d.toISOString()); })() });
-    if (mudaVig && !mudaValor && BIL_STATE.tarifas.some(z => z !== t && z.Ativa === false && chave(z.Linha, z.Secao) === it.k)) return Object.assign(it, { tipo: "erro", msg: "só a vigência mudou e a seção tem tarifa anterior encerrada: mudar a data abriria um intervalo sem tarifa — edite a seção na tabela" });   /* v0.12.73 (revisão) */
-    if (mudaValor || mudaTrecho || mudaVig) return Object.assign(it, { tipo: "ajuste", mudaValor, mudaTrecho, mudaVig });
-    return Object.assign(it, { tipo: "igual" });
-  });
-  const fora = vig.filter(t => !vistos.has(chave(t.Linha, t.Secao)));
-  return { itens, fora };
-}
 const BIL_TAR_TIPO = { nova: ["Nova", "st-pago"], ajuste: ["Ajuste", "st-pendente"], reajuste: ["Reajuste", "st-aprovado"], igual: ["Sem alteração", "st-aguardando"], erro: ["Erro", "st-vencido"] };
 let BIL_IMP = null;
 window.bilTarImportar = () => {
@@ -34044,59 +33041,8 @@ async function renderDo() { if (!$("doBody")) return; await doCarregar(true); tr
 window.doAtualizar = async () => { const b = $("doBody"); if (b) b.innerHTML = `<div class="cap-empty"><h3>Atualizando…</h3></div>`; await doCarregar(true); try { await tarCarregar(); } catch (e) {} doPintar(); };
 window.doAba = a => { DO.aba = a; DO.abre = ""; doPintar(); };
 window.doAbrir = id => { DO.abre = id ? String(id) : ""; doPintar(); window.scrollTo(0, 0); };
-function doPintar() {
-  const body = $("doBody"); if (!body || session.modAtual !== "diario") return;
-  const ed = doEd();
-  $("doActions").innerHTML = `<button class="btn" onclick="doAtualizar()">Atualizar</button>${ed && DO.lists.pub ? `<button class="btn primary" onclick="doPubForm()">+ Nova publicação</button>` : ""}`;
-  if (DO.erro) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível ler o Diário Oficial</h3><p>${esc(DO.erro.slice(0, 160))}</p></div>`; return; }
-  if (!DO.lists.pub || !DO.lists.tr) { body.innerHTML = `<div class="cap-empty"><h3>As listas do Diário Oficial ainda não existem</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração</a> para criar "${esc(LISTS.do_pub.displayName)}" e "${esc(LISTS.do_trechos.displayName)}" no site Financeiro.` : "Peça a um administrador para criá-las."}</p></div>`; return; }
-  const p = DO.abre && DO.pubs.find(x => x._id === DO.abre);
-  if (p) { body.innerHTML = doDetalhe(p); return; }
-  const tabs = `<div class="cap-tools"><span class="seg-tabs" role="tablist"><button class="${DO.aba === "detro" ? "on" : ""}" onclick="doAba('detro')">Linhas no DETRO</button><button class="${DO.aba === "pubs" ? "on" : ""}" onclick="doAba('pubs')">Publicações</button><button class="${DO.aba === "ader" ? "on" : ""}" onclick="doAba('ader')">Aderência às Tarifas</button></span><span class="grow"></span>${dolLinkSite()}</div>`;
-  body.innerHTML = tabs + (DO.aba === "ader" ? doAderencia() : DO.aba === "detro" ? dolAba() : dolRelacao() + doListaPubs());
-}
 function doArq(p) { const a = doJson(p && p.Arquivo, null); return a && docIdOk(a.d) && docIdOk(a.id) ? a : null; }
-function doListaPubs() {
-  const vig = doVigente();
-  const ps = DO.pubs.slice().sort((a, b) => (Number(b.Ano) || 0) - (Number(a.Ano) || 0) || String(ymd(b.DataPublicacao || "")).localeCompare(String(ymd(a.DataPublicacao || ""))));
-  if (!ps.length) return `<div class="cap-empty"><h3>Nenhuma publicação</h3><p>${doEd() ? "Clique em \"+ Nova publicação\" e cadastre a portaria do DETRO com os trechos autorizados." : "Nenhuma portaria cadastrada ainda."}</p></div>`;
-  return `<div class="table-wrap"><table class="cap-table do-pubs"><thead><tr><th>Ano</th><th>Ato</th><th>Publicação</th><th>Vigência</th><th style="text-align:right">Trechos</th><th>PDF</th><th></th></tr></thead><tbody>${ps.map(p => `<tr onclick="doAbrir(${esc(jsArg(p._id))})" tabindex="0" class="do-clic">
-    <td><b>${esc(p.Ano ?? "—")}</b></td><td>${esc(p.Ato || p.Title || "—")}${p.Empresa ? `<div class="sup">${esc(p.Empresa)}</div>` : ""}</td><td>${p.DataPublicacao ? fmtDate(p.DataPublicacao) : "—"}</td><td>${p.VigenciaInicio ? "a partir de " + fmtDate(p.VigenciaInicio) : "—"}</td>
-    <td class="right">${doTrechosDe(p._id).length}</td><td>${doArq(p) ? `<button class="btn sm" onclick="event.stopPropagation(); doVerPdf(${esc(jsArg(p._id))})">📄 Ver</button>` : `<span class="sup">sem PDF</span>`}</td>
-    <td>${vig === p ? `<span class="do-selo do-ok">Vigente</span>` : p.Vigente === true ? `<span class="do-selo do-na">Marcada como vigente</span>` : ""}</td></tr>`).join("")}</tbody></table></div>
-    <p class="sup" style="margin-top:8px">Clique na publicação para ver e editar os trechos autorizados. A aderência usa a publicação <b>vigente</b>${vig ? ` (${esc(vig.Title || vig.Ato || "")})` : ""}.</p>`;
-}
-function doDetalhe(p) {
-  const ed = doEd(), ts = doTrechosDe(p._id), arq = doArq(p), vig = doVigente() === p;
-  const grupos = []; ts.forEach(t => { const l = doLinhaDO(t); let g = grupos.find(x => x.l === l); if (!g) grupos.push(g = { l, its: [] }); g.its.push(t); });
-  const linhas = doLinhasMap(p), pontos = doJson(p.Pontos, {});
-  const tab = grupos.length ? grupos.map(g => `<tr class="do-gh"><td colspan="${ed ? 6 : 5}">Linha ${esc(g.l)}</td></tr>${g.its.map(t => `<tr><td class="right">${esc(t.Secao ?? "")}</td><td>${esc(t.Origem || "")} - ${esc(t.Destino || "")}${t.Complemento ? ` <span class="sup">(${esc(t.Complemento)})</span>` : ""}${t.Observacao ? `<div class="sup">${esc(t.Observacao)}</div>` : ""}</td><td>${esc(t.Categoria || "")}</td><td class="right">${t.Tarifa != null ? esc(fmtBRL(t.Tarifa)) : "—"}</td><td>${doUsoNoErp(t, p)}</td>${ed ? `<td class="right nowrap"><button class="btn sm" onclick="doTrForm(${esc(jsArg(p._id))}, ${esc(jsArg(t._id))})">Editar</button> <button class="btn sm ghost" onclick="doTrExcluir(${esc(jsArg(t._id))})" aria-label="Excluir">✕</button></td>` : ""}</tr>`).join("")}`).join("")
-    : `<tr><td colspan="${ed ? 6 : 5}" class="sup">Nenhum trecho cadastrado.${ed ? " Use \"+ Trecho\" ou \"Colar da portaria\"." : ""}</td></tr>`;
-  return `<div class="cap-tools"><button class="btn sm" onclick="doAbrir('')">← Publicações</button><span class="grow"></span>${arq ? `<button class="btn sm" onclick="doVerPdf(${esc(jsArg(p._id))})">📄 Ver PDF</button>` : ""}${ed ? `<button class="btn sm" onclick="doPdfEscolher(${esc(jsArg(p._id))})">${arq ? "Trocar PDF" : "Anexar PDF"}</button><input type="file" id="doPdfArq" accept="application/pdf,image/*" hidden onchange="doPdfEnviar(${esc(jsArg(p._id))}, this)">` : ""}<button class="btn sm" onclick="doImprimir(${esc(jsArg(p._id))})">Imprimir</button>${ed ? `<button class="btn sm" onclick="doPubForm(${esc(jsArg(p._id))})">Editar dados</button>` : ""}${podeExcluir("diario") ? `<button class="btn sm ghost" onclick="doPubExcluir(${esc(jsArg(p._id))})">Excluir publicação</button>` : ""}</div>
-    <section class="cap-card do-cab"><div class="do-cab-g">
-      <div><span class="sup">Ato</span><b>${esc(p.Ato || p.Title || "—")}</b></div><div><span class="sup">Ano</span><b>${esc(p.Ano ?? "—")}</b></div>
-      <div><span class="sup">Publicação</span><b>${p.DataPublicacao ? fmtDate(p.DataPublicacao) : "—"}</b></div><div><span class="sup">Vigência</span><b>${p.VigenciaInicio ? "a partir de " + fmtDate(p.VigenciaInicio) : "—"}</b></div>
-      <div><span class="sup">Empresa</span><b>${esc(p.Empresa || "—")}</b></div><div><span class="sup">Situação</span><b>${vig ? `<span class="do-selo do-ok">Vigente</span>` : `<span class="sup">não é a vigente</span>`}</b>${ed && !vig ? ` <button class="btn sm" onclick="doMarcarVigente(${esc(jsArg(p._id))})">Tornar vigente</button>` : ""}</div>
-    </div>${p.Observacoes ? `<p class="sup" style="margin:10px 0 0">${esc(p.Observacoes)}</p>` : ""}</section>
-    <div class="cap-tools" style="margin-top:14px"><h3 style="margin:0">Trechos autorizados <span class="sup">${ts.length}</span></h3><span class="grow"></span>${ed ? `<button class="btn sm" onclick="doColar(${esc(jsArg(p._id))})">Colar da portaria</button><button class="btn sm primary" onclick="doTrForm(${esc(jsArg(p._id))})">+ Trecho</button>` : ""}</div>
-    <div class="table-wrap"><table class="cap-table do-tr"><thead><tr><th style="text-align:right;width:60px">Seção</th><th>Trecho</th><th>Cat.</th><th style="text-align:right">Tarifa</th><th>No ERP</th>${ed ? "<th></th>" : ""}</tr></thead><tbody>${tab}</tbody></table></div>
-    <div class="do-cfg">
-      <section class="cap-card"><div class="cap-card-h"><h3>Linhas do ERP × linhas do DETRO</h3>${ed ? `<button class="btn sm" onclick="doCfgForm(${esc(jsArg(p._id))}, 'Linhas')">Editar</button>` : ""}</div>
-        <p class="sup">Usado para avisar quando uma seção existe na portaria, mas em outra linha. Linha do ERP sem correspondência é comparada com todas.</p>
-        ${Object.keys(linhas).length ? `<table class="do-kv"><tbody>${Object.entries(linhas).map(([k, v]) => `<tr><td><b>${esc(k)}</b></td><td>${esc(v.join(", "))}</td></tr>`).join("")}</tbody></table>` : `<p class="sup">Nenhuma correspondência.</p>`}</section>
-      <section class="cap-card"><div class="cap-card-h"><h3>Equivalências de pontos</h3>${ed ? `<button class="btn sm" onclick="doCfgForm(${esc(jsArg(p._id))}, 'Pontos')">Editar</button>` : ""}</div>
-        <p class="sup">Nome usado no ERP = nome no Diário Oficial. Já reconhecidos sem cadastrar: Conceição / Macabu, Madalena, Trajano, Curato = Curata, Imbé = Visconde de Imbé, Trevo 40.</p>
-        ${Object.keys(pontos).length ? `<table class="do-kv"><tbody>${Object.entries(pontos).map(([k, v]) => `<tr><td>${esc(k)}</td><td>= ${esc(v)}</td></tr>`).join("")}</tbody></table>` : `<p class="sup">Nenhuma equivalência extra.</p>`}</section>
-    </div>`;
-}
 /* quais seções do ERP caem neste trecho (só para a publicação vigente) */
-function doUsoNoErp(t, p) {
-  if (doVigente() !== p) return `<span class="sup">—</span>`;
-  const I = doIndice(); if (!I) return "";
-  const k = doPar(doPonto(t.Origem, I.A), doPonto(t.Destino, I.A));
-  const usam = (typeof BIL_STATE !== "undefined" ? BIL_STATE.tarifas || [] : []).filter(x => x.Ativa !== false && doParesDe(x.Secao, x.Descricao, I.A).includes(k));
-  return usam.length ? usam.map(x => `<span class="do-uso" title="${esc(x.Descricao || "")} · ${esc(fmtBRL(x.Valor))}">${esc(x.Linha)} · ${esc(x.Secao)}</span>`).join(" ") : `<span class="sup">sem seção no ERP</span>`;
-}
 window.doVerPdf = id => { const p = DO.pubs.find(x => x._id === String(id)), a = doArq(p); if (!a) { toast("Esta publicação não tem PDF anexado."); return; } docVer(a, p.Title || "Diário Oficial"); };
 window.doPdfEscolher = () => { const i = $("doPdfArq"); if (i) i.click(); };
 window.doPdfEnviar = async (id, inp) => {
@@ -34227,19 +33173,6 @@ function doLinhasAder() {
     .map(t => ({ t, st: doStatus(t.Linha, t.Secao, t.Descricao, t.Valor) }));
 }
 window.doFiltro = k => { DO.filtro = DO.filtro === k ? "" : k; doPintar(); };
-function doAderencia() {
-  const I = doIndice();
-  if (!I) return `<div class="cap-empty"><h3>Sem publicação vigente</h3><p>Cadastre a portaria do DETRO e marque-a como vigente.</p></div>`;
-  const R = doLinhasAder(), n = doResumo(R.map(x => x.st));
-  const vis = R.filter(x => !DO.filtro || x.st.k === DO.filtro);
-  const usados = new Set(); R.forEach(x => doParesDe(x.t.Secao, x.t.Descricao, I.A).forEach(k => usados.add(k)));
-  const semUso = doTrechosDe(I.pub._id).filter(t => !usados.has(doPar(doPonto(t.Origem, I.A), doPonto(t.Destino, I.A))));
-  const K = [["ok", "Oficiais", "constam da portaria"], ["tar", "Tarifa diferente", "oficial, valor ≠ portaria"], ["outra", "Em outra linha", "oficial, linha diferente"], ["nao", "Não oficiais", "fora do Diário Oficial"], ["na", "Não se aplica", "taxas, promoções, fretamento"]].concat(n.nr || DO.filtro === "nr" ? [["nr", "Não reconhecidas", "ajuste descrição ou equivalências"]] : []);
-  return `<p class="sup">Comparação com a <b>${esc(I.pub.Title || I.pub.Ato || "publicação vigente")}</b>${I.pub.VigenciaInicio ? ` (vigência a partir de ${fmtDate(I.pub.VigenciaInicio)})` : ""}. Fonte das seções: lista de tarifas do LevBom (a mesma da Tabela de Tarifas). As seções <b>não oficiais</b> ficam fora da prestação de contas ao DETRO (LevBom › BOM do mês › "Só seções oficiais").</p>
-    <div class="cap-kpis">${K.map(([k, l, s]) => `<button class="kpi ${DO.filtro === k ? "on" : ""} ${k === "nao" && n.nao ? "venc" : ""}" onclick="doFiltro('${k}')" aria-pressed="${DO.filtro === k}"><div class="lbl">${l}</div><div class="val">${n[k]}</div><div class="sub">${DO.filtro === k ? "filtro ativo · clique para limpar" : s}</div></button>`).join("")}</div>
-    <div class="table-wrap"><table class="cap-table"><thead><tr><th>Linha</th><th>Seção</th><th>Trecho (ERP)</th><th style="text-align:right">Tarifa ERP</th><th>Diário Oficial</th><th>Situação</th></tr></thead><tbody>${vis.length ? vis.map(({ t, st }) => `<tr><td>${doLinhaRotulo(t.Linha, I)}</td><td>${esc(t.Secao)}</td><td>${esc(t.Descricao || "")}</td><td class="right">${esc(fmtBRL(t.Valor))}</td><td class="sup">${esc(st.det || "")}</td><td>${doSelo(st, true)}</td></tr>`).join("") : `<tr><td colspan="6" class="sup">Nada neste filtro.</td></tr>`}</tbody></table></div>
-    ${semUso.length ? `<h3 style="margin:18px 0 6px">Autorizados sem seção no ERP <span class="sup">${semUso.length}</span></h3><p class="sup" style="margin-top:0">Trechos da portaria que não aparecem na lista de tarifas (ou com nome que o ERP não reconheceu: ajuste em Equivalências de pontos).</p><div class="table-wrap"><table class="cap-table"><tbody>${semUso.map(t => `<tr><td>${esc(doLinhaDO(t))}</td><td class="right">${esc(t.Secao ?? "")}</td><td>${esc(t.Origem)} - ${esc(t.Destino)}${t.Complemento ? ` <span class="sup">(${esc(t.Complemento)})</span>` : ""}</td><td>${esc(t.Categoria || "")}</td><td class="right">${esc(fmtBRL(t.Tarifa))}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
-}
 window.doImprimir = id => {
   const p = DO.pubs.find(x => x._id === String(id)); if (!p) return;
   const ts = doTrechosDe(p._id), grupos = []; ts.forEach(t => { const l = doLinhaDO(t); let g = grupos.find(x => x.l === l); if (!g) grupos.push(g = { l, its: [] }); g.its.push(t); });
@@ -35931,18 +34864,7 @@ MODULES.push({ id: "di_mestres", path: "#/diretoria/cadastros-mestres", icon: "s
 PAG_DEF.di_mestres = [{ k: "centros", n: "Centros de custo", aba: "mstAba('centros')" }];
 const mstPode = () => podeEditar("di_mestres") && pagNivel("di_mestres", "centros") !== "nenhum";   /* revisão: a guarda de escrita confere o módulo */
 const mstPodeExcluir = () => !!session.n1;   /* revisão: excluir só o administrador (grava o maior código já usado em ERP — Parâmetros) */
-function pageMst() {
-  const abas = PAG_DEF.di_mestres.filter(p => pagNivel("di_mestres", p.k) !== "nenhum").map(p => `<button class="on" data-k="${p.k}" onclick="mstAba('${p.k}')">${esc(p.n)}</button>`).join("")
-    + `<button disabled title="Rodada 2">Plano de contas</button><button disabled title="Rodada 3">Estabelecimentos</button>`;
-  return `<div class="page" id="mstRoot">
-    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Diretoria">Diretoria</a><span>›</span><b>Cadastros Mestres</b></nav>
-    <div class="cap-topo"><div><h1 style="margin:0">Cadastros Mestres</h1><p class="sup" style="margin:2px 0 0">Fonte única dos cadastros usados pelo Financeiro, RH, Terceiros, DRE e Contabilidade. Mudanças aqui valem para todo o ERP.</p></div><div id="mstAcoes"></div></div>
-    <div class="cap-views" id="mstTabs">${abas}</div>
-    <div id="mstBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
-  </div>`;
-}
 window.mstAba = () => paintMst();
-async function renderMst() { try { await mstCarregar(true); } catch (e) {} paintMst(); }
 function mstCcPill(c) { const k = CC_CORES[c.nome] || CC_DEFAULT_COR; return `<span class="pill mst-pill" style="background:${esc(k.bg)};color:${esc(k.fg)};border:1px solid ${esc(k.bd)}">${esc(c.nome)}</span>`; }
 function paintMst() {
   const body = $("mstBody"); if (!body) return;
@@ -39880,40 +38802,6 @@ window.consExportar = () => {
   baixarTexto(`consumiveis_movimentacoes_${todayISO()}.xls`, csvTexto(cab, linhas), "application/vnd.ms-excel;charset=utf-8");
 };
 /* ---- Painel (no padrão dos painéis do Financeiro) ---- */
-function consPainelDados() {
-  const hoje = todayISO(), meses = []; for (let i = 11; i >= 0; i--) { const d = new Date(hoje.slice(0, 4), Number(hoje.slice(5, 7)) - 1 - i, 1); meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`); }
-  const lim = meses[0] + "-01", saidas = CONS.movs.filter(m => m.Tipo === "Saída" && consDia(m) >= lim), custo = m => Math.abs(consNum(m.Quantidade)) * consNum(m.CustoUnit);
-  const porMes = meses.map(c => { const ms = saidas.filter(m => consDia(m).startsWith(c)); return { c, n: ms.length, qtd: ms.reduce((s, m) => s + Math.abs(consNum(m.Quantidade)), 0), valor: ms.reduce((s, m) => s + custo(m), 0) }; });
-  const agr = (k, fn) => { const M = new Map(); saidas.forEach(m => { const g = fn(m) || "—"; const o = M.get(g) || { k: g, n: 0, qtd: 0, valor: 0 }; o.n++; o.qtd += Math.abs(consNum(m.Quantidade)); o.valor += custo(m); M.set(g, o); }); return [...M.values()].sort((a, b) => b.valor - a.valor || b.qtd - a.qtd); };
-  const L = consLinhas(), ativos = L.filter(x => x.Ativo !== false);
-  return { meses, porMes, itens: agr("item", m => m.ItemNome).slice(0, 10), deps: agr("dep", m => m.Departamento), cats: agr("cat", m => m.Categoria), funcs: agr("func", m => m.FuncNome).filter(x => x.k !== "—").slice(0, 10),
-    valorEstoque: ativos.reduce((s, x) => s + x.valor, 0), baixo: ativos.filter(x => x.sit === "baixo" || x.sit === "zerado"), saidas12: saidas.length, valor12: saidas.reduce((s, m) => s + custo(m), 0), valorMes: porMes[11].valor, mediaMes: saidas.length ? saidas.reduce((s, m) => s + custo(m), 0) / 12 : 0 };
-}
-function consPainelHtml() {
-  const D = consPainelDados(), m = todayISO().slice(0, 7);
-  const kpi = (l, v, sub, cls) => `<div class="kpi static ${cls || ""}"><div class="lbl">${esc(l)}</div><div class="val">${v}</div><div class="sub">${esc(sub)}</div></div>`;
-  const kpis = `<div class="cap-kpis">${kpi("Valor em estoque", `<span class="money">${esc(fmtBRL(D.valorEstoque))}</span>`, "itens ativos, pelo custo unitário", "pago")}${kpi("Consumo no mês", `<span class="money">${esc(fmtBRL(D.valorMes))}</span>`, compLabel(m))}${kpi("Média mensal", `<span class="money">${esc(fmtBRL(D.mediaMes))}</span>`, "saídas dos últimos 12 meses")}${kpi("Saídas (12 meses)", D.saidas12, `${esc(fmtBRL(D.valor12))} no período`)}${kpi("Repor", D.baixo.length, "abaixo do mínimo ou zerados", D.baixo.length ? "venc" : "")}</div>`;
-  const card = (t, s, inner) => `<div class="cap-card"><div class="cap-card-h"><h3>${t}</h3><span class="cap-card-s">${s}</span></div>${inner}</div>`;
-  const tab = (rows, col) => rows.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>${col}</th><th class="right">Saídas</th><th class="right">Qtd.</th><th class="right">Valor</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.k)}</td><td class="right">${r.n}</td><td class="right">${consQtd(r.qtd)}</td><td class="right">${esc(fmtBRL(r.valor))}</td></tr>`).join("")}</tbody></table></div>` : `<p class="cap-muted">Sem saídas nos últimos 12 meses.</p>`;
-  const repor = D.baixo.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Item</th><th class="right">Estoque</th><th class="right">Mínimo</th><th>Situação</th></tr></thead><tbody>${D.baixo.map(x => `<tr class="cons-l" onclick="consVer(${esc(jsArg(x._id))})"><td>${esc(x.Title)}</td><td class="right">${consQtd(x.saldo, x.Unidade)}</td><td class="right">${consQtd(x.EstoqueMin, x.Unidade)}</td><td>${consSitPill(x.sit)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="cap-muted">Nenhum item abaixo do mínimo.</p>`;
-  return kpis + `<div class="cap-grid cons-grid">${card("Consumo por mês", "últimos 12 meses · valor das saídas pelo custo unitário", `<div class="cap-chart"><canvas id="consChMes" height="220"></canvas></div>`)}${card("Itens mais retirados", "12 meses · clique para ver as movimentações", `<div class="cap-chart" style="height:${Math.max(220, 26 * D.itens.length + 60)}px"><canvas id="consChItens"></canvas></div>`)}</div>
-    <div class="cap-grid cons-grid">${card("Por departamento", "12 meses", `<div class="cap-chart"><canvas id="consChDep" height="220"></canvas></div>`)}${card("Por categoria", "12 meses", `<div class="cap-chart"><canvas id="consChCat" height="220"></canvas></div>`)}</div>
-    <div class="cap-grid cons-grid">${card("Funcionários que mais retiraram", "12 meses", tab(D.funcs, "Funcionário"))}${card("Para repor", "abaixo do mínimo ou zerados", repor)}</div>`;
-}
-function consPainelCharts() {
-  if (!window.Chart || !Chart.getChart) return;
-  const D = consPainelDados(), css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
-  const COL = { a: css("--navy") || "#0B1628", b: css("--orange") || "#F0541B", c: css("--ok") || "#197A46", d: css("--warn") || "#9A6A00", e: "#5B6068", f: "#1A2E52", g: "#8A5E00", h: "#B3271E" }, cores = Object.values(COL), eixo = "#3B4352";
-  const mk = (id, cfg) => { const el = $(id); if (!el) return; const old = Chart.getChart(el); if (old) old.destroy(); try { new Chart(el, cfg); } catch (e) { console.warn("chart", id, e); } };
-  const common = (onClick) => ({ responsive: true, maintainAspectRatio: false, animation: false, onClick, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 12 }, color: eixo } }, tooltip: { callbacks: { label: c => ` ${c.dataset.label || c.label}: ${fmtBRL(c.parsed.x !== undefined && c.chart.config.options.indexAxis === "y" ? c.parsed.x : c.parsed.y ?? c.parsed)}` } }, datalabels: { display: false } } });
-  const tk = { font: { size: 11 }, color: eixo };
-  mk("consChMes", { type: "bar", data: { labels: D.porMes.map(e => e.c.slice(5, 7) + "/" + e.c.slice(2, 4)), datasets: [{ label: "Saídas (R$)", data: D.porMes.map(e => Math.round(e.valor * 100) / 100), backgroundColor: COL.a }] },
-    options: Object.assign(common((ev, els) => { if (!els.length) return; CONS.fm = { q: "", tipo: "Saída", item: "", func: "", per: "365" }; CONS.aba = "mov"; paintCons(); }), { scales: { x: { ticks: tk }, y: { ticks: Object.assign({ callback: v => capMoneyShort(v) }, tk) } } }) });
-  if (D.itens.length) mk("consChItens", { type: "bar", data: { labels: D.itens.map(r => r.k), datasets: [{ label: "Valor (R$)", data: D.itens.map(r => Math.round(r.valor * 100) / 100), backgroundColor: COL.b }] },
-    options: Object.assign(common((ev, els) => { if (!els.length) return; const it = CONS.itens.find(x => x.Title === D.itens[els[0].index].k); CONS.fm = { q: "", tipo: "Saída", item: it ? it._id : "", func: "", per: "365" }; CONS.aba = "mov"; paintCons(); }), { indexAxis: "y", scales: { x: { ticks: Object.assign({ callback: v => capMoneyShort(v), maxTicksLimit: 5 }, tk) }, y: { ticks: tk } } }) });
-  const pizza = (id, rows) => rows.length && mk(id, { type: "doughnut", data: { labels: rows.map(r => r.k), datasets: [{ data: rows.map(r => Math.round(r.valor * 100) / 100), backgroundColor: rows.map((r, i) => cores[i % cores.length]) }] }, options: common() });
-  pizza("consChDep", D.deps.slice(0, 8)); pizza("consChCat", D.cats.slice(0, 8));
-}
 /* ---- cadastro do item ---- */
 window.consVer = id => {
   const x = CONS.itens.find(i => i._id === String(id)); if (!x) return;
@@ -43369,23 +42257,7 @@ function agvenLinhaCod(rot) {   /* "1002 - Macaé x …" → "1002" (só se for 
   const m = String(rot || "").match(/^(\S+) - /), cod = m ? m[1] : String(rot || "").trim();
   return agvenLinhasBil().some(l => l.cod === cod) ? cod : "";
 }
-function agvenTrechos(cod, data) {   /* trechos da linha com tarifa na data */
-  if (!cod) return [];
-  const vistos = new Map();
-  (BIL_STATE.tarifas || []).filter(t => String(t.Linha) === cod).forEach(t => { if (!vistos.has(t.Secao)) vistos.set(t.Secao, t); });
-  const lista = [...vistos.values()].map(t => ({ secao: String(t.Secao), label: String(t.Descricao || t.Secao), valor: bilTarifa(cod, String(t.Secao), data) })).filter(x => x.valor > 0);
-  const cont = {}; lista.forEach(x => { cont[x.label] = (cont[x.label] || 0) + 1; });
-  lista.forEach(x => { if (cont[x.label] > 1) x.label = `${x.label} (${x.secao})`; });
-  return lista.sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
-}
 function agvenTrechoOpts(row, E) { return agvenTrechos(agvenLinhaCod(row.l), E && E.cab && E.cab.Data).map(x => x.label); }
-function agvenPreco(row, E, forcar) {   /* valor unitário automático: linha + trecho + data; gratuidade = R$ 0,00 */
-  const cod = agvenLinhaCod(row.l); if (!cod || !row.s) return false;
-  if (!forcar && !row._auto && lancNum(row.u)) return false;
-  if (/gratuidade/i.test(row.t || "")) { row.u = 0; row._auto = true; return true; }
-  const v = bilTarifa(cod, row.s, E && E.cab && E.cab.Data); if (!(v > 0)) return false;
-  row.u = /meia/i.test(row.t || "") ? Math.round(v * 50) / 100 : v; row._auto = true; return true;   /* meia (estudante) = metade da tarifa; o campo continua editável */
-}
 /* o select do Trecho depende da Linha da própria linha */
 { const c0 = lancCelHtml; lancCelHtml = function (c, v, i, ro) {
     if (c.rowOpts && LANC_ED) { const row = LANC_ED.linhas[i] || {}; const ops = c.rowOpts(row, LANC_ED); return c0.call(this, Object.assign({}, c, { opts: () => ops, ph: c.rowPh ? c.rowPh(row, ops) : c.ph }), v, i, ro); }
@@ -43777,16 +42649,6 @@ const DO_ABAS = [["pubs", "Publicações"], ["linhas", "Linhas"], ["trechos", "T
 DO.aba = "pubs";
 window.doAba = a => { DO.aba = DO_ABAS.some(x => x[0] === a) ? a : (a === "detro" ? "linhas" : "pubs"); DO.abre = ""; DOL.verDados = false; doPintar(); };
 window.doAbrir = id => { DO.abre = id ? String(id) : ""; DO.aba = "pubs"; doPintar(); const el = $("doPubDet"); if (el) el.scrollIntoView({ block: "start", behavior: "smooth" }); };
-function doPintar() {
-  const body = $("doBody"); if (!body || session.modAtual !== "diario") return;
-  const ed = doEd();
-  $("doActions").innerHTML = `<button class="btn" onclick="doAtualizar()">Atualizar</button>${ed && DO.lists.pub ? `<button class="btn primary" onclick="doPubForm()">+ Nova publicação</button>` : ""}`;
-  if (DO.erro) { body.innerHTML = `<div class="cap-empty"><h3>Não foi possível ler o Diário Oficial</h3><p>${esc(DO.erro.slice(0, 160))}</p></div>`; return; }
-  if (!DO.lists.pub || !DO.lists.tr) { body.innerHTML = `<div class="cap-empty"><h3>As listas do Diário Oficial ainda não existem</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração</a> para criar "${esc(LISTS.do_pub.displayName)}" e "${esc(LISTS.do_trechos.displayName)}" no site Financeiro.` : "Peça a um administrador para criá-las."}</p></div>`; return; }
-  const tabs = `<div class="cap-tools"><span class="seg-tabs" role="tablist">${DO_ABAS.map(([k, l]) => `<button class="${DO.aba === k ? "on" : ""}" role="tab" aria-selected="${DO.aba === k}" onclick="doAba('${k}')">${l}</button>`).join("")}</span><span class="grow"></span>${dolLinkSite()}</div>`;
-  const p = DO.abre && DO.pubs.find(x => x._id === DO.abre);
-  body.innerHTML = tabs + (DO.aba === "ader" ? doAderencia() : DO.aba === "linhas" ? doAbaLinhas() : DO.aba === "trechos" ? doAbaTrechos() : DO.aba === "nao" ? doAbaNao() : doListaPubs() + (p ? `<div id="doPubDet">${doDetalhe(p)}</div>` : ""));
-}
 /* 1) Publicações: tabela; clique abre o resumo abaixo */
 function doListaPubs() {
   const vig = doVigente();
@@ -43802,16 +42664,6 @@ const doTrLinha = (t, i, ed, pid, comLinhaErp) => {
   const erp = comLinhaErp ? doLinhaErpDe(t.Linha) : "";
   return `<tr><td class="right sup">${i + 1}</td>${comLinhaErp ? `<td>${erp ? `<b>${esc(erp)}</b>` : `<span class="sup">—</span>`}</td>` : ""}<td class="nw"><b>${esc(doLinhaDO(t))}</b></td><td>${esc(t.Origem || "")}</td><td>${esc(t.Destino || "")}${t.Complemento ? ` <span class="sup">(${esc(t.Complemento)})</span>` : ""}${t.Observacao ? `<div class="sup">${esc(t.Observacao)}</div>` : ""}</td><td style="text-align:center">${esc(t.Categoria || "—")}</td><td class="right nw">${t.Tarifa != null ? esc(fmtBRL(t.Tarifa)) : "—"}</td>`;
 };
-function doDetalhe(p) {
-  const ed = doEd(), ts = doTrechosDe(p._id), arq = doArq(p), vig = doVigente() === p, pontos = doJson(p.Pontos, {});
-  const rows = ts.length ? ts.map((t, i) => `${doTrLinha(t, i, ed, p._id, false)}<td>${doUsoNoErp(t, p)}</td>${ed ? `<td class="right nw"><button class="btn sm" onclick="doTrForm(${esc(jsArg(p._id))}, ${esc(jsArg(t._id))})">Editar</button> <button class="btn sm danger-ghost" onclick="doTrExcluir(${esc(jsArg(t._id))})">Excluir</button></td>` : ""}</tr>`).join("")
-    : `<tr><td colspan="${ed ? 8 : 7}" class="sup">Nenhum trecho cadastrado.${ed ? " Use \"+ Trecho\" ou \"Colar da portaria\"." : ""}</td></tr>`;
-  return `<section class="cap-card do-cab" style="margin-top:14px"><div class="cap-tools" style="padding:0;border:0;box-shadow:none;background:none;margin-bottom:10px"><h3 style="margin:0">${esc(p.Ato || p.Title || "Publicação")} <span class="sup">${esc(p.Ano ?? "")}</span></h3><span class="grow"></span>${arq ? `<button class="btn sm" onclick="doVerPdf(${esc(jsArg(p._id))})">📄 Ver PDF</button>` : ""}${ed ? `<button class="btn sm" onclick="doPdfEscolher(${esc(jsArg(p._id))})">${arq ? "Trocar PDF" : "Anexar PDF"}</button><input type="file" id="doPdfArq" accept="application/pdf,image/*" hidden onchange="doPdfEnviar(${esc(jsArg(p._id))}, this)">` : ""}<button class="btn sm" onclick="doImprimir(${esc(jsArg(p._id))})">Imprimir</button>${ed ? `<button class="btn sm" onclick="doPubForm(${esc(jsArg(p._id))})">Editar dados</button>` : ""}${ed && !vig ? `<button class="btn sm" onclick="doMarcarVigente(${esc(jsArg(p._id))})">Tornar vigente</button>` : ""}${podeExcluir("diario") ? `<button class="btn sm danger-ghost" onclick="doPubExcluir(${esc(jsArg(p._id))})">Excluir publicação</button>` : ""}<button class="btn sm ghost" onclick="doAbrir('')" title="Fechar">✕</button></div>
-    <div class="do-cab-g"><div><span class="sup">Publicação</span><b>${p.DataPublicacao ? fmtDate(p.DataPublicacao) : "—"}</b></div><div><span class="sup">Vigência</span><b>${p.VigenciaInicio ? "a partir de " + fmtDate(p.VigenciaInicio) : "—"}</b></div><div><span class="sup">Empresa</span><b>${esc(p.Empresa || "—")}</b></div><div><span class="sup">Situação</span><b>${vig ? `<span class="do-selo do-ok">Vigente</span>` : `<span class="sup">não é a vigente</span>`}</b></div></div>${p.Observacoes ? `<p class="sup" style="margin:10px 0 0">${esc(p.Observacoes)}</p>` : ""}
-    <div class="cap-tools" style="margin-top:14px"><h3 style="margin:0">Trechos autorizados <span class="sup">${ts.length}</span></h3><span class="grow"></span>${ed ? `<button class="btn sm" onclick="doColar(${esc(jsArg(p._id))})">Colar da portaria</button><button class="btn sm primary" onclick="doTrForm(${esc(jsArg(p._id))})">+ Trecho</button>` : ""}</div>
-    <div class="table-wrap"><table class="cap-table do-t"><thead><tr><th rowspan="2" style="text-align:right;width:44px">#</th><th rowspan="2">Cód. DETRO</th><th colspan="2" class="bil-gr">Trecho</th><th rowspan="2" style="text-align:center">Cat.</th><th rowspan="2" style="text-align:right">Tarifa</th><th rowspan="2">No ERP</th>${ed ? `<th rowspan="2"></th>` : ""}</tr><tr><th class="bil-sub">Ponto A</th><th class="bil-sub">Ponto B</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <details class="do-cfg-det" style="margin-top:12px"><summary class="sup">Equivalências de pontos (nome usado no ERP = nome no Diário Oficial)${ed ? ` · <a href="#" onclick="event.preventDefault();doCfgForm(${esc(jsArg(p._id))}, 'Pontos')">editar</a>` : ""}</summary>${Object.keys(pontos).length ? `<table class="do-kv"><tbody>${Object.entries(pontos).map(([k, v]) => `<tr><td>${esc(k)}</td><td>= ${esc(v)}</td></tr>`).join("")}</tbody></table>` : `<p class="sup">Nenhuma equivalência extra (Conceição / Macabu, Madalena, Trajano, Curato, Imbé e Trevo 40 já são reconhecidos).</p>`}</details></section>`;
-}
 /* formulário de trecho: Cód. DETRO em lista (ou linha do ERP, nos não oficiais), Ponto A / Ponto B, Cat., Tarifa */
 window.doTrForm = (pid, tid) => {
   const nao = String(pid) === DO_NO, t = tid ? DO.trechos.find(x => x._id === String(tid)) : null, ts = doTrechosDe(pid), ult = ts[ts.length - 1] || {};
@@ -43838,17 +42690,6 @@ window.doTrForm = (pid, tid) => {
   });
 };
 /* 2) Linhas: tabela editável — Linha (ERP) · Cód. DETRO · Trecho (Ponto A / Ponto B) · Tipo */
-function doAbaLinhas() {
-  const ed = doEd(), its = dolOrd();
-  if (DOL.erro) return `<div class="cap-empty"><h3>Não foi possível ler as linhas</h3><p>${esc(DOL.erro.slice(0, 160))}</p></div>`;
-  if (!DO.lists.lin) return `<div class="cap-empty"><h3>A lista "${esc(LISTS.do_linhas.displayName)}" ainda não existe</h3><p>${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › Executar tudo</a> para criá-la no site Financeiro.` : "Peça a um administrador para rodar a Configuração."}</p></div>`;
-  const rows = its.map(x => { const p = bilTrechoPartes(x.Ligacao || ""); return `<tr class="${ed ? "bil-dbl" : ""}" ${ed ? `ondblclick="if (!event.target.closest('button')) dolForm(${esc(jsArg(x._id))})"` : ""}><td><b>${esc(x.LinhaERP || "—")}</b></td><td class="nw">${esc(x.Title || "—")}</td><td>${esc(p.a || "—")}</td><td>${esc(p.b || "—")}</td><td style="text-align:center">${esc(x.Caracteristica || "—")}</td><td class="sup nw">${x.AtualizadoEm ? `cópia de ${esc(fmtDate(x.AtualizadoEm))}` : "sem cópia"}</td>
-    <td class="right nw"><button class="btn sm" onclick="dolVer(${esc(jsArg(x._id))})" title="Dados oficiais copiados da consulta do DETRO (tarifas, horários, itinerários)">Dados oficiais</button> ${dolLinkLinha(x, "DETRO")}${ed ? ` <button class="btn sm" onclick="dolForm(${esc(jsArg(x._id))})">Editar</button>${podeExcluir("diario") ? ` <button class="btn sm danger-ghost" onclick="dolExcluir(${esc(jsArg(x._id))})">Excluir</button>` : ""}` : ""}</td></tr>`; }).join("");
-  const tab = `<div class="cap-tools"><span class="hint">Cada linha do ERP (1000, 1001, 2000…) ligada ao código da linha no DETRO (B140, B142, B155…), com o trecho principal e o tipo. É daqui que o LevBom, o Movimento Diário e a Aderência tomam as linhas.</span><span class="grow"></span>${ed ? `<button class="btn primary" onclick="dolForm('')">+ Linha</button>` : ""}</div>
-    <div class="table-wrap"><table class="cap-table do-t"><thead><tr><th rowspan="2">Linha</th><th rowspan="2">Cód. DETRO</th><th colspan="2" class="bil-gr">Trecho</th><th rowspan="2" style="text-align:center">Tipo</th><th rowspan="2">Dados oficiais</th><th rowspan="2"></th></tr><tr><th class="bil-sub">Ponto A</th><th class="bil-sub">Ponto B</th></tr></thead><tbody>${rows || `<tr><td colspan="7" class="sup">Nenhuma linha cadastrada.${ed ? " Clique em \"+ Linha\"." : ""}</td></tr>`}</tbody></table></div>`;
-  const x = DOL.verDados && its.find(i => i._id === DOL.sel);
-  return tab + (x ? `<div id="doLinDados" style="margin-top:14px"><div class="cap-tools"><h3 style="margin:0">Dados oficiais · ${esc(x.Title || "")}${x.LinhaERP ? ` <span class="sup">ERP ${esc(x.LinhaERP)}</span>` : ""}</h3><span class="grow"></span>${dolDados(x) ? `<button class="btn sm" onclick="dolImprimir(${esc(jsArg(x._id))})">🖨 Imprimir</button>` : ""}${ed ? `<button class="btn sm" onclick="dolImportar(${esc(jsArg(x._id))})">Atualizar dados oficiais</button>` : ""}<button class="btn sm ghost" onclick="DOL.verDados=false;doPintar()">✕</button></div>${dolDadosHtml(x)}</div>` : "");
-}
 function dolDadosHtml(x) { const d = dolDados(x); return `<p class="sup" style="margin:6px 0 12px">${x.AtualizadoEm ? `Cópia da consulta oficial do DETRO feita em <b>${esc(fmtDate(x.AtualizadoEm))}</b>${x.AtualizadoPor ? ` por ${esc(x.AtualizadoPor)}` : ""}.` : "Os dados oficiais desta linha ainda não foram copiados. Use \"Atualizar dados oficiais\"."}</p>` + (d ? dolHtml(x, d) : `<div class="cap-empty"><h3>Sem a cópia dos dados oficiais</h3><p>${x.CodigoDetro ? "Abra a linha no DETRO pelo botão da tabela." : "Cadastre o código da consulta do DETRO (Editar) para ter o link direto."}</p></div>`); }
 window.dolVer = id => { DOL.sel = String(id || ""); DOL.verDados = true; DO.aba = "linhas"; doPintar(); const el = $("doLinDados"); if (el) el.scrollIntoView({ block: "start", behavior: "smooth" }); };
 window.dolSel = id => { DOL.sel = String(id || ""); DOL.verDados = true; doPintar(); };
@@ -43878,25 +42719,7 @@ window.dolForm = id => {
   setTimeout(() => { const s = $("dlTit"), l = $("dlTitLivre"); if (s && l) { s.addEventListener("change", () => { if (s.value) l.value = ""; }); l.addEventListener("input", () => { if (l.value) s.value = ""; }); } }, 0);
 };
 /* 3) Trechos: os da publicação vigente, com a linha do ERP e a aderência ao LevBom */
-function doAbaTrechos() {
-  const ed = doEd(), v = doVigente();
-  if (!v) return `<div class="cap-empty"><h3>Sem publicação vigente</h3><p>Cadastre a portaria do DETRO na aba Publicações e marque-a como vigente.</p></div>`;
-  const ts = doTrechosDe(v._id);
-  const STS = ts.map(t => doAderTrecho(t)), n = { ok: 0, tar: 0, nao: 0 }; STS.forEach(st => { if (n[st.k] != null) n[st.k]++; });
-  const rows = ts.map((t, i) => `${doTrLinha(t, i, ed, v._id, true)}<td style="text-align:center">${doBola(STS[i])}</td>${ed ? `<td class="right nw"><button class="btn sm" onclick="doTrForm(${esc(jsArg(v._id))}, ${esc(jsArg(t._id))})">Editar</button> <button class="btn sm danger-ghost" onclick="doTrExcluir(${esc(jsArg(t._id))})">Excluir</button></td>` : ""}</tr>`).join("");
-  return `<div class="cap-tools"><span class="hint">Trechos autorizados na <b>${esc(v.Title || v.Ato || "publicação vigente")}</b>${v.VigenciaInicio ? ` (vigência a partir de ${fmtDate(v.VigenciaInicio)})` : ""}. A bolinha compara com as tarifas vigentes do LevBom: <span class="do-bola do-b-ok"><i></i></span> igual · <span class="do-bola do-b-ok do-b-alerta"><i></i></span> tarifa diferente · <span class="do-bola do-b-nao"><i></i></span> sem tarifa no LevBom.</span><span class="grow"></span><span class="bti-chip bti-nova">No LevBom: <b>${n.ok}</b></span><span class="bti-chip bti-ajuste">Tarifa diferente: <b>${n.tar}</b></span><span class="bti-chip bti-erro">Sem tarifa: <b>${n.nao}</b></span>${ed ? `<button class="btn sm" onclick="doColar(${esc(jsArg(v._id))})">Colar da portaria</button><button class="btn primary" onclick="doTrForm(${esc(jsArg(v._id))})">+ Trecho</button>` : ""}</div>
-    <div class="table-wrap"><table class="cap-table do-t"><thead><tr><th rowspan="2" style="text-align:right;width:44px">#</th><th rowspan="2">Linha</th><th rowspan="2">Cód. DETRO</th><th colspan="2" class="bil-gr">Trecho</th><th rowspan="2" style="text-align:center">Cat.</th><th rowspan="2" style="text-align:right">Tarifa</th><th rowspan="2" style="text-align:center">LevBom</th>${ed ? `<th rowspan="2"></th>` : ""}</tr><tr><th class="bil-sub">Ponto A</th><th class="bil-sub">Ponto B</th></tr></thead><tbody>${rows || `<tr><td colspan="${ed ? 9 : 8}" class="sup">Nenhum trecho nesta publicação.${ed ? " Use \"+ Trecho\" ou \"Colar da portaria\"." : ""}</td></tr>`}</tbody></table></div>`;
-}
 /* 4) Trechos não oficiais: registro próprio (fora da portaria), com sugestões vindas da aderência */
-function doAbaNao() {
-  const ed = doEd(), ts = doTrechosDe(DO_NO), I = doIndice();
-  const rows = ts.map((t, i) => `<tr><td class="right sup">${i + 1}</td><td><b>${esc(t.Linha || "—")}</b></td><td>${esc(t.Origem || "")}</td><td>${esc(t.Destino || "")}${t.Complemento ? ` <span class="sup">(${esc(t.Complemento)})</span>` : ""}</td><td style="text-align:center">${esc(t.Categoria || "—")}</td><td class="right nw">${t.Tarifa != null ? esc(fmtBRL(t.Tarifa)) : "—"}</td><td class="sup">${esc(t.Observacao || "")}</td>${ed ? `<td class="right nw"><button class="btn sm" onclick="doTrForm('${DO_NO}', ${esc(jsArg(t._id))})">Editar</button> <button class="btn sm danger-ghost" onclick="doTrExcluir(${esc(jsArg(t._id))})">Excluir</button></td>` : ""}</tr>`).join("");
-  const reg = new Set(ts.map(t => `${String(t.Linha || "").toUpperCase()}|${I ? doPar(doPonto(t.Origem, I.A), doPonto(t.Destino, I.A)) : bilTrechoNorm(bilTrechoJunta(t.Origem, t.Destino))}`));
-  const sug = I ? doLinhasAder().filter(x => x.st.k === "nao").filter(x => { const ks = doParesDe(x.t.Secao, x.t.Descricao, I.A); return !ks.some(k => reg.has(`${String(x.t.Linha).toUpperCase()}|${k}`)); }) : [];
-  return `<div class="cap-tools"><span class="hint">Trechos que a empresa opera e <b>não constam</b> da portaria vigente — registro para controle e para o pedido de inclusão ao DETRO. Não entram na prestação de contas (LevBom › BOM › "Só seções oficiais").</span><span class="grow"></span>${ed ? `<button class="btn primary" onclick="doTrForm('${DO_NO}')">+ Trecho não oficial</button>` : ""}</div>
-    <div class="table-wrap"><table class="cap-table do-t"><thead><tr><th rowspan="2" style="text-align:right;width:44px">#</th><th rowspan="2">Linha</th><th colspan="2" class="bil-gr">Trecho</th><th rowspan="2" style="text-align:center">Cat.</th><th rowspan="2" style="text-align:right">Tarifa</th><th rowspan="2">Observação</th>${ed ? `<th rowspan="2"></th>` : ""}</tr><tr><th class="bil-sub">Ponto A</th><th class="bil-sub">Ponto B</th></tr></thead><tbody>${rows || `<tr><td colspan="${ed ? 8 : 7}" class="sup">Nenhum trecho não oficial registrado.</td></tr>`}</tbody></table></div>
-    ${sug.length ? `<h3 style="margin:18px 0 6px">Seções do LevBom fora da portaria <span class="sup">${sug.length}</span></h3><p class="sup" style="margin-top:0">Aparecem como "Não oficial" na aderência e ainda não estão registradas aqui.</p><div class="table-wrap"><table class="cap-table"><tbody>${sug.map(x => { const p = bilTrechoPartes(x.t.Descricao); return `<tr><td><b>${esc(x.t.Linha)}</b></td><td>${esc(p.a)}</td><td>${esc(p.b)}</td><td class="right nw">${esc(fmtBRL(x.t.Valor))}</td><td class="right nw">${ed ? `<button class="btn sm" onclick="doNaoRegistrar(${esc(jsArg(x.t._id))})">Registrar como não oficial</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}`;
-}
 window.doNaoRegistrar = async id => {
   const t = (BIL_STATE.tarifas || []).find(x => String(x._id) === String(id)); if (!t || !doEd()) return;
   const p = bilTrechoPartes(t.Descricao), ts = doTrechosDe(DO_NO);
@@ -43909,21 +42732,6 @@ window.doAderEditar = async id => { if (!(await doBilPronto())) { toast("As list
 window.doAderExcluir = async id => { if (!(await doBilPronto())) return; const i = bilSorted().findIndex(t => String(t._id) === String(id)); if (i >= 0) bilTarExcluir(i); };
 window.doAderNovo = async () => { if (!(await doBilPronto())) { toast("As listas do LevBom ainda não existem."); return; } bilTarifaEdit(-1); };
 { const p0 = paintBil; paintBil = function () { if (session.modAtual === "diario" && !$("bilBody")) { try { doPintar(); } catch (e) {} return; } return p0.apply(this, arguments); }; }   /* o LevBom repinta a página do Diário Oficial quando o formulário foi aberto de lá */
-function doAderencia() {
-  const I = doIndice();
-  if (!I) return `<div class="cap-empty"><h3>Sem publicação vigente</h3><p>Cadastre a portaria do DETRO e marque-a como vigente.</p></div>`;
-  const ed = podeEditar("bilhet"), exc = podeExcluir("bilhet"), R = doLinhasAder(), n = doResumo(R.map(x => x.st));
-  const vis = R.filter(x => !DO.filtro || x.st.k === DO.filtro);
-  const usados = new Set(); R.forEach(x => doParesDe(x.t.Secao, x.t.Descricao, I.A).forEach(k => usados.add(k)));
-  const semUso = doTrechosDe(I.pub._id).filter(t => !usados.has(doPar(doPonto(t.Origem, I.A), doPonto(t.Destino, I.A))));
-  const K = [["ok", "Oficiais", "constam da portaria"], ["tar", "Tarifa diferente", "oficial, valor ≠ portaria"], ["outra", "Em outra linha", "oficial, linha diferente"], ["nao", "Não oficiais", "fora do Diário Oficial"], ["na", "Não se aplica", "taxas, promoções, fretamento"]].concat(n.nr || DO.filtro === "nr" ? [["nr", "Não reconhecidas", "ajuste descrição ou equivalências"]] : []);
-  const cod = L => { const m = I.linhas && I.linhas[String(L || "").toUpperCase()]; return m && m.length ? m.join(", ") : ""; };
-  return `<p class="sup">Comparação com a <b>${esc(I.pub.Title || I.pub.Ato || "publicação vigente")}</b>${I.pub.VigenciaInicio ? ` (vigência a partir de ${fmtDate(I.pub.VigenciaInicio)})` : ""}. Fonte: tarifas vigentes do LevBom (as mesmas da Tabela de Tarifas); Editar, Excluir e + Trecho gravam no LevBom, com as permissões de lá. As seções <b>não oficiais</b> ficam fora da prestação de contas ao DETRO.</p>
-    <div class="cap-kpis">${K.map(([k, l, s]) => `<button class="kpi ${DO.filtro === k ? "on" : ""} ${k === "nao" && n.nao ? "venc" : ""}" onclick="doFiltro('${k}')" aria-pressed="${DO.filtro === k}"><div class="lbl">${l}</div><div class="val">${n[k]}</div><div class="sub">${DO.filtro === k ? "filtro ativo · clique para limpar" : s}</div></button>`).join("")}</div>
-    ${ed ? `<div class="cap-tools" style="margin-bottom:8px"><span class="grow"></span><button class="btn primary" onclick="doAderNovo()">+ Trecho no LevBom</button></div>` : ""}
-    <div class="table-wrap"><table class="cap-table do-t"><thead><tr><th rowspan="2">Linha</th><th rowspan="2">Cód. DETRO</th><th colspan="2" class="bil-gr">Trecho</th><th rowspan="2" style="text-align:right">Tarifa ERP</th><th rowspan="2">Diário Oficial</th><th rowspan="2">Situação</th>${ed ? `<th rowspan="2"></th>` : ""}</tr><tr><th class="bil-sub">Ponto A</th><th class="bil-sub">Ponto B</th></tr></thead><tbody>${vis.length ? vis.map(({ t, st }) => { const p = bilTrechoPartes(t.Descricao); return `<tr><td><b>${esc(t.Linha)}</b></td><td class="nw">${esc(cod(t.Linha) || "—")}</td><td>${esc(p.a || "")}</td><td>${esc(p.b || "")}</td><td class="right nw">${esc(fmtBRL(t.Valor))}</td><td class="sup">${esc(st.det || "")}</td><td>${doSelo(st, true)}</td>${ed ? `<td class="right nw"><button class="btn sm" onclick="doAderEditar(${esc(jsArg(t._id))})">Editar</button>${exc ? ` <button class="btn sm danger-ghost" onclick="doAderExcluir(${esc(jsArg(t._id))})">Excluir</button>` : ""}</td>` : ""}</tr>`; }).join("") : `<tr><td colspan="${ed ? 8 : 7}" class="sup">Nada neste filtro.</td></tr>`}</tbody></table></div>
-    ${semUso.length ? `<h3 style="margin:18px 0 6px">Autorizados sem seção no ERP <span class="sup">${semUso.length}</span></h3><p class="sup" style="margin-top:0">Trechos da portaria que não aparecem na lista de tarifas do LevBom (ou com nome que o ERP não reconheceu: ajuste nas equivalências de pontos da publicação).</p><div class="table-wrap"><table class="cap-table"><thead><tr><th>Linha</th><th>Cód. DETRO</th><th>Ponto A</th><th>Ponto B</th><th style="text-align:center">Cat.</th><th style="text-align:right">Tarifa</th></tr></thead><tbody>${semUso.map(t => `<tr><td><b>${esc(doLinhaErpDe(t.Linha) || "—")}</b></td><td>${esc(doLinhaDO(t))}</td><td>${esc(t.Origem)}</td><td>${esc(t.Destino)}${t.Complemento ? ` <span class="sup">(${esc(t.Complemento)})</span>` : ""}</td><td style="text-align:center">${esc(t.Categoria || "")}</td><td class="right nw">${esc(fmtBRL(t.Tarifa))}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
-}
 
 /* ---------- LevBom › Tarifas: sem o campo de código da seção; Linha em lista do Diário Oficial; trecho oficial preenche Ponto A/B e tarifa ---------- */
 function bilSecaoUnica(linha, a, b, catA) { const base = (bilSecaoSugere(a, b) || "SEC") + (catA ? "-A" : ""); let s = base, n = 2; const tem = c => BIL_STATE.tarifas.some(x => String(x.Linha) === String(linha) && String(x.Secao).toUpperCase() === c.toUpperCase()); while (tem(s)) s = `${base}-${n++}`; return s; }
@@ -44195,15 +43003,6 @@ window.doTrAplicar = async () => {
   try { await doCarregar(true); } catch (e) {} if (!falha) closeModal(); else { b.disabled = false; b.textContent = "Substituir a lista"; } DO.aba = "trechos"; doPintar();
 };
 /* Trechos Não Oficiais: mesmo desenho */
-function doAbaNao() {
-  const ed = doEd(), ts = doTrechosDe(DO_NO), I = doIndice();
-  const rows = ts.map((t, i) => `<tr class="${ed ? "bil-dbl" : ""}" ${ed ? `ondblclick="if (!event.target.closest('button')) doTrForm('${DO_NO}', ${esc(jsArg(t._id))})" title="Duplo clique para editar"` : ""}><td class="sup">${i + 1}</td><td><b>${esc(t.Linha || "—")}</b></td><td>${esc(t.Origem || "")}</td><td>${esc(t.Destino || "")}${t.Complemento ? ` <span class="sup">(${esc(t.Complemento)})</span>` : ""}</td><td>${esc(t.Categoria || "—")}</td><td class="nw">${t.Tarifa != null ? esc(fmtBRL(t.Tarifa)) : "—"}</td><td class="sup">${esc(t.Observacao || "")}</td>${ed ? `<td class="nw"><button class="btn sm" onclick="doTrForm('${DO_NO}', ${esc(jsArg(t._id))})">Editar</button> <button class="btn sm danger-ghost" onclick="doTrExcluir(${esc(jsArg(t._id))})">Excluir</button></td>` : ""}</tr>`).join("");
-  const reg = new Set(ts.map(t => `${String(t.Linha || "").toUpperCase()}|${I ? doPar(doPonto(t.Origem, I.A), doPonto(t.Destino, I.A)) : bilTrechoNorm(bilTrechoJunta(t.Origem, t.Destino))}`));
-  const sug = I ? doLinhasAder().filter(x => x.st.k === "nao").filter(x => { const ks = doParesDe(x.t.Secao, x.t.Descricao, I.A); return !ks.some(k => reg.has(`${String(x.t.Linha).toUpperCase()}|${k}`)); }) : [];
-  return `<div class="table-wrap"><table class="cap-table do-t do-c">${doColg(["44px", "80px", "20%", "20%", "60px", "100px", "auto", ed ? "150px" : "0"])}<thead><tr><th rowspan="2">#</th><th rowspan="2">Linha</th><th colspan="2" class="bil-gr">Trecho</th><th rowspan="2">Cat.</th><th rowspan="2">Tarifa</th><th rowspan="2">Observação</th>${ed ? `<th rowspan="2"></th>` : ""}</tr><tr><th class="bil-sub">Ponto A</th><th class="bil-sub">Ponto B</th></tr></thead><tbody>${rows || `<tr><td colspan="${ed ? 8 : 7}" class="sup">Nenhum trecho não oficial registrado.</td></tr>`}</tbody></table></div>
-    <p class="sup do-legenda">Trechos que a empresa opera e <b>não constam</b> da portaria vigente — registro para controle e para o pedido de inclusão ao DETRO. Não entram na prestação de contas (LevBom › BOM › "Só seções oficiais").${ed ? " Duplo clique edita." : ""}</p>
-    ${sug.length ? `<h3 style="margin:18px 0 6px">Seções do LevBom fora da portaria <span class="sup">${sug.length}</span></h3><p class="sup" style="margin-top:0">Aparecem como "Não oficial" na aderência e ainda não estão registradas aqui.</p><div class="table-wrap"><table class="cap-table do-t do-c">${doColg(["80px", "25%", "25%", "100px", "auto"])}<thead><tr><th>Linha</th><th>Ponto A</th><th>Ponto B</th><th>Tarifa</th><th></th></tr></thead><tbody>${sug.map(x => { const p = bilTrechoPartes(x.t.Descricao); return `<tr><td><b>${esc(x.t.Linha)}</b></td><td>${esc(p.a)}</td><td>${esc(p.b)}</td><td class="nw">${esc(fmtBRL(x.t.Valor))}</td><td class="nw">${ed ? `<button class="btn sm" onclick="doNaoRegistrar(${esc(jsArg(x.t._id))})">Registrar como não oficial</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}`;
-}
 /* Aderência: mesmo desenho; botões no topo */
 function doAderencia() {
   const I = doIndice();
@@ -56625,6 +55424,7 @@ CONFIG.version = "v0.14.89";   /* Passageiros: apagar todos os trechos de um hor
 CONFIG.version = "v0.14.90";   /* Passageiros: Lançamentos primeiro; Exportar Base (mês ou tudo, por trecho) e importar de volta; Folha em Branco (Excel e PDF); linha sem horário abre em branco; observações editáveis pelo administrador; Análise + Histórico numa aba */
 CONFIG.version = "v0.14.91";   /* Passageiros: Planilha e Folha de Emergência (uma aba / 2 páginas); lançamento rápido; trechos como sublinhas; Grade do Dia no Banco; nomes por extenso */
 CONFIG.version = "v0.14.92";   /* varredura de 24/11: trava do dia nas gravações em lote; célula de Pagantes; colunas vazias; TI no Início; motivo em janela do ERP na CAP; Exportar Relatório completo */
+CONFIG.version = "v0.14.93";   /* limpeza sem mudança de comportamento: 76 corpos de função que já tinham sido substituídos por versões posteriores saíram do arquivo (154 KB) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

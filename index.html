@@ -55815,6 +55815,109 @@ Object.assign(window, { PX7, px7Chaves });
   .px2 .px7-pe{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 9px 0 18px;margin-top:4px;border-top:1px dashed #D5DAE1}.px2 .px7-pe .grow{flex:1}.px7-res{font-weight:700;color:var(--navy);font-size:13px}
   .px2 .px7-vz{padding:8px 18px;font-size:13px;color:var(--ink-2)}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.100 (25/11/2026) · Estatística de Passageiros › Análise em 3 páginas internas.
+   Pedido do Rafael (25/11, 16:02):
+   - Leitura Mensal: Passageiros por Horário, Passageiros Dia a Dia e Calendário;
+   - Resumo: Resumo por Horário (ou a tabela escolhida) e Por Trecho;
+   - Histórico: Histórico, Mês a Mês, Ano a Ano, Totais por Ano e Tabela Mês a Mês.
+   Os indicadores do mês e a faixa Gráfico/Medida/Tabela aparecem em Leitura Mensal e em Resumo. No Histórico (todos os
+   meses) o seletor de mês some, como já era. A escolha fica guardada enquanto a página está aberta.
+   ===================================================================== */
+const PX8 = { sub: "mensal" };
+const PX8_SUBS = [["mensal", "Leitura Mensal"], ["resumo", "Resumo"], ["hist", "Histórico"]];
+window.px8Sub = k => { PX8.sub = k; PAX_UI._mantemRolagem = false; paintPax(); try { window.scrollTo(0, 0); } catch (e) {} };
+function px8Arruma() {
+  const body = document.getElementById("paxBody"); if (!body || PAX_STATE.tab !== "horario") return;
+  const topo = body.querySelector(".op-topo"); if (!topo) return;
+  const h2 = body.querySelector("h2.pax-sec"), kids = [...body.children], ih = h2 ? kids.indexOf(h2) : kids.length;
+  if (!h2 && PX8.sub === "hist") PX8.sub = "mensal";
+  const grupo = (e, i) => {
+    if (e.matches(".op-topo, .pax-flut, .pax-flut-sen, .px6-sub, .px8-sub")) return "todos";
+    if (i >= ih) return "hist";
+    if (e.matches(".cap-card") && (e.querySelector("#paxChartHoras, #paxChartDias, #px9Chart") || e.id === "paxCal")) return "mensal";
+    if (e.matches(".cap-card")) return "resumo";
+    return "mes";   /* indicadores do mês e a faixa de controles: Leitura Mensal e Resumo */
+  };
+  kids.forEach((e, i) => { const g = grupo(e, i); if (g === "todos") return; e.hidden = !(g === PX8.sub || (g === "mes" && PX8.sub !== "hist")); });
+  if (!body.querySelector(".px8-sub")) topo.insertAdjacentHTML("afterend", `<div class="px6-sub px8-sub" role="tablist" aria-label="Análise" data-sem-titulo>${PX8_SUBS.filter(([k]) => k !== "hist" || h2).map(([k, n]) => `<button type="button" role="tab" class="${PX8.sub === k ? "on" : ""}" aria-selected="${PX8.sub === k}" onclick="px8Sub('${k}')">${n}</button>`).join("")}</div>`);
+  const ma = document.getElementById("paxMAB"); if (ma) ma.hidden = PX8.sub === "hist";
+  if (PX8.sub === "hist") { const det = body.querySelector("details.pax-det"); if (det) det.open = true; }
+  try { body.querySelectorAll(".cap-card:not([hidden]) canvas").forEach(cv => { const ch = window.Chart && Chart.getChart(cv); if (ch) ch.resize(); }); } catch (e) {}
+  try { if (typeof px6Filtros === "function") { const fr = document.querySelector("#paxFlut .px6-fr"); if (fr) fr.textContent = px6Resumo(document.getElementById("paxFlut")); } } catch (e) {}
+}
+{ const p0 = paintPax;
+  paintPax = function () { const r = p0.apply(this, arguments); try { px8Arruma(); } catch (e) {} return r; };
+  window.paintPax = paintPax; }
+Object.assign(window, { PX8 });
+{ const t0 = window.paxTab; window.paxTab = function (t) { if (t === "hist") { PX8.sub = "hist"; t = "horario"; } return t0.call(this, t); }; }
+/* =====================================================================
+   v0.14.101 (25/11/2026) · Estatística de Passageiros › Análise › Leitura Mensal: gráfico "Movimento no Ano".
+   Pedido do Rafael (25/11, 16:07): gráfico de linha com a queda ou o ganho de movimento, o total mês a mês no ano;
+   um por total e outro por horário, no mesmo gráfico, trocando pelo mesmo tipo de botão de Barras/Linhas.
+   - "Total": passageiros (pagantes + gratuidades) de cada mês do ano do mês na tela, com a variação sobre o mês anterior
+     em cada ponto (▲ verde, ▼ vermelho) e, tracejado, o mesmo mês do ano anterior quando houver dado.
+   - "Por Horário": uma linha por horário (e sentido, quando o horário existe nos dois), mês a mês no ano. A dica mostra
+     o número e a variação sobre o mês anterior.
+   - Segue os filtros de Linha, Sentido, Tipo de dia e Horário; o mês na tela fica em destaque (ponto maior).
+   ===================================================================== */
+const PX9 = { modo: "total" };
+const PX9_CORES = ["#0F1E3A", "#D6421F", "#2E8B57", "#2B6CB0", "#8E5BB5", "#B38600", "#0F766E", "#C05621", "#5B6068", "#9B2C2C", "#3182CE", "#6B8E23", "#805AD5", "#D69E2E"];
+window.px9Modo = m => { PX9.modo = m; paintPax(); };
+function px9Dados() {
+  const ano = String(PAX_STATE.mes || todayISO()).slice(0, 4), its = paxFiltra(PAX_STATE.itens).filter(x => /^\d{4}-\d{2}/.test(x.Data || ""));
+  const tot = (a, m) => its.filter(x => x.Data.startsWith(`${a}-${m}`)).reduce((s, x) => s + Number(x.Pagantes || 0) + Number(x.Gratuidade || 0), 0);
+  const tem = (a, m) => its.some(x => x.Data.startsWith(`${a}-${m}`));
+  const MM = PAX_MES_ABREV.map((_, i) => String(i + 1).padStart(2, "0"));
+  const atual = MM.map(m => tem(ano, m) ? tot(ano, m) : null), anterior = MM.map(m => tem(String(ano - 1), m) ? tot(String(ano - 1), m) : null);
+  const doAno = its.filter(x => x.Data.startsWith(ano)), sents = {}; doAno.forEach(x => { (sents[x.Horario] = sents[x.Horario] || new Set()).add(x.Sentido || "Ida"); });
+  const horas = new Map(); doAno.forEach(x => { const s = x.Sentido || "Ida", k = `${x.Horario}|${s}`; if (!horas.has(k)) horas.set(k, { k, rot: sents[x.Horario].size > 1 ? `${paxHoraPura(x)} ${s}` : paxHoraPura(x) + (/\(F\)/.test(x.Horario) ? " (F)" : ""), v: MM.map(() => null) }); const h = horas.get(k), i = Number(x.Data.slice(5, 7)) - 1; h.v[i] = (h.v[i] || 0) + Number(x.Pagantes || 0) + Number(x.Gratuidade || 0); });
+  return { ano, atual, anterior, horas: [...horas.values()].sort((a, b) => a.rot.localeCompare(b.rot)), sel: Number(String(PAX_STATE.mes || "").slice(5, 7)) - 1 };
+}
+const px9Pct = (a, b) => a == null || b == null || !b ? null : 100 * (a - b) / b;
+const px9PctTxt = p => p == null ? "" : `${p >= 0 ? "▲" : "▼"} ${Math.abs(p).toFixed(1).replace(".", ",")}%`;
+function px9CardHtml() {
+  const D = px9Dados(), i = D.sel, v = D.atual[i], ant = i > 0 ? D.atual[i - 1] : null, p = px9Pct(v, ant);
+  const res = v == null ? `sem viagens em ${esc(mesLabel(PAX_STATE.mes))}` : `${esc(mesLabel(PAX_STATE.mes))}: ${v.toLocaleString("pt-BR")} passageiros${p != null ? ` · <b class="px9-v ${p >= 0 ? "up" : "down"}">${px9PctTxt(p)}</b> sobre ${esc(PAX_MES_ABREV[i - 1])}` : ""}`;
+  return `<div class="cap-card px9-card"><div class="cap-card-h"><h3>Movimento no Ano · ${esc(D.ano)}</h3><span class="cap-card-s">${res}</span><span class="grow"></span><span class="seg-tabs pax-seg" role="group" aria-label="Leitura do movimento">${[["total", "Total"], ["hora", "Por Horário"]].map(([k, l]) => `<button type="button" class="${PX9.modo === k ? "on" : ""}" aria-pressed="${PX9.modo === k}" onclick="px9Modo('${k}')">${l}</button>`).join("")}</span></div>
+    <div class="cap-chart" style="height:300px"><canvas id="px9Chart" aria-label="Movimento de passageiros mês a mês no ano"></canvas></div>
+    <p class="sup px9-nota">${PX9.modo === "total" ? `Passageiros (pagantes + gratuidades) de cada mês; ▲/▼ = ganho ou queda sobre o mês anterior. Tracejado: ${esc(String(D.ano - 1))}, quando há dado.` : "Uma linha por horário; passe o mouse para ver o número e a variação sobre o mês anterior."} Segue os filtros acima.</p></div>`;
+}
+function px9Chart() {
+  const el = document.getElementById("px9Chart"); if (!el || !window.Chart) return;
+  const D = px9Dados(), old = Chart.getChart(el); if (old) old.destroy();
+  const eixo = extra => Object.assign({ ticks: { font: { size: PAX_CH.eixo, weight: 600 }, color: PAX_CH.cor }, grid: { color: PAX_CH.grade } }, extra || {});
+  const nf = v => v == null ? "—" : Number(v).toLocaleString("pt-BR"), raio = arr => arr.map((v, i) => v == null ? 0 : i === D.sel ? 7 : 4);
+  const dica = { callbacks: { label: ctx => { const a = ctx.dataset.data, i = ctx.dataIndex, v = a[i], p = px9Pct(v, i > 0 ? a[i - 1] : null); return `${ctx.dataset.label}: ${nf(v)}${p != null ? `  (${px9PctTxt(p)} sobre ${PAX_MES_ABREV[i - 1]})` : ""}`; } } };
+  let datasets, dl;
+  if (PX9.modo === "hora") {
+    datasets = D.horas.map((h, j) => { const c = PX9_CORES[j % PX9_CORES.length]; return { label: h.rot, data: h.v, borderColor: c, backgroundColor: c, tension: .25, borderWidth: 2, pointRadius: raio(h.v), spanGaps: false }; });
+    dl = { display: false };
+  } else {
+    const cor = PAX_CH.cor, a = D.atual, ptCor = a.map((v, i) => { const p = px9Pct(v, i > 0 ? a[i - 1] : null); return p == null ? "#0F1E3A" : p >= 0 ? "#197A46" : "#B3271E"; });
+    datasets = [{ label: D.ano, data: a, borderColor: "#0F1E3A", backgroundColor: ptCor, pointBackgroundColor: ptCor, pointBorderColor: "#fff", borderWidth: 3, tension: .25, pointRadius: raio(a), spanGaps: false }];
+    if (D.anterior.some(v => v != null)) datasets.push({ label: String(D.ano - 1), data: D.anterior, borderColor: "#9AA3B2", backgroundColor: "#9AA3B2", borderWidth: 2, borderDash: [6, 4], tension: .25, pointRadius: 3, spanGaps: false });
+    dl = { display: ctx => ctx.datasetIndex === 0 && ctx.dataset.data[ctx.dataIndex] != null, anchor: "end", align: "top", offset: 4,
+      formatter: (v, ctx) => { const i = ctx.dataIndex, p = px9Pct(v, i > 0 ? ctx.dataset.data[i - 1] : null); return p == null ? nf(v) : [nf(v), px9PctTxt(p)]; },
+      font: { size: 11.5, weight: 800 }, color: ctx => ctx.dataset.pointBackgroundColor[ctx.dataIndex] || cor, textAlign: "center" };
+  }
+  try { new Chart(el, { type: "line", data: { labels: PAX_MES_ABREV, datasets }, plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [],
+    options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: PX9.modo === "hora" ? "nearest" : "index", intersect: false },
+      plugins: { legend: { display: datasets.length > 1, position: "bottom", labels: { color: PAX_CH.cor, font: { size: 12, weight: 600 }, boxWidth: 12 } }, tooltip: dica, datalabels: dl },
+      layout: { padding: { top: 12 } }, scales: { x: eixo({ grid: { display: false } }), y: eixo({ beginAtZero: true, grace: PX9.modo === "hora" ? "12%" : "35%" }) } } }); } catch (e) { console.warn("px9", e); }
+}
+{ const p0 = paintPax;
+  paintPax = function () { const r = p0.apply(this, arguments);
+    try { const body = document.getElementById("paxBody"); if (!body || PAX_STATE.tab !== "horario" || body.querySelector(".px9-card")) return r;
+      const cv = ["paxChartDias", "paxChartHoras"].map(id => document.getElementById(id)).find(Boolean), ref = cv && cv.closest(".cap-card"); if (!ref) return r;
+      ref.insertAdjacentHTML("afterend", px9CardHtml()); const card = body.querySelector(".px9-card"); card.hidden = typeof PX8 !== "undefined" && PX8.sub !== "mensal";
+      if (!card.hidden) px9Chart(); } catch (e) { console.warn("px9", e); }
+    return r; };
+  window.paintPax = paintPax; }
+Object.assign(window, { PX9, px9Dados });
+(function () { const st = document.createElement("style"); st.id = "erp-v014101";
+  st.textContent = `.px9-v.up{color:#197A46}.px9-v.down{color:#B3271E}.px9-nota{margin:8px 0 0}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -55919,6 +56022,8 @@ CONFIG.version = "v0.14.96";   /* Passageiros: Planilha de Emergência refeita (
 CONFIG.version = "v0.14.97";   /* Passageiros: o aviso de localidade não cadastrada aponta o caminho certo (Diretoria › Detro RJ › Diário Oficial › Localidades) */
 CONFIG.version = "v0.14.98";   /* Passageiros: Importar dentro de Lançamentos; filtros recolhidos numa faixa ao rolar (abre com o mouse ou o botão) */
 CONFIG.version = "v0.14.99";   /* Passageiros › Lançamentos: trechos em lote na folha (todos os trechos da linha abaixo do horário) */
+CONFIG.version = "v0.14.100";   /* Passageiros › Análise em 3 páginas internas: Leitura Mensal, Resumo e Histórico */
+CONFIG.version = "v0.14.101";   /* Passageiros › Leitura Mensal: gráfico Movimento no Ano (Total | Por Horário, ganho ou queda sobre o mês anterior) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

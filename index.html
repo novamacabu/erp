@@ -56616,6 +56616,684 @@ Object.assign(window, { DIP, dipLer, dipCalcular, dipReceita, dipTarifa, dipDies
 .dp-ocultar{position:absolute;right:6px;top:6px;z-index:3}.dp-fict{position:absolute;left:6px;top:6px;z-index:3;font-size:.68em;font-weight:800;letter-spacing:.05em;color:var(--dor);background:#FFF3EC;border:1px dashed var(--dor);border-radius:2px;padding:2px 7px}
 .dp-pe{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:.74em;color:var(--dmut)}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.106 (25/11/2026) · Operacional › Frota › página do ônibus › Estrutura (2D e 3D)
+   Plano aprovado pelo Rafael em 25/11 17:37 (claude/erp-nmb/frota-estrutura-plano-2026-11-25.md, respostas às 7 perguntas):
+   - piloto com gabaritos padrão (urbano com motor dianteiro e rodoviário com motor traseiro), no detalhe fino (67 componentes:
+     mangueiras, correias, filtros, câmaras de freio, amortecedores…). Gabarito é desenho (forma e posição aproximadas), sem dado
+     técnico: código da peça, torque e intervalos começam vazios e são preenchidos no catálogo;
+   - catálogo em duas listas novas (Configuração): "Frota — Estrutura · Catálogos" e "Frota — Estrutura · Componentes" — uma linha
+     por componente, para que o administrador e o proprietário da página (almoxarifado e diretoria) editem sem passar pelo
+     "ERP — Parâmetros", que só o administrador grava;
+   - coluna nova "Componentes" em "Frota — Manutenção" e em "Frota — Não conformidades" (números e nomes dos componentes);
+   - km atual na v1: o mais recente entre o hodômetro do último abastecimento (Controle de Diesel) e o km da última manutenção;
+   - cartão compacto "Estrutura" na página do ônibus (depois do Layout) e a seção completa em rota própria
+     #/operacional/frota/veiculo/<id>/estrutura; editor do catálogo em #/operacional/frota/estrutura;
+   - ver: quem vê a página do ônibus; editar o catálogo: administrador e proprietário (página "Estrutura dos ônibus" da Frota).
+   O 3D é desenho próprio em SVG (projeção ortográfica, faces por profundidade), sem biblioteca externa.
+   ===================================================================== */
+LISTS.frota_estc = {
+  key: "frota_estc", displayName: "Frota — Estrutura · Catálogos", siteKey: "operacional", titleAs: "Catálogo",
+  description: "Frota NMB · catálogos da estrutura dos ônibus: arranjo (motor dianteiro ou traseiro) e os modelos (chassi | carroceria) que usam o catálogo. Editado em Operacional › Frota › Estrutura.",
+  columns: [
+    { name: "Arranjo",    displayName: "Arranjo",                       choice: choice(["Urbano · motor dianteiro", "Rodoviário · motor traseiro"]) },
+    { name: "Modelos",    displayName: "Modelos (chassi | carroceria)", text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "LimiarKm",   displayName: "A vencer: % do intervalo em km",   number: integer(1, 50) },
+    { name: "LimiarDias", displayName: "A vencer: % do intervalo em dias", number: integer(1, 50) },
+    { name: "Observacoes", displayName: "Observações",                  text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+LISTS.frota_estp = {
+  key: "frota_estp", displayName: "Frota — Estrutura · Componentes", siteKey: "operacional", titleAs: "Componente",
+  description: "Frota NMB · componentes de cada catálogo da estrutura: sistema, função, o que verificar, intervalos, código da peça, torque, posição no desenho 2D e forma no 3D.",
+  columns: [
+    { name: "Catalogo",      displayName: "Catálogo (id)",        text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Numero",        displayName: "Número",               number: integer(1, 999) },
+    { name: "Sistema",       displayName: "Sistema",              text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Funcao",        displayName: "Função",               text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "Verificar",     displayName: "O que verificar",      text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "IntervaloKm",   displayName: "Intervalo (km)",       number: integer(0, null) },
+    { name: "IntervaloDias", displayName: "Intervalo (dias)",     number: integer(0, null) },
+    { name: "CodigoPeca",    displayName: "Código da peça",       text: { allowMultipleLines: false, maxLength: 80 } },
+    { name: "Torque",        displayName: "Torque de aperto",     text: { allowMultipleLines: false, maxLength: 160 } },
+    { name: "Observacao",    displayName: "Observação",           text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "X",             displayName: "Posição 2D (x)",       number: { decimalPlaces: "none", displayAs: "number" } },
+    { name: "Y",             displayName: "Posição 2D (y)",       number: { decimalPlaces: "none", displayAs: "number" } },
+    { name: "Geo",           displayName: "Forma 3D (JSON)",      text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+SETUP_ORDER.push("frota_estc", "frota_estp");
+SETUP_TEXT.frota_estc = `Cria no site Operacional a lista "Frota — Estrutura · Catálogos" (v0.14.106): cada catálogo da estrutura dos ônibus, com o arranjo e os modelos (chassi | carroceria) que o usam.`;
+SETUP_TEXT.frota_estp = `Cria no site Operacional a lista "Frota — Estrutura · Componentes" (v0.14.106): os componentes de cada catálogo (sistema, função, o que verificar, intervalos, código da peça, torque, posição 2D e forma 3D).`;
+LISTS.frota_manut.columns.push({ name: "Componentes", displayName: "Componentes (estrutura)", text: { allowMultipleLines: true, textType: "plain" } });
+LISTS.frota_nc.columns.push({ name: "Componentes", displayName: "Componentes (estrutura)", text: { allowMultipleLines: true, textType: "plain" } });
+PAG_DEF.frota.push({ k: "estr", n: "Estrutura dos ônibus (catálogo)" });
+
+/* ---------- sistemas, cores e situações ---------- */
+const FES_SYS = [["todos", "Todos"], ["motor", "Motor"], ["arref", "Arrefecimento"], ["alim", "Alimentação"], ["freios", "Freios a ar"], ["transm", "Transmissão"], ["susp", "Suspensão e rodas"], ["direcao", "Direção"], ["eletrica", "Elétrica"], ["carroc", "Carroceria"]];
+const FES_SYSNOME = Object.fromEntries(FES_SYS);
+const FES_COR = { motor: "#56606e", arref: "#2b6cb0", alim: "#b7791f", freios: "#805ad5", transm: "#2f855a", susp: "#718096", direcao: "#0f766e", eletrica: "#c99a06", carroc: "#94a3b8" };
+const FES_ST = { ok: ["Em dia", "#197a46", "#e6f4ea"], warn: ["A vencer", "#9a6a00", "#fff6db"], err: ["Vencida", "#b3271e", "#fde8e6"], semreg: ["Sem registro", "#5b6068", "#eef0f3"], semkm: ["Sem km para contar", "#5b6068", "#eef0f3"], semiv: ["Sem intervalo definido", "#5b6068", "#f3f4f6"] };
+const FES_ARR = { u: "Urbano · motor dianteiro", r: "Rodoviário · motor traseiro" };
+
+/* ---------- gabaritos (forma e posição aproximadas; nada de dado técnico) ----------
+   2D: x,y no viewBox 1000×380, frente à direita. 3D: metros; x = comprimento (frente +6), y = altura, z = largura (direita +z).
+   B(centro, tamanho) = caixa; C(eixo 0|1|2, centro, raio, comprimento, segmentos) = cilindro; e = vetor de "Separar peças". */
+const fB = (c, s) => ({ t: "b", c, s }), fC = (ax, c, r, l, seg) => ({ t: "c", ax, c, r, l, seg: seg || 12 });
+const fPar = (f, c, ...a) => [f(c, ...a), f([c[0], c[1], -c[2]], ...a)];
+const fParC = (ax, c, r, l, seg) => [fC(ax, c, r, l, seg), fC(ax, [c[0], c[1], -c[2]], r, l, seg)];
+const fStuds = (x, z) => Array.from({ length: 10 }, (_, i) => { const a = i * Math.PI / 5; return fC(2, [x + .17 * Math.cos(a), .5 + .17 * Math.sin(a), z], .028, .06, 6); });
+const FES_GAB_U = [
+  [1, "Motor", "motor", 825, 222, [fB([4.65, 1.0, 0], [1.2, .8, .85])], [0, 1.5, 0], "Motor diesel. Gera a força que move o ônibus e aciona compressor, alternador e bomba da direção.", ["Vazamentos de óleo e de líquido de arrefecimento", "Fumaça e ruídos fora do normal", "Fixação geral"]],
+  [2, "Cárter e óleo do motor", "motor", 815, 262, [fB([4.65, .5, 0], [.95, .2, .6])], [0, -.6, 0], "Reservatório do óleo que lubrifica o motor.", ["Nível na vareta com o motor frio", "Cor e cheiro do óleo", "Vazamento no bujão e na junta"]],
+  [3, "Filtro de óleo", "motor", 780, 245, [fC(1, [4.15, .55, -.5], .09, .26, 10)], [0, .2, 1.3], "Retém as impurezas do óleo do motor.", ["Vazamento na base do filtro", "Troca junto com o óleo"]],
+  [4, "Filtro de ar do motor", "motor", 790, 160, [fB([4.45, 1.75, .75], [.45, .4, .35])], [0, .8, 1.0], "Limpa o ar que entra no motor.", ["Indicador de restrição", "Elemento sujo ou rasgado", "Abraçadeiras e dutos"]],
+  [5, "Coxins do motor", "motor", 845, 258, [...fPar(fB, [5.15, .58, .38], [.12, .12, .12]), ...fPar(fB, [4.15, .58, .38], [.12, .12, .12])], [0, -.4, .4], "Apoiam o motor no chassi e absorvem a vibração.", ["Borracha trincada ou descolada", "Vibração anormal na marcha lenta", "Parafusos de fixação"]],
+  [6, "Turbocompressor", "motor", 822, 172, [fC(2, [5.0, 1.5, -.5], .13, .18, 12)], [.3, 1.0, 1.2], "Usa os gases do escape para mandar mais ar ao motor.", ["Folga no eixo", "Óleo nas tubulações de ar", "Ruído (assobio) fora do normal"]],
+  [7, "Coletor e tubo de escape", "motor", 640, 300, [fC(0, [1.6, .42, -.55], .07, 4.2, 8)], [0, -.5, 1.0], "Leva os gases do motor até o pós-tratamento.", ["Vazamentos e fuligem nas juntas", "Suportes e abraçadeiras", "Encostando em chicote ou mangueira"]],
+  [8, "Pós-tratamento (SCR) e silencioso", "motor", 395, 300, [fB([-1.0, .5, -.55], [.8, .32, .35])], [0, -.5, 1.2], "Reduz a poluição e o ruído do escape.", ["Luz de aviso no painel", "Fixação e corrosão", "Sensores e conectores"]],
+  [9, "Radiador", "arref", 935, 205, [fB([5.82, 1.0, 0], [.1, .9, 1.0])], [1.3, .5, 0], "Resfria o líquido que circula pelo motor.", ["Colmeia limpa, sem amassados ou entupimento", "Vazamentos", "Fixação"]],
+  [10, "Ventoinha e embreagem viscosa", "arref", 905, 205, [fC(0, [5.66, 1.0, 0], .4, .08, 16)], [.9, .3, 0], "Puxa o ar pelo radiador quando o motor esquenta.", ["Pás trincadas", "Acoplamento da embreagem viscosa", "Folga no rolamento"]],
+  [11, "Mangueira superior do radiador", "arref", 920, 172, [fC(0, [5.45, 1.34, .28], .05, .5, 8)], [.7, 2.2, 0], "Leva o líquido quente do motor ao radiador.", ["Ressecamento, trincas ou inchaço", "Abraçadeiras firmes", "Marcas de vazamento nas conexões"]],
+  [12, "Mangueira inferior do radiador", "arref", 920, 240, [fC(0, [5.45, .7, -.28], .05, .5, 8)], [.7, -.7, 0], "Devolve o líquido resfriado do radiador ao motor.", ["Ressecamento, trincas ou inchaço", "Abraçadeiras firmes", "Mangueira amassada"]],
+  [13, "Reservatório de expansão", "arref", 910, 140, [fB([5.55, 1.85, .6], [.22, .25, .25])], [.6, .9, .8], "Guarda o líquido de arrefecimento e absorve a dilatação.", ["Nível entre mínimo e máximo, com o motor frio", "Tampa e vedação", "Óleo misturado ao líquido"]],
+  [14, "Bomba d'água", "arref", 875, 215, [fC(0, [5.3, .95, .25], .09, .14, 10)], [.5, .4, 1.0], "Faz o líquido de arrefecimento circular.", ["Vazamento pelo furo de alívio", "Ruído no rolamento"]],
+  [15, "Correia do ventilador", "arref", 875, 158, [fC(0, [5.38, 1.22, 0], .17, .03, 16)], [.8, 1.3, 0], "Aciona a ventoinha e a bomba d'água.", ["Trincas e desgaste", "Tensão correta", "Tensor e polias"]],
+  [16, "Tanque de diesel", "alim", 505, 262, [fB([-.4, .62, -.8], [1.0, .45, .5])], [0, 0, 1.5], "Armazena o diesel.", ["Tampa e respiro", "Fixação das cintas", "Vazamentos"]],
+  [17, "Filtro de combustível", "alim", 755, 190, [fB([4.0, 1.0, -.55], [.12, .25, .12])], [0, .4, 1.3], "Retém as impurezas do diesel antes da injeção.", ["Vazamento na base", "Perda de potência"]],
+  [18, "Filtro separador de água", "alim", 750, 265, [fC(1, [3.95, .72, -.62], .07, .22, 10)], [0, -.2, 1.3], "Separa a água do diesel.", ["Drenar a água acumulada", "Luz de água no combustível"]],
+  [19, "Linhas de combustível", "alim", 545, 232, [fC(0, [1.75, .6, -.72], .025, 4.3, 6)], [0, 0, 1.1], "Levam o diesel do tanque ao motor e trazem o retorno.", ["Atrito com o chassi", "Vazamentos nas conexões", "Fixação das presilhas"]],
+  [20, "Tanque de ARLA 32", "alim", 435, 262, [fB([-1.25, .6, -.85], [.35, .35, .35])], [0, 0, 1.5], "Armazena o ARLA 32, que reduz a poluição do escape.", ["Nível e cristais brancos na tampa", "Luz de aviso no painel"]],
+  [21, "Módulo dosador de ARLA", "alim", 420, 225, [fB([-1.0, .75, -.82], [.15, .15, .15])], [0, .4, 1.5], "Dosa o ARLA 32 para o pós-tratamento.", ["Filtro do módulo", "Conectores e mangueiras"]],
+  [22, "Compressor de ar", "freios", 800, 195, [fC(0, [4.15, 1.4, .5], .13, .32, 12)], [-.3, 1.4, 1.3], "Gera o ar comprimido que aciona os freios, as portas e a suspensão.", ["Tempo para encher o sistema", "Óleo saindo no dreno dos reservatórios", "Ruído e fixação"]],
+  [23, "Secador de ar (APU)", "freios", 620, 225, [fB([2.6, .72, .8], [.22, .3, .2])], [0, .4, 1.4], "Retira a umidade do ar comprimido.", ["Água nos reservatórios", "Descarga da válvula de purga", "Elemento secador"]],
+  [24, "Reservatórios de ar", "freios", 590, 268, [fC(0, [1.3, .62, .78], .16, 1.0, 12), fC(0, [1.3, .62, .42], .16, 1.0, 12)], [0, 0, 1.5], "Guardam o ar comprimido para os freios e as portas.", ["Drenar a água acumulada", "Fixação e corrosão", "Válvula de segurança"]],
+  [25, "Válvula pedal de freio", "freios", 940, 290, [fB([5.6, .9, .72], [.12, .15, .12])], [.6, .4, 1.0], "Comanda o ar dos freios conforme o pé do motorista.", ["Curso do pedal", "Vazamento de ar ao frear", "Retorno do pedal"]],
+  [26, "Câmaras de freio dianteiras", "freios", 680, 280, fParC(2, [3.45, .62, .72], .1, .14, 10), [0, .4, .9], "Transformam o ar em força nos freios dianteiros.", ["Vazamento de ar", "Fixação e haste", "Diafragma"]],
+  [27, "Lonas e tambores dianteiros", "freios", 690, 322, fParC(2, [3.7, .5, .78], .3, .12, 14), [0, 0, 1.0], "Freio a tambor das rodas dianteiras.", ["Espessura das lonas", "Trincas no tambor", "Aquecimento desigual"]],
+  [28, "Câmaras de freio traseiras (com mola)", "freios", 300, 270, fParC(2, [-1.95, .62, .6], .12, .18, 10), [0, .4, .9], "Freio de serviço e de estacionamento das rodas traseiras.", ["Vazamento de ar", "Freio de estacionamento segurando", "Fixação e haste"]],
+  [29, "Lonas e tambores traseiros", "freios", 298, 322, fParC(2, [-2.2, .5, .6], .32, .12, 14), [0, 0, 1.0], "Freio a tambor das rodas traseiras.", ["Espessura das lonas", "Trincas no tambor", "Aquecimento desigual"]],
+  [30, "Ajustadores de folga", "freios", 175, 320, [...fPar(fB, [-2.4, .42, .66], [.06, .18, .05]), ...fPar(fB, [3.5, .42, .82], [.06, .18, .05])], [0, -.4, .6], "Mantêm a folga entre lona e tambor.", ["Curso da haste da câmara", "Lubrificação", "Ajuste automático funcionando"]],
+  [31, "Embreagem", "transm", 712, 205, [fC(0, [4.0, .85, 0], .27, .1, 16)], [-.3, .9, 0], "Liga e desliga o motor da caixa de câmbio.", ["Patinando ao arrancar", "Curso e altura do pedal", "Vazamento no sistema hidráulico"]],
+  [32, "Caixa de câmbio", "transm", 670, 236, [fB([3.55, .85, 0], [.6, .48, .52])], [-.6, 1.0, 0], "Escolhe a marcha e entrega a força do motor ao eixo cardan.", ["Engates sem arranhar", "Nível e vazamento de óleo", "Ruídos"]],
+  [33, "Trambulador e alavanca de câmbio", "transm", 690, 170, [fC(1, [5.0, 1.55, .45], .03, .7, 6), fB([4.3, 1.1, .25], [1.4, .05, .05])], [0, .9, .8], "Liga a alavanca do motorista à caixa de câmbio.", ["Folga na alavanca", "Buchas e articulações", "Engate preciso"]],
+  [34, "Eixo cardan", "transm", 560, 300, [fC(0, [.7, .62, 0], .06, 5.0, 8)], [0, -.2, 0], "Leva a força do câmbio até o diferencial.", ["Vibração em velocidade", "Fixação dos parafusos", "Balanceamento"]],
+  [35, "Cruzetas e mancal central", "transm", 480, 305, [fB([.7, .62, 0], [.14, .14, .2]), fB([3.18, .62, 0], [.12, .12, .12]), fB([-1.78, .62, 0], [.12, .12, .12])], [0, -.5, 0], "Articulações e apoio do eixo cardan.", ["Folga nas cruzetas", "Graxa nas cruzetas e na luva", "Borracha do mancal central"]],
+  [36, "Diferencial", "transm", 250, 290, [fB([-2.2, .5, 0], [.45, .45, .5])], [0, 0, 0], "Divide a força entre as rodas traseiras nas curvas.", ["Ruído (uivo) em velocidade constante", "Vazamento no retentor do pinhão", "Nível do óleo"]],
+  [37, "Semieixos e cubos traseiros", "transm", 205, 290, [fC(2, [-2.2, .5, 0], .07, 1.6, 8)], [0, -.3, 0], "Levam a força do diferencial às rodas traseiras.", ["Vazamento de óleo no cubo", "Folga nos rolamentos", "Parafusos da flange"]],
+  [38, "Feixe de molas dianteiro", "susp", 735, 232, fPar(fB, [3.7, .66, .62], [1.4, .1, .09]), [0, .5, .4], "Sustenta o peso sobre o eixo dianteiro e absorve impactos.", ["Lâmina quebrada ou deslocada", "Grampos apertados", "Buchas e pinos"]],
+  [39, "Feixe de molas traseiro", "susp", 250, 236, fPar(fB, [-2.2, .66, .62], [1.4, .1, .09]), [0, .5, .4], "Sustenta o peso sobre o eixo traseiro e absorve impactos.", ["Lâmina quebrada ou deslocada", "Grampos (abraçadeiras) apertados", "Buchas do jumelo"]],
+  [40, "Amortecedores dianteiros", "susp", 775, 285, fParC(1, [3.95, .85, .72], .04, .4, 8), [0, .7, .6], "Controlam o balanço da frente.", ["Vazamento de óleo", "Buchas", "Balanço excessivo"]],
+  [41, "Amortecedores traseiros", "susp", 200, 245, fParC(1, [-2.5, .85, .72], .04, .4, 8), [0, .7, .6], "Controlam o balanço da traseira.", ["Vazamento de óleo", "Buchas", "Balanço excessivo"]],
+  [42, "Pneus e rodas dianteiros", "susp", 730, 345, fParC(2, [3.7, .5, 1.0], .5, .3, 18), [0, 0, .5], "Rodas e pneus do eixo dianteiro.", ["Calibragem", "Sulcos e desgaste irregular", "Cortes e bolhas"], .55],
+  [43, "Pneus e rodas traseiros (duplos)", "susp", 250, 345, fParC(2, [-2.2, .5, .95], .5, .55, 18), [0, 0, .5], "Rodas e pneus duplos do eixo traseiro.", ["Calibragem dos dois pneus", "Sulcos e desgaste irregular", "Pedras entre os pneus duplos"], .55],
+  [44, "Parafusos de roda", "susp", 730, 290, fStuds(3.7, 1.17), [0, 0, .7], "Prendem as rodas ao cubo. Aperto com torquímetro, em cruz.", ["Reaperto depois de toda troca de pneu", "Porca faltando ou com rosca danificada", "Ferrugem escorrida (sinal de porca solta)"]],
+  [45, "Caixa de direção", "direcao", 860, 295, [fB([5.3, .62, .72], [.3, .25, .25])], [.4, .2, 1.2], "Transforma o giro do volante no movimento das rodas dianteiras.", ["Folga no volante", "Vazamento do óleo hidráulico", "Fixação no chassi"]],
+  [46, "Bomba e reservatório da direção hidráulica", "direcao", 895, 280, [fB([4.95, 1.35, .62], [.18, .2, .18])], [.3, .8, 1.1], "Dá a pressão hidráulica que deixa o volante leve.", ["Nível do óleo", "Ruído ao virar", "Mangueiras de pressão"]],
+  [47, "Barra e terminais de direção", "direcao", 820, 315, [fC(2, [3.9, .45, 0], .03, 1.5, 6)], [.3, -.4, 0], "Ligam a caixa de direção às rodas.", ["Folga nos terminais", "Coifas rasgadas", "Alinhamento"]],
+  [48, "Coluna de direção e volante", "direcao", 935, 118, [fC(1, [5.55, 1.65, .72], .04, .9, 6), fC(1, [5.5, 2.12, .72], .22, .04, 16)], [.4, .6, .6], "Liga o volante à caixa de direção.", ["Folga na coluna", "Cruzetas da coluna", "Regulagem e trava"]],
+  [49, "Alternador", "eletrica", 855, 185, [fC(0, [5.1, 1.38, .5], .12, .22, 12)], [.3, 1.4, 1.3], "Recarrega as baterias e alimenta a parte elétrica com o motor ligado.", ["Tensão de carga no painel", "Ruído no rolamento", "Conexões"]],
+  [50, "Correia do alternador", "eletrica", 845, 145, [fC(0, [5.3, 1.38, .5], .16, .03, 16)], [.6, 1.6, 1.3], "Aciona o alternador.", ["Trincas e desgaste", "Tensão correta", "Tensor e polias"]],
+  [51, "Motor de partida", "eletrica", 720, 262, [fC(0, [4.1, .72, .45], .08, .3, 10)], [0, -.3, 1.2], "Gira o motor na partida.", ["Partida lenta ou com ruído", "Cabos e conexões"]],
+  [52, "Baterias", "eletrica", 365, 262, [fB([-.9, .6, .8], [.6, .3, .45])], [0, 0, 1.5], "Dão a partida e mantêm a parte elétrica com o motor desligado.", ["Terminais limpos e apertados", "Tensão em repouso", "Fixação da caixa"]],
+  [53, "Chave geral e cabos de bateria", "eletrica", 335, 225, [fB([-.5, .6, .95], [.12, .15, .08])], [0, .4, 1.4], "Desliga toda a parte elétrica e leva a corrente das baterias.", ["Funcionamento da chave", "Cabos sem atrito ou aquecimento"]],
+  [54, "Central elétrica e fusíveis", "eletrica", 905, 70, [fB([5.6, 2.0, -.95], [.25, .6, .35])], [.7, .3, .8], "Distribui e protege os circuitos do ônibus.", ["Fusíveis e relés corretos", "Oxidação nos conectores", "Tampa fechada e sem umidade"]],
+  [55, "Painel de instrumentos", "eletrica", 955, 160, [fB([5.75, 1.95, .4], [.2, .3, 1.0])], [.8, .5, 0], "Mostra velocidade, rotação, pressão do ar, temperatura e avisos.", ["Luzes de aviso", "Manômetros de ar", "Iluminação do painel"]],
+  [56, "Faróis e lanternas dianteiros", "eletrica", 970, 235, fPar(fB, [6.02, .9, .85], [.04, .2, .3]), [.6, 0, .3], "Iluminação e sinalização da frente.", ["Lâmpadas e regulagem", "Setas e pisca-alerta", "Lentes trincadas"]],
+  [57, "Lanternas traseiras", "eletrica", 50, 230, fPar(fB, [-6.02, 1.1, .95], [.04, .45, .2]), [-.6, 0, .3], "Sinalização da traseira: freio, setas, ré e placa.", ["Luz de freio", "Setas e ré", "Luz da placa"]],
+  [58, "Tacógrafo", "eletrica", 975, 195, [fB([5.7, 2.25, .2], [.12, .1, .25])], [.6, .6, 0], "Registra velocidade, tempo e distância.", ["Disco ou registro do dia", "Lacres", "Verificação metrológica em dia"]],
+  [59, "Ar-condicionado", "carroc", 500, 46, [fB([0, 3.33, 0], [2.4, .26, 1.6])], [0, 1.1, 0], "Climatiza o salão de passageiros.", ["Filtros de ar limpos", "Temperatura de saída", "Dreno sem pingar no salão"]],
+  [60, "Porta dianteira", "carroc", 869, 110, [fB([5.3, 1.65, 1.24], [.85, 2.5, .05])], [0, 0, .9], "Embarque dos passageiros, acionada a ar.", ["Abre e fecha sem tranco", "Borrachas de vedação", "Sensor anti-esmagamento"], .55],
+  [61, "Porta central e elevador", "carroc", 500, 170, [fB([.6, 1.65, 1.24], [1.2, 2.5, .05]), fB([.6, .42, .98], [1.0, .06, .5])], [0, 0, .9], "Desembarque e plataforma para cadeira de rodas.", ["Ciclo completo do elevador", "Trava e sinal sonoro", "Borrachas e sensores da porta"], .55],
+  [62, "Para-brisa e limpadores", "carroc", 965, 80, [fB([6.0, 2.3, 0], [.03, 1.2, 2.2])], [.9, 0, 0], "Visibilidade do motorista.", ["Trincas no vidro", "Palhetas e esguicho", "Desembaçador"], .35],
+  [63, "Espelhos retrovisores", "carroc", 985, 120, fPar(fB, [6.25, 2.3, 1.35], [.08, .35, .2]), [.5, 0, .5], "Visão das laterais e da traseira.", ["Regulagem", "Espelho trincado", "Fixação do braço"]],
+  [64, "Janelas e saídas de emergência", "carroc", 300, 120, fPar(fB, [-1.0, 2.3, 1.255], [8, 1.1, .03]), [0, 0, .8], "Janelas do salão e as saídas de emergência sinalizadas.", ["Martelos e sinalização", "Vidros trincados", "Trincos funcionando"], .3],
+  [65, "Bancos e cintos", "carroc", 160, 200, fPar(fB, [-1.5, .95, .6], [7, .5, .9]), [0, 1.6, 0], "Assentos do salão e do motorista.", ["Fixação no piso", "Estofado rasgado", "Cinto do motorista"], .35],
+  [66, "Catraca e validador", "carroc", 800, 120, [fB([4.4, 1.0, -.6], [.3, .9, .3])], [0, .5, .8], "Controle de acesso e cobrança.", ["Giro da catraca", "Validador ligado e comunicando", "Fixação"]],
+  [67, "Extintor de incêndio", "carroc", 760, 110, [fC(1, [5.0, .75, -.9], .08, .45, 10)], [.3, .3, .8], "Combate a princípio de incêndio.", ["Validade e manômetro na faixa verde", "Lacre e fixação", "Acesso desobstruído"]]
+];
+/* rodoviário: motor, arrefecimento, câmbio e o que o motor aciona vão para a traseira; cardan curto; suspensão a ar; bagageiros */
+const FES_MOVE = new Set([1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 17, 18, 22, 31, 32, 46, 49, 50, 51]);
+const FES_ROD = {
+  7: { nome: "Coletor e tubo de escape", x: 95, y: 300, geo: [fC(0, [-4.95, .42, -.55], .07, 1.4, 8)] },
+  8: { x: 60, y: 268, geo: [fB([-5.55, .95, .78], [.5, .45, .35])] },
+  19: { x: 330, y: 300, geo: [fC(0, [-3.0, .6, -.72], .025, 4.6, 6)] },
+  33: { x: 690, y: 170, geo: [fC(1, [5.0, 1.55, .45], .03, .7, 6), fB([.6, 1.05, .25], [8.4, .04, .04])] },
+  34: { x: 175, y: 278, geo: [fC(0, [-3.0, .62, 0], .06, 1.1, 8)] },
+  35: { x: 160, y: 305, geo: [fB([-2.5, .62, 0], [.12, .12, .12]), fB([-3.5, .62, 0], [.12, .12, .12])] },
+  38: { nome: "Bolsas de ar dianteiras", x: 735, y: 232, geo: fParC(1, [3.7, .8, .62], .13, .25, 12), fn: "Suspensão a ar do eixo dianteiro: sustenta a carroceria e mantém a altura.", chk: ["Vazamento de ar", "Borracha trincada", "Válvula niveladora"] },
+  39: { nome: "Bolsas de ar traseiras", x: 330, y: 236, geo: [...fParC(1, [-1.75, .8, .62], .14, .25, 12), ...fParC(1, [-2.65, .8, .62], .14, .25, 12)], fn: "Suspensão a ar do eixo traseiro: sustenta a carroceria e mantém a altura.", chk: ["Vazamento de ar", "Borracha trincada", "Válvula niveladora"] },
+  61: { nome: "Bagageiros e portinholas", x: 560, y: 205, geo: [fB([.8, .75, 1.22], [4.2, .7, .06])], fn: "Compartimentos de bagagem entre os eixos.", chk: ["Fechaduras e travas", "Borrachas de vedação", "Amortecedores das portinholas"] },
+  66: { nome: "Validador (bilhetagem)", x: 800, y: 120, fn: "Validação de passagens e bilhetes.", chk: ["Validador ligado e comunicando", "Fixação"] },
+  /* posições 2D ajustadas na traseira para os marcadores não se sobreporem */
+  1: { x: 100, y: 222 }, 2: { x: 90, y: 262 }, 3: { x: 130, y: 232 }, 4: { x: 82, y: 160 }, 5: { x: 125, y: 300 }, 6: { x: 112, y: 178 }, 9: { x: 140, y: 200 }, 12: { x: 195, y: 245 }, 36: { x: 250, y: 300 }, 46: { x: 260, y: 262 }, 17: { x: 50, y: 150 }, 22: { x: 60, y: 200 }, 18: { x: 230, y: 330 }, 35: { x: 140, y: 335 }, 10: { x: 200, y: 215 }, 11: { x: 215, y: 165 }, 13: { x: 180, y: 135 }, 14: { x: 165, y: 222 },
+  15: { x: 185, y: 180 },   30: { x: 175, y: 320 },  41: { x: 225, y: 262 },  49: { x: 150, y: 165 }, 51: { x: 135, y: 262 }, 53: { x: 360, y: 225 }, 65: { x: 300, y: 200 }, 31: { x: 60, y: 330 }, 32: { x: 95, y: 330 }
+};
+function fesGabarito(arr) {
+  const rod = arr === "r", clone = o => JSON.parse(JSON.stringify(o));
+  return FES_GAB_U.map(([n, nome, sis, x, y, p, e, fn, chk, op]) => {
+    let c = { n, nome, sis, x, y, geo: { p: clone(p), e: e.slice(), op: op || 1 }, fn, chk: chk.slice() };
+    if (rod && FES_MOVE.has(n)) {
+      c.x = Math.round(45 + (x - 740) * 0.75); c.geo.e[0] = -c.geo.e[0];
+      c.geo.p.forEach(q => { const meio = q.t === "b" ? q.s[0] / 2 : q.ax === 0 ? q.l / 2 : q.r; q.c[0] = Math.max(-5.95 + meio, -q.c[0] - .4); });
+    }
+    const o = rod ? FES_ROD[n] : null;
+    if (o) { c = Object.assign(c, { nome: o.nome || c.nome, x: o.x != null ? o.x : c.x, y: o.y != null ? o.y : c.y, fn: o.fn || c.fn, chk: o.chk || c.chk }); if (o.geo) c.geo.p = clone(o.geo); }
+    return Object.assign(c, { ivKm: null, ivDias: null, cod: "", tq: "", obs: "" });
+  });
+}
+
+/* ---------- estado e leitura ---------- */
+const FES = { cats: [], comps: [], listC: undefined, listP: undefined, km: {}, colManut: false, colNc: false, em: 0, erro: "", carregando: null,
+  modo: "2d", sys: "todos", sel: 1, yaw: -.62, pitch: .38, vista: "livre", zoom: 1, sep: 0, carroc: true, numeros: true, amplia: false,
+  ed: { cat: "", sel: 0, arr: null, sujo: false } };
+const fesDrag = { on: false, moved: false, x: 0, y: 0, yaw: 0, pitch: 0, raf: 0 };
+const fesVe = () => !!session.n1 || frotaVe("veic") || frotaVe("geral");
+const fesEd = () => !(typeof vcAtivo === "function" && vcAtivo()) && (!!session.n1 || pagNivel("frota", "estr") === "proprietario");
+const fesJ = (s, d) => { try { const v = JSON.parse(s || ""); return v == null ? d : v; } catch (e) { return d; } };
+const fesNorm = s => normName(s).replace(/[^a-z0-9]/g, "");
+async function fesCarregar(force) {
+  if (FES.carregando) return FES.carregando;
+  if (!force && FES.em && Date.now() - FES.em < 60000) return Promise.resolve();
+  FES.carregando = (async () => {
+    try {
+      await frotaGarantir(!FROTA.carregadoEm || Date.now() - FROTA.carregadoEm > 60000);
+      if (!FROTA.site) throw new Error(FROTA.erro || "site da Frota indisponível");
+      const ls = await SP.lists(FROTA.site.id), acha = k => ls.find(l => l.displayName === LISTS[k].displayName) || null;
+      FES.listC = acha("frota_estc"); FES.listP = acha("frota_estp");
+      const ler = async l => l ? (await SP.items(FROTA.site.id, l.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})) : [];
+      const [cs, ps] = await Promise.all([ler(FES.listC), ler(FES.listP)]); FES.cats = cs; FES.comps = ps;
+      const cols = async l => { if (!l) return false; try { const r = await graph(`/sites/${FROTA.site.id}/lists/${l.id}/columns?$select=name`); return !!(r && r.value && r.value.some(c => c.name === "Componentes")); } catch (e) { return false; } };
+      [FES.colManut, FES.colNc] = await Promise.all([cols(FROTA.listManut), cols(FROTA.listNc)]);
+      FES.km = {}; const dl = acha("dsl_abast");
+      if (dl) { try { (await graphAll(`/sites/${FROTA.site.id}/lists/${dl.id}/items?$expand=fields($select=Veiculo,Hodometro,Data,Del)&$top=999`)).forEach(it => { const f = it.fields || {}, v = fesNorm(f.Veiculo), km = Number(f.Hodometro) || 0, d = ymd(f.Data || "");
+          if (!v || !km || f.Del === true || f.Del === "true") return; const o = FES.km[v]; if (!o || d > o.d || (d === o.d && km > o.km)) FES.km[v] = { km, d, fonte: "abastecimento (Controle de Diesel)" }; }); } catch (e) {} }
+      FES.erro = "";
+      FES.em = Date.now();
+    } catch (e) { FES.erro = String((e && e.message) || e); FES.em = 0; }
+  })().finally(() => { FES.carregando = null; });
+  return FES.carregando;
+}
+/* componentes de um catálogo gravado → formato interno */
+function fesDaLista(cid) {
+  return FES.comps.filter(p => String(p.Catalogo) === String(cid)).map(p => {
+    const g = fesJ(p.Geo, {}); return { _id: p._id, n: Number(p.Numero) || 0, nome: String(p.Title || ""), sis: FES_SYSNOME[p.Sistema] ? p.Sistema : "carroc", x: Number(p.X) || 500, y: Number(p.Y) || 190,
+      geo: { p: (Array.isArray(g.p) ? g.p : []).filter(q => q && (q.t === "b" || q.t === "c") && Array.isArray(q.c) && q.c.length === 3 && (q.t === "b" ? Array.isArray(q.s) && q.s.length === 3 : q.r > 0 && q.l > 0)).map(q => q.t === "b" ? fB(q.c.map(Number), q.s.map(Number)) : fC(Number(q.ax) || 0, q.c.map(Number), Number(q.r), Number(q.l), Number(q.seg) || 12)), e: Array.isArray(g.e) && g.e.length === 3 ? g.e.map(Number) : [0, 0, 0], op: Number(g.op) || 1 }, fn: p.Funcao || "", chk: String(p.Verificar || "").split(/\n+/).map(s => s.trim()).filter(Boolean),
+      ivKm: Number(p.IntervaloKm) || null, ivDias: Number(p.IntervaloDias) || null, cod: p.CodigoPeca || "", tq: p.Torque || "", obs: p.Observacao || "" };
+  }).sort((a, b) => a.n - b.n);
+}
+const fesArrDe = cat => String(cat && cat.Arranjo || "").startsWith("Rodovi") ? "r" : "u";
+const fesModelos = cat => String(cat && cat.Modelos || "").split(/\n+/).map(l => l.split("|").map(s => s.trim())).filter(x => x[0]);
+/* catálogo do veículo: pela marca e modelo do chassi + carroceria; sem catálogo, o gabarito pelo Tipo */
+function fesCatDoVeic(v) {
+  const ch = fesNorm([v.ChassiMarca, v.ChassiModelo].filter(Boolean).join(" ")), ca = fesNorm([v.CarroceriaMarca, v.Carroceria].filter(Boolean).join(" "));
+  const cat = ch ? FES.cats.find(c => fesModelos(c).some(([a, b]) => fesNorm(a) === ch && (!b || fesNorm(b) === ca))) : null;
+  if (cat) { const comps = fesDaLista(cat._id); if (comps.length) return { cat, arr: fesArrDe(cat), comps, gab: false }; }
+  const arr = /rodovi/i.test(String(v.Tipo || "")) ? "r" : "u";
+  return { cat: null, arr, comps: fesGabarito(arr), gab: true };
+}
+/* km atual: o mais recente entre o último abastecimento e a última manutenção com km */
+function fesKm(v) {
+  const p = fesNorm(v.Title), a = FES.km[p] || null;
+  const ms = (FROTA.manut || []).filter(m => fesNorm(m.Veiculo) === p && Number(m.Km) > 0).map(m => ({ km: Number(m.Km), d: ymd(m.DataFim || m.DataInicio || ""), fonte: "manutenção" })).sort((x, y) => y.d.localeCompare(x.d) || y.km - x.km)[0] || null;
+  if (a && ms) return a.d > ms.d || (a.d === ms.d && a.km >= ms.km) ? a : ms;
+  return a || ms;
+}
+const fesCompsDe = m => String(m && m.Componentes || "").split(/[;\n]+/).map(s => { const x = s.trim().match(/^(\d+)/); return x ? Number(x[1]) : null; }).filter(n => n != null);
+const fesData = s => s ? fmtDate(s) : "—";
+const fesKmTxt = n => n == null ? "—" : Number(n).toLocaleString("pt-BR") + " km";
+/* situação de cada componente no veículo */
+function fesSituacao(v, R) {
+  const p = fesNorm(v.Title), km = fesKm(v), hoje = todayISO(), cat = R.cat || {};
+  const pk = (Number(cat.LimiarKm) || 10) / 100, pd = (Number(cat.LimiarDias) || 10) / 100;
+  const doV = (FROTA.manut || []).filter(m => fesNorm(m.Veiculo) === p), ncV = (FROTA.ncs || []).filter(m => fesNorm(m.Veiculo) === p);
+  return R.comps.map(c => {
+    const ms = doV.filter(m => fesCompsDe(m).includes(c.n)), ncs = ncV.filter(m => fesCompsDe(m).includes(c.n));
+    const conc = ms.filter(m => m.Situacao === "Concluída").map(m => ({ m, d: ymd(m.DataFim || m.DataInicio || ""), km: Number(m.Km) || null })).sort((a, b) => b.d.localeCompare(a.d))[0] || null;
+    const hist = ms.map(m => ({ d: ymd(m.DataFim || m.DataInicio || ""), t: `${m.Tipo || "Manutenção"}: ${m.Title || ""}${m.Situacao === "Aberta" ? " (aberta)" : ""}${m.Km ? ` · ${fesKmTxt(m.Km)}` : ""}` }))
+      .concat(ncs.map(n => ({ d: ymd(n.Abertura || ""), t: `Não conformidade ${n.Gravidade || ""}: ${n.Title || ""}${n.Situacao === "Concluída" ? " (concluída)" : " (aberta)"}` }))).sort((a, b) => b.d.localeCompare(a.d));
+    const o = Object.assign({}, c, { ult: conc, hist, st: "semiv", prox: "", falta: "" });
+    if (!c.ivKm && !c.ivDias) return o;
+    if (!conc) { o.st = "semreg"; return o; }
+    const limD = c.ivDias ? Math.min(30, Math.max(3, Math.round(c.ivDias * pd))) : 0, limK = c.ivKm ? c.ivKm * pk : 0;
+    const proxKm = c.ivKm && conc.km != null ? conc.km + c.ivKm : null, proxD = c.ivDias ? ymd(new Date(dLocal(conc.d).getTime() + c.ivDias * 864e5)) : null;
+    const fk = proxKm != null && km ? proxKm - km.km : null, fd = proxD ? Math.round((dLocal(proxD) - dLocal(hoje)) / 864e5) : null;
+    if (fk == null && fd == null) { o.st = "semkm"; o.prox = proxKm != null ? fesKmTxt(proxKm) : ""; o.falta = conc.km == null ? "última manutenção sem km" : "sem km atual do ônibus"; return o; }
+    const venc = (fk != null && fk < 0) || (fd != null && fd < 0), perto = (fk != null && fk <= limK) || (fd != null && fd <= limD);
+    o.st = venc ? "err" : perto ? "warn" : "ok";
+    o.prox = [proxKm != null ? fesKmTxt(proxKm) : "", proxD ? fmtDate(proxD) : ""].filter(Boolean).join(" ou ");
+    const t = []; if (fk != null) t.push(fk < 0 ? `vencida há ${Math.abs(fk).toLocaleString("pt-BR")} km` : `faltam ${fk.toLocaleString("pt-BR")} km`); if (fd != null) t.push(fd < 0 ? `vencida há ${-fd} dia(s)` : `faltam ${fd} dia(s)`);
+    o.falta = t.join(" · "); return o;
+  });
+}
+const fesConta = L => ({ ok: L.filter(c => c.st === "ok").length, warn: L.filter(c => c.st === "warn").length, err: L.filter(c => c.st === "err").length, semreg: L.filter(c => c.st === "semreg" || c.st === "semkm").length, semiv: L.filter(c => c.st === "semiv").length });
+const fesChip = st => { const s = FES_ST[st] || FES_ST.semiv; return `<span class="fes-chip" style="color:${s[1]};background:${s[2]}">${esc(s[0])}</span>`; };
+
+/* ---------- 3D: malha, projeção e ordenação por profundidade ---------- */
+function fesFaces(p) {
+  if (p.t === "b") { const [cx, cy, cz] = p.c, hx = p.s[0] / 2, hy = p.s[1] / 2, hz = p.s[2] / 2, v = (a, b, c) => [cx + a * hx, cy + b * hy, cz + c * hz];
+    return [{ v: [v(1, -1, -1), v(1, 1, -1), v(1, 1, 1), v(1, -1, 1)], n: [1, 0, 0] }, { v: [v(-1, -1, -1), v(-1, -1, 1), v(-1, 1, 1), v(-1, 1, -1)], n: [-1, 0, 0] },
+      { v: [v(-1, 1, -1), v(-1, 1, 1), v(1, 1, 1), v(1, 1, -1)], n: [0, 1, 0] }, { v: [v(-1, -1, -1), v(1, -1, -1), v(1, -1, 1), v(-1, -1, 1)], n: [0, -1, 0] },
+      { v: [v(-1, -1, 1), v(1, -1, 1), v(1, 1, 1), v(-1, 1, 1)], n: [0, 0, 1] }, { v: [v(-1, -1, -1), v(-1, 1, -1), v(1, 1, -1), v(1, -1, -1)], n: [0, 0, -1] }]; }
+  const a = p.ax || 0, u = (a + 1) % 3, w = (a + 2) % 3, seg = Math.max(4, Math.min(24, p.seg || 12)), out = [], ring = [[], []];
+  for (let i = 0; i < seg; i++) { const t = i / seg * Math.PI * 2; for (let k = 0; k < 2; k++) { const q = p.c.slice(); q[a] += (k ? 1 : -1) * p.l / 2; q[u] += p.r * Math.cos(t); q[w] += p.r * Math.sin(t); ring[k].push(q); } }
+  for (let i = 0; i < seg; i++) { const j = (i + 1) % seg, t = (i + .5) / seg * Math.PI * 2, n = [0, 0, 0]; n[u] = Math.cos(t); n[w] = Math.sin(t); out.push({ v: [ring[0][i], ring[0][j], ring[1][j], ring[1][i]], n }); }
+  const n0 = [0, 0, 0], n1 = [0, 0, 0]; n0[a] = -1; n1[a] = 1; out.push({ v: ring[0], n: n0 }, { v: ring[1], n: n1 }); return out;
+}
+const FES_CTX = [fB([3.7, .5, 0], [.12, .12, 1.7])].map(p => ({ cor: "#4a5060", op: .8, f: fesFaces(p) }));
+const FES_CARF = fesFaces(fB([0, 1.775, 0], [12, 2.85, 2.5]));
+const FES_LINHAS = []; [1.255, -1.255].forEach(z => { FES_LINHAS.push({ n: [0, 0, Math.sign(z)], v: [[-5.6, 1.75, z], [4.6, 1.75, z], [4.6, 2.85, z], [-5.6, 2.85, z], [-5.6, 1.75, z]] }); for (let x = -4.3; x < 4.6; x += 1.3) FES_LINHAS.push({ n: [0, 0, Math.sign(z)], v: [[x, 1.75, z], [x, 2.85, z]] }); });
+FES_LINHAS.push({ n: [1, 0, 0], v: [[6.005, 1.3, -1.1], [6.005, 1.3, 1.1], [6.005, 2.95, 1.1], [6.005, 2.95, -1.1], [6.005, 1.3, -1.1]] });
+const FES_CHAO = []; for (let x = -7; x <= 7; x++) FES_CHAO.push([[x, 0, -2.2], [x, 0, 2.2]]); for (let z = -2; z <= 2; z++) FES_CHAO.push([[-7, 0, z], [7, 0, z]]);
+const FES_LUZ = (() => { const l = [-.35, .75, .56], m = Math.hypot(...l); return l.map(x => x / m); })();
+const FES_VISTAS = [["livre", "3/4", -.62, .38], ["dir", "Lateral direita", 0, .02], ["esq", "Lateral esquerda", Math.PI, .02], ["frente", "Frente", -Math.PI / 2, .05], ["cima", "Por cima", 0, 1.54], ["baixo", "Por baixo", 0, -1.54]];
+function fesTom(h, n) { const d = Math.max(0, n[0] * FES_LUZ[0] + n[1] * FES_LUZ[1] + n[2] * FES_LUZ[2]), k = .5 + .55 * d; return "rgb(" + [1, 3, 5].map(i => Math.min(255, Math.round(parseInt(h.slice(i, i + 2), 16) * k))).join(",") + ")"; }
+function fesPartes(L) {   /* cache por lista de componentes */
+  if (L._partes) return L._partes; const out = [];
+  L.forEach(c => (c.geo.p || []).forEach((p, i) => { try { out.push({ id: c.n, s: c.sis, cor: FES_COR[c.sis] || "#94a3b8", op: c.geo.op || 1, e: c.geo.e || [0, 0, 0], sg: (p.c[2] < 0 ? -1 : 1), f: fesFaces(p), c: p.c, primeira: i === 0, st: c.st }); } catch (e) {} }));
+  Object.defineProperty(L, "_partes", { value: out, enumerable: false, configurable: true }); return out;
+}
+const fesAtivo = c => FES.sys === "todos" || c.sis === FES.sys || c.s === FES.sys;
+function fes3dSvg(L) {
+  const P = fesPartes(L), k = FES.sep / 100, cy = Math.cos(FES.yaw), sy = Math.sin(FES.yaw), cp = Math.cos(FES.pitch), sp = Math.sin(FES.pitch);
+  const rot = p => { const x1 = p[0] * cy + p[2] * sy, z1 = -p[0] * sy + p[2] * cy; return [x1, p[1] * cp - z1 * sp, p[1] * sp + z1 * cp]; };
+  const desl = p => [p.e[0] * k, p.e[1] * k, p.e[2] * k * p.sg];
+  const ps = P.find(p => p.id === FES.sel && p.primeira) || P[0] || { c: [0, 1.6, 0], e: [0, 0, 0], sg: 1 }, so = desl(ps);
+  const fz = Math.min(1, Math.max(0, (FES.zoom - 1) / 1.2)), alvo = rot([(ps.c[0] + so[0]) * fz, 1.6 + (ps.c[1] + so[1] - 1.6) * fz, (ps.c[2] + so[2]) * fz]);
+  const E = 64 * FES.zoom, tela = q => [500 + (q[0] - alvo[0]) * E, 310 - (q[1] - alvo[1]) * E], pts = v => v.map(q => tela(q).map(n => n.toFixed(1)).join(",")).join(" ");
+  const corpo = [], tras = [], frente = [];
+  const add = (f, off, cor, op, id, ativo) => { const n = rot(f.n); if (n[2] <= .001) return; const v = f.v.map(q => rot([q[0] + off[0], q[1] + off[1], q[2] + off[2]])); let d = 0; v.forEach(q => d += q[2]);
+    const sel = id === FES.sel, clic = ativo && id;
+    corpo.push({ d: d / v.length, h: `<polygon class="fes-face" points="${pts(v)}" fill="${fesTom(sel ? "#d6421f" : cor, n)}" fill-opacity="${ativo ? op : .1}" stroke="${sel ? "#8f2a12" : "rgba(15,30,58,.35)"}" stroke-opacity="${ativo ? 1 : .3}" stroke-width=".6" stroke-linejoin="round"${clic ? ` data-act="sel" data-id="${id}" style="cursor:pointer"` : ` style="pointer-events:none"`}/>` }); };
+  P.forEach(p => { const at = fesAtivo(p), off = desl(p); p.f.forEach(f => add(f, off, p.cor, p.op, p.id, at)); });
+  FES_CTX.forEach(p => p.f.forEach(f => add(f, [0, 0, 0], p.cor, p.op, 0, true)));
+  corpo.sort((a, b) => a.d - b.d);
+  if (FES.carroc) { FES_CARF.forEach(f => { const n = rot(f.n), na = n[2] > 0; (na ? frente : tras).push(`<polygon points="${pts(f.v.map(rot))}" fill="#0f1e3a" fill-opacity="${na ? .035 : .02}" stroke="#0f1e3a" stroke-opacity="${na ? .55 : .18}" stroke-width="1.4" stroke-linejoin="round" style="pointer-events:none"/>`); });
+    FES_LINHAS.forEach(l => { if (rot(l.n)[2] > .02) frente.push(`<polyline points="${pts(l.v.map(rot))}" fill="none" stroke="#0f1e3a" stroke-opacity=".3" stroke-width="1" style="pointer-events:none"/>`); }); }
+  let bal = "";
+  if (FES.numeros) bal = P.filter(p => p.primeira && fesAtivo(p)).map(p => { const off = desl(p), q = rot([p.c[0] + off[0], p.c[1] + off[1], p.c[2] + off[2]]), [ax, ay] = tela(q), x = ax + 22, y = ay - 26, sel = p.id === FES.sel;
+    const cor = sel ? "#d6421f" : ({ err: "#b3271e", warn: "#9a6a00" })[p.st] || "#0f1e3a";
+    return { d: q[2] + (sel ? 100 : 0), h: `<g class="fes-bal" data-act="sel" data-id="${p.id}" style="cursor:pointer"><line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#0f1e3a" stroke-opacity=".45"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${sel ? 14 : 11}" fill="${cor}" stroke="#fff" stroke-width="2"/><text x="${x.toFixed(1)}" y="${(y + 4.2).toFixed(1)}" text-anchor="middle" fill="#fff" style="font:800 ${p.id > 99 ? 9 : 11}px Manrope,sans-serif;pointer-events:none">${p.id}</text></g>` }; }).sort((a, b) => a.d - b.d).map(r => r.h).join("");
+  return FES_CHAO.map(g => `<polyline points="${pts(g.map(rot))}" fill="none" stroke="#dfe3e8" style="pointer-events:none"/>`).join("") + tras.join("") + corpo.map(r => r.h).join("") + frente.join("") + bal;
+}
+
+/* ---------- 2D ---------- */
+function fes2dFundo(arr) {
+  const rod = arr === "r", jan = rod ? [[62, 96], [166, 96], [270, 96], [374, 96], [478, 96], [582, 96], [686, 96]] : [[62, 88], [158, 88], [254, 88], [350, 108], [542, 88], [638, 88], [734, 98]];
+  const sob = rod ? [[50, 185, 160, 78], [44, 180, 22, 86], [575, 254, 68, 30, 14], [450, 250, 90, 36], [414, 255, 32, 28], [338, 250, 64, 34], [330, 196, 330, 44], [695, 226, 70, 9]] : [[770, 185, 110, 78], [905, 180, 32, 86], [640, 214, 60, 44], [558, 254, 68, 30, 14], [450, 250, 90, 36], [414, 255, 32, 28], [338, 250, 64, 34], [215, 228, 70, 9], [695, 226, 70, 9]];
+  return `<svg viewBox="0 0 1000 380" aria-hidden="true"><line x1="10" y1="340" x2="990" y2="340" stroke="#d3d8de" stroke-width="2"/><rect x="400" y="38" width="200" height="18" fill="#e2e5e9" stroke="#8a9099" stroke-width="1.5"/>
+    <path d="M40 72 Q40 56 56 56 L915 56 Q952 56 957 92 L962 272 Q962 290 944 290 L40 290 Z" fill="#fff" stroke="#0f1e3a" stroke-width="2.5"/>
+    <path d="M902 66 L948 66 Q953 70 954 96 L956 182 L902 182 Z" fill="#eef2f8" stroke="#8a9099" stroke-width="1.5"/>
+    <g fill="#eef2f8" stroke="#d3d8de" stroke-width="1.5">${jan.map(([x, w]) => `<rect x="${x}" y="80" width="${w}" height="82"/>`).join("")}</g>
+    ${rod ? "" : `<rect x="468" y="76" width="64" height="210" fill="#eef2f8" stroke="#0f1e3a" stroke-width="2"/><line x1="500" y1="76" x2="500" y2="286" stroke="#0f1e3a" stroke-width="1.5"/>`}
+    <rect x="842" y="76" width="54" height="210" fill="#eef2f8" stroke="#0f1e3a" stroke-width="2"/><line x1="869" y1="76" x2="869" y2="286" stroke="#0f1e3a" stroke-width="1.5"/>
+    <line x1="40" y1="${rod ? 190 : 245}" x2="960" y2="${rod ? 190 : 245}" stroke="#d3d8de" stroke-width="1.5" stroke-dasharray="6 6"/>
+    <circle cx="250" cy="290" r="50" fill="#3b4352"/><circle cx="250" cy="290" r="22" fill="#8a9099"/><circle cx="730" cy="290" r="50" fill="#3b4352"/><circle cx="730" cy="290" r="22" fill="#8a9099"/>
+    <g fill="rgba(15,30,58,0.06)" stroke="#5b6068" stroke-width="1.8" stroke-dasharray="5 4">${sob.map(([x, y, w, h, rx]) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"${rx ? ` rx="${rx}"` : ""}/>`).join("")}</g>
+    ${rod ? `<line x1="212" y1="296" x2="272" y2="294" stroke="#5b6068" stroke-width="5" stroke-dasharray="10 5"/>` : `<line x1="640" y1="300" x2="272" y2="294" stroke="#5b6068" stroke-width="5" stroke-dasharray="10 5"/><path d="M882 250 Q895 262 906 250" fill="none" stroke="#5b6068" stroke-width="2.5"/>`}</svg>`;
+}
+function fes2dHtml(L, arr, editor) {
+  const muitos = FES.sys === "todos" && L.length > 30;
+  const hots = L.map(c => `<button type="button" class="fes-hot${c.n === FES.sel ? " sel" : ""}${fesAtivo(c) ? "" : " off"}${muitos ? " mini" : ""}" style="left:${c.x / 10}%;top:${c.y / 3.8}%" data-act="sel" data-id="${c.n}" aria-label="${esc(c.n + " · " + c.nome + (editor ? "" : " · " + (FES_ST[c.st] || FES_ST.semiv)[0]))}">${c.n}${c.st === "err" || c.st === "warn" ? `<i style="background:${c.st === "err" ? "#b3271e" : "#d99a00"}"></i>` : ""}</button>`).join("");
+  return `<div class="fes-2dw${FES.amplia ? " amplia" : ""}"><div class="fes-2d" id="fes2d">${fes2dFundo(arr)}${hots}</div></div>
+    <div class="fes-leg"><span><span style="width:16px;height:16px;border-radius:999px;background:#0f1e3a"></span>Componente</span><span><span style="width:16px;height:16px;border-radius:999px;background:#d6421f"></span>Selecionado</span><span><span style="width:10px;height:10px;border-radius:999px;background:#d99a00"></span>A vencer</span><span><span style="width:10px;height:10px;border-radius:999px;background:#b3271e"></span>Vencido</span><span><span style="width:18px;border-top:2px dashed #5b6068"></span>Por baixo da carroceria</span>
+    <button type="button" class="btn mini fes-ampliar" data-act="amplia">${FES.amplia ? "Desenho normal" : "Ampliar desenho"}</button></div>`;
+}
+function fes3dHtml(L) {
+  return `<div class="fes-3d" id="fes3d"><svg viewBox="0 0 1000 600" id="fes3dSvg" role="img" aria-label="Modelo 3D do ônibus com os componentes">${fes3dSvg(L)}</svg>
+    <div class="fes-zoom"><button type="button" data-act="zoom" data-v="-1" aria-label="Afastar">−</button><button type="button" data-act="zoom" data-v="1" aria-label="Aproximar">+</button></div></div>
+    <div class="fes-ctrl"><label>Separar peças <input type="range" min="0" max="100" value="${FES.sep}" id="fesSep"></label>
+    <span style="display:flex;gap:6px"><button type="button" class="btn mini${FES.carroc ? "" : " on"}" data-act="carroc">${FES.carroc ? "Carroceria: raio-x" : "Carroceria: oculta"}</button><button type="button" class="btn mini${FES.numeros ? "" : " on"}" data-act="numeros">${FES.numeros ? "Números: ligados" : "Números: desligados"}</button></span>
+    <span class="sup">Arraste para girar · aproximar foca na peça selecionada</span></div>`;
+}
+
+/* ---------- página do veículo: cartão compacto ---------- */
+{ const p0 = frotaVeicPintar;
+  frotaVeicPintar = function () {
+    const r = p0.apply(this, arguments);
+    try { const body = $("fvBody"), v = frotaVeicPorId(FV.id); if (!body || !v || !fesVe() || body.querySelector(".fes-card")) return r;
+      const lay = body.querySelector(".fv-lay"), html = `<div class="cap-card fes-card" id="fesCard"><div class="cap-card-h"><h3>Estrutura</h3><span class="cap-card-s">componentes por sistema, em 2D e 3D, com a situação de cada um</span><span class="grow"></span><a class="btn mini" href="#/operacional/frota/veiculo/${encodeURIComponent(v._id)}/estrutura">Abrir estrutura</a></div><div id="fesCardBody"><div class="sup">Lendo o catálogo…</div></div></div>`;
+      if (lay) lay.insertAdjacentHTML("afterend", html); else body.insertAdjacentHTML("beforeend", html);
+      const pinta = () => { const b = $("fesCardBody"), vv = frotaVeicPorId(FV.id); if (!b || !vv) return; const R = fesCatDoVeic(vv), L = fesSituacao(vv, R), n = fesConta(L);
+        const top = L.filter(c => c.st === "err").concat(L.filter(c => c.st === "warn")).slice(0, 3);
+        b.innerHTML = `<div class="fes-kpis">${[["Em dia", n.ok, "ok"], ["A vencer", n.warn, "warn"], ["Vencidos", n.err, "err"], ["Sem registro", n.semreg, "semreg"]].map(([t, x, k]) => `<div class="fes-kpi"><span class="fes-label">${t}</span><b style="color:${FES_ST[k][1]}">${x}</b></div>`).join("")}</div>
+          ${top.length ? `<ul class="fes-top">${top.map(c => `<li>${fesChip(c.st)} <b>${c.n} · ${esc(c.nome)}</b> <span class="sup">${esc(c.falta || c.prox || "")}</span></li>`).join("")}</ul>` : ""}
+          <p class="sup" style="margin:6px 0 0">${R.gab ? `Catálogo padrão (${esc(FES_ARR[R.arr])}), sem dados técnicos: ${n.semiv} componente(s) sem intervalo definido.` : `Catálogo ${esc(R.cat.Title || "")} · ${L.length} componentes${n.semiv ? ` · ${n.semiv} sem intervalo definido` : ""}.`}${FES.erro ? ` Não foi possível ler o catálogo (${esc(FES.erro)}).` : ""}</p>`; };
+      if (FES.em) pinta(); fesCarregar().then(pinta);
+    } catch (e) { console.warn("estrutura", e); }
+    return r;
+  }; window.frotaVeicPintar = frotaVeicPintar; }
+
+/* ---------- seção Estrutura do veículo ---------- */
+const FESV = { id: "", L: [], R: null };
+function pageFesVeic() { return `<div class="page fes" id="fesRoot"><div class="cap-empty"><h3>Carregando…</h3></div></div>`; }
+async function renderFesVeic(id) { FESV.id = String(id); await fesCarregar(); fesVeicPintar(); }
+function fesVeicPintar() {
+  const root = $("fesRoot"); if (!root) return; const v = frotaVeicPorId(FESV.id);
+  if (!v) { root.innerHTML = `${frotaCrumbs(null)}<div class="cap-empty"><h3>Veículo não encontrado</h3><p><a href="#/operacional/frota">Voltar para a Frota</a></p></div>`; return; }
+  const R = FESV.R = fesCatDoVeic(v), L = FESV.L = fesSituacao(v, R), n = fesConta(L), km = fesKm(v);
+  if (!L.some(c => c.n === FES.sel)) FES.sel = (L[0] || {}).n || 0;
+  const c = L.find(i => i.n === FES.sel) || L[0], nOn = L.filter(fesAtivo).length, ed = fesEd();
+  const chips = FES_SYS.map(([k, l]) => `<button type="button" class="btn sm fes-sysb${k === FES.sys ? " on" : ""}" data-act="sys" data-k="${k}">${k === "todos" ? "" : `<span class="fes-sw" style="background:${FES_COR[k]}"></span>`}${esc(l)}</button>`).join("");
+  const vistas = FES.modo === "3d" ? `<div class="fes-vistas">${FES_VISTAS.map(([k, l]) => `<button type="button" class="btn mini${FES.vista === k ? " on" : ""}" data-act="vista" data-k="${k}">${l}</button>`).join("")}</div>` : `<span class="sup">${esc(FES_SYSNOME[FES.sys])} · ${nOn} componentes</span>`;
+  const desc = [[v.ChassiMarca, v.ChassiModelo].filter(Boolean).join(" "), [v.CarroceriaMarca, v.Carroceria].filter(Boolean).join(" "), v.Tipo, v.Ano].filter(Boolean).join(" · ");
+  root.innerHTML = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><a href="#/operacional/frota">Veículos</a><span>›</span><a href="#/operacional/frota/veiculo/${encodeURIComponent(v._id)}">${esc(v.Title || "—")}</a><span>›</span><b>Estrutura</b></nav>
+    <div class="cap-topo"><div><h1 style="margin:0">Estrutura · ônibus ${esc(v.Title || "—")}</h1><p class="sup" style="margin:2px 0 0">${esc(desc || "modelo não informado no cadastro")} · ${km ? `${fesKmTxt(km.km)} (${esc(km.fonte)}, ${fesData(km.d)})` : "sem km registrado: a situação conta só pelos dias"}</p></div>
+      <span class="grow"></span><div class="page-actions"><button class="btn ghost" onclick="location.hash='#/operacional/frota/veiculo/${encodeURIComponent(v._id)}'">← Ônibus ${esc(v.Title || "")}</button>${ed ? `<a class="btn" href="#/operacional/frota/estrutura${R.cat ? "?cat=" + encodeURIComponent(R.cat._id) : ""}">Editar catálogo</a>` : ""}</div></div>
+    ${FES.erro ? `<div class="import-help">Não foi possível ler o catálogo (${esc(FES.erro)}). Mostrando o gabarito padrão.</div>` : ""}
+    ${R.gab ? `<div class="import-help fes-aviso"><b>Catálogo padrão (${esc(FES_ARR[R.arr])}).</b> Forma e posição aproximadas, sem dados técnicos: código da peça, torque e intervalos se preenchem no catálogo do modelo. ${ed ? (FES.listC && FES.listP ? `<button class="btn mini" onclick="fesCriarDoVeic('${esc(v._id)}')">Criar o catálogo deste modelo</button>` : `Rode Sistema › Configuração › "Executar tudo" para criar as listas do catálogo.`) : "Peça ao administrador ou ao proprietário da página para criar o catálogo deste modelo."}</div>` : ""}
+    ${!FES.colManut ? `<div class="import-help">A coluna "Componentes" ainda não existe em Frota — Manutenção: ${session.n1 ? "rode Sistema › Configuração › Executar tudo" : "peça a um administrador para rodar a Configuração"}. Até lá, nenhuma manutenção fica ligada a um componente.</div>` : ""}
+    <div class="cap-card fes-veic"><div class="fes-abas" role="tablist" aria-label="Vista"><button type="button" role="tab" class="fes-aba" aria-selected="${FES.modo === "2d"}" data-act="modo" data-k="2d">Esquema 2D</button><button type="button" role="tab" class="fes-aba" aria-selected="${FES.modo === "3d"}" data-act="modo" data-k="3d">Modelo 3D</button></div>
+      <div class="fes-kpis">${[["Em dia", n.ok, "ok"], ["A vencer", n.warn, "warn"], ["Vencidos", n.err, "err"], ["Sem registro", n.semreg, "semreg"], ["Sem intervalo", n.semiv, "semiv"]].map(([t, x, k]) => `<div class="fes-kpi"><span class="fes-label">${t}</span><b style="color:${FES_ST[k][1]}">${x}</b></div>`).join("")}</div></div>
+    <div class="fes-chips" aria-label="Sistemas">${chips}</div>
+    <div class="fes-main"><div class="cap-card fes-draw"><div class="fes-row"><h3 class="fes-h2">${FES.modo === "3d" ? "Modelo 3D simplificado" : "Vista lateral direita"}</h3>${vistas}</div>${FES.modo === "3d" ? fes3dHtml(L) : fes2dHtml(L, R.arr)}</div>
+      <div class="cap-card fes-ficha" id="fesFicha">${c ? fesFichaHtml(c, v, R) : `<p class="sup">Catálogo sem componentes.</p>`}</div></div>
+    <div class="cap-card fes-lista">${fesTabelaHtml(L)}</div>`;
+}
+function fesFichaHtml(c, v, R) {
+  const iv = [c.ivKm ? `a cada ${Number(c.ivKm).toLocaleString("pt-BR")} km` : "", c.ivDias ? `a cada ${c.ivDias} dias` : ""].filter(Boolean).join(" ou ") || "Sem intervalo definido";
+  return `<div style="display:flex;gap:12px;align-items:flex-start"><div class="fes-num">${c.n}</div><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px"><div class="fes-label">${esc(FES_SYSNOME[c.sis] || "")}</div><h2 class="fes-h2" style="font-size:20px;line-height:1.25">${esc(c.nome)}</h2></div>${fesChip(c.st)}</div>
+    ${c.fn ? `<p style="margin:0;font-size:15px;line-height:1.55">${esc(c.fn)}</p>` : ""}
+    ${c.chk.length ? `<div style="display:flex;flex-direction:column;gap:8px"><div class="fes-label">O que verificar</div>${c.chk.map(t => `<div class="fes-li">${esc(t)}</div>`).join("")}</div>` : ""}
+    <div class="fes-grid2"><div style="grid-column:span 2"><span class="fes-label">Intervalo</span><b style="font-weight:600">${esc(iv)}</b></div>
+      <div><span class="fes-label">Última</span>${c.ult ? `${c.ult.km ? fesKmTxt(c.ult.km) + " · " : ""}${fesData(c.ult.d)}` : "Nenhuma manutenção concluída"}</div>
+      <div><span class="fes-label">Próxima</span>${esc(c.prox || "—")}${c.falta ? `<span style="font-size:12.5px;font-weight:700;color:${(FES_ST[c.st] || FES_ST.semiv)[1]}">${esc(c.falta)}</span>` : ""}</div>
+      <div><span class="fes-label">Código da peça</span>${c.cod ? esc(c.cod) : `<span class="sup">A preencher</span>`}</div>
+      <div><span class="fes-label">Torque de aperto</span>${c.tq ? esc(c.tq) : `<span class="sup">A preencher com o manual do fabricante</span>`}</div>
+      ${c.obs ? `<div style="grid-column:span 2"><span class="fes-label">Observação</span>${esc(c.obs)}</div>` : ""}</div>
+    <div style="display:flex;flex-direction:column;gap:8px"><div class="fes-label">Histórico neste ônibus</div>${c.hist.length ? c.hist.slice(0, 8).map(e => `<div class="fes-hist"><b>${fesData(e.d)}</b><span>${esc(e.t)}</span></div>`).join("") : `<div class="sup">Nenhum registro deste componente neste ônibus.</div>`}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">${frotaEd("manut") && FROTA.listManut ? `<button type="button" class="btn primary" data-act="manut">Registrar manutenção</button>` : ""}${frotaEd("nc") && FROTA.listNc ? `<button type="button" class="btn" data-act="nc">Abrir não conformidade</button>` : ""}</div>`;
+}
+function fesTabelaHtml(L) {
+  const linhas = L.filter(fesAtivo).map(c => `<tr${c.n === FES.sel ? ` class="sel"` : ""}><td><button type="button" data-act="sel" data-id="${c.n}"><span style="background:${FES_COR[c.sis] || "#94a3b8"}">${c.n}</span>${esc(c.nome)}</button></td><td class="sup">${esc(FES_SYSNOME[c.sis] || "")}</td><td>${c.ult ? `${c.ult.km ? fesKmTxt(c.ult.km) + " · " : ""}${fesData(c.ult.d)}` : "—"}</td><td>${esc(c.prox || "—")}${c.falta ? `<div class="sup">${esc(c.falta)}</div>` : ""}</td><td>${fesChip(c.st)}</td></tr>`).join("");
+  return `<div class="cap-card-h"><h3>Componentes · ${esc(FES_SYSNOME[FES.sys])}</h3></div><div class="table-wrap fes-tab"><table class="cap-table"><thead><tr><th>Componente</th><th>Sistema</th><th>Última</th><th>Próxima</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table></div>`;
+}
+function fesRedesenhar3d() { const s = $("fes3dSvg"); if (!s) return; const L = $("fesEdRoot") ? FES.ed.L : FESV.L; if (L) s.innerHTML = fes3dSvg(L); }
+/* eventos delegados (seção do veículo e editor) */
+document.addEventListener("click", e => {
+  const root = e.target.closest("#fesRoot, #fesEdRoot"); if (!root) return; const t = e.target.closest("[data-act]"); if (!t || !root.contains(t)) return;
+  const a = t.dataset.act, ehEd = root.id === "fesEdRoot", L = ehEd ? FES.ed.L : FESV.L;
+  if (a === "sel") { if (fesDrag.moved || FES.ed.arrastou) return; FES.sel = +t.dataset.id; if (ehEd) FES.ed.sel = FES.sel; }
+  else if (a === "sys") { FES.sys = t.dataset.k; if (!L.some(c => c.n === FES.sel && fesAtivo(c))) { const f = L.find(fesAtivo); if (f) FES.sel = f.n; } }
+  else if (a === "modo") FES.modo = t.dataset.k;
+  else if (a === "vista") { const v = FES_VISTAS.find(x => x[0] === t.dataset.k); FES.vista = v[0]; FES.yaw = v[2]; FES.pitch = v[3]; }
+  else if (a === "zoom") FES.zoom = Math.max(.6, Math.min(3, +(FES.zoom + .4 * +t.dataset.v).toFixed(2)));
+  else if (a === "carroc") FES.carroc = !FES.carroc;
+  else if (a === "numeros") FES.numeros = !FES.numeros;
+  else if (a === "amplia") FES.amplia = !FES.amplia;
+  else if (a === "manut" || a === "nc") { const v = frotaVeicPorId(FESV.id), c = FESV.L.find(i => i.n === FES.sel); if (!v || !c) return; const comp = `${c.n} · ${c.nome}`;
+    if (a === "manut") manutForm(null, { Veiculo: v.Title, Title: `${c.nome}: `, Componentes: comp }); else ncForm(null, { Veiculo: v.Title, Title: `${c.nome}: `, Componentes: comp }); return; }
+  else return;
+  if (ehEd) fesEdPintar(); else fesVeicPintar();
+});
+document.addEventListener("input", e => { if (e.target.id === "fesSep") { FES.sep = +e.target.value; fesRedesenhar3d(); } });
+document.addEventListener("pointerdown", e => { if (!e.target.closest("#fes3d") || e.target.closest(".fes-zoom")) return; Object.assign(fesDrag, { on: true, moved: false, x: e.clientX, y: e.clientY, yaw: FES.yaw, pitch: FES.pitch }); });
+document.addEventListener("pointermove", e => {
+  if (!fesDrag.on) return; const dx = e.clientX - fesDrag.x, dy = e.clientY - fesDrag.y; if (!fesDrag.moved && Math.hypot(dx, dy) < 5) return; fesDrag.moved = true;
+  FES.yaw = fesDrag.yaw + dx * .01; FES.pitch = Math.max(-1.55, Math.min(1.55, fesDrag.pitch + dy * .01)); FES.vista = "";
+  if (!fesDrag.raf) fesDrag.raf = requestAnimationFrame(() => { fesDrag.raf = 0; fesRedesenhar3d(); });
+});
+{ const solta = () => { if (!fesDrag.on) return; fesDrag.on = false; if (fesDrag.moved) setTimeout(() => { fesDrag.moved = false; }, 0); }; window.addEventListener("pointerup", solta); window.addEventListener("pointercancel", solta); }
+
+/* ---------- manutenção e não conformidade com os componentes ---------- */
+function fesCompsCampo(idPre, veic, val, dis, temCol) {
+  if (!temCol) return `<div class="field full fes-field" data-pre="${idPre}"><label>Componentes (estrutura)</label><div class="hint">${FES.em ? `A coluna "Componentes" ainda não existe nesta lista: rode Sistema › Configuração › Executar tudo.` : "Lendo o catálogo da estrutura…"}</div></div>`;
+  return `<div class="field full fes-field" data-pre="${idPre}"><label>Componentes (estrutura)</label><input type="hidden" id="${idPre}" value="${esc(val || "")}"><div class="fes-pick" id="${idPre}Box" data-dis="${dis ? 1 : 0}">${fesPickHtml(veic, val, dis)}</div><div class="hint">Os componentes atendidos, do catálogo do veículo. A situação de cada um na Estrutura do ônibus vem daqui.</div></div>`;
+}
+function fesPickHtml(veic, val, dis) {
+  const v = (FROTA.veicsTodos || FROTA.veics || []).find(x => fesNorm(x.Title) === fesNorm(veic));
+  if (!v) return `<span class="sup">Escolha o veículo para ver os componentes.</span>`;
+  const L = fesCatDoVeic(v).comps, sel = new Set(fesCompsDe({ Componentes: val }));
+  return FES_SYS.slice(1).map(([k, nome]) => { const cs = L.filter(c => c.sis === k); if (!cs.length) return "";
+    return `<details${cs.some(c => sel.has(c.n)) ? " open" : ""}><summary><span class="fes-sw" style="background:${FES_COR[k]}"></span>${esc(nome)} <span class="sup">${cs.filter(c => sel.has(c.n)).length || ""}</span></summary>${cs.map(c => `<label class="fes-pk"><input type="checkbox" value="${esc(c.n + " · " + c.nome)}" ${sel.has(c.n) ? "checked" : ""} ${dis}> ${c.n} · ${esc(c.nome)}</label>`).join("")}</details>`; }).join("");
+}
+/* formulário aberto antes de qualquer página da Estrutura: lê o catálogo e repinta o campo */
+function fesFormCarrega(idPre, idVeic, temCol, val) {
+  if (FES.em || !document.querySelector(`.fes-field[data-pre="${idPre}"]`)) return;
+  fesCarregar().then(() => { const fd = document.querySelector(`.fes-field[data-pre="${idPre}"]`); if (!fd) return; const ve = $(idVeic), dis = $("mSave") && $("mSave").style.display === "none" ? "disabled" : "";
+    fd.outerHTML = fesCompsCampo(idPre, ve ? ve.value : "", ($(idPre) || {}).value || val, dis, temCol()); fesPickLigar(idPre, idVeic); });
+}
+function fesPickLigar(idPre, idVeic) {
+  const box = $(idPre + "Box"), h = $(idPre); if (!box || !h) return;
+  box.addEventListener("change", () => { h.value = [...box.querySelectorAll("input:checked")].map(i => i.value).join("; "); });
+  const ve = $(idVeic); if (ve) ve.addEventListener("change", () => { box.innerHTML = fesPickHtml(ve.value, h.value, box.dataset.dis === "1" ? "disabled" : ""); });
+}
+window.manutForm = (id, pre) => {
+  const m = id ? FROTA.manut.find(x => x._id === String(id)) : null, v = m || Object.assign({ Tipo: "Preventiva", Situacao: "Aberta", DataInicio: todayISO() }, pre || {});
+  const ok = frotaCadForm({ lista: "listManut", item: m, titulo: m ? `Manutenção · ${m.Veiculo || ""} · ${fmtDate(m.DataInicio)}` : "Nova manutenção", html: dis => `<div class="form-grid">
+      <div class="field"><label>Veículo<span class="req">*</span></label>${fcVeic("mnV", v.Veiculo, dis)}</div>
+      <div class="field"><label>Tipo</label>${fcSel("mnT", MANUT_TIPO, v.Tipo, dis)}</div>
+      <div class="field full"><label>Serviço<span class="req">*</span></label><input id="mnS" value="${esc(v.Title || "")}" placeholder="Ex.: revisão de 10.000 km, troca de pastilhas" ${dis}></div>
+      <div class="field"><label>Início<span class="req">*</span></label>${fcDate("mnI", v.DataInicio, dis)}</div>
+      <div class="field"><label>Fim</label>${fcDate("mnF", v.DataFim, dis)}</div>
+      <div class="field"><label>Km do veículo</label>${fcNum("mnK", v.Km, dis)}</div>
+      <div class="field"><label>Situação</label>${fcSel("mnSt", MANUT_SIT, v.Situacao, dis)}</div>
+      ${fesCompsCampo("mnCp", v.Veiculo, v.Componentes, dis, FES.colManut)}
+      <div class="field full"><label>Observações</label><textarea id="mnO" rows="2" ${dis}>${esc(v.Observacoes || "")}</textarea></div></div>`,
+    ler: (g, err) => { if (!g("mnV")) return err("Informe o veículo."); if (!g("mnS")) return err("Descreva o serviço."); if (!g("mnI")) return err("Informe o início."); if (g("mnF") && g("mnF") < g("mnI")) return err("O fim não pode ser antes do início."); if (g("mnSt") === "Concluída" && !g("mnF")) return err("Informe a data de fim para concluir.");
+      const f = { Title: g("mnS"), Veiculo: g("mnV"), Tipo: g("mnT"), DataInicio: g("mnI"), DataFim: g("mnF") || null, Km: g("mnK") === "" ? null : Number(g("mnK")), Situacao: g("mnF") && g("mnSt") === "Aberta" ? "Concluída" : g("mnSt"), Observacoes: g("mnO") || null };
+      if (FES.colManut && $("mnCp")) f.Componentes = g("mnCp") || null; return f; } });
+  fesPickLigar("mnCp", "mnV"); fesFormCarrega("mnCp", "mnV", () => FES.colManut, v.Componentes); return ok;
+};
+window.ncForm = (id, pre) => {
+  const m = id ? FROTA.ncs.find(x => x._id === String(id)) : null, v = m || Object.assign({ Gravidade: "Leve", Situacao: "Aberta", Abertura: todayISO() }, pre || {});
+  frotaCadForm({ lista: "listNc", item: m, titulo: m ? `Não conformidade · ${m.Veiculo || ""}` : "Nova não conformidade", html: dis => `<div class="form-grid">
+      <div class="field"><label>Veículo<span class="req">*</span></label>${fcVeic("ncV", v.Veiculo, dis)}</div>
+      <div class="field"><label>Gravidade</label>${fcSel("ncG", NC_GRAV, v.Gravidade, dis)}</div>
+      <div class="field full"><label>Item<span class="req">*</span></label><input id="ncI" value="${esc(v.Title || "")}" placeholder="Ex.: adesivo de lotação descolando, lanterna traseira queimada" ${dis}></div>
+      <div class="field"><label>Abertura<span class="req">*</span></label>${fcDate("ncA", v.Abertura, dis)}</div>
+      <div class="field"><label>Prazo</label>${fcDate("ncP", v.Prazo, dis)}<div class="hint">Grave: imediato · Média: 7 dias · Leve: 30 dias (preenche ao escolher a gravidade)</div></div>
+      <div class="field"><label>Situação</label>${fcSel("ncS", NC_SIT, v.Situacao, dis)}</div>
+      <div class="field"><label>Concluída em</label>${fcDate("ncC", v.Conclusao, dis)}</div>
+      ${fesCompsCampo("ncCp", v.Veiculo, v.Componentes, dis, FES.colNc)}
+      <div class="field full"><label>Ação / observações</label><textarea id="ncO" rows="2" ${dis}>${esc(v.Observacoes || "")}</textarea></div></div>`,
+    ler: (g, err) => { if (!g("ncV")) return err("Informe o veículo."); if (!g("ncI")) return err("Descreva o item."); if (!g("ncA")) return err("Informe a abertura."); if (g("ncC") && g("ncC") < g("ncA")) return err("A conclusão não pode ser antes da abertura.");
+      const pz = g("ncP") || ymd(new Date(dLocal(g("ncA")).getTime() + (NC_PRAZO[g("ncG")] || 0) * 864e5));
+      const f = { Title: g("ncI"), Veiculo: g("ncV"), Gravidade: g("ncG"), Abertura: g("ncA"), Prazo: pz, Situacao: g("ncC") ? "Concluída" : g("ncS"), Conclusao: g("ncC") || null, Observacoes: g("ncO") || null };
+      if (FES.colNc && $("ncCp")) f.Componentes = g("ncCp") || null; return f; } });
+  const calc = () => { const a = $("ncA"), gv = $("ncG"), pz = $("ncP"); if (a && a.value && gv && pz && !pz.dataset.manual) pz.value = ymd(new Date(dLocal(a.value).getTime() + (NC_PRAZO[gv.value] || 0) * 864e5)); };
+  ["ncA", "ncG"].forEach(k => { const e = $(k); if (e) e.addEventListener("change", calc); }); const pz = $("ncP"); if (pz) { pz.addEventListener("input", () => { pz.dataset.manual = "1"; }); if (m && m.Prazo) pz.dataset.manual = "1"; } if (!m) calc();
+  fesPickLigar("ncCp", "ncV"); fesFormCarrega("ncCp", "ncV", () => FES.colNc, v.Componentes);
+};
+/* a manutenção gravada repinta a Estrutura aberta */
+{ const p0 = frotaPintar; frotaPintar = function () { const r = p0.apply(this, arguments); try { if ($("fesRoot")) fesVeicPintar(); } catch (e) {} return r; }; }
+
+/* ---------- catálogo: gravação ---------- */
+const fesCampos = (c, cid) => ({ Title: c.nome, Catalogo: String(cid), Numero: c.n, Sistema: c.sis, Funcao: c.fn || null, Verificar: (c.chk || []).join("\n") || null, IntervaloKm: c.ivKm || null, IntervaloDias: c.ivDias || null,
+  CodigoPeca: c.cod || null, Torque: c.tq || null, Observacao: c.obs || null, X: Math.round(c.x), Y: Math.round(c.y), Geo: JSON.stringify({ p: c.geo.p, e: c.geo.e, op: c.geo.op }) });
+async function fesCriarCatalogo(meta, comps) {
+  if (!fesEd()) throw new Error("Só o administrador e o proprietário da página editam o catálogo.");
+  if (!FES.listC || !FES.listP) throw new Error(`As listas do catálogo ainda não existem: ${session.n1 ? "rode Sistema › Configuração › Executar tudo" : "peça a um administrador para rodar a Configuração"}.`);
+  const it = await SP.create(FROTA.site.id, FES.listC.id, meta), cid = String(it.id);
+  let i = 0; for (const c of comps) { await SP.create(FROTA.site.id, FES.listP.id, fesCampos(c, cid)); i++; if (i % 10 === 0) toast(`Gravando o catálogo: ${i} de ${comps.length} componentes…`, 2500); }
+  await fesCarregar(true); return cid;
+}
+window.fesCriarDoVeic = async id => {
+  const v = frotaVeicPorId(id); if (!v) return; const R = fesCatDoVeic(v);
+  const ch = [v.ChassiMarca, v.ChassiModelo].filter(Boolean).join(" "), ca = [v.CarroceriaMarca, v.Carroceria].filter(Boolean).join(" ");
+  if (!ch) { toast("O cadastro do veículo não tem marca e modelo do chassi: preencha antes, para o catálogo valer para os ônibus do mesmo modelo.", 8000); return; }
+  if (!(await erpConfirmar({ titulo: "Criar o catálogo deste modelo", html: `Cria o catálogo <b>${esc(ch)}${ca ? " · " + esc(ca) : ""}</b> a partir do gabarito ${esc(FES_ARR[R.arr])} (${R.comps.length} componentes, sem dados técnicos). Ele passa a valer para todos os ônibus com este chassi e carroceria.`, sim: "Criar" }))) return;
+  try { const cid = await fesCriarCatalogo({ Title: [ch, ca].filter(Boolean).join(" · "), Arranjo: FES_ARR[R.arr], Modelos: `${ch} | ${ca}`, LimiarKm: 10, LimiarDias: 10 }, R.comps);
+    toast("Catálogo criado. Preencha os intervalos, códigos e torques no editor.", 6000); location.hash = `#/operacional/frota/estrutura?cat=${encodeURIComponent(cid)}`; }
+  catch (e) { toast("Não foi possível criar o catálogo: " + e.message, 8000); }
+};
+
+/* ---------- editor do catálogo ---------- */
+function pageFesEd() { return `<div class="page fes" id="fesEdRoot"><div class="cap-empty"><h3>Carregando…</h3></div></div>`; }
+async function renderFesEd(cat) { FES.ed.cat = cat || ""; FES.ed.sel = 0; await fesCarregar(true); fesEdPintar(); }
+function fesEdLista() { const cat = FES.cats.find(c => c._id === FES.ed.cat); if (!cat) { FES.ed.L = []; return null; } if (!FES.ed.L || FES.ed.L._cat !== cat._id || FES.ed.recarregar) { FES.ed.L = fesDaLista(cat._id); FES.ed.L.forEach(c => { c.st = "ok"; }); Object.defineProperty(FES.ed.L, "_cat", { value: cat._id, enumerable: false }); FES.ed.recarregar = false; } return cat; }
+function fesEdPintar() {
+  const root = $("fesEdRoot"); if (!root) return;
+  const crumbs = `<nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Operacional">Operacional</a><span>›</span><a href="#/operacional/frota">Veículos</a><span>›</span>${FES.ed.cat ? `<a href="#/operacional/frota/estrutura">Estrutura · catálogos</a><span>›</span><b>Catálogo</b>` : "<b>Estrutura · catálogos</b>"}</nav>`;
+  if (!fesEd()) { root.innerHTML = crumbs + `<div class="cap-empty"><h3>Sem acesso</h3><p>O catálogo da estrutura é editado pelo administrador e pelo proprietário da página "Estrutura dos ônibus".</p></div>`; return; }
+  if (!FES.listC || !FES.listP) { root.innerHTML = crumbs + `<div class="cap-empty"><h3>Listas do catálogo ainda não criadas</h3><p>${session.n1 ? `Rode Sistema › Configuração › "Executar tudo".` : "Peça a um administrador para rodar a Configuração."}</p>${FES.erro ? `<p class="sup">${esc(FES.erro)}</p>` : ""}</div>`; return; }
+  const cat = FES.ed.cat ? fesEdLista() : null;
+  if (!cat) {
+    const veics = FROTA.veicsTodos || FROTA.veics || [];
+    const linhas = FES.cats.map(c => { const n = FES.comps.filter(p => String(p.Catalogo) === c._id).length, mods = fesModelos(c), usam = veics.filter(v => { const R = fesCatDoVeic(v); return R.cat && R.cat._id === c._id; }).map(v => v.Title);
+      return `<tr><td><b>${esc(c.Title || "—")}</b><div class="sup">${esc(c.Arranjo || "")}</div></td><td>${mods.map(([a, b]) => `<div>${esc(a)}${b ? ` <span class="sup">| ${esc(b)}</span>` : ""}</div>`).join("") || "—"}</td><td class="n">${n}</td><td>${usam.length ? esc(usam.join(", ")) : `<span class="sup">nenhum ônibus</span>`}</td>
+        <td class="nw"><a class="btn mini" href="#/operacional/frota/estrutura?cat=${encodeURIComponent(c._id)}">Abrir</a> <button class="btn mini" onclick="fesCopiar('${esc(c._id)}')">Copiar</button>${session.n1 ? ` <button class="btn mini danger" onclick="fesExcluirCat('${esc(c._id)}')">Excluir</button>` : ""}</td></tr>`; }).join("");
+    const semCat = veics.filter(v => fesCatDoVeic(v).gab).map(v => v.Title);
+    root.innerHTML = crumbs + `<div class="cap-topo"><div><h1 style="margin:0">Estrutura dos ônibus · catálogos</h1><p class="sup" style="margin:2px 0 0">Um catálogo por arranjo e modelo (chassi | carroceria). Os ônibus sem catálogo usam o gabarito padrão do tipo.</p></div><span class="grow"></span><div class="page-actions"><button class="btn primary" onclick="fesNovoCat()">+ Novo catálogo</button></div></div>
+      <div class="cap-card">${FES.cats.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Catálogo</th><th>Modelos (chassi | carroceria)</th><th class="n">Componentes</th><th>Ônibus que usam</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>` : `<div class="cap-empty"><h3>Nenhum catálogo ainda</h3><p>Crie a partir de um gabarito (urbano com motor dianteiro ou rodoviário com motor traseiro).</p></div>`}</div>
+      ${semCat.length ? `<p class="sup">Ônibus com o gabarito padrão (sem catálogo do modelo): ${esc(semCat.join(", "))}.</p>` : ""}`;
+    return;
+  }
+  const L = FES.ed.L, arr = fesArrDe(cat); if (!L.some(c => c.n === FES.ed.sel)) FES.ed.sel = (L[0] || {}).n || 0; FES.sel = FES.ed.sel;
+  const c = L.find(i => i.n === FES.ed.sel), perto = fesPerto(L);
+  root.innerHTML = crumbs + `<div class="cap-topo"><div><h1 style="margin:0">${esc(cat.Title || "Catálogo")}</h1><p class="sup" style="margin:2px 0 0">${esc(cat.Arranjo || "")} · ${L.length} componentes · ${fesModelos(cat).map(([a, b]) => esc(a + (b ? " | " + b : ""))).join(" · ") || "sem modelos"}</p></div><span class="grow"></span>
+      <div class="page-actions"><button class="btn" onclick="fesMetaForm('${esc(cat._id)}')">Dados do catálogo</button><button class="btn" onclick="fesCopiar('${esc(cat._id)}')">Copiar para outro modelo</button><button class="btn" onclick="fesNovoComp('b')">+ Componente (caixa)</button><button class="btn" onclick="fesNovoComp('c')">+ Componente (cilindro)</button></div></div>
+    ${perto.length ? `<div class="import-help fes-perto">Marcadores a menos de 35 px de outro no desenho 2D: ${perto.map(([a, b, d]) => `${a} e ${b} (${d} px)`).join(" · ")}. Arraste para afastar ou use o filtro por sistema.</div>` : ""}
+    <div class="fes-chips">${FES_SYS.map(([k, l]) => `<button type="button" class="btn sm fes-sysb${k === FES.sys ? " on" : ""}" data-act="sys" data-k="${k}">${k === "todos" ? "" : `<span class="fes-sw" style="background:${FES_COR[k]}"></span>`}${esc(l)}</button>`).join("")}</div>
+    <div class="fes-main"><div class="cap-card fes-draw"><div class="fes-abas" role="tablist"><button type="button" role="tab" class="fes-aba" aria-selected="${FES.modo === "2d"}" data-act="modo" data-k="2d">Esquema 2D · arraste o marcador</button><button type="button" role="tab" class="fes-aba" aria-selected="${FES.modo === "3d"}" data-act="modo" data-k="3d">Modelo 3D</button></div>
+      ${FES.modo === "3d" ? fes3dHtml(L) : fes2dHtml(L, arr, true)}</div>
+      <div class="cap-card fes-ficha" id="fesEdForm">${c ? fesEdFormHtml(c) : `<p class="sup">Catálogo sem componentes. Use "+ Componente".</p>`}</div></div>
+    <div class="cap-card"><div class="cap-card-h"><h3>Componentes</h3></div><div class="table-wrap fes-tab"><table class="cap-table"><thead><tr><th>Componente</th><th>Sistema</th><th>Intervalo</th><th>Código</th><th>Torque</th></tr></thead><tbody>
+      ${L.filter(fesAtivo).map(x => `<tr${x.n === FES.ed.sel ? ` class="sel"` : ""}><td><button type="button" data-act="sel" data-id="${x.n}"><span style="background:${FES_COR[x.sis] || "#94a3b8"}">${x.n}</span>${esc(x.nome)}</button></td><td class="sup">${esc(FES_SYSNOME[x.sis] || "")}</td><td>${esc([x.ivKm ? Number(x.ivKm).toLocaleString("pt-BR") + " km" : "", x.ivDias ? x.ivDias + " dias" : ""].filter(Boolean).join(" · ") || "—")}</td><td>${esc(x.cod || "—")}</td><td>${esc(x.tq || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  fesEdLigarArraste();
+}
+function fesPerto(L) { const out = []; for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const a = L[i], b = L[j]; if (!fesAtivo(a) || !fesAtivo(b)) continue; const d = Math.round(Math.hypot(a.x - b.x, a.y - b.y)); if (d < 35) out.push([a.n, b.n, d]); } return out.sort((x, y) => x[2] - y[2]).slice(0, 12); }
+function fesEdFormHtml(c) {
+  const parte = (p, i) => p.t === "b" ? `<tr data-i="${i}"><td>Caixa</td><td>—</td>${[0, 1, 2].map(k => `<td><input type="number" step="0.01" data-k="c${k}" value="${p.c[k]}"></td>`).join("")}${[0, 1, 2].map(k => `<td><input type="number" step="0.01" data-k="s${k}" value="${p.s[k]}"></td>`).join("")}<td><button class="btn mini" onclick="fesParteRem(${i})">×</button></td></tr>`
+    : `<tr data-i="${i}"><td>Cilindro</td><td><select data-k="ax">${[["0", "comprimento"], ["1", "altura"], ["2", "largura"]].map(([v, t]) => `<option value="${v}" ${String(p.ax) === v ? "selected" : ""}>${t}</option>`).join("")}</select></td>${[0, 1, 2].map(k => `<td><input type="number" step="0.01" data-k="c${k}" value="${p.c[k]}"></td>`).join("")}<td><input type="number" step="0.01" data-k="r" value="${p.r}" title="raio"></td><td><input type="number" step="0.01" data-k="l" value="${p.l}" title="comprimento"></td><td><input type="number" step="1" data-k="seg" value="${p.seg || 12}" title="segmentos"></td><td><button class="btn mini" onclick="fesParteRem(${i})">×</button></td></tr>`;
+  return `<div class="fes-row"><h3 class="fes-h2">${c.n} · ${esc(c.nome)}</h3><span class="sup">${FES.ed.sujo ? "alterações não salvas" : ""}</span></div>
+    <div class="form-grid fes-edf">
+      <div class="field"><label>Número</label><input id="feN" type="number" min="1" value="${c.n}"></div>
+      <div class="field"><label>Sistema</label><select id="feS">${FES_SYS.slice(1).map(([k, l]) => `<option value="${k}" ${k === c.sis ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
+      <div class="field full"><label>Nome</label><input id="feNome" value="${esc(c.nome)}"></div>
+      <div class="field full"><label>Função</label><textarea id="feFn" rows="2">${esc(c.fn || "")}</textarea></div>
+      <div class="field full"><label>O que verificar (um item por linha)</label><textarea id="feChk" rows="3">${esc((c.chk || []).join("\n"))}</textarea></div>
+      <div class="field"><label>Intervalo (km)</label><input id="feKm" type="number" min="0" value="${c.ivKm || ""}" placeholder="do manual"></div>
+      <div class="field"><label>Intervalo (dias)</label><input id="feDias" type="number" min="0" value="${c.ivDias || ""}" placeholder="do manual"></div>
+      <div class="field"><label>Código da peça</label><input id="feCod" value="${esc(c.cod || "")}"></div>
+      <div class="field"><label>Torque de aperto</label><input id="feTq" value="${esc(c.tq || "")}" placeholder="do manual do fabricante"></div>
+      <div class="field full"><label>Observação</label><textarea id="feObs" rows="2">${esc(c.obs || "")}</textarea></div>
+      <div class="field"><label>Posição 2D · x (0–1000)</label><input id="feX" type="number" value="${Math.round(c.x)}"></div>
+      <div class="field"><label>Posição 2D · y (0–380)</label><input id="feY" type="number" value="${Math.round(c.y)}"></div></div>
+    <div><div class="fes-label">Forma 3D (metros: comprimento com a frente em +6, altura, largura com o lado direito em +)</div>
+      <div class="table-wrap"><table class="cap-table fes-geo"><thead><tr><th>Forma</th><th>Eixo</th><th>x</th><th>y</th><th>z</th><th colspan="3">Tamanho (x, y, z) ou raio, comprimento, segmentos</th><th></th></tr></thead><tbody id="feGeo">${(c.geo.p || []).map(parte).join("")}</tbody></table></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn mini" onclick="fesParteAdd('b')">+ Caixa</button><button class="btn mini" onclick="fesParteAdd('c')">+ Cilindro</button>
+        <label class="sup">Separar (x, y, z) ${[0, 1, 2].map(k => `<input type="number" step="0.1" class="fes-e" data-k="${k}" value="${(c.geo.e || [0, 0, 0])[k]}" style="width:64px">`).join("")}</label><label class="sup">Opacidade <input type="number" step="0.05" min="0.1" max="1" id="feOp" value="${c.geo.op || 1}" style="width:64px"></label></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" onclick="fesSalvarComp()">Salvar componente</button><button class="btn" onclick="fesAplicarForm()">Ver no desenho</button><button class="btn danger" onclick="fesExcluirComp()">Excluir componente</button></div>`;
+}
+/* lê o formulário para o componente selecionado (sem gravar) */
+function fesLerForm() {
+  const c = FES.ed.L.find(i => i.n === FES.ed.sel); if (!c || !$("feNome")) return c;
+  const num = id => { const v = ($(id).value || "").trim(); return v === "" ? null : Number(v); };
+  c.nNovo = num("feN"); c.sis = $("feS").value; c.nome = $("feNome").value.trim(); c.fn = $("feFn").value.trim(); c.chk = $("feChk").value.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  c.ivKm = num("feKm") || null; c.ivDias = num("feDias") || null; c.cod = $("feCod").value.trim(); c.tq = $("feTq").value.trim(); c.obs = $("feObs").value.trim();
+  c.x = Math.max(0, Math.min(1000, num("feX") || 0)); c.y = Math.max(0, Math.min(380, num("feY") || 0));
+  c.geo.p = [...document.querySelectorAll("#feGeo tr")].map(tr => { const i = +tr.dataset.i, p = JSON.parse(JSON.stringify(c.geo.p[i])), q = k => { const e = tr.querySelector(`[data-k="${k}"]`); return e ? Number(e.value) : null; };
+    p.c = [q("c0"), q("c1"), q("c2")].map(x => Number(x) || 0); if (p.t === "b") p.s = [q("s0"), q("s1"), q("s2")].map(x => Math.max(.01, Number(x) || .1)); else { p.ax = Number(q("ax")) || 0; p.r = Math.max(.005, q("r") || .05); p.l = Math.max(.005, q("l") || .1); p.seg = Math.max(4, Math.min(24, Math.round(q("seg") || 12))); } return p; });
+  c.geo.e = [...document.querySelectorAll(".fes-e")].map(e => Number(e.value) || 0); c.geo.op = Math.max(.1, Math.min(1, Number(($("feOp") || {}).value) || 1));
+  delete FES.ed.L._partes; return c;
+}
+window.fesAplicarForm = () => { fesLerForm(); FES.ed.sujo = true; fesEdPintar(); };
+window.fesParteAdd = t => { const c = fesLerForm(); if (!c) return; c.geo.p.push(t === "b" ? fB([0, 1, 0], [.3, .3, .3]) : fC(0, [0, 1, 0], .1, .3, 12)); FES.ed.sujo = true; delete FES.ed.L._partes; fesEdPintar(); };
+window.fesParteRem = i => { const c = fesLerForm(); if (!c) return; c.geo.p.splice(i, 1); FES.ed.sujo = true; delete FES.ed.L._partes; fesEdPintar(); };
+window.fesSalvarComp = async () => {
+  if (!fesEd()) { toast("Só o administrador e o proprietário da página editam o catálogo."); return; } const c = fesLerForm(); if (!c) return; if (!c.nome) { toast("Informe o nome do componente."); return; }
+  const nn = c.nNovo || c.n; if (nn !== c.n && FES.ed.L.some(x => x !== c && x.n === nn)) { toast(`Já existe o componente ${nn} neste catálogo.`); return; }
+  c.n = nn; delete c.nNovo;
+  try { const f = fesCampos(c, FES.ed.cat); if (c._id) await SP.update(FROTA.site.id, FES.listP.id, c._id, f); else { const it = await SP.create(FROTA.site.id, FES.listP.id, f); c._id = String(it.id); }
+    toast("Componente salvo."); FES.ed.sujo = false; FES.ed.sel = c.n; await fesCarregar(true); FES.ed.recarregar = true; fesEdPintar(); }
+  catch (e) { toast("Não foi possível salvar: " + e.message, 7000); }
+};
+window.fesExcluirComp = async () => {
+  if (!fesEd()) return; const c = FES.ed.L.find(i => i.n === FES.ed.sel); if (!c) return;
+  if (!(await erpConfirmar({ titulo: "Excluir componente", html: `Excluir <b>${c.n} · ${esc(c.nome)}</b> do catálogo? As manutenções já registradas continuam com o número e o nome no texto.`, sim: "Excluir", perigo: true }))) return;
+  try { if (c._id) await graph(`/sites/${FROTA.site.id}/lists/${FES.listP.id}/items/${c._id}`, { method: "DELETE" }); FES.ed.L.splice(FES.ed.L.indexOf(c), 1); delete FES.ed.L._partes; await fesCarregar(true); FES.ed.recarregar = true; FES.ed.sel = 0; toast("Componente excluído."); fesEdPintar(); }
+  catch (e) { toast("Não foi possível excluir: " + e.message, 7000); }
+};
+window.fesNovoComp = t => { const L = FES.ed.L; if (!L) return; const n = L.reduce((m, c) => Math.max(m, c.n), 0) + 1;
+  L.push({ n, nome: "Novo componente", sis: FES.sys !== "todos" ? FES.sys : "carroc", x: 500, y: 190, geo: { p: [t === "b" ? fB([0, 1, 0], [.3, .3, .3]) : fC(0, [0, 1, 0], .1, .3, 12)], e: [0, .5, 0], op: 1 }, fn: "", chk: [], ivKm: null, ivDias: null, cod: "", tq: "", obs: "", st: "ok" });
+  delete L._partes; FES.ed.sel = n; FES.ed.sujo = true; fesEdPintar(); toast("Componente incluído no desenho: preencha os dados e salve.", 5000); };
+/* arrastar o marcador no 2D do editor */
+function fesEdLigarArraste() {
+  const box = $("fes2d"); if (!box || !$("fesEdRoot")) return;
+  box.querySelectorAll(".fes-hot").forEach(b => b.addEventListener("pointerdown", ev => {
+    const id = +b.dataset.id, c = FES.ed.L.find(i => i.n === id); if (!c) return; ev.preventDefault(); b.setPointerCapture && b.setPointerCapture(ev.pointerId);
+    const r = box.getBoundingClientRect(), x0 = ev.clientX, y0 = ev.clientY; let mov = false; FES.ed.arrastou = false;
+    const mv = e => { if (!mov && Math.hypot(e.clientX - x0, e.clientY - y0) < 4) return; mov = true; c.x = Math.round(Math.max(0, Math.min(1000, (e.clientX - r.left) / r.width * 1000))); c.y = Math.round(Math.max(0, Math.min(380, (e.clientY - r.top) / r.height * 380)));
+      b.style.left = c.x / 10 + "%"; b.style.top = c.y / 3.8 + "%"; if (FES.ed.sel === id) { if ($("feX")) $("feX").value = c.x; if ($("feY")) $("feY").value = c.y; } };
+    const up = () => { b.removeEventListener("pointermove", mv); b.removeEventListener("pointerup", up); if (mov) { FES.ed.arrastou = true; if (FES.ed.sel !== id) { fesLerForm(); FES.ed.sel = id; } FES.ed.sujo = true; setTimeout(() => { FES.ed.arrastou = false; }, 0); fesEdPintar(); } };
+    b.addEventListener("pointermove", mv); b.addEventListener("pointerup", up);
+  }));
+}
+window.fesNovoCat = () => {
+  openModal("Novo catálogo", `<div class="form-grid"><div class="field full"><label>Nome<span class="req">*</span></label><input id="fcN" placeholder="Ex.: Urbano padrão · motor dianteiro"></div>
+    <div class="field full"><label>Gabarito</label><select id="fcA"><option value="u">${FES_ARR.u}</option><option value="r">${FES_ARR.r}</option></select></div>
+    <div class="field full"><label>Modelos (um por linha: chassi | carroceria)</label><textarea id="fcM" rows="3" placeholder="Marca Modelo do chassi | Marca Modelo da carroceria"></textarea><div class="hint">Como está no cadastro do veículo (marca e modelo do chassi; marca e modelo da carroceria). Carroceria em branco vale para qualquer carroceria.</div></div></div><div class="err-msg" id="fcErr" style="display:none"></div>`, async () => {
+    const n = $("fcN").value.trim(), a = $("fcA").value, m = $("fcM").value.trim(); if (!n) { const e = $("fcErr"); e.textContent = "Informe o nome."; e.style.display = "block"; return false; }
+    try { const cid = await fesCriarCatalogo({ Title: n, Arranjo: FES_ARR[a], Modelos: m || null, LimiarKm: 10, LimiarDias: 10 }, fesGabarito(a)); toast("Catálogo criado."); location.hash = `#/operacional/frota/estrutura?cat=${encodeURIComponent(cid)}`; return true; }
+    catch (e) { const el = $("fcErr"); el.textContent = e.message; el.style.display = "block"; return false; } });
+};
+window.fesMetaForm = cid => { const c = FES.cats.find(x => x._id === cid); if (!c || !fesEd()) return;
+  openModal("Dados do catálogo", `<div class="form-grid"><div class="field full"><label>Nome</label><input id="fmN" value="${esc(c.Title || "")}"></div>
+    <div class="field full"><label>Arranjo</label><select id="fmA">${Object.values(FES_ARR).map(a => `<option ${a === c.Arranjo ? "selected" : ""}>${a}</option>`).join("")}</select></div>
+    <div class="field full"><label>Modelos (um por linha: chassi | carroceria)</label><textarea id="fmM" rows="3">${esc(c.Modelos || "")}</textarea></div>
+    <div class="field"><label>A vencer: % do intervalo em km</label><input id="fmK" type="number" min="1" max="50" value="${Number(c.LimiarKm) || 10}"></div>
+    <div class="field"><label>A vencer: % do intervalo em dias</label><input id="fmD" type="number" min="1" max="50" value="${Number(c.LimiarDias) || 10}"><div class="hint">Em dias, o limiar fica entre 3 e 30 dias.</div></div>
+    <div class="field full"><label>Observações</label><textarea id="fmO" rows="2">${esc(c.Observacoes || "")}</textarea></div></div>`, async () => {
+    const f = { Title: $("fmN").value.trim() || c.Title, Arranjo: $("fmA").value, Modelos: $("fmM").value.trim() || null, LimiarKm: Math.max(1, Math.min(50, Number($("fmK").value) || 10)), LimiarDias: Math.max(1, Math.min(50, Number($("fmD").value) || 10)), Observacoes: $("fmO").value.trim() || null };
+    try { await SP.update(FROTA.site.id, FES.listC.id, c._id, f); Object.assign(c, f); toast("Catálogo atualizado."); fesEdPintar(); return true; } catch (e) { toast("Não foi possível gravar: " + e.message, 7000); return false; } }); };
+window.fesCopiar = cid => { const c = FES.cats.find(x => x._id === cid); if (!c) return;
+  openModal("Copiar catálogo para outro modelo", `<div class="form-grid"><div class="field full"><label>Nome do novo catálogo<span class="req">*</span></label><input id="fkN" value="${esc((c.Title || "") + " (cópia)")}"></div>
+    <div class="field full"><label>Modelos (um por linha: chassi | carroceria)</label><textarea id="fkM" rows="3"></textarea></div></div><p class="sup">Copia os ${FES.comps.filter(p => String(p.Catalogo) === cid).length} componentes com todos os dados (intervalos, códigos, torques, posições e formas).</p><div class="err-msg" id="fkErr" style="display:none"></div>`, async () => {
+    const n = $("fkN").value.trim(); if (!n) { const e = $("fkErr"); e.textContent = "Informe o nome."; e.style.display = "block"; return false; }
+    try { const nid = await fesCriarCatalogo({ Title: n, Arranjo: c.Arranjo, Modelos: $("fkM").value.trim() || null, LimiarKm: c.LimiarKm || 10, LimiarDias: c.LimiarDias || 10, Observacoes: c.Observacoes || null }, fesDaLista(cid)); toast("Catálogo copiado."); location.hash = `#/operacional/frota/estrutura?cat=${encodeURIComponent(nid)}`; return true; }
+    catch (e) { const el = $("fkErr"); el.textContent = e.message; el.style.display = "block"; return false; } }); };
+window.fesExcluirCat = async cid => { const c = FES.cats.find(x => x._id === cid); if (!c || !session.n1) return; const ps = FES.comps.filter(p => String(p.Catalogo) === cid);
+  if (!(await erpConfirmar({ titulo: "Excluir catálogo", html: `Excluir <b>${esc(c.Title || "")}</b> e os ${ps.length} componentes? Os ônibus deste modelo voltam ao gabarito padrão.`, sim: "Excluir", perigo: true }))) return;
+  try { for (const p of ps) await graph(`/sites/${FROTA.site.id}/lists/${FES.listP.id}/items/${p._id}`, { method: "DELETE" }); await graph(`/sites/${FROTA.site.id}/lists/${FES.listC.id}/items/${c._id}`, { method: "DELETE" }); await fesCarregar(true); toast("Catálogo excluído."); fesEdPintar(); }
+  catch (e) { toast("Não foi possível excluir: " + e.message, 7000); } };
+
+/* ---------- rotas ---------- */
+{ const r0 = route; route = function () {
+    const hr = location.hash || "", h = hr.split("?")[0], mE = h.match(/^#\/operacional\/frota\/veiculo\/([^/]+)\/estrutura$/), mC = h === "#/operacional/frota/estrutura";
+    if (FES.ed.sujo && $("fesEdRoot") && hr !== FES.ed.hash) { if (FES.ed.ignorar) { FES.ed.ignorar = false; return; } if (!confirm("O componente tem alterações não salvas. Sair mesmo assim?")) { FES.ed.ignorar = true; location.hash = FES.ed.hash; return; } FES.ed.sujo = false; }
+    if (!mE && !mC) return r0.apply(this, arguments);
+    const mod = MODULES.find(x => x.id === "frota"); if (!canSee(mod) || !fesVe()) { location.hash = "#/inicio"; return; }
+    FES.ed.hash = hr;
+    session.modAtual = "frota"; session.pagAtual = "frota.geral"; document.body.classList.remove("nav-open"); document.body.classList.add("wide");
+    if (mE) { let id = ""; try { id = decodeURIComponent(mE[1]); } catch (e) {} if (FESV.id !== String(id)) { FES.sel = 1; FES.sys = "todos"; } $("main").innerHTML = pageFesVeic(); renderFesVeic(id); }
+    else { const q = new URLSearchParams(hr.split("?")[1] || ""); $("main").innerHTML = pageFesEd(); renderFesEd(q.get("cat") || ""); }
+    navAtivo("frota"); window.scrollTo(0, 0);
+  }; }
+Object.assign(window, { FES, fesGabarito, fesCatDoVeic, fesSituacao, fesKm, fesCarregar, fesFaces, fesPerto, fesVeicPintar, fesEdPintar });
+(function () { const st = document.createElement("style"); st.id = "erp-v014106";
+  st.textContent = `.fes{display:flex;flex-direction:column;gap:16px}.fes .crumbs{margin:0}
+.fes-label{font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--muted,#5b6068);text-transform:uppercase}
+.fes-kpis{display:flex;flex-wrap:wrap;gap:10px}.fes-kpi{min-width:104px;padding:8px 12px;border:1px solid var(--line,#e2e5e9);border-radius:2px}.fes-kpi b{display:block;font-size:24px;font-weight:800;line-height:1.1;margin-top:3px}
+.fes-veic{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
+.fes-abas{display:flex;border-bottom:1px solid var(--line,#e2e5e9)}.fes-aba{position:relative;min-height:40px;padding:0 18px;border:0;background:none;font:700 14px Manrope,sans-serif;color:#5b6068;cursor:pointer}
+.fes-aba[aria-selected="true"]{color:#0f1e3a}.fes-aba[aria-selected="true"]::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:3px;background:#d6421f}
+.fes-chips{display:flex;flex-wrap:wrap;gap:8px}.fes-sysb.on{background:#0f1e3a;color:#fff;border-color:#0f1e3a}.fes-sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+.fes-main{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}.fes-draw{flex:999 1 560px;min-width:0;display:flex;flex-direction:column;gap:12px}
+.fes-ficha{flex:1 1 340px;min-width:0;position:relative;display:flex;flex-direction:column;gap:14px}
+.fes-ficha::before,.fes-ficha::after{content:"";position:absolute;width:22px;height:22px}.fes-ficha::before{top:-1px;left:-1px;border-top:2px solid #d6421f;border-left:2px solid #d6421f}.fes-ficha::after{bottom:-1px;right:-1px;border-bottom:2px solid #0f1e3a;border-right:2px solid #0f1e3a}
+.fes-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center}.fes-h2{margin:0;font-size:16px;font-weight:800;color:#0f1e3a}.fes-vistas{display:flex;flex-wrap:wrap;gap:6px}
+.fes-2dw{overflow-x:auto}.fes-2dw.amplia .fes-2d{width:200%}.fes-2d{position:relative;width:100%}.fes-2d svg{display:block;width:100%;height:auto}
+.fes-hot{position:absolute;transform:translate(-50%,-50%);width:28px;height:28px;padding:0;border-radius:999px;border:2px solid #fff;font:800 11.5px Manrope,sans-serif;color:#fff;background:#0f1e3a;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(16,24,40,.35);z-index:2;touch-action:none}
+.fes-hot.mini{width:22px;height:22px;font-size:9.5px}.fes-hot.sel{background:#d6421f;z-index:3;box-shadow:0 0 0 4px rgba(214,66,31,.3)}.fes-hot.off{opacity:.18}
+.fes-hot i{position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:999px;border:2px solid #fff}
+#fesEdRoot .fes-hot{cursor:grab}
+.fes-leg{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;font-weight:600;color:#5b6068;align-items:center}.fes-leg>span{display:inline-flex;align-items:center;gap:6px}.fes-ampliar{margin-left:auto}
+.fes-3d{position:relative;width:100%;background:linear-gradient(#fbfcfd,#f1f3f6);border:1px solid #edeff2;border-radius:2px;touch-action:none;cursor:grab;user-select:none}.fes-3d svg{display:block;width:100%;height:auto}
+.fes-zoom{position:absolute;right:10px;bottom:10px;display:flex;gap:6px}.fes-zoom button{width:38px;height:38px;border:1px solid #d3d8de;border-radius:2px;background:#fff;font:800 18px Manrope,sans-serif;color:#0f1e3a;cursor:pointer}
+.fes-ctrl{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center}.fes-ctrl label{display:flex;align-items:center;gap:10px;font-size:13.5px;font-weight:700;color:#0f1e3a}.fes-ctrl input{width:180px;accent-color:#d6421f}
+.fes-chip{flex:0 0 auto;display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}
+.fes-num{flex:0 0 auto;width:36px;height:36px;border-radius:999px;background:#d6421f;color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center}
+.fes-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;padding:12px 0;border-top:1px solid #edeff2;border-bottom:1px solid #edeff2}.fes-grid2>div{display:flex;flex-direction:column;gap:3px;font-size:13.5px}
+.fes-li{display:flex;gap:8px;font-size:13.5px;line-height:1.45}.fes-li::before{content:"";flex:0 0 auto;width:6px;height:6px;margin-top:7px;background:#0f1e3a}
+.fes-hist{display:flex;gap:12px;font-size:13.5px;line-height:1.45}.fes-hist b{flex:0 0 86px;color:#0f1e3a}
+.fes-tab tr.sel td{background:#fff1ea}.fes-tab td button{display:inline-flex;align-items:center;gap:10px;min-height:32px;padding:0;border:0;background:none;font:700 13.5px Manrope,sans-serif;color:#0f1e3a;cursor:pointer;text-align:left}
+.fes-tab td button span{width:24px;height:24px;border-radius:999px;color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.fes-top{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13.5px}
+.fes-pick{display:flex;flex-direction:column;gap:4px;max-height:220px;overflow:auto;border:1px solid var(--line,#e2e5e9);border-radius:2px;padding:6px 10px}.fes-pick summary{cursor:pointer;font-weight:700;color:#0f1e3a}.fes-pk{display:flex;gap:6px;align-items:center;font-size:13px;padding:2px 0 2px 18px}
+.fes-geo input,.fes-geo select{width:72px;padding:3px 5px}.fes-edf{margin:0}
+@media (max-width:700px){.fes-main{flex-direction:column;order:2}.fes .fes-lista{order:1}.fes-hot{width:24px;height:24px;font-size:10px}.fes-hot.mini{width:18px;height:18px;font-size:8.5px}.fes-grid2{grid-template-columns:1fr}.fes-ctrl input{width:130px}}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -56726,6 +57404,7 @@ CONFIG.version = "v0.14.102";   /* Passageiros: rótulos e ⛶ no Movimento por 
 CONFIG.version = "v0.14.103";   /* Passageiros: Veículo e Motorista na folha de Lançamentos e no Banco de Dados */
 CONFIG.version = "v0.14.104";   /* Passageiros: Folha (PDF) em paisagem com quadrinhos do dia e Observações; mesma ordem de colunas no PDF, na planilha e no ERP; Observações da planilha entram nas Obs. do horário */
 CONFIG.version = "v0.14.105";   /* Diretoria › Relatórios › Painel de Operação (painel da TV no ERP, com receita estimada e disponibilidade); ocupação unificada: (pagantes + gratuidades) ÷ lugares */
+CONFIG.version = "v0.14.106";   /* Frota › página do ônibus › Estrutura (2D e 3D, catálogo por modelo, situação pelas manutenções); colunas Componentes em Manutenção e NC */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

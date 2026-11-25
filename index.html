@@ -55500,6 +55500,7 @@ function px5Montar(wbk, arquivo) {
     const rl = c("relatorio"), rs = rl == null ? "" : String(rl).trim().replace(/\.0+$/, ""); if (rs) { if (/^\d{1,5}$/.test(rs)) v.rel = v.rel || rs.padStart(5, "0"); else v.ruim = v.ruim || "relatório deve ter até 5 números"; }
     const ve = String(c("veiculo") == null ? "" : c("veiculo")).trim().replace(/\.0+$/, ""), mo = String(c("motorista") == null ? "" : c("motorista")).trim();
     if (ve && !v.veic) v.veic = ve.slice(0, 30); if (mo && !v.mot) v.mot = mo.slice(0, 120);
+    const ob = String(c("observacoes") == null ? "" : c("observacoes")).trim().slice(0, 800); if (ob && !(v.obs || (v.obs = [])).includes(ob)) v.obs.push(ob);   /* v0.14.104: vai para as observações do horário */
     return { v, c }; };
   abas.forEach(a => { const V = px3N(a.nome) === "viagens";
     a.t.linhas.forEach((r, i) => { const o = chaveDe(r, a.t.cab, a.nome, i + 1); if (!o) return; const t = px3Num(o.c("ticket agencia")), f = px3Num(o.c("fechamento do motorista")), g = px3Num(o.c("gratuidades"));
@@ -55539,7 +55540,8 @@ function px5Montar(wbk, arquivo) {
     const fer = feriadoNome(v.data), sem = px5SemAtendimento(v.data, v.serv);
     if (fer || sem) { r.diaAviso = fer ? `feriado (${fer})` : `${paxLoteServRot(v.serv)} não roda neste dia pela Tabela de Horários`; r.aviso = (r.aviso ? r.aviso + " · " : "") + r.diaAviso; }
     regs.push(r); });
-  return { arquivo, regs, erros, iguais, brancos, gMant, vmTem, locRuim: [...locRuim], novo: regs.filter(r => r.st === "novo").length, alt: regs.filter(r => r.st === "alt").length, ruim: regs.filter(r => r.st === "erro").length };
+  const obsList = [...viagens.values()].filter(v => v.obs && v.obs.length && !v.ruim && !px2Travado(v.data)).map(v => ({ data: v.data, serv: v.serv, hora: v.hora, sent: v.sent, txt: v.obs }));
+  return { arquivo, regs, erros, iguais, brancos, gMant, vmTem, obsList, locRuim: [...locRuim], novo: regs.filter(r => r.st === "novo").length, alt: regs.filter(r => r.st === "alt").length, ruim: regs.filter(r => r.st === "erro").length };
 }
 px3Montar = px5Montar; window.px3Montar = px5Montar;
 { const h0 = px3PrevHtml;
@@ -56091,6 +56093,80 @@ Object.assign(window, { PX11, px11Cad });
   .px2 .lanc-head.px2-row{padding-left:9px;padding-right:9px}   /* a linha tem 8 px + 1 px de borda: o título fica sobre a célula */
   .pb-t td.pb-vm{font-size:13px;color:var(--ink-2)}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.104 (25/11/2026) · Estatística de Passageiros: Folha (PDF), Planilha (Excel) e ERP com as mesmas colunas, na mesma ordem.
+   Pedido do Rafael (25/11, 17:23).
+   - Folha de Emergência (PDF) em paisagem, colunas mais largas (Origem e Destino com 38 mm), 20 linhas por página,
+     frente e verso. Sai "Folha ___ de ___". O dia da semana vira quadrinhos para marcar: Seg Ter Qua Qui Sex Sáb Dom
+     e Feriado. Ganha a coluna Observações (a planilha e o ERP já têm).
+   - Ordem única nos três: Relatório · Veículo · Motorista · Linha · Horário · Sentido · Origem · Destino · Ticket Agência
+     · Fechamento do Motorista · Gratuidades (· Total) · Observações. Data e dia da semana: no cabeçalho do PDF, nas duas
+     primeiras colunas da planilha e no alto da folha do ERP.
+   - ERP › Lançamentos: Horário e Sentido passam para antes de Origem e Destino (como no PDF e na planilha).
+   - Importação: a coluna Observações da planilha entra nas observações do horário (botão Obs. da folha), com o nome de
+     quem importou; a mesma observação não é repetida ao importar o arquivo de novo.
+   ===================================================================== */
+/* ---------- Folha de Emergência (PDF) em paisagem ---------- */
+window.px4Folha = async bt => {
+  const t0 = bt && bt.textContent; if (bt) { bt.disabled = true; bt.textContent = "Gerando…"; }
+  try { const J = await erpLib("jspdf"); await erpLib("jspdf_autotable"); const autoTable = window.autoTable, T = ctbPdfTxt; if (!J || !J.jsPDF || typeof autoTable !== "function") throw new Error("biblioteca de PDF indisponível");
+    const doc = new J.jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true }), W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 10, NAVY = [15, 30, 58], MUT = [90, 97, 110], INK = [20, 24, 32], LINHAS = 20;
+    const logo = await ctbLogoPng().catch(() => null), locs = px2Locais().map(l => l.nome).join(" · ");
+    doc.setProperties({ title: T("Folha de Emergência - Estatística de Passageiros"), author: T("Transportadora Nova Macabu"), creator: "ERP NMB" });
+    const caixa = (x, y, rot) => { doc.setDrawColor(...NAVY); doc.setLineWidth(0.35); doc.rect(x, y - 3.1, 3.6, 3.6); doc.text(T(rot), x + 5, y); return x + 5 + doc.getTextWidth(T(rot)) + 4.2; };
+    for (let p = 1; p <= 2; p++) { if (p > 1) doc.addPage(); let x0 = M;
+      if (logo) { const h = 12, w = Math.min(34, h * logo.w / logo.h); doc.addImage(logo.url, "PNG", M, 5.5, w, w * logo.h / logo.w); x0 = M + w + 5; }
+      doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(...NAVY); doc.text(T("Estatística de Passageiros - Folha de Emergência"), x0, 11.5);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(...INK);
+      let x = x0; doc.text(T("Data: ____ / ____ / ________"), x, 18.5); x += doc.getTextWidth(T("Data: ____ / ____ / ________")) + 8;
+      doc.text(T("Dia da semana:"), x, 18.5); x += doc.getTextWidth(T("Dia da semana:")) + 3;
+      ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom", "Feriado"].forEach(d => { x = caixa(x, 18.5, d); });
+      x += 4; doc.text(T("Responsável: " + "_".repeat(Math.max(10, Math.floor((W - M - x - doc.getTextWidth(T("Responsável: "))) / doc.getTextWidth("_"))))), x, 18.5);
+      doc.setDrawColor(214, 66, 31); doc.setLineWidth(0.6); doc.line(M, 22.5, W - M, 22.5);
+      doc.setFontSize(8); doc.setTextColor(...MUT); doc.text(T("Um lançamento por linha: a viagem e o trecho com os passageiros. Não precisa somar: o ERP soma os trechos de cada viagem. Mesmas colunas da Planilha de Emergência e da folha de Lançamentos do ERP."), M, 26.5);
+      autoTable(doc, { theme: "grid", startY: 29, margin: { left: M, right: M }, pageBreak: "avoid", rowPageBreak: "avoid",
+        styles: { font: "helvetica", fontSize: 8.4, textColor: [27, 34, 48], lineColor: [110, 118, 130], lineWidth: 0.2, halign: "center", valign: "middle", cellPadding: 0.8, minCellHeight: 7.7 },
+        headStyles: { fillColor: NAVY, textColor: 255, fontStyle: "bold", fontSize: 8, minCellHeight: 9.5 },
+        head: [[T("Relatório"), T("Veículo"), "Motorista", "Linha", T("Horário"), "Sentido\n(Ida/Volta)", "Origem", "Destino", T("Ticket\nAgência"), "Fechamento\ndo Motorista", "Gratuidades", T("Observações")]],
+        body: Array.from({ length: LINHAS }, () => Array(12).fill("")),
+        columnStyles: { 0: { cellWidth: 18 }, 1: { cellWidth: 18 }, 2: { cellWidth: 36 }, 3: { cellWidth: 16 }, 4: { cellWidth: 16 }, 5: { cellWidth: 17 }, 6: { cellWidth: 38 }, 7: { cellWidth: 38 }, 8: { cellWidth: 17 }, 9: { cellWidth: 21 }, 10: { cellWidth: 19 }, 11: { cellWidth: 23 } } });
+      doc.setFontSize(7.4); doc.setTextColor(...MUT); const yl = H - 13;
+      doc.text(T("Linhas: 1000 Paradora · 1001 Direto · 2000 Sta. Maria Madalena · Fretamento.   Sentido: Ida = sentido Macaé · Volta = sentido Conceição / Madalena."), M, yl);
+      doc.text(doc.splitTextToSize(T("Localidades: " + locs + "."), W - 2 * M), M, yl + 3.4);
+      doc.text(T(`Transportadora Nova Macabu · ERP NMB · ${p === 1 ? "frente" : "verso"} · depois lance em Estatística de Passageiros › Lançamentos ou na Planilha de Emergência`), M, H - 4.5); doc.text(T(`Página ${p} de 2`), W - M, H - 4.5, { align: "right" }); }
+    doc.save("Folha de Emergência - Passageiros.pdf"); toast("Folha de emergência gerada: 2 páginas em paisagem, para imprimir frente e verso.", 6000);
+  } catch (e) { toast("Não foi possível gerar a folha: " + e.message, 8000); } finally { if (bt) { bt.disabled = false; bt.textContent = t0; } }
+};
+
+/* ---------- ERP › Lançamentos: Horário e Sentido antes de Origem e Destino ---------- */
+function px12Ordem(el) {   /* filhos: Relatório, Veículo, Motorista, Linha, Origem, Destino, Horário, Sentido, … → … Linha, Horário, Sentido, Origem, Destino, … */
+  if (!el || el.dataset.px12) return; const k = el.children; if (k.length < 8) return;
+  const ori = k[4], hora = k[6], sent = k[7]; el.insertBefore(hora, ori); el.insertBefore(sent, ori); el.dataset.px12 = "1";
+}
+{ const w0 = paxLoteWire;
+  paxLoteWire = function () { const r = w0.apply(this, arguments);
+    try { const grid = $("paxLoteGrid"); if (grid && grid.querySelector(".lanc-head .px11-h")) { px12Ordem(grid.querySelector(".lanc-head")); grid.querySelectorAll(".px2-row[data-i]").forEach(px12Ordem); if (typeof px10Cab === "function") px10Cab(); } } catch (e) {}
+    return r; }; }
+
+/* ---------- Importação: Observações da planilha → observações do horário ---------- */
+{ const g0 = px3Gravar;
+  px3Gravar = async function () { const imp = PX3.imp, obs = imp && imp.obsList ? imp.obsList.slice() : []; const r = await g0.apply(this, arguments);
+    if (!obs.length || PX3.imp) return r;   /* PX3.imp continua preenchido quando a pessoa desistiu ou houve falha */
+    const porDia = new Map(); obs.forEach(o => { (porDia.get(o.data) || porDia.set(o.data, []).get(o.data)).push(o); });
+    let n = 0; for (const [d, lst] of porDia) { try { await px2DiaGrava(d, at => { const c = px2J(at.Comentarios, {}); let mud = false;
+          lst.forEach(o => { const k = px2ComK(o), arr = Array.isArray(c[k]) ? c[k] : (c[k] = []); o.txt.forEach(t => { if (arr.some(x => String(x.txt || "").trim() === t)) return; arr.push({ em: new Date().toISOString(), por: `${px2Eu() || "Importação"} (planilha)`, txt: t }); n++; mud = true; }); });
+          return mud ? { Comentarios: JSON.stringify(c) } : null; }); } catch (e) {} }
+    if (n) { toast(`${n} observação(ões) da planilha registrada(s) nos horários.`, 6000); try { if (PXD.list) await px2Carregar(); } catch (e) {} }
+    return r; };
+  window.px3Gravar = px3Gravar; }
+{ const h0 = px3PrevHtml;
+  px3PrevHtml = function (imp) { const h = h0.apply(this, arguments), n = imp && imp.obsList ? imp.obsList.reduce((s, o) => s + o.txt.length, 0) : 0;
+    return n ? h.replace('<div class="px3-res"', `<div class="import-help pax-tab-aviso px5-notas"><p>${n} observação(ões) da coluna Observações entram nas observações do horário (botão Obs. da folha) ao gravar.</p></div><div class="px3-res"`) : h; }; }
+Object.assign(window, { px12Ordem });
+(function () { const st = document.createElement("style"); st.id = "erp-v014104";
+  st.textContent = `.px2 .lanc-row.px2-row,.px2 .px4-sr{grid-template-columns:78px 96px 150px 128px 84px 58px minmax(120px,1fr) minmax(120px,1fr) 88px 118px 96px 54px 96px 60px 96px 24px}
+  .px2 .px4-sr.px5-sr .px5-sl{grid-column:1 / 7}.px2 .px4-sr.px5-sr .px5-so{grid-column:7}.px2 .px4-sr.px5-sr .px5-sd{grid-column:8}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -56199,6 +56275,7 @@ CONFIG.version = "v0.14.100";   /* Passageiros › Análise em 3 páginas intern
 CONFIG.version = "v0.14.101";   /* Passageiros › Leitura Mensal: gráfico Movimento no Ano (Total | Por Horário, ganho ou queda sobre o mês anterior) */
 CONFIG.version = "v0.14.102";   /* Passageiros: rótulos e ⛶ no Movimento por horário; hoje em destaque no calendário; cabeçalho fixo e Relatório obrigatório em Lançamentos; Por Trecho sem subtítulo repetido */
 CONFIG.version = "v0.14.103";   /* Passageiros: Veículo e Motorista na folha de Lançamentos e no Banco de Dados */
+CONFIG.version = "v0.14.104";   /* Passageiros: Folha (PDF) em paisagem com quadrinhos do dia e Observações; mesma ordem de colunas no PDF, na planilha e no ERP; Observações da planilha entram nas Obs. do horário */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

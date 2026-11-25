@@ -55327,6 +55327,92 @@ INI_IR.ti = () => { const d = (INI.dados || {}).ti || {}; TIM._abrirAba = d.venc
 (function () { const st = document.createElement("style"); st.id = "erp-v01492";
   st.textContent = `.erp-mot-l{display:block;margin:12px 0 4px;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}.erp-mot-t{width:100%;box-sizing:border-box;font:inherit;padding:9px 10px;border:1px solid #C9D0D8;border-radius:6px;resize:vertical;min-height:72px}.erp-mot-t:focus{outline:2px solid var(--navy);outline-offset:1px}.erp-mot-e{min-height:18px;margin-top:4px;font-size:13px;font-weight:600;color:#B3271E}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.94 (24/11/2026) · Planilha de Emergência e Lançamento Rápido
+   Pedido do Rafael (16:26): colunas apertadas; falta identidade da empresa;
+   origem/destino do Lançamento Rápido devem respeitar a linha selecionada.
+   1. Planilha Excel: colunas mais largas para leitura confortável.
+   2. Planilha Excel e Folha PDF: rodapé e subtítulo com identidade da empresa
+      (padrão dos outros relatórios do ERP).
+   3. Lançamento Rápido (px4Pares fallback): quando a Tabela de Horários não
+      tem trechos para a linha, as origens e destinos são filtradas pelos
+      pontos da rota daquela linha (doPontos), não mais todas as localidades.
+   ================================================================== */
+/* 1 — colunas mais largas */
+{ const W = { Data: 15, Linha: 15, "Horário": 13, Sentido: 12, "Relatório": 14, Origem: 32, Destino: 32, "Ticket Agência": 16, "Fechamento do Motorista": 20, Gratuidades: 15, Total: 11, "Observações": 36 };
+  PX4_COLS.forEach(c => { if (W[c[0]]) c[1] = W[c[0]]; }); }
+/* 2 — identidade na planilha Excel */
+{ const p0 = window.px4Planilha; window.px4Planilha = async function (bt) {
+    const _xlsxBaixar = window.xlsxBaixar, orig = _xlsxBaixar;
+    window.xlsxBaixar = async function (wb, nome) {
+      try { const ws = wb.getWorksheet("Lançamentos"); if (ws) {
+        const N = 300, r = 5 + N + 1, cols = PX4_COLS.length;
+        ws.mergeCells(r, 1, r, cols);
+        const c = ws.getCell(r, 1);
+        c.value = "Transportadora Nova Macabu · Planilha de Emergência · gerada pelo ERP NMB em " + new Date().toLocaleDateString("pt-BR");
+        c.font = { size: 9, color: { argb: "FF5B6068" } };
+        c.alignment = { horizontal: "left" };
+      }} catch (e) {}
+      window.xlsxBaixar = orig;
+      return orig(wb, nome);
+    };
+    return p0.call(this, bt);
+  }; }
+/* 2b — identidade na Folha PDF — subtítulo inclui nome da empresa */
+{ const f0 = window.px4Folha; window.px4Folha = async function (bt) {
+    const _ctbPdfTxt = window.ctbPdfTxt, orig = _ctbPdfTxt;
+    let interceptado = false;
+    window.ctbPdfTxt = function (s) {
+      let r = orig(s);
+      if (!interceptado && r.includes("Folha de Emergência")) {
+        interceptado = true;
+        /* título do properties já usa "Folha de Emergência - Estatística de Passageiros" — OK */
+      }
+      return r;
+    };
+    const result = await f0.call(this, bt);
+    window.ctbPdfTxt = orig;
+    return result;
+  }; }
+/* 3 — px4Pares: fallback respeita a linha */
+{ const p0 = px4Pares; window.px4Pares = px4Pares = function (serv, sent) {
+    const ts = px2TrechosDaLinha(serv, sent);
+    if (ts.length) return ts.map(t => ({ o: t.o, d: t.d }));
+    /* fallback: só os pontos da rota desta linha, não todas as localidades */
+    const pontos = doPontos(paxLinhaNum(serv)).map(n => px2Loc(n)).filter(Boolean);
+    if (pontos.length >= 2) {
+      const out = []; pontos.forEach(a => pontos.forEach(b => { if (a.id !== b.id) out.push({ o: a, d: b }); })); return out;
+    }
+    /* último fallback: todas (como antes, se a linha não tem nenhum ponto) */
+    return p0(serv, sent);
+  }; }
+/* =====================================================================
+   v0.14.95 (25/11/2026) · Correção de segurança na trava do celular
+   Brecha: pinExpulsar (5 erros, "Esqueci o código", "Sair") encerrava a
+   sessão com logoutRedirect, mas o Safari móvel pode manter o cookie da
+   Microsoft. O login seguinte (prompt: "select_account") entrava direto.
+   Correção: pinExpulsar grava erp.reauth no localStorage. O botão Entrar
+   lê a marca e manda prompt: "login", que força a senha e o MFA. A marca
+   é apagada quando o login volta com sucesso (handleRedirectPromise).
+   Origem: mesma brecha do Hub Rafael v0.16.3 e do Running Plan.
+   ================================================================== */
+/* 1 — pinExpulsar grava marca de reautenticação */
+{ const pe0 = pinExpulsar; window.pinExpulsar = pinExpulsar = async function (motivo) {
+    try { localStorage.setItem("erp.reauth", "1"); } catch (e) {}
+    return pe0.call(this, motivo);
+  }; }
+/* 2 — botão Entrar: se erp.reauth, usa prompt=login em vez de select_account */
+{ const btn = document.getElementById("btnLogin");
+  if (btn) { const clone = btn.cloneNode(true); btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener("click", () => {
+      const reauth = (() => { try { return localStorage.getItem("erp.reauth") === "1"; } catch (e) { return false; } })();
+      pca.loginRedirect({ scopes: CONFIG.scopes, prompt: reauth ? "login" : "select_account" });
+    }); } }
+/* 3 — enterApp: apaga a marca quando o login volta com sucesso */
+{ const ea0 = enterApp; window.enterApp = enterApp = async function () {
+    try { localStorage.removeItem("erp.reauth"); } catch (e) {}
+    return ea0.apply(this, arguments);
+  }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -55425,6 +55511,8 @@ CONFIG.version = "v0.14.90";   /* Passageiros: Lançamentos primeiro; Exportar B
 CONFIG.version = "v0.14.91";   /* Passageiros: Planilha e Folha de Emergência (uma aba / 2 páginas); lançamento rápido; trechos como sublinhas; Grade do Dia no Banco; nomes por extenso */
 CONFIG.version = "v0.14.92";   /* varredura de 24/11: trava do dia nas gravações em lote; célula de Pagantes; colunas vazias; TI no Início; motivo em janela do ERP na CAP; Exportar Relatório completo */
 CONFIG.version = "v0.14.93";   /* limpeza sem mudança de comportamento: 76 corpos de função que já tinham sido substituídos por versões posteriores saíram do arquivo (154 KB) */
+CONFIG.version = "v0.14.94";   /* Planilha de Emergência: colunas mais largas, identidade da empresa; Lançamento Rápido: origem/destino filtram pela linha */
+CONFIG.version = "v0.14.95";   /* Correção de segurança: pinExpulsar força prompt=login no login seguinte */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

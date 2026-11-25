@@ -55413,6 +55413,277 @@ INI_IR.ti = () => { const d = (INI.dados || {}).ti || {}; TIM._abrirAba = d.venc
     try { localStorage.removeItem("erp.reauth"); } catch (e) {}
     return ea0.apply(this, arguments);
   }; }
+/* =====================================================================
+   v0.14.96 (25/11/2026) · Estatística de Passageiros: Planilha de Emergência refeita, importação e Lançamentos.
+   Pedido do Rafael (25/11, 14:23).
+   PLANILHA DE EMERGÊNCIA (Excel)
+   - Colunas: Data · Dia da Semana · Relatório · Veículo · Motorista · Linha · Horário · Sentido · Origem · Destino ·
+     Ticket Agência · Fechamento do Motorista · Gratuidades · Total · Observações. Fonte 12, tudo centralizado.
+   - Data como 25-nov-26; Dia da Semana (Seg, Ter…) calculado ao digitar a data; Horário como 05:20.
+   - Listas que dependem da linha (nomes no Excel + INDIRETO): Horário = Tabela de Horários da linha no dia da semana da
+     data (feriado = quadro de feriados); Origem = localidades dos trechos da linha no Diário Oficial; Destino = trechos que
+     saem da origem escolhida. Fora da lista o Excel avisa e deixa seguir (horário fora da tabela continua valendo com *).
+   - Veículo = Frota — Veículos (sem os baixados); Motorista = RH — Funcionários com cargo de motorista (sem os desligados).
+   - Cores: digitar = branco; lista = azul #DCE6F1; fórmula = laranja #FDE9D9; Observações = cinza #F2F2F2.
+   - Logo e nome da empresa no topo, rodapé "Transportadora Nova Macabu · … ERP NMB"; o PDF segue a mesma ordem de colunas.
+   IMPORTAÇÃO (Atualizar pela Base em Excel)
+   - Lê Veículo e Motorista (colunas novas em "Financeiro — Passageiros", pela Configuração).
+   - Gratuidades em branco em todas as linhas da viagem: mantém as gratuidades já gravadas (não zera).
+   - Aviso na prévia e confirmação para viagem em feriado ou em dia em que a linha não roda.
+   LANÇAMENTOS
+   - Lançar em feriado, ou numa linha que não roda no dia pela Tabela de Horários, pede confirmação (Lançamento rápido e Gravar).
+   - Texto das linhas da folha centralizado e sem corte; nos trechos abertos, origem e destino ficam sob as colunas deles.
+   ===================================================================== */
+LISTS.pax.columns.push(
+  { name: "Veiculo",   displayName: "Veículo (prefixo)", text: { allowMultipleLines: false, maxLength: 30 } },
+  { name: "Motorista", displayName: "Motorista",         text: { allowMultipleLines: false, maxLength: 120 } });
+const PX5 = { ok: new Set(), faltam: [], colsOk: false };
+const PX5_LINHAS = [["1000", "Parador"], ["1001", "Direto"], ["2000", "Madalena"], ["Fretamento", "Fretamento"]];
+
+/* ---------- colunas Veículo e Motorista: existem na lista? ---------- */
+{ const c0 = px2Carregar;
+  px2Carregar = async function () { const r = await c0.apply(this, arguments);
+    try { if (PAX_STATE.list && !PX5.colsOk) { const x = await graph(`/sites/${PAX_STATE.site.id}/lists/${PAX_STATE.list.id}/columns?$select=name`), nomes = x && Array.isArray(x.value) ? new Set(x.value.map(c => c.name)) : null;
+        PX5.faltam = nomes ? ["Veiculo", "Motorista"].filter(c => !nomes.has(c)) : []; PX5.colsOk = !!nomes && !PX5.faltam.length; } } catch (e) { PX5.faltam = []; }
+    return r; }; }
+/* valores → colunas: Veículo e Motorista só quando vêm da importação e a coluna existe */
+{ const c0 = px2CamposDe;
+  px2CamposDe = function (v) { const f = c0.apply(this, arguments);
+    if (v && "veic" in v && !PX5.faltam.includes("Veiculo")) f.Veiculo = v.veic || null;
+    if (v && "mot" in v && !PX5.faltam.includes("Motorista")) f.Motorista = v.mot || null;
+    return f; }; }
+
+/* ---------- feriado / linha que não roda no dia ---------- */
+function px5SemAtendimento(data, serv) { const dia = paxHorDoDia(data); return !!dia && !dia.some(v => v.servs.includes(serv)); }
+async function px5ConfirmaDia(data, servs) {
+  const fer = feriadoNome(data), sem = [...new Set(servs)].filter(s => px5SemAtendimento(data, s)), ks = [];
+  if (fer && !PX5.ok.has(data + "|fer")) ks.push(data + "|fer");
+  sem.forEach(s => { if (!PX5.ok.has(data + "|" + s)) ks.push(data + "|" + s); });
+  if (!ks.length) return true;
+  const dow = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"][dLocal(data).getDay()], partes = [];
+  if (fer) partes.push(`<b>${esc(fmtDate(data))} é feriado</b> (${esc(fer)}).`);
+  if (sem.length) partes.push(`Pela Tabela de Horários, <b>${esc(sem.map(paxLoteServRot).join(", "))}</b> não ${sem.length > 1 ? "rodam" : "roda"} ${fer ? "em feriado" : (dLocal(data).getDay() % 6 === 0 ? "no " : "na ") + esc(dow)} (${esc(fmtDate(data))}).`);
+  partes.push("Confirma que o lançamento é deste dia?");
+  const ok = await erpConfirmar({ titulo: fer ? "Lançamento em feriado" : "Lançamento em dia sem atendimento", html: `<p>${partes.join(" ")}</p>`, texto: partes.join(" ").replace(/<[^>]+>/g, ""), sim: "Sim, é deste dia", nao: "Voltar" });
+  if (ok) ks.forEach(k => PX5.ok.add(k));
+  return !!ok;
+}
+/* Lançamento rápido: confirma antes de registrar um horário ainda não gravado */
+{ const r0 = px4Registrar;
+  px4Registrar = async function () { const L = PAX_UI.lote, q = PX4.q, l = L && q && q.vk ? L.linhas.find(x => px4VK(x) === q.vk) : null;
+    if (l && !l.id && !(await px5ConfirmaDia(L.data, [l.serv]))) return;
+    return r0.apply(this, arguments); };
+  window.px4Registrar = px4Registrar; }
+/* Gravar: confirma as viagens novas do dia */
+{ const s0 = window.paxLoteSalvar;
+  window.paxLoteSalvar = async function () { const L = PAX_UI.lote;
+    try { if (L && !px2Travado(L.data)) { const servs = L.linhas.filter(l => paxLoteSt(l) === "novo").map(l => l.serv); if (servs.length && !(await px5ConfirmaDia(L.data, servs))) return; } } catch (e) {}
+    return s0.apply(this, arguments); }; }
+
+/* ---------- importação: Veículo, Motorista, Gratuidades em branco, feriado ---------- */
+function px5MantemG(nv, a) {   /* gratuidades em branco no arquivo: ficam as gravadas (por trecho, quando havia) */
+  if (nv.det) { let s = 0; Object.keys(nv.det).forEach(k => { const g = Number(((a.det || {})[k] || {}).g) || 0; nv.det[k] = Object.assign({}, nv.det[k], { g }); s += g; }); nv.g = Math.max(a.g, s); }
+  else nv.g = a.g;
+  nv.gMant = true;
+}
+function px5Montar(wbk, arquivo) {
+  const abas = wbk.nomes.filter(n => px3N(n) !== "listas").map(n => ({ nome: n, t: px3LerAba(wbk.aba(n)) })).filter(a => a.t);
+  if (!abas.length) throw new Error("não encontrei a linha de cabeçalho (Data, Linha, Horário…). Use a Planilha de Emergência de Lançamentos ou o Excel de Banco de Dados › Exportar Base.");
+  const erros = [], viagens = new Map(), locRuim = new Set();
+  const chaveDe = (r, cab, aba, n) => { const c = k => (cab[k] == null ? null : r[cab[k]]), data = celData(c("data")), ln = px3N(c("linha")).replace(/\.0+$/, ""), serv = px3SERV[px3N(c("servico"))] || PX3_LINHA[ln] || PX3_LINHA[(ln.match(/^\d{4}/) || [""])[0]], hv = c("horario"), hora = celHora(typeof hv === "string" ? hv.replace(/\s*\(F\)\s*$/i, "") : hv), sv = px3N(c("sentido")), sent = sv === "volta" ? "Volta" : sv === "ida" || !sv ? "Ida" : "";
+    if (px3N(c("data")) === "total" || px3N(c("id")) === "total") return null;
+    const vals = ["ticket agencia", "fechamento do motorista", "gratuidades", "relatorio", "origem", "destino", "trecho", "horario", "linha", "servico"].some(k => { const v = c(k); return v != null && String(v).trim() !== ""; });
+    if (!vals) return null;
+    if (!data || !serv || !/^([01]\d|2[0-3]):[0-5]\d$/.test(hora || "") || !sent) { erros.push(`Aba ${aba}, linha ${n}: ${!data ? "Data" : !serv ? "Linha" : !sent ? "Sentido" : "Horário"} não reconhecido(a).`); return null; }
+    const idv = c("id"), id = idv == null || String(idv).trim() === "" ? "" : String(idv).trim().replace(/\.0+$/, ""), k = `${data}|${serv}|${hora}|${sent}`;
+    let v = viagens.get(k); if (!v) { v = { k, data, serv, hora, sent, id: "", rel: "", tot: null, solto: null, det: {}, gx: 0, ruim: "", veic: "", mot: "", gInf: false }; viagens.set(k, v); } if (id && !v.id) v.id = id;
+    const rl = c("relatorio"), rs = rl == null ? "" : String(rl).trim().replace(/\.0+$/, ""); if (rs) { if (/^\d{1,5}$/.test(rs)) v.rel = v.rel || rs.padStart(5, "0"); else v.ruim = v.ruim || "relatório deve ter até 5 números"; }
+    const ve = String(c("veiculo") == null ? "" : c("veiculo")).trim().replace(/\.0+$/, ""), mo = String(c("motorista") == null ? "" : c("motorista")).trim();
+    if (ve && !v.veic) v.veic = ve.slice(0, 30); if (mo && !v.mot) v.mot = mo.slice(0, 120);
+    return { v, c }; };
+  abas.forEach(a => { const V = px3N(a.nome) === "viagens";
+    a.t.linhas.forEach((r, i) => { const o = chaveDe(r, a.t.cab, a.nome, i + 1); if (!o) return; const t = px3Num(o.c("ticket agencia")), f = px3Num(o.c("fechamento do motorista")), g = px3Num(o.c("gratuidades"));
+      if ([t, f, g].some(Number.isNaN)) { o.v.ruim = "use números inteiros (zero ou mais)"; return; }
+      if (g != null) o.v.gInf = true;
+      if (V) { if (t != null || f != null || g != null) o.v.tot = { t: t || 0, f: f || 0, g: g || 0 }; return; }
+      if (!(t || f || g)) return;
+      const cod = String(o.c("trecho") || "").trim(), og = String(o.c("origem") || "").trim(), ds = String(o.c("destino") || "").trim();
+      if (px3N(cod) === px3N(PX3_SEM) || px3N(og) === px3N(PX3_SEM)) { if (t || f) { o.v.ruim = `"${PX3_SEM}" só aceita gratuidades`; return; } o.v.gx += g || 0; return; }
+      let kk = "";
+      if (og || ds) { const A = px2Loc(og), B = px2Loc(ds); if (!A || !B) { const nm = !A ? og || "" : ds || ""; if (nm) locRuim.add(nm); o.v.ruim = `localidade "${nm || (!A ? "origem em branco" : "destino em branco")}" não reconhecida`; return; } if (A.id === B.id) { o.v.ruim = "origem e destino iguais"; return; } kk = `${A.id} X ${B.id}`; }
+      else if (cod) { if (!px2KeyPartes(cod)) { o.v.ruim = `trecho "${cod}" não reconhecido`; return; } kk = px2KeyCanon(cod); }
+      if (!kk) { const s = o.v.solto || { t: 0, f: 0, g: 0 }; o.v.solto = { t: s.t + (t || 0), f: s.f + (f || 0), g: s.g + (g || 0) }; return; }
+      const x = o.v.det[kk] || { t: 0, f: 0, g: 0 }; o.v.det[kk] = { t: x.t + (t || 0), f: x.f + (f || 0), g: x.g + (g || 0) }; }); });
+  const porId = new Map(PAX_STATE.itens.map(x => [String(x._id), x])), porK = new Map(PAX_STATE.itens.map(x => [`${x.Data}|${x.Servico}|${paxHoraPura(x)}|${x.Sentido || "Ida"}`, x]));
+  const regs = []; let iguais = 0, brancos = 0, gMant = 0, vmTem = false;
+  [...viagens.values()].sort((a, b) => a.k.localeCompare(b.k)).forEach(v => {
+    const temDet = px2DetTem(v.det); if (!v.tot && v.solto) v.tot = v.solto;
+    const rot = `${fmtDate(v.data)} · ${paxLoteServRot(v.serv)} ${v.hora} ${v.sent}`, r = { v, rot, st: "", aviso: "", antes: null, x: null };
+    if (v.ruim) { r.st = "erro"; r.aviso = v.ruim; regs.push(r); return; }
+    if (!temDet && !v.tot && !v.gx) { brancos++; return; }
+    const x = porK.get(v.k) || null, xi = v.id ? porId.get(v.id) : null;
+    if (temDet && v.solto) { r.st = "erro"; r.aviso = "há lançamento com trecho e lançamento sem trecho na mesma viagem"; regs.push(r); return; }
+    if (v.id && xi && xi !== x) { r.st = "erro"; r.aviso = `o ID ${v.id} é de outra viagem: não altere Data, Serviço, Horário e Sentido`; regs.push(r); return; }
+    if (!temDet && v.gx) { r.st = "erro"; r.aviso = `há "${PX3_SEM}" sem nenhum trecho com passageiros`; regs.push(r); return; }
+    let nv; if (temDet) { const s = px2DetSoma(v.det); nv = { t: s.t, f: s.f, g: s.g + v.gx, det: v.det }; if (v.tot && (v.tot.t !== nv.t || v.tot.f !== nv.f || v.tot.g !== nv.g)) r.aviso = "o total da aba Viagens difere da soma dos trechos: vale a soma dos trechos"; }
+    else nv = { t: v.tot.t, f: v.tot.f, g: v.tot.g, det: null };
+    nv.rel = v.rel || (x && x.Relatorio ? String(x.Relatorio) : "");
+    nv.veic = v.veic || (x && x.Veiculo ? String(x.Veiculo) : ""); nv.mot = v.mot || (x && x.Motorista ? String(x.Motorista) : ""); if (v.veic || v.mot) vmTem = true;
+    r.nv = nv; r.x = x;
+    if (px2Travado(v.data)) { r.st = "erro"; r.aviso = px2TravaMsg(v.data); regs.push(r); return; }
+    if (x) { const tk = Number(x.TicketAgencia || 0), a = { rel: x.Relatorio ? String(x.Relatorio) : "", t: tk, f: Math.max(0, Number(x.Pagantes || 0) - tk), g: Number(x.Gratuidade || 0), det: px2DetDe(x) }; r.antes = a;
+      if (!v.gInf) { px5MantemG(nv, a); gMant++; }
+      const vmIgual = (nv.veic || "") === String(x.Veiculo || "") && (nv.mot || "") === String(x.Motorista || "");
+      if (a.rel === nv.rel && a.t === nv.t && a.f === nv.f && a.g === nv.g && vmIgual && px2DetTxt(a.det) === px2DetTxt(nv.det || {})) { iguais++; return; } r.st = "alt"; }
+    else { const c = paxHorConfere({ Data: v.data, Servico: v.serv, Horario: v.hora, Sentido: v.sent }, true); r.st = "novo"; if (!c.ok) { r.fora = true; r.aviso = (r.aviso ? r.aviso + " · " : "") + `horário fora da Tabela de Horários (*): fica para a aprovação do dia`; } }
+    const fer = feriadoNome(v.data), sem = px5SemAtendimento(v.data, v.serv);
+    if (fer || sem) { r.diaAviso = fer ? `feriado (${fer})` : `${paxLoteServRot(v.serv)} não roda neste dia pela Tabela de Horários`; r.aviso = (r.aviso ? r.aviso + " · " : "") + r.diaAviso; }
+    regs.push(r); });
+  return { arquivo, regs, erros, iguais, brancos, gMant, vmTem, locRuim: [...locRuim], novo: regs.filter(r => r.st === "novo").length, alt: regs.filter(r => r.st === "alt").length, ruim: regs.filter(r => r.st === "erro").length };
+}
+px3Montar = px5Montar; window.px3Montar = px5Montar;
+{ const h0 = px3PrevHtml;
+  px3PrevHtml = function (imp) { const notas = [];
+    if (imp.locRuim && imp.locRuim.length) notas.push(`<b>Localidade não cadastrada: ${imp.locRuim.map(esc).join(", ")}.</b> As linhas com ela não são gravadas. Cadastre em Operacional › Diário Oficial › Localidades (como localidade nova, ou como "outro nome" de uma existente) e escolha o arquivo de novo.`);
+    if (imp.gMant) notas.push(`Gratuidades em branco no arquivo: em ${imp.gMant} viagem(ns) já gravada(s) ficam as gratuidades que já estavam no ERP.`);
+    if (imp.vmTem && PX5.faltam.length) notas.push(`<b>Veículo e Motorista não serão gravados</b>: faltam as colunas na lista de passageiros. ${session.n1 ? "Rode Sistema › Configuração › Executar tudo" : "Peça a um administrador para rodar a Configuração"} e escolha o arquivo de novo.`);
+    const nd = imp.regs.filter(r => r.diaAviso && (r.st === "novo" || r.st === "alt")).length; if (nd) notas.push(`${nd} viagem(ns) em feriado ou em dia em que a linha não roda: confira na coluna Aviso. Ao gravar, o ERP pede confirmação.`);
+    return (notas.length ? `<div class="import-help pax-tab-aviso px5-notas">${notas.map(n => `<p>${n}</p>`).join("")}</div>` : "") + h0.apply(this, arguments); }; }
+{ const g0 = px3Gravar;
+  px3Gravar = async function () { const imp = PX3.imp; if (!imp) return g0.apply(this, arguments);
+    const d = imp.regs.filter(r => r.diaAviso && (r.st === "novo" || r.st === "alt"));
+    if (d.length) { const dias = [...new Set(d.map(r => r.v.data))].sort().map(x => `${fmtDate(x)}${feriadoNome(x) ? ` (${feriadoNome(x)})` : ""}`);
+      if (!(await erpConfirmar({ titulo: "Lançamentos em feriado ou dia sem atendimento", texto: `${d.length} viagem(ns) do arquivo cai(em) em feriado ou em dia em que a linha não roda pela Tabela de Horários: ${dias.join(", ")}. Confirma que esses lançamentos estão certos?`, sim: "Sim, Continuar", nao: "Voltar" }))) return;
+      d.forEach(r => { PX5.ok.add(r.v.data + "|fer"); PX5.ok.add(r.v.data + "|" + r.v.serv); }); }
+    return g0.apply(this, arguments); };
+  window.px3Gravar = px3Gravar; }
+
+/* ---------- Planilha de Emergência (Excel) ---------- */
+const PX5_COR = { m: "FFFFFFFF", l: "FFDCE6F1", f: "FFFDE9D9", o: "FFF2F2F2" };
+const PX5_COLS = [["Data", 15, "m"], ["Dia da Semana", 14, "f"], ["Relatório", 13, "m"], ["Veículo", 13, "l"], ["Motorista", 30, "l"], ["Linha", 14, "l"], ["Horário", 12, "l"], ["Sentido", 12, "l"], ["Origem", 28, "l"], ["Destino", 28, "l"], ["Ticket Agência", 15, "m"], ["Fechamento do Motorista", 18, "m"], ["Gratuidades", 15, "m"], ["Total", 11, "f"], ["Observações", 40, "o"]];
+const px5Col = n => { let s = ""; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+function px5Horarios(serv, di) {   /* di: 0 = todos; 1–7 = domingo a sábado (DIA.SEMANA do Excel); 8 = feriado */
+  const ks = di === 0 ? [...HOR_DK, "fer"] : [di === 8 ? "fer" : HOR_DK[di - 1]], s = new Set();
+  (HOR_STATE.itens || []).forEach(x => { if (x.Ativo === false || !/^\d{2}:\d{2}$/.test(String(x.Horario || ""))) return; if (serv && !horPaxServs(x).includes(serv)) return; if (!horDiasDe(x).some(d => ks.includes(d))) return; s.add(x.Horario); });
+  return [...s].sort();
+}
+function px5Pontos(serv) {   /* localidades da linha: trechos do Diário Oficial; senão os pontos da rota; senão todas */
+  const m = new Map(); ["Ida", "Volta"].forEach(sn => px2TrechosDaLinha(serv, sn).forEach(t => { m.set(t.o.id, t.o); m.set(t.d.id, t.d); }));
+  let ls = [...m.values()]; if (!ls.length) ls = doPontos(paxLinhaNum(serv)).map(px2Loc).filter(Boolean); if (!ls.length) ls = px2Locais();
+  return [...new Map(ls.map(l => [l.id, l])).values()].sort((a, b) => a.ordem - b.ordem);
+}
+function px5Destinos(serv, o) { const m = new Map(); ["Ida", "Volta"].forEach(sn => px2TrechosDaLinha(serv, sn).forEach(t => { if (t.o.id === o.id) m.set(t.d.id, t.d); if (t.d.id === o.id) m.set(t.o.id, t.o); })); const ls = [...m.values()]; return (ls.length ? ls : px5Pontos(serv).filter(l => l.id !== o.id)).sort((a, b) => a.ordem - b.ordem); }
+async function px5Cadastros() {   /* veículos e motoristas: leitura simples; sem acesso, a coluna fica sem lista */
+  const r = { veic: null, mot: null, avisos: [] };
+  try { const v = await iniItens("frota_veic"); r.veic = v ? [...new Set(v.filter(x => x.Situacao !== "Baixado").map(x => String(x.Title || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true })) : null; } catch (e) { r.veic = null; }
+  try { const f = await iniItens("rh_func"); r.mot = f ? [...new Set(f.filter(x => /motorista/i.test(String(x.Cargo || "")) && x.Situacao !== "Desligado").map(x => String(x.Title || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")) : null; } catch (e) { r.mot = null; }
+  if (!r.veic || !r.veic.length) r.avisos.push("Veículo sem lista (sem acesso à Frota — Veículos ou lista vazia): digite o prefixo.");
+  if (!r.mot || !r.mot.length) r.avisos.push("Motorista sem lista (sem acesso a RH — Funcionários ou nenhum motorista ativo): digite o nome.");
+  return r;
+}
+window.px4Planilha = async bt => {
+  const t0 = bt && bt.textContent; if (bt) { bt.disabled = true; bt.textContent = "Gerando…"; }
+  try {
+    try { await paxHorCarrega(false); } catch (e) {} try { await doCarregar(); } catch (e) {}
+    const cad = await px5Cadastros(), { wb } = await xlsxNovo(), NAVY = "FF0F1E3A", ORANGE = "FFD6421F", LIN = "FFB8C0CC", CINZA = "FF5B6068", N = 300, R0 = 5, NC = PX5_COLS.length, hoje = new Date();
+    const fill = c => ({ type: "pattern", pattern: "solid", fgColor: { argb: c } }), brd = { top: { style: "thin", color: { argb: LIN } }, bottom: { style: "thin", color: { argb: LIN } }, left: { style: "thin", color: { argb: LIN } }, right: { style: "thin", color: { argb: LIN } } };
+    wb.creator = "ERP NMB"; wb.company = "Transportadora Nova Macabu"; wb.title = "Planilha de Emergência - Estatística de Passageiros";
+    const ws = wb.addWorksheet("Lançamentos", { views: [{ state: "frozen", ySplit: 4, showGridLines: false }], properties: { tabColor: { argb: NAVY } },
+      pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "4:4", horizontalCentered: true, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.2, footer: 0.25 } } });
+    const wl = wb.addWorksheet("Listas", { state: "veryHidden" });
+    /* --- listas e nomes --- */
+    let col = 1; const nome = (n, vals, fmt) => { const L = px5Col(col); (vals.length ? vals : [""]).forEach((v, i) => { const c = wl.getCell(i + 1, col); c.value = v; if (fmt) c.numFmt = fmt; }); wb.definedNames.add(`Listas!$${L}$1:$${L}$${Math.max(1, vals.length)}`, n); col++; };
+    const hora = h => { const [a, b] = h.split(":").map(Number); return (a * 60 + b) / 1440; };
+    const todas = px2Locais(); nome("LOCALIDADES", todas.map(l => l.nome));
+    const fer = []; for (let y = hoje.getFullYear() - 1; y <= hoje.getFullYear() + 2; y++) feriadosDoAno(y).forEach((n, iso) => fer.push(iso)); fer.sort();
+    nome("FERIADOS", fer.map(iso => { const d = dLocal(iso); return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); }), "dd/mm/yyyy");
+    for (let di = 0; di <= 8; di++) { PX5_LINHAS.forEach(([k, s]) => nome(`H_${k}_${di}`, px5Horarios(s, di).map(hora), "hh:mm")); nome(`H__${di}`, px5Horarios("", di).map(hora), "hh:mm"); }
+    PX5_LINHAS.forEach(([k, s]) => { const ps = px5Pontos(s); nome(`O_${k}`, ps.map(l => l.nome)); nome(`D_${k}_0`, ps.map(l => l.nome)); ps.forEach((o, i) => nome(`D_${k}_${i + 1}`, px5Destinos(s, o).map(l => l.nome))); });
+    nome("O_", todas.map(l => l.nome)); nome("D__0", todas.map(l => l.nome)); todas.forEach((o, i) => nome(`D__${i + 1}`, todas.filter(l => l.id !== o.id).map(l => l.nome)));
+    if (cad.veic && cad.veic.length) nome("VEICULOS", cad.veic); if (cad.mot && cad.mot.length) nome("MOTORISTAS", cad.mot);
+    /* --- topo: logo, título, legenda --- */
+    ws.getRow(1).height = 30; ws.getRow(2).height = 34; ws.getRow(3).height = 4;
+    const logo = await ctbLogoPng().catch(() => null); if (logo) { const id = wb.addImage({ base64: logo.url, extension: "png" }); ws.addImage(id, { tl: { col: 0.1, row: 0.15 }, ext: { width: Math.min(170, Math.round(56 * logo.w / Math.max(logo.h, 1))), height: 56 } }); }
+    ws.mergeCells(1, 3, 1, NC); const t = ws.getCell(1, 3); t.value = "Estatística de Passageiros · Planilha de Emergência"; t.font = { bold: true, size: 16, color: { argb: NAVY } }; t.alignment = { vertical: "middle", horizontal: "left" };
+    ws.mergeCells(2, 3, 2, NC); const s = ws.getCell(2, 3);
+    s.value = "Um lançamento por linha: a viagem (data, linha, horário, sentido) e o trecho (origem e destino) com os passageiros; o ERP soma os trechos de cada viagem. Escolha a Linha antes de Horário, Origem e Destino: as listas seguem a linha e o dia. Cores: branco = digitar · azul = escolher na lista · laranja = calculado · cinza = observações. Depois: Estatística de Passageiros › Importar › Atualizar pela Base em Excel."
+      + (cad.avisos.length ? " " + cad.avisos.join(" ") : "");
+    s.font = { size: 10, color: { argb: CINZA } }; s.alignment = { wrapText: true, vertical: "middle", horizontal: "left" };
+    for (let i = 1; i <= NC; i++) ws.getCell(3, i).fill = fill(ORANGE);
+    const hr = ws.getRow(4); hr.height = 34; PX5_COLS.forEach(([h, w], i) => { const c = hr.getCell(i + 1); c.value = h; c.font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }; c.fill = fill(NAVY); c.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; c.border = brd; ws.getColumn(i + 1).width = w; });
+    /* --- linhas de lançamento --- */
+    const aviso = (titulo, msg) => ({ showErrorMessage: true, errorStyle: "warning", errorTitle: titulo, error: msg });
+    for (let r = R0; r < R0 + N; r++) { const row = ws.getRow(r); row.height = 20;
+      PX5_COLS.forEach(([, , tp], i) => { const c = row.getCell(i + 1); c.border = brd; c.fill = fill(PX5_COR[tp]); c.font = { size: 12, bold: i === 13 }; c.alignment = { vertical: "middle", horizontal: "center" }; });
+      const C = k => row.getCell(k);
+      C(1).numFmt = "[$-416]dd-mmm-yy;@"; C(3).numFmt = "@"; C(4).numFmt = "@"; C(7).numFmt = "hh:mm"; [11, 12, 13, 14].forEach(k => { C(k).numFmt = "0"; });
+      C(2).value = { formula: `IF($A${r}="","",CHOOSE(WEEKDAY($A${r}),"Dom","Seg","Ter","Qua","Qui","Sex","Sáb"))` };
+      C(14).value = { formula: `IF(COUNT(K${r}:M${r})=0,"",SUM(K${r}:M${r}))` };
+      C(15).alignment = { vertical: "middle", horizontal: "center", wrapText: true }; }
+    const r1 = R0, rN = R0 + N - 1, fx = L => `${L}${r1}:${L}${rN}`, dv = (L, v) => ws.dataValidations.add(fx(L), v), dia = `IF($A${r1}="",0,IF(COUNTIF(FERIADOS,$A${r1})>0,8,WEEKDAY($A${r1})))`;
+    dv("A", { type: "date", allowBlank: true, operator: "greaterThan", formulae: [new Date(2020, 0, 1)], showErrorMessage: true, errorTitle: "Data", error: "Digite a data como dia/mês/ano (ex.: 25/11/2026)." });
+    dv("C", Object.assign({ type: "textLength", allowBlank: true, operator: "lessThanOrEqual", formulae: [5] }, aviso("Relatório", "O número do relatório tem até 5 dígitos.")));
+    if (cad.veic && cad.veic.length) dv("D", Object.assign({ type: "list", allowBlank: true, formulae: ["VEICULOS"] }, aviso("Veículo", "Este prefixo não está na Frota — Veículos. Continuar assim mesmo?")));
+    if (cad.mot && cad.mot.length) dv("E", Object.assign({ type: "list", allowBlank: true, formulae: ["MOTORISTAS"] }, aviso("Motorista", "Este nome não está entre os motoristas do RH. Continuar assim mesmo?")));
+    dv("F", { type: "list", allowBlank: true, formulae: ['"1000,1001,2000,Fretamento"'], showErrorMessage: true, errorTitle: "Linha", error: "Escolha 1000, 1001, 2000 ou Fretamento." });
+    dv("G", Object.assign({ type: "list", allowBlank: true, formulae: [`INDIRECT("H_"&$F${r1}&"_"&${dia})`] }, aviso("Horário", "Este horário não está na Tabela de Horários desta linha para o dia. Se a viagem aconteceu, continue: ela entra com asterisco (*) e fica para a aprovação do dia.")));
+    dv("H", { type: "list", allowBlank: true, formulae: ['"Ida,Volta"'], showErrorMessage: true, errorTitle: "Sentido", error: "Escolha Ida ou Volta." });
+    dv("I", Object.assign({ type: "list", allowBlank: true, formulae: [`INDIRECT("O_"&$F${r1})`] }, aviso("Origem", "Esta localidade não está nos trechos desta linha no Diário Oficial. Continuar assim mesmo?")));
+    dv("J", Object.assign({ type: "list", allowBlank: true, formulae: [`INDIRECT("D_"&$F${r1}&"_"&IFERROR(MATCH($I${r1},INDIRECT("O_"&$F${r1}),0),0))`] }, aviso("Destino", "Não há trecho desta origem para este destino na linha. Continuar assim mesmo?")));
+    ["K", "L", "M"].forEach(L => dv(L, { type: "whole", allowBlank: true, operator: "greaterThanOrEqual", formulae: [0], showErrorMessage: true, errorTitle: "Passageiros", error: "Use um número inteiro (zero ou mais)." }));
+    ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: NC } };
+    const rf = R0 + N + 1; ws.mergeCells(rf, 1, rf, NC); const fc = ws.getCell(rf, 1);
+    fc.value = `Transportadora Nova Macabu · Planilha de Emergência · gerada pelo ERP NMB em ${hoje.toLocaleDateString("pt-BR")}`; fc.font = { size: 9, color: { argb: CINZA } }; fc.alignment = { horizontal: "left" };
+    ws.headerFooter = { oddFooter: `&L&8Transportadora Nova Macabu · ERP NMB · Planilha de Emergência&R&8Página &P de &N` };
+    wb.views = [{ activeTab: 0 }];
+    await xlsxBaixar(wb, "Planilha de Emergência - Passageiros.xlsx"); toast("Planilha de emergência gerada. Guarde uma cópia no computador: ela vale para qualquer dia.", 7000);
+  } catch (e) { toast("Não foi possível gerar a planilha: " + e.message, 8000); } finally { if (bt) { bt.disabled = false; bt.textContent = t0; } }
+};
+
+/* ---------- Folha de Emergência (PDF): mesma ordem de colunas da planilha, logo e nome da empresa ---------- */
+window.px4Folha = async bt => {
+  const t0 = bt && bt.textContent; if (bt) { bt.disabled = true; bt.textContent = "Gerando…"; }
+  try { const J = await erpLib("jspdf"); await erpLib("jspdf_autotable"); const autoTable = window.autoTable, T = ctbPdfTxt; if (!J || !J.jsPDF || typeof autoTable !== "function") throw new Error("biblioteca de PDF indisponível");
+    const doc = new J.jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true }), W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 10, NAVY = [15, 30, 58], MUT = [90, 97, 110], LINHAS = 30;
+    const logo = await ctbLogoPng().catch(() => null), locs = px2Locais().map(l => l.nome).join(" · ");
+    doc.setProperties({ title: T("Folha de Emergência - Estatística de Passageiros"), author: T("Transportadora Nova Macabu"), creator: "ERP NMB" });
+    for (let p = 1; p <= 2; p++) { if (p > 1) doc.addPage(); let x0 = M; if (logo) { const h = 11, w = Math.min(32, h * logo.w / logo.h); doc.addImage(logo.url, "PNG", M, 6.5, w, w * logo.h / logo.w); x0 = M + w + 4; }
+      doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...NAVY); doc.text(T("Estatística de Passageiros - Folha de Emergência"), x0, 11.5);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(20, 24, 32); doc.text(T("Data: ___ / ___ / ______   Dia: _______   Responsável: ____________________   Folha ___ de ___"), x0, 18);
+      doc.setDrawColor(214, 66, 31); doc.setLineWidth(0.6); doc.line(M, 22, W - M, 22);
+      doc.setFontSize(8); doc.setTextColor(...MUT); doc.text(T("Um lançamento por linha: a viagem e o trecho com os passageiros. Não precisa somar: o ERP soma os trechos de cada viagem."), M, 26);
+      autoTable(doc, { theme: "grid", startY: 28.5, margin: { left: M, right: M }, pageBreak: "avoid", rowPageBreak: "avoid",
+        styles: { font: "helvetica", fontSize: 7.6, textColor: [27, 34, 48], lineColor: [110, 118, 130], lineWidth: 0.2, halign: "center", valign: "middle", cellPadding: 0.7, minCellHeight: 7.6 },
+        headStyles: { fillColor: NAVY, textColor: 255, fontStyle: "bold", fontSize: 7, minCellHeight: 9 },
+        head: [[T("Relatório"), T("Veículo"), "Motorista", "Linha", T("Horário"), "Sentido\n(Ida/Volta)", "Origem", "Destino", T("Ticket\nAgência"), "Fechamento\ndo Motorista", "Gratuidades"]],
+        body: Array.from({ length: LINHAS }, () => Array(11).fill("")),
+        columnStyles: { 0: { cellWidth: 15 }, 1: { cellWidth: 15 }, 2: { cellWidth: 25 }, 3: { cellWidth: 13 }, 4: { cellWidth: 13 }, 5: { cellWidth: 15 }, 6: { cellWidth: 24 }, 7: { cellWidth: 24 }, 8: { cellWidth: 14 }, 9: { cellWidth: 16 }, 10: { cellWidth: 16 } } });
+      doc.setFontSize(7.2); doc.setTextColor(...MUT); const yl = H - 17;
+      doc.text(T("Linhas: 1000 Paradora · 1001 Direto · 2000 Sta. Maria Madalena · Fretamento."), M, yl); doc.text(doc.splitTextToSize(T("Localidades: " + locs + "."), W - 2 * M), M, yl + 3.4);
+      doc.text(T(`Transportadora Nova Macabu · ERP NMB · ${p === 1 ? "frente" : "verso"} · depois lance em Estatística de Passageiros › Lançamentos ou na Planilha de Emergência`), M, H - 5); doc.text(T(`Página ${p} de 2`), W - M, H - 5, { align: "right" }); }
+    doc.save("Folha de Emergência - Passageiros.pdf"); toast("Folha de emergência gerada: 2 páginas, para imprimir frente e verso.", 6000);
+  } catch (e) { toast("Não foi possível gerar a folha: " + e.message, 8000); } finally { if (bt) { bt.disabled = false; bt.textContent = t0; } }
+};
+
+/* ---------- folha do dia: texto centralizado, sem corte; trechos sob Origem e Destino ---------- */
+{ const w0 = paxLoteWire;
+  paxLoteWire = function () { const r = w0.apply(this, arguments);
+    try { const grid = $("paxLoteGrid"); if (grid) grid.querySelectorAll(".px4-sr[data-k]").forEach(sr => { const sn = sr.querySelector(".px4-sn"); if (!sn) return; const p = px2KeyPartes(sr.dataset.k);
+        sn.outerHTML = `<span class="px5-sl" aria-hidden="true">↳ Trecho</span><span class="px5-so">${esc(p ? p.a.nome : sr.dataset.k)}</span><span class="px5-sd">${esc(p ? p.b.nome : "")}</span>`; sr.classList.add("px5-sr"); }); } catch (e) {}
+    return r; }; }
+Object.assign(window, { PX5, px5Montar, px5ConfirmaDia, px5Horarios, px5Pontos, px5Destinos, px5Cadastros });
+(function () { const st = document.createElement("style"); st.id = "erp-v01496";
+  st.textContent = `.px2 .lanc-row.px2-row,.px2 .px4-sr{grid-template-columns:78px 132px minmax(130px,1fr) minmax(130px,1fr) 84px 58px 88px 118px 96px 54px 96px 60px 96px 24px}
+  .px2 .px2-row:not(.lanc-head)>.lanc-cell,.px2 .px2-row:not(.lanc-head)>.lanc-calc{text-align:center;justify-content:center}
+  .px2 .px2-row .pl-fixo,.px2 .px2-row .px2-od{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.2;overflow-wrap:break-word}
+  .px2 .px2-row .pl-st{display:inline-block}
+  .px2 .px4-sr.px5-sr .px5-sl{grid-column:1 / 3;padding-left:12px;font-size:12.5px;color:var(--ink-2);text-align:left;white-space:nowrap}
+  .px2 .px4-sr.px5-sr .px5-so{grid-column:3}.px2 .px4-sr.px5-sr .px5-sd{grid-column:4}
+  .px2 .px4-sr.px5-sr .px5-so,.px2 .px4-sr.px5-sr .px5-sd{text-align:center;font-size:13.5px;color:var(--ink);line-height:1.2;overflow-wrap:break-word}
+  .px2 .px4-sr.px5-sr input[data-f="t"]{grid-column:7}
+  .px2 .px4-sr input.px2-n{text-align:center}
+  .px5-notas p{margin:0 0 6px}.px5-notas p:last-child{margin:0}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -55513,6 +55784,7 @@ CONFIG.version = "v0.14.92";   /* varredura de 24/11: trava do dia nas gravaçõ
 CONFIG.version = "v0.14.93";   /* limpeza sem mudança de comportamento: 76 corpos de função que já tinham sido substituídos por versões posteriores saíram do arquivo (154 KB) */
 CONFIG.version = "v0.14.94";   /* Planilha de Emergência: colunas mais largas, identidade da empresa; Lançamento Rápido: origem/destino filtram pela linha */
 CONFIG.version = "v0.14.95";   /* Correção de segurança: pinExpulsar força prompt=login no login seguinte */
+CONFIG.version = "v0.14.96";   /* Passageiros: Planilha de Emergência refeita (listas por linha, Veículo, Motorista, cores, logo); importação mantém gratuidades em branco; aviso de feriado e dia sem atendimento; folha centralizada */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

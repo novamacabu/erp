@@ -55750,6 +55750,71 @@ Object.assign(window, { PX6, px6Resumo });
     .pax-flut.preso.px6-abre .px6-corpo{display:block}
   }`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.99 (25/11/2026) · Estatística de Passageiros › Lançamentos: trechos em lote na folha.
+   Pedido do Rafael (25/11, 15:56): o botão de trechos levava cada trecho para o Lançamento rápido, um por um; na linha
+   paradora há muitos trechos por horário, então o lançamento precisa ser em lote.
+   - O botão "Trechos" do horário abre, logo abaixo dele, TODOS os trechos da linha naquele sentido (Diário Oficial, oficiais
+     e não oficiais), mais os que já têm passageiros, cada um com Ticket Agência, Fechamento do Motorista e Gratuidades.
+   - Digita-se direto: Enter (ou seta) desce para o trecho de baixo na mesma coluna, Tab anda para o lado. A linha do horário
+     mostra a soma na hora; trecho em branco não é gravado. "Fechar trechos" recolhe (os que têm passageiros continuam
+     aparecendo resumidos, como antes).
+   - Continua precisando de "Gravar" (o rascunho é salvo sozinho). O Lançamento rápido continua lá para quem preferir.
+   - Dia enviado ou aprovado (travado) mantém o comportamento anterior (só leitura).
+   ===================================================================== */
+const PX7 = { lote: new Set() };
+window.px2TrechosDaFolha = i => {
+  const L = PAX_UI.lote, l = L && L.linhas[i]; if (!l) return;
+  if (!/^\d{2}:\d{2}$/.test(l.hora || "")) { toast("Informe o horário da viagem antes de lançar os trechos."); return; }
+  const vk = px4VK(l);
+  if (px2Travado(L.data)) { if (px2DetTem(l.det)) { if (PX4.exp.has(vk)) PX4.exp.delete(vk); else PX4.exp.add(vk); PAX_UI._mantemRolagem = true; paintPax(); } else toast("Este horário não tem trechos lançados."); return; }
+  if (PX7.lote.has(vk)) { PX7.lote.delete(vk); if (px2DetTem(l.det)) PX4.exp.add(vk); }
+  else { PX7.lote.add(vk); PX4.exp.delete(vk); PX7.foco = vk; }
+  PAX_UI._mantemRolagem = true; paintPax();
+};
+function px7Chaves(l) {
+  const ks = new Set(px2TrechosDaLinha(l.serv, l.sent).map(t => t.k));
+  Object.keys(l.det || {}).forEach(k => { const d = l.det[k]; if (Number(d.t) || Number(d.f) || Number(d.g)) ks.add(k); });
+  return [...ks].sort(px4OrdTr(l.serv, l.sent));
+}
+function px7Resumo(l) { const n = px4NTr(l.det), s = px2DetSoma(l.det || {}); return n ? `${n} trecho(s) com passageiros · ${s.t + s.f + s.g + (Number(l.gx) || 0)} no total` : "Nenhum trecho lançado ainda"; }
+{ const w0 = paxLoteWire;
+  paxLoteWire = function () { const r = w0.apply(this, arguments);
+    try { const L = PAX_UI.lote, grid = $("paxLoteGrid"); if (!L || !grid || px2Travado(L.data)) return r;
+      L.linhas.forEach((l, i) => { const vk = px4VK(l); if (!PX7.lote.has(vk)) { if (!px2DetTem(l.det)) { const b0 = grid.querySelector(`.px2-row[data-i="${i}"] .px2-btr`); if (b0) { b0.textContent = "Trechos ▸"; b0.title = "Lançar por trecho: abre todos os trechos da linha neste horário"; } } return; } const row = grid.querySelector(`.px2-row[data-i="${i}"]`); if (!row) return;
+        const velho = row.nextElementSibling; if (velho && velho.classList.contains("px4-sub")) velho.remove();
+        const ks = px7Chaves(l), nm = k => px2KeyPartes(k) || { a: { nome: k }, b: { nome: "" } };
+        row.classList.add("px4-aberta");
+        row.insertAdjacentHTML("afterend", `<div class="px7-lote" data-vi="${i}" data-sem-titulo>
+          ${ks.length ? ks.map(k => { const d = (l.det || {})[k] || {}, p = nm(k), v = f => Number(d[f]) ? d[f] : "", tot = (Number(d.t) || 0) + (Number(d.f) || 0) + (Number(d.g) || 0);
+            return `<div class="px4-sr px5-sr px7-sr" data-k="${esc(k)}"><span class="px5-sl" aria-hidden="true">↳ Trecho</span><span class="px5-so">${esc(p.a.nome)}</span><span class="px5-sd">${esc(p.b.nome)}</span>${[["t", "Ticket Agência"], ["f", "Fechamento do Motorista"], ["g", "Gratuidades"]].map(([f, rot]) => `<input class="lanc-in num px2-n" inputmode="numeric" maxlength="4" data-f="${f}" value="${v(f)}" placeholder="0" aria-label="${rot} · ${esc(p.a.nome)} × ${esc(p.b.nome)} · ${esc(l.hora)}">`).join("")}<span class="px4-st">${tot || ""}</span><span></span></div>`; }).join("")
+            : `<div class="px7-vz">Não há trechos desta linha no Diário Oficial. Use o Lançamento rápido ou cadastre os trechos em Diretoria › Detro RJ › Diário Oficial.</div>`}
+          ${Number(l.gx) ? `<div class="px4-sr"><span class="px4-sn">↳ Gratuidades sem trecho informado</span><span></span><span></span><span class="px4-st" style="grid-column:9">${esc(String(l.gx))}</span></div>` : ""}
+          <div class="px7-pe"><span class="px7-res">${esc(px7Resumo(l))}</span><span class="grow"></span><span class="sup">Enter desce · Tab anda para o lado · trecho em branco não é gravado</span><button type="button" class="btn sm" data-px7-fecha>Fechar trechos</button></div></div>`);
+        const bt = row.querySelector(".px2-btr"); if (bt) { const n = px4NTr(l.det); bt.textContent = `${n ? `${n} ${n === 1 ? "trecho" : "trechos"}` : "Trechos"} ▾`; bt.classList.add("on"); bt.setAttribute("aria-expanded", "true"); bt.title = "Fechar os trechos deste horário"; } });
+      grid.addEventListener("input", e => { const el = e.target, box = el.closest && el.closest(".px7-lote"); if (!box || !el.dataset.f) return; const sr = el.closest(".px7-sr"), vi = Number(box.dataset.vi), l = L.linhas[vi]; if (!sr || !l) return;
+        const lim = el.value.replace(/\D+/g, "").slice(0, 4); if (lim !== el.value) el.value = lim;
+        const k = sr.dataset.k; if (!l.det || typeof l.det !== "object") l.det = {}; const d = l.det[k] || (l.det[k] = { t: 0, f: 0, g: 0 }); d[el.dataset.f] = Number(lim) || 0;
+        if (!(Number(d.t) || Number(d.f) || Number(d.g))) delete l.det[k];
+        const tot = (Number(d.t) || 0) + (Number(d.f) || 0) + (Number(d.g) || 0); sr.querySelector(".px4-st").textContent = tot || "";
+        const tem = px4Soma(l), row = grid.querySelector(`.px2-row[data-i="${vi}"]`), v = px2Vals(l);
+        if (row) [["tk", v.t], ["pag", v.f], ["grat", v.g]].forEach(([kk, n]) => { const inp = row.querySelector(`input[data-k="${kk}"]`); if (!inp) return; inp.value = tem ? String(n) : ""; inp.readOnly = tem; inp.classList.toggle("px2-soma", tem); });
+        const bt = row && row.querySelector(".px2-btr"); if (bt) { const n = px4NTr(l.det); bt.textContent = `${n ? `${n} ${n === 1 ? "trecho" : "trechos"}` : "Trechos"} ▾`; }
+        const rs = box.querySelector(".px7-res"); if (rs) rs.textContent = px7Resumo(l);
+        paxLoteRodape(); px2RascAgendar(); });
+      grid.addEventListener("click", e => { const b = e.target.closest("[data-px7-fecha]"); if (!b) return; const box = b.closest(".px7-lote"), l = L.linhas[Number(box.dataset.vi)]; if (!l) return; const vk = px4VK(l);
+        PX7.lote.delete(vk); if (px2DetTem(l.det)) PX4.exp.add(vk); PAX_UI._mantemRolagem = true; paintPax(); });
+      if (PX7.foco) { const f = PX7.foco; PX7.foco = ""; const i = L.linhas.findIndex(x => px4VK(x) === f), inp = grid.querySelector(`.px7-lote[data-vi="${i}"] input[data-f]`); if (inp) setTimeout(() => { try { inp.focus({ preventScroll: true }); inp.select(); } catch (e) {} }, 0); }
+    } catch (e) {}
+    return r; }; }
+Object.assign(window, { PX7, px7Chaves });
+(function () { const st = document.createElement("style"); st.id = "erp-v01499";
+  st.textContent = `.px2 .px7-lote{margin:-2px 0 6px;padding:6px 0 8px;background:#F7F9FC;border-left:3px solid var(--navy,#0F1E3A);border-radius:0 0 6px 6px}
+  .px2 .px7-lote .px7-sr{padding-top:3px;padding-bottom:3px}.px2 .px7-lote .px7-sr:nth-child(even){background:#EEF2F8}
+  .px2 .px7-lote .px7-sr input{background:#fff}
+  .px2 .px7-pe{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 9px 0 18px;margin-top:4px;border-top:1px dashed #D5DAE1}.px2 .px7-pe .grow{flex:1}.px7-res{font-weight:700;color:var(--navy);font-size:13px}
+  .px2 .px7-vz{padding:8px 18px;font-size:13px;color:var(--ink-2)}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -55853,6 +55918,7 @@ CONFIG.version = "v0.14.95";   /* Correção de segurança: pinExpulsar força p
 CONFIG.version = "v0.14.96";   /* Passageiros: Planilha de Emergência refeita (listas por linha, Veículo, Motorista, cores, logo); importação mantém gratuidades em branco; aviso de feriado e dia sem atendimento; folha centralizada */
 CONFIG.version = "v0.14.97";   /* Passageiros: o aviso de localidade não cadastrada aponta o caminho certo (Diretoria › Detro RJ › Diário Oficial › Localidades) */
 CONFIG.version = "v0.14.98";   /* Passageiros: Importar dentro de Lançamentos; filtros recolhidos numa faixa ao rolar (abre com o mouse ou o botão) */
+CONFIG.version = "v0.14.99";   /* Passageiros › Lançamentos: trechos em lote na folha (todos os trechos da linha abaixo do horário) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

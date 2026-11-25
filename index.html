@@ -55684,6 +55684,72 @@ Object.assign(window, { PX5, px5Montar, px5ConfirmaDia, px5Horarios, px5Pontos, 
   .px2 .px4-sr input.px2-n{text-align:center}
   .px5-notas p{margin:0 0 6px}.px5-notas p:last-child{margin:0}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.98 (25/11/2026) · Estatística de Passageiros: Importar dentro de Lançamentos; filtros recolhidos ao rolar.
+   Pedido do Rafael (25/11, 15:52).
+   1. A aba "Importar" sai do topo e passa a ser uma subaba de Lançamentos ("Lançamento do Dia" | "Importar").
+      Os botões que levavam a Importar continuam levando para lá (agora dentro de Lançamentos).
+   2. Ao rolar a página, o quadro de filtros (Ano, Mês, Linha, Sentido, Tipo de dia, Horário) não fica mais aberto preso
+      no topo: recolhe numa faixa fina com "Filtros" e o resumo do que está escolhido. Passar o mouse na faixa, ou clicar
+      em "Mostrar filtros", abre o quadro por cima; tirar o mouse (ou clicar de novo) recolhe. No alto da página, o quadro
+      fica aberto como antes. No celular o quadro já não fica preso (sem mudança).
+   ===================================================================== */
+const PX6 = { fixo: false, hover: false, t: 0 };   /* fixo = aberto pelo botão; hover = aberto pelo mouse */
+function px6Resumo(fl) {   /* "2026 · Nov · Linha: Fretamento · …" a partir dos chips marcados, na ordem dos rótulos */
+  const partes = []; let rot = "";
+  fl.querySelectorAll(".rot, .chip").forEach(el => {
+    if (el.classList.contains("rot")) { rot = el.textContent.trim(); return; }
+    if (!(el.classList.contains("on") || el.getAttribute("aria-pressed") === "true")) return;
+    const t = el.textContent.replace(/\s+/g, " ").trim(); if (!t) return;
+    partes.push(/^(ano|m[eê]s)$/i.test(rot) || !rot ? t : `${rot}: ${t}`);
+  });
+  return partes.join(" · ");
+}
+function px6Filtros() {
+  const fl = document.getElementById("paxFlut"); if (!fl) return;
+  if (!fl.querySelector(".px6-fh")) {
+    const corpo = document.createElement("div"); corpo.className = "px6-corpo"; while (fl.firstChild) corpo.appendChild(fl.firstChild); fl.appendChild(corpo);
+    fl.insertAdjacentHTML("afterbegin", `<div class="px6-fh" data-sem-titulo><b class="px6-ft">Filtros</b><span class="px6-fr"></span><span class="grow"></span><button type="button" class="btn sm px6-fb" aria-expanded="false">Mostrar filtros</button></div>`);
+    const fh = fl.querySelector(".px6-fh"), bt = fh.querySelector(".px6-fb");
+    const aplica = () => { const ab = PX6.fixo || PX6.hover; fl.classList.toggle("px6-abre", ab); bt.textContent = PX6.fixo ? "Recolher filtros" : PX6.hover ? "Manter aberto" : "Mostrar filtros"; bt.setAttribute("aria-expanded", String(ab)); };
+    bt.addEventListener("click", e => { e.stopPropagation(); if (PX6.fixo) { PX6.fixo = false; PX6.hover = false; } else PX6.fixo = true; aplica(); });
+    fl.addEventListener("mouseenter", () => { clearTimeout(PX6.t); if (fl.classList.contains("preso") && !PX6.hover) { PX6.hover = true; aplica(); } });
+    fl.addEventListener("mouseleave", () => { clearTimeout(PX6.t); PX6.t = setTimeout(() => { if (PX6.hover && fl.isConnected) { PX6.hover = false; aplica(); } }, 350); });
+    aplica();
+  }
+  fl.querySelector(".px6-fr").textContent = px6Resumo(fl);
+  try { const sen = fl.previousElementSibling; if (sen && sen.classList.contains("pax-flut-sen")) fl.classList.toggle("preso", sen.getBoundingClientRect().top < (PAX_UI._top || 0) + 2); } catch (e) {}
+}
+function px6Abas() {
+  const seg = document.querySelector("#paxBody .op-topo .seg-tabs"); if (!seg) return;
+  const bts = [...seg.querySelectorAll("button")], imp = bts.find(b => /paxTab\('importar'\)/.test(b.getAttribute("onclick") || "")), lan = bts.find(b => /paxTab\('lancar'\)/.test(b.getAttribute("onclick") || ""));
+  const temImp = !!imp; if (imp) imp.remove();
+  const tab = PAX_STATE.tab; if (!lan || (tab !== "lancar" && tab !== "importar")) return;
+  bts.forEach(b => { if (b !== imp) b.classList.toggle("on", b === lan); }); lan.setAttribute("aria-selected", "true");
+  if (!temImp) return;
+  const topo = seg.closest(".op-topo");
+  topo.insertAdjacentHTML("afterend", `<div class="px6-sub" role="tablist" aria-label="Lançamentos" data-sem-titulo><button type="button" role="tab" class="${tab === "lancar" ? "on" : ""}" aria-selected="${tab === "lancar"}" onclick="paxTab('lancar')">Lançamento do Dia</button><button type="button" role="tab" class="${tab === "importar" ? "on" : ""}" aria-selected="${tab === "importar"}" onclick="paxTab('importar')">Importar</button></div>`);
+}
+{ const p0 = paintPax;
+  paintPax = function () { const r = p0.apply(this, arguments);
+    try { px6Abas(); } catch (e) {}
+    try { px6Filtros(); } catch (e) {}
+    return r; };
+  window.paintPax = paintPax; }
+Object.assign(window, { PX6, px6Resumo });
+(function () { const st = document.createElement("style"); st.id = "erp-v01498";
+  st.textContent = `.px6-sub{display:flex;gap:6px;margin:-4px 0 14px;flex-wrap:wrap}
+  .px6-sub button{border:1px solid var(--control-line,#D3D8DE);background:#fff;border-radius:999px;padding:6px 14px;font:inherit;font-size:13.5px;font-weight:700;color:var(--ink-2);cursor:pointer}
+  .px6-sub button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+  .px6-fh{display:none;align-items:center;gap:10px;min-height:34px}
+  .px6-ft{color:var(--navy);font-size:14px}.px6-fr{font-size:13px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.px6-fh .grow{flex:1}
+  @media (min-width:761px) and (min-height:621px){
+    .pax-flut.preso{padding-top:6px;padding-bottom:6px}
+    .pax-flut.preso .px6-fh{display:flex}
+    .pax-flut.preso .px6-corpo{display:none;position:absolute;left:-1px;right:-1px;top:100%;background:var(--surface,#fff);border:1px solid #C9D0D8;border-top:1px dashed var(--line);box-shadow:0 14px 28px rgba(16,24,40,.18);padding:10px 14px 8px;z-index:31}
+    .pax-flut.preso.px6-abre .px6-corpo{display:block}
+  }`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -55786,6 +55852,7 @@ CONFIG.version = "v0.14.94";   /* Planilha de Emergência: colunas mais largas, 
 CONFIG.version = "v0.14.95";   /* Correção de segurança: pinExpulsar força prompt=login no login seguinte */
 CONFIG.version = "v0.14.96";   /* Passageiros: Planilha de Emergência refeita (listas por linha, Veículo, Motorista, cores, logo); importação mantém gratuidades em branco; aviso de feriado e dia sem atendimento; folha centralizada */
 CONFIG.version = "v0.14.97";   /* Passageiros: o aviso de localidade não cadastrada aponta o caminho certo (Diretoria › Detro RJ › Diário Oficial › Localidades) */
+CONFIG.version = "v0.14.98";   /* Passageiros: Importar dentro de Lançamentos; filtros recolhidos numa faixa ao rolar (abre com o mouse ou o botão) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

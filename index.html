@@ -55918,6 +55918,179 @@ Object.assign(window, { PX9, px9Dados });
 (function () { const st = document.createElement("style"); st.id = "erp-v014101";
   st.textContent = `.px9-v.up{color:#197A46}.px9-v.down{color:#B3271E}.px9-nota{margin:8px 0 0}`;
   document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.102 (25/11/2026) · Estatística de Passageiros: ajustes pedidos às 16:37.
+   1. Movimento no Ano › Por Horário: rótulos de dados (o número de cada ponto, na cor da linha, sem sobrepor) e o botão ⛶
+      de ampliar, como nos outros gráficos; ampliado, mantém os rótulos.
+   2. Calendário: o dia de hoje em destaque (fundo azul-marinho, texto branco e a etiqueta "Hoje").
+   3. Lançamentos: o cabeçalho da tabela (Relatório, Linha, Origem…) fica fixo no alto ao rolar, acompanhando a rolagem
+      lateral; o Relatório passa a ser obrigatório para gravar (e no Lançamento rápido), com aviso nas linhas sem ele.
+   4. Por Trecho: sai o subtítulo repetido (o nome do trecho já aparece por extenso).
+   ===================================================================== */
+/* ---------- 1 · Movimento no Ano: rótulos e ampliar ---------- */
+{ const c0 = px9Chart;
+  px9Chart = function () { const r = c0.apply(this, arguments);
+    try { const el = document.getElementById("px9Chart"), ch = el && window.Chart && Chart.getChart(el); if (ch) {
+        const val = ctx => ctx && ctx.dataset && Array.isArray(ctx.dataset.data) ? ctx.dataset.data[ctx.dataIndex] : null;   /* funções à prova de chamada sem contexto (o ⛶ copia as opções) */
+        if (PX9.modo === "hora") { ch.options.plugins.datalabels = { erpKeep: true, display: ctx => val(ctx) != null ? "auto" : false, anchor: "end", align: "top", offset: 2, clamp: true,
+            formatter: v => v == null ? "" : Number(v).toLocaleString("pt-BR"), font: { size: 11, weight: 800 }, color: ctx => (ctx && ctx.dataset && ctx.dataset.borderColor) || PAX_CH.cor };
+          ch.options.scales.y.grace = "22%"; }
+        else { const nf = v => v == null ? "—" : Number(v).toLocaleString("pt-BR");
+          ch.options.plugins.datalabels = { erpKeep: true, display: ctx => !!ctx && ctx.datasetIndex === 0 && val(ctx) != null, anchor: "end", align: "top", offset: 4, textAlign: "center", font: { size: 11.5, weight: 800 },
+            formatter: (v, ctx) => { if (!ctx || !ctx.dataset) return nf(v); const i = ctx.dataIndex, p = px9Pct(v, i > 0 ? ctx.dataset.data[i - 1] : null); return p == null ? nf(v) : [nf(v), px9PctTxt(p)]; },
+            color: ctx => (ctx && ctx.dataset && Array.isArray(ctx.dataset.pointBackgroundColor) && ctx.dataset.pointBackgroundColor[ctx.dataIndex]) || PAX_CH.cor }; }
+        ch.update("none"); }
+      if (window.erpChartButtons) erpChartButtons("#paxBody"); } catch (e) {}
+    return r; }; }
+
+/* ---------- 2 · Calendário: hoje em destaque ---------- */
+{ const c0 = paxCalendarioHtml;
+  paxCalendarioHtml = function () { let h = c0.apply(this, arguments);
+    try { const hoje = todayISO(), alvo = `onclick="paxSelDia(${jsArg(hoje)})"`, i = h.indexOf(alvo); if (i < 0) return h;
+      const ini = h.lastIndexOf('<div class="pax-dia ', i); if (ini < 0) return h;
+      h = h.slice(0, ini) + '<div class="pax-dia pax-hoje ' + h.slice(ini + '<div class="pax-dia '.length);
+      const j = h.indexOf('<div class="d"><b>', ini); if (j > 0) { const k = h.indexOf("</b>", j); if (k > 0) h = h.slice(0, k + 4) + ' <span class="pax-hoje-t">Hoje</span>' + h.slice(k + 4); }
+    } catch (e) {}
+    return h; }; }
+
+/* ---------- 4 · Por Trecho sem o subtítulo repetido ---------- */
+{ const t0 = paxPorTrecho;
+  paxPorTrecho = function () { return String(t0.apply(this, arguments)).replace(/(<span class="l"><b>[^<]*<\/b>) <small class="sup">[^<]*<\/small>/g, "$1"); }; }
+
+/* ---------- 3a · Relatório obrigatório ---------- */
+const px10SemRel = l => !/^\d{1,5}$/.test(String(l.rel == null ? "" : l.rel).trim());
+{ const s0 = window.paxLoteSalvar;
+  window.paxLoteSalvar = async function () {
+    try { const L = PAX_UI.lote; if (L && !px2Travado(L.data)) {
+        const falta = L.linhas.map((l, i) => ({ l, i })).filter(o => ["novo", "alt"].includes(paxLoteSt(o.l)) && px10SemRel(o.l));
+        if (falta.length) { const grid = $("paxLoteGrid");
+          falta.forEach(o => { const inp = grid && grid.querySelector(`.px2-row[data-i="${o.i}"] input[data-k="rel"]`); if (inp) { inp.classList.add("ruim"); inp.title = "Informe o nº do relatório"; } });
+          const p = falta[0], inp = grid && grid.querySelector(`.px2-row[data-i="${p.i}"] input[data-k="rel"]`);
+          toast(`Informe o nº do Relatório antes de gravar: ${falta.length} viagem(ns) sem relatório (ex.: ${paxLoteServRot(p.l.serv)} ${p.l.hora} ${p.l.sent}).`, 9000);
+          if (inp) { inp.scrollIntoView({ block: "center", behavior: "smooth" }); setTimeout(() => { try { inp.focus({ preventScroll: true }); } catch (e) {} }, 300); }
+          return; } } } catch (e) {}
+    return s0.apply(this, arguments); }; }
+{ const r0 = px4Registrar;
+  px4Registrar = async function () { const L = PAX_UI.lote, q = PX4.q, l = L && q && q.vk ? L.linhas.find(x => px4VK(x) === q.vk) : null, rq = $("px4QR");
+    if (l && px10SemRel(l) && !(rq && /^\d{1,5}$/.test(rq.value.trim()))) { const m = $("px4QMsg"); if (m) { m.textContent = "Informe o nº do Relatório (obrigatório para lançar)."; m.classList.add("err"); } if (rq) { rq.classList.add("ruim"); rq.focus(); } return; }
+    return r0.apply(this, arguments); };
+  window.px4Registrar = px4Registrar; }
+
+/* ---------- 3b · cabeçalho da folha fixo ao rolar ---------- */
+const PX10 = { h: null, off: null };
+function px10Cab() {
+  if (PX10.off) { PX10.off(); PX10.off = null; }
+  const grid = $("paxLoteGrid"), head = grid && grid.querySelector(".lanc-head"), rola = grid && grid.closest(".px2-rola"); if (!head || !rola) return;
+  const rel = head.firstElementChild; if (rel && !/\*/.test(rel.textContent)) rel.innerHTML = `${esc(rel.textContent.trim())} <span class="req" title="obrigatório">*</span>`;
+  const caixa = document.createElement("div"); caixa.id = "px10H"; caixa.className = "px10-h"; caixa.setAttribute("aria-hidden", "true");
+  const dentro = document.createElement("div"); dentro.className = "px10-in"; const cl = head.cloneNode(true); cl.removeAttribute("id"); dentro.appendChild(cl); caixa.appendChild(dentro);
+  const velho = document.getElementById("px10H"); if (velho) velho.remove(); document.body.appendChild(caixa);
+  const poe = () => {
+    if (!grid.isConnected || !caixa.isConnected) { if (PX10.off) { PX10.off(); PX10.off = null; } caixa.remove(); return; }
+    const top = PAX_UI._top || 0, rh = head.getBoundingClientRect(), rg = grid.getBoundingClientRect(), rr = rola.getBoundingClientRect();
+    const mostra = rh.top < top && rg.bottom > top + rh.height + 20 && getComputedStyle(grid).display !== "none";
+    caixa.style.display = mostra ? "block" : "none"; if (!mostra) return;
+    const cs = getComputedStyle(head); Object.assign(cl.style, { gridTemplateColumns: cs.gridTemplateColumns, width: head.offsetWidth + "px", columnGap: cs.columnGap, margin: "0", paddingLeft: cs.paddingLeft, paddingRight: cs.paddingRight, fontSize: cs.fontSize, fontWeight: cs.fontWeight, letterSpacing: cs.letterSpacing, color: cs.color });
+    Object.assign(caixa.style, { top: top + "px", left: rr.left + "px", width: rola.clientWidth + "px" }); dentro.style.transform = `translateX(${Math.round(rh.left - rr.left)}px)`;
+  };
+  const om = { passive: true }; window.addEventListener("scroll", poe, om); window.addEventListener("resize", poe, om); rola.addEventListener("scroll", poe, om);
+  PX10.off = () => { window.removeEventListener("scroll", poe, om); window.removeEventListener("resize", poe, om); rola.removeEventListener("scroll", poe, om); };
+  poe();
+}
+{ const w0 = paxLoteWire;
+  paxLoteWire = function () { const r = w0.apply(this, arguments); try { px10Cab(); } catch (e) {} return r; }; }
+{ const p0 = paintPax;   /* saiu de Lançamentos: o cabeçalho fixo some junto */
+  paintPax = function () { const r = p0.apply(this, arguments); try { if (!$("paxLoteGrid")) { const h = document.getElementById("px10H"); if (h) h.remove(); if (PX10.off) { PX10.off(); PX10.off = null; } } } catch (e) {} return r; };
+  window.paintPax = paintPax; }
+window.addEventListener("hashchange", () => { const h = document.getElementById("px10H"); if (h && !$("paxLoteGrid")) { h.remove(); if (PX10.off) { PX10.off(); PX10.off = null; } } });
+Object.assign(window, { PX10, px10Cab });
+(function () { const st = document.createElement("style"); st.id = "erp-v014102";
+  st.textContent = `.pax-dia.pax-hoje{background:var(--navy,#0F1E3A)!important;border-color:var(--navy,#0F1E3A)!important;box-shadow:0 0 0 3px rgba(214,66,31,.35)}
+  .pax-dia.pax-hoje,.pax-dia.pax-hoje *{color:#fff!important}
+  .pax-hoje-t{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:999px;background:var(--orange,#D6421F);font-size:10.5px;font-weight:800;letter-spacing:.04em;vertical-align:1px}
+  .px10-h{position:fixed;z-index:40;overflow:hidden;background:#fff;border-bottom:1px solid #DDE2EA;box-shadow:0 6px 14px rgba(16,24,40,.12);display:none;pointer-events:none}
+  .px10-h .px10-in{will-change:transform}
+  .px10-h .lanc-head{display:grid;align-items:center;padding:8px 9px 8px 6px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2,#5B6068)}
+  .px10-h .lanc-head>div{text-align:center;line-height:1.2;white-space:normal}
+  .px2 .lanc-head .req,.px10-h .req{color:var(--orange,#D6421F)}`;
+  document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.103 (25/11/2026) · Estatística de Passageiros: Veículo e Motorista no ERP (não só no Excel).
+   Pedido do Rafael (25/11, 16:41).
+   - Lançamentos (folha do dia): colunas Veículo e Motorista depois do Relatório, com as listas da Frota (sem os
+     baixados) e do RH (motoristas, sem os desligados). Gravam nas colunas "Veículo (prefixo)" e "Motorista" da lista
+     de passageiros (criadas pela Configuração na v0.14.96). Mudar só o veículo ou o motorista de uma viagem gravada
+     conta como alteração. Entram no rascunho.
+   - Banco de Dados › Por Viagem: colunas Veículo e Motorista (consulta; altera-se pela folha ou pela importação).
+   - O dia da semana já aparece na folha (ao lado da data) e no Banco de Dados (coluna Dia).
+   ===================================================================== */
+const PX11 = { cad: null, lendo: null };
+function px11Cad() {
+  if (PX11.cad || PX11.lendo) return PX11.lendo || Promise.resolve(PX11.cad);
+  PX11.lendo = px5Cadastros().then(c => { PX11.cad = c; PX11.lendo = null; if (PAX_STATE.tab === "lancar" && $("paxLoteGrid")) { PAX_UI._mantemRolagem = true; paintPax(); } return c; }).catch(() => { PX11.lendo = null; PX11.cad = { veic: [], mot: [] }; return PX11.cad; });
+  return PX11.lendo;
+}
+/* a linha da folha ganha veic/mot (do gravado ou do rascunho) */
+{ const m0 = paxLoteMontar;
+  paxLoteMontar = function (data) { const L = m0.apply(this, arguments);
+    try { L.linhas.forEach(l => { const x = l.id ? PAX_STATE.itens.find(i => i._id === String(l.id)) : null; l.bv = x ? { veic: String(x.Veiculo || ""), mot: String(x.Motorista || "") } : null; if (l.veic == null) l.veic = l.bv ? l.bv.veic : ""; if (l.mot == null) l.mot = l.bv ? l.bv.mot : ""; });
+      const dia = px2Dia(data), r = dia ? px2J(dia.Rascunho, null) : null;
+      if (r && Array.isArray(r.linhas)) r.linhas.forEach(d => { if (d.veic == null && d.mot == null) return; const at = L.linhas.find(x => x.serv === d.serv && x.hora === d.hora && x.sent === d.sent); if (at) { if (d.veic != null) at.veic = d.veic; if (d.mot != null) at.mot = d.mot; } });
+    } catch (e) {}
+    return L; }; }
+{ const c0 = px2RascColhe;
+  px2RascColhe = function () { const p = c0.apply(this, arguments), L = PAX_UI.lote; if (!p || !L) return p;
+    const vm = L.linhas.filter(l => l.id && ((l.veic || "") !== ((l.bv || {}).veic || "") || (l.mot || "") !== ((l.bv || {}).mot || "")));   /* só veículo/motorista mudou: também vai para o rascunho */
+    vm.forEach(l => { if (!p.linhas.some(d => d.serv === l.serv && d.hora === l.hora && d.sent === l.sent)) p.linhas.push({ serv: l.serv, hora: l.hora, sent: l.sent, rel: l.rel || "", tk: l.tk || "", pag: l.pag || "", grat: l.grat || "", det: px2DetTem(l.det) ? l.det : null, gx: l.gx || "", livre: !!l.livre }); });
+    p.linhas.forEach(d => { const l = L.linhas.find(x => x.serv === d.serv && x.hora === d.hora && x.sent === d.sent); if (l) { d.veic = l.veic || ""; d.mot = l.mot || ""; } });
+    return p; }; }
+{ const s0 = paxLoteSt;
+  paxLoteSt = function (l) { const s = s0.apply(this, arguments);
+    if (s === "igual" && l && l.id && ((l.veic || "") !== ((l.bv || {}).veic || "") || (l.mot || "") !== ((l.bv || {}).mot || ""))) return "alt";
+    return s; }; }
+{ const e0 = px2Efet;
+  px2Efet = function (l) { const v = e0.apply(this, arguments); if (v && l) { v.veic = l.veic || ""; v.mot = l.mot || ""; } return v; }; }
+/* colunas na folha */
+function px11Sel(k, val, lista, rot, dis) {
+  const ls = (lista || []).slice(); if (val && !ls.includes(val)) ls.unshift(val);
+  return `<div class="lanc-cell"><select class="lanc-in lanc-sel px11-s" data-k="${k}" aria-label="${rot}" ${dis}><option value="">${ls.length ? "—" : "digite no cadastro"}</option>${ls.map(v => `<option ${v === val ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></div>`;
+}
+{ const w0 = paxLoteWire;
+  paxLoteWire = function () { const r = w0.apply(this, arguments);
+    try { const L = PAX_UI.lote, grid = $("paxLoteGrid"); if (!L || !grid) return r; const trav = px2Travado(L.data), dis = trav ? "disabled" : "", cad = PX11.cad || {}; if (!PX11.cad) px11Cad();
+      const head = grid.querySelector(".lanc-head"); if (head && !head.querySelector(".px11-h")) head.firstElementChild.insertAdjacentHTML("afterend", `<div class="px11-h">Veículo</div><div class="px11-h">Motorista</div>`);
+      L.linhas.forEach((l, i) => { const row = grid.querySelector(`.px2-row[data-i="${i}"]`); if (!row || row.querySelector(".px11-s")) return;
+        row.firstElementChild.insertAdjacentHTML("afterend", px11Sel("veic", l.veic || "", cad.veic, `Veículo ${l.hora}`, dis) + px11Sel("mot", l.mot || "", cad.mot, `Motorista ${l.hora}`, dis)); });
+      grid.addEventListener("change", e => { const el = e.target; if (!el.classList || !el.classList.contains("px11-s")) return; const row = el.closest(".px2-row"), l = row && L.linhas[Number(row.dataset.i)]; if (!l) return;
+        l[el.dataset.k] = el.value; paxLoteRodape(); px2RascAgendar(); });
+      if (typeof px10Cab === "function") px10Cab();
+    } catch (e) {}
+    return r; }; }
+/* Banco de Dados › Por Viagem: colunas de consulta */
+function px11Banco() {
+  const t = document.querySelector("#paxBody table.pb-t"); if (!t || t.querySelector(".px11-bh")) return;
+  const ths = [...t.querySelectorAll("thead th")], ip = ths.findIndex(th => /^Pagantes/.test(th.textContent.trim())); if (ip < 0) return;
+  ths[ip].insertAdjacentHTML("beforebegin", `<th class="px11-bh">Veículo</th><th class="px11-bh">Motorista</th>`);
+  t.querySelectorAll("tbody tr[data-id]").forEach(tr => { const x = PAX_STATE.itens.find(i => i._id === tr.dataset.id), td = tr.children[ip]; if (!td) return;
+    td.insertAdjacentHTML("beforebegin", `<td class="nw pb-vm">${esc((x && x.Veiculo) || "—")}</td><td class="pb-vm">${esc((x && x.Motorista) || "—")}</td>`); });
+  t.querySelectorAll("tbody td[colspan]").forEach(td => { td.colSpan = Number(td.colSpan) + 2; });
+}
+{ const p0 = paintPax;
+  paintPax = function () { const r = p0.apply(this, arguments); try { if (PAX_STATE.tab === "banco") px11Banco(); } catch (e) {} return r; };
+  window.paintPax = paintPax; }
+{ const b0 = window.paxBancoPinta; if (typeof b0 === "function") window.paxBancoPinta = paxBancoPinta = function () { const r = b0.apply(this, arguments); try { px11Banco(); } catch (e) {} return r; }; }
+Object.assign(window, { PX11, px11Cad });
+(function () { const st = document.createElement("style"); st.id = "erp-v014103";
+  st.textContent = `.px2 .lanc-row.px2-row,.px2 .px4-sr{grid-template-columns:78px 96px 150px 128px minmax(120px,1fr) minmax(120px,1fr) 84px 58px 88px 118px 96px 54px 96px 60px 96px 24px}
+  .px2 .px2-grid{min-width:1560px}
+  .px2 .px11-s{padding:0 4px;font-size:13px;text-overflow:ellipsis}
+  .px2 .px4-sr.px5-sr .px5-sl{grid-column:1 / 5}.px2 .px4-sr.px5-sr .px5-so{grid-column:5}.px2 .px4-sr.px5-sr .px5-sd{grid-column:6}
+  .px2 .px4-sr.px5-sr input[data-f="t"]{grid-column:9}
+  .px2 .px4-sn{grid-column:1 / 9}.px2 .px4-sa .pin-link{grid-column:1 / 9}
+  .px2 .px4-sr .px4-st[style*="grid-column:9"]{grid-column:11!important}
+  .px2 .lanc-head.px2-row{padding-left:9px;padding-right:9px}   /* a linha tem 8 px + 1 px de borda: o título fica sobre a célula */
+  .pb-t td.pb-vm{font-size:13px;color:var(--ink-2)}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -56024,6 +56197,8 @@ CONFIG.version = "v0.14.98";   /* Passageiros: Importar dentro de Lançamentos; 
 CONFIG.version = "v0.14.99";   /* Passageiros › Lançamentos: trechos em lote na folha (todos os trechos da linha abaixo do horário) */
 CONFIG.version = "v0.14.100";   /* Passageiros › Análise em 3 páginas internas: Leitura Mensal, Resumo e Histórico */
 CONFIG.version = "v0.14.101";   /* Passageiros › Leitura Mensal: gráfico Movimento no Ano (Total | Por Horário, ganho ou queda sobre o mês anterior) */
+CONFIG.version = "v0.14.102";   /* Passageiros: rótulos e ⛶ no Movimento por horário; hoje em destaque no calendário; cabeçalho fixo e Relatório obrigatório em Lançamentos; Por Trecho sem subtítulo repetido */
+CONFIG.version = "v0.14.103";   /* Passageiros: Veículo e Motorista na folha de Lançamentos e no Banco de Dados */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

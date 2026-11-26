@@ -57677,6 +57677,34 @@ document.addEventListener("change", ev => { if (ev.target && ev.target.id === "r
     const cpfD = rhfDig(g("rdFuCPF")); if ($("rdFuCPF") && cpfD.length === 11 && rhfCpfOk(cpfD)) { const dup = rhfCpfDup(cpfD, $("rdFuCPF").dataset.meu); if (dup) falha(`CPF já cadastrado para ${dup}. Edite o cadastro dele em vez de criar outro.`); }
     if (rhfEhMot()) { if ($("rdFuCNHn") && rhfDig(g("rdFuCNHn")).length !== 11) falha("Motorista: informe a CNH (11 dígitos)."); if ($("rdFuCNHv") && !g("rdFuCNHv")) falha("Motorista: informe a validade da CNH."); if ($("rdFuT") && rhfDig(g("rdFuT")).length !== 11) falha("Motorista: informe o celular (DDD + 9 dígitos) — é por ele que o Painel de Infrações avisa."); }
     return r0.apply(this, arguments); }; }
+
+/* =====================================================================
+   v0.14.112 (Rafael, 26/11 20:10): ao voltar do cadastro de um funcionário a lista "subia e descia" por alguns segundos
+   no celular. Causa: a lista é redesenhada 3–4 vezes (Carregando → tabela → fila/documentos) e a página encolhe e cresce
+   enquanto o navegador (Safari) tenta restaurar a rolagem antiga. Correção: rolagem controlada pelo ERP
+   (history.scrollRestoration = "manual"); a altura da lista fica reservada durante o redesenho e a posição é devolvida
+   uma vez só, quando a lista para de mudar.
+   ===================================================================== */
+try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch (e) {}
+const RHF_LISTA = { y: 0, h: 0, voltar: false };
+const rhfEhLista = h => h === "#/rh/funcionarios" || h === "#/rh/banco-de-dados/funcs";
+const rhfEhFicha = h => /^#\/rh\/banco-de-dados\/funcs\/[^/?]+/.test(h) || /^#\/rh\/funcionarios\/[^/?]+/.test(h);
+window.addEventListener("scroll", () => { const h = (location.hash || "").split("?")[0]; if (rhfEhLista(h)) { RHF_LISTA.y = window.scrollY; const m = $("main"); if (m) RHF_LISTA.h = m.offsetHeight; } }, { passive: true });
+window.addEventListener("hashchange", e => { try { const de = new URL(e.oldURL).hash.split("?")[0], para = new URL(e.newURL).hash.split("?")[0]; if (rhfEhLista(de) && rhfEhFicha(para)) RHF_LISTA.voltar = true; else if (!rhfEhLista(para) && !rhfEhFicha(para)) RHF_LISTA.voltar = false; } catch (er) {} });
+function rhfListaRestaurar() {
+  const m = $("main"); if (!m) return; const y = RHF_LISTA.y; RHF_LISTA.voltar = false;
+  if (RHF_LISTA.h) m.style.minHeight = RHF_LISTA.h + "px";   /* não deixa a página encolher enquanto a lista é redesenhada */
+  let ult = performance.now(), t0 = ult, fim = false;
+  const ob = new MutationObserver(() => { ult = performance.now(); }); ob.observe(m, { childList: true, subtree: true });
+  const vigia = () => { if (fim) return; const agora = performance.now(); if ((agora - ult > 300 && agora - t0 > 350) || agora - t0 > 3000) { fim = true; ob.disconnect(); window.scrollTo(0, y); requestAnimationFrame(() => { m.style.minHeight = ""; }); return; } requestAnimationFrame(vigia); };
+  requestAnimationFrame(vigia);
+}
+setTimeout(() => { const r1 = window.route; window.route = function () {   /* por fora de todos os outros (envolve depois que o script inteiro carregou) */
+    const h = (location.hash || "#/inicio").split("?")[0], volta = rhfEhLista(h) && RHF_LISTA.voltar;
+    const r = r1.apply(this, arguments);
+    if (volta) rhfListaRestaurar();
+    return r;
+  }; }, 0);
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -57913,6 +57941,7 @@ window.rhfObsRemover = async i => { const h = RHF_OBS.lista[i]; if (!h || !rhfOb
 CONFIG.version = "v0.14.109";   /* fundo padrão nos módulos; Funcionários no menu do RH com campos descritivos; painel: Associar claro, Limpar sem contorno, hover em contraste, "Fechada manualmente" ≠ "Enviada" */
 CONFIG.version = "v0.14.110";   /* RH › Funcionários: máscaras, limites e padrão gravado de CPF, PIS, CNH, RG, celular e telefone */
 CONFIG.version = "v0.14.111";   /* RH › Funcionários: datas com limite e conferência; CPF conferido ao digitar; máscaras de CNH, RG, agência e conta; obrigatórios com * (CNH e celular para motoristas); Painel › Banco de Dados escreve a divergência com o RH na linha */
+CONFIG.version = "v0.14.112";   /* RH › Funcionários: volta da ficha para a lista sem a página subir e descer (rolagem controlada pelo ERP) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

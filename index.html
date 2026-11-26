@@ -57608,6 +57608,36 @@ SETUP_TEXT.inf_mot = `Completa no site Operacional a lista "Cadastro Motoristas"
 (function () { const st = document.createElement("style"); st.id = "erp-v014108";
   st.textContent = `.rhf-fila{margin-bottom:12px;border-left:3px solid var(--orange,#D6421F)}.rhf-pend{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--orange,#D6421F);border:1px dashed var(--orange,#D6421F);border-radius:2px;padding:1px 5px;margin-left:6px}`;
   document.head.appendChild(st); })();
+
+/* =====================================================================
+   v0.14.110 (Rafael, 26/11 18:45): RH › Funcionários — documentos e telefones com máscara ao digitar, limite de
+   caracteres e padrão gravado: CPF 000.000.000-00, PIS 000.00000.00-0, CNH 11 dígitos, RG até 14 caracteres,
+   celular (00) 0.0000-0000, telefone (00) 0000-0000.
+   ===================================================================== */
+function rhfPisFmt(v) { const d = rhfDig(v).slice(0, 11); if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 8)}.${d.slice(8, 10)}-${d.slice(10)}`; return d; }
+function rhfFoneFmt(v) { const d = rhfDig(v).slice(0, 11); if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 3)}.${d.slice(3, 7)}-${d.slice(7)}`; if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`; return d; }
+{ const f0 = rhfFone; rhfFone = function (v) { const d = rhfDig(v); return d.length === 11 || d.length === 10 ? rhfFoneFmt(d) : f0.apply(this, arguments); }; }   /* celular gravado como (00) 0.0000-0000 */
+const RHF_MASCARAS = { rdFuCPF: ["cpf", 14], rdFuPIS: ["pis", 14], rdFuCNHn: ["dig11", 11], rdFuTel: ["fone", 15], rdFuT: ["fone", 16], rdFuRG: ["rg", 14] };
+function rhfMascara(tipo, v) {
+  if (tipo === "cpf") { const d = rhfDig(v).slice(0, 11); return d.length === 11 ? rhfCpfFmt(d) : d.replace(/^(\d{3})(\d)/, "$1.$2").replace(/^(\d{3}\.\d{3})(\d)/, "$1.$2").replace(/^(\d{3}\.\d{3}\.\d{3})(\d)/, "$1-$2"); }
+  if (tipo === "pis") { const d = rhfDig(v).slice(0, 11); return d.length === 11 ? rhfPisFmt(d) : d.replace(/^(\d{3})(\d)/, "$1.$2").replace(/^(\d{3}\.\d{5})(\d)/, "$1.$2").replace(/^(\d{3}\.\d{5}\.\d{2})(\d)/, "$1-$2"); }
+  if (tipo === "dig11") return rhfDig(v).slice(0, 11);
+  if (tipo === "fone") { const d = rhfDig(v).slice(0, 11); return d.length >= 10 ? rhfFoneFmt(d) : d.replace(/^(\d{2})(\d)/, "($1) $2"); }
+  if (tipo === "rg") return String(v || "").toUpperCase().replace(/[^0-9A-Z.\-\/]/g, "").slice(0, 14);
+  return v;
+}
+document.addEventListener("input", ev => { const el = ev.target; const m = el && el.id && RHF_MASCARAS[el.id]; if (!m) return; const nv = rhfMascara(m[0], el.value); if (nv !== el.value) { el.value = nv; try { el.setSelectionRange(nv.length, nv.length); } catch (e) {} } });
+{ const f0 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function (v) { let h = f0.apply(this, arguments);
+    for (const [id, [tipo, max]] of Object.entries(RHF_MASCARAS)) h = h.replace(new RegExp(`(<input[^>]*id="${id}")((?:(?!maxlength=)[^>])*)>`), (_, a, b) => `${a}${b} maxlength="${max}">`);
+    for (const [id, tipo] of [["rdFuCPF", "cpf"], ["rdFuPIS", "pis"], ["rdFuCNHn", "dig11"], ["rdFuTel", "fone"], ["rdFuT", "fone"], ["rdFuRG", "rg"]]) h = h.replace(new RegExp(`(<input[^>]*id="${id}"[^>]*value=")([^"]*)(")`), (_, a, val, c) => a + esc(rhfMascara(tipo, val.replace(/&quot;/g, '"').replace(/&amp;/g, "&"))) + c);
+    return h; }; }
+{ const r0 = RHDB_READ.funcs; RHDB_READ.funcs = function () { const o = r0.apply(this, arguments); const g = id => ($(id) ? $(id).value : "").trim();
+    if ($("rdFuPIS")) { const d = rhfDig(g("rdFuPIS")); if (d && d.length !== 11) { const e = $("rdErr"); if (e) { e.style.display = "block"; e.textContent = "PIS inválido: são 11 dígitos (000.00000.00-0)."; } throw new Error("PIS inválido: são 11 dígitos."); } o.PIS = d ? rhfPisFmt(d) : null; }
+    if ($("rdFuCPF") && "CPF" in o && o.CPF) o.CPF = rhfCpfFmt(o.CPF);
+    if ($("rdFuRG") && "RG" in o && o.RG) o.RG = rhfMascara("rg", o.RG) || null;
+    if ($("rdFuTel") && "Telefone" in o && o.Telefone) { const d = rhfDig(o.Telefone); if (d.length !== 10 && d.length !== 11) { const e = $("rdErr"); if (e) { e.style.display = "block"; e.textContent = "Telefone: informe DDD e número, ex.: (00) 0000-0000."; } throw new Error("Telefone fora do padrão."); } o.Telefone = rhfFoneFmt(d); }
+    if ($("rdFuT") && "Contato" in o && o.Contato) { const d = rhfDig(o.Contato); if (d.length !== 11) { const e = $("rdErr"); if (e) { e.style.display = "block"; e.textContent = "Celular: informe DDD e os 9 dígitos, ex.: (00) 0.0000-0000."; } throw new Error("Celular fora do padrão."); } o.Contato = rhfFoneFmt(d); }
+    return o; }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -57841,6 +57871,7 @@ window.rhfObsRemover = async i => { const h = RHF_OBS.lista[i]; if (!h || !rhfOb
 .rhf-cad .rhf-obs-add,.rhf-cad .pb-hist-acoes{display:none}
 `; document.head.appendChild(st); })();
 CONFIG.version = "v0.14.109";   /* fundo padrão nos módulos; Funcionários no menu do RH com campos descritivos; painel: Associar claro, Limpar sem contorno, hover em contraste, "Fechada manualmente" ≠ "Enviada" */
+CONFIG.version = "v0.14.110";   /* RH › Funcionários: máscaras, limites e padrão gravado de CPF, PIS, CNH, RG, celular e telefone */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

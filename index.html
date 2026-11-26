@@ -4276,12 +4276,13 @@ async function setupList(def, cb) {
     SETUP_CTX.lists = lists;
   } catch (e) { finish(s2, "err", e.message); return steps; }
 
-  const s3 = push("title", `Renomear coluna Título para "${def.titleAs}"`);
+  const s3 = push("title", def.titleAs ? `Renomear coluna Título para "${def.titleAs}"` : "Coluna Título");
   let cols = [];
   try {
     cols = await graphAll(`/sites/${site.id}/lists/${list.id}/columns`);
     const title = cols.find(c => c.name === "Title");
-    if (title && title.displayName === def.titleAs) finish(s3, "skip", "Já estava renomeada");
+    if (!def.titleAs) finish(s3, "skip", "Mantida como está (lista de outro sistema)");   /* v0.14.109: listas da telemetria não têm o Título renomeado */
+    else if (title && title.displayName === def.titleAs) finish(s3, "skip", "Já estava renomeada");
     else if (title) { await graph(`/sites/${site.id}/lists/${list.id}/columns/${title.id}`, { method: "PATCH", body: { displayName: def.titleAs, required: true } }); finish(s3, "ok", "Renomeada e marcada como obrigatória"); }
     else finish(s3, "warn", "Coluna Título não encontrada — pulando");
   } catch (e) { finish(s3, "warn", e.message); }
@@ -10025,9 +10026,9 @@ function adaptarPayload(p){
   if(p && (p.areaRestrita || p.velocidadeExcedida)){
     const inf=[];
     ((p.areaRestrita||{}).value||[]).forEach(it=>{const f=it.fields||{};
-      inf.push({id:String(it.id||f.id||""),lista:"Área Restrita",matricula:String(f.Matricula??""),motoristaLinha:f.Motorista&&f.Motorista!=="-"?f.Motorista:null,veiculo:f.Title||"",localizacao:f["Localiza_x00e7__x00e3_o"]||"—",data:String(f.Data||"").slice(0,10),hora:String(f.Hora||"").slice(0,5),velocidade:Math.round(Number(f.Velocidade)||0),limite:Number(f.LimitedeVelocidade)||0,classificacao:normCls(f["Classifica_x00e7__x00e3_o"]),notificado:f.Notificado===true});});
+      inf.push({id:String(it.id||f.id||""),lista:"Área Restrita",matricula:String(f.Matricula??""),motoristaLinha:f.Motorista&&f.Motorista!=="-"?f.Motorista:null,veiculo:f.Title||"",localizacao:f["Localiza_x00e7__x00e3_o"]||"—",data:String(f.Data||"").slice(0,10),hora:String(f.Hora||"").slice(0,5),velocidade:Math.round(Number(f.Velocidade)||0),limite:Number(f.LimitedeVelocidade)||0,classificacao:normCls(f["Classifica_x00e7__x00e3_o"]),notificado:f.Notificado===true,manual:f.FechamentoManual===true});});
     ((p.velocidadeExcedida||{}).value||[]).forEach(it=>{const f=it.fields||{};
-      inf.push({id:String(it.id||f.id||""),lista:"Velocidade Excedida",matricula:String(f.Matricula??""),motoristaLinha:f.Motorista&&f.Motorista!=="-"?f.Motorista:null,veiculo:f.Title||"",localizacao:f["Localiza_x00e7__x00e3_o"]||"—",data:String(f["InicioViola_x00e7__x00e3_o"]||"").slice(0,10),hora:String(f.HoraInicial||"").slice(0,5),velocidade:Math.round(Number(f["VelocidadeM_x00e1_xima"])||0),limite:85,classificacao:normCls(f["Classifica_x00e7__x00e3_o"]),notificado:f.Notificado===true});});
+      inf.push({id:String(it.id||f.id||""),lista:"Velocidade Excedida",matricula:String(f.Matricula??""),motoristaLinha:f.Motorista&&f.Motorista!=="-"?f.Motorista:null,veiculo:f.Title||"",localizacao:f["Localiza_x00e7__x00e3_o"]||"—",data:String(f["InicioViola_x00e7__x00e3_o"]||"").slice(0,10),hora:String(f.HoraInicial||"").slice(0,5),velocidade:Math.round(Number(f["VelocidadeM_x00e1_xima"])||0),limite:85,classificacao:normCls(f["Classifica_x00e7__x00e3_o"]),notificado:f.Notificado===true,manual:f.FechamentoManual===true});});
     const motoristas=(((p.cadastro||{}).value)||[]).map(it=>{const f=it.fields||{};return {id:String(it.id||""),matricula:String(f.Matricula??"").trim(),nome:f.Title||"",contato:f.Contato||"",situacao:f["Situa_x00e7__x00e3_o"]||"",identidade:f.Identidade||"",habilitacao:f["Habilita_x00e7__x00e3_o"]||"",validadeCNH:f.ValidadeCNH||"",cpf:String(f.CPF||"").replace(/\D/g,""),matRh:String(f.MatriculaRH||"").trim()};});   /* v0.14.107 · v0.14.108: CPF e matrícula do RH */
     return {geradoEm:p.geradoEm,infracoes:inf.filter(i=>i.data&&/^\d{4}-\d{2}-\d{2}$/.test(i.data)),motoristas};
   }
@@ -10042,7 +10043,7 @@ function normalizar(){
     const vel=Number(i.velocidade)||0, lim=Number(i.limite)||0;
     return {...i, matricula:String(i.matricula||""), motorista:i.motoristaLinha||(m?m.nome:null), cadastrado:!!m,
       situacao:m?m.situacao:null, velocidade:vel, limite:lim, excesso:Math.max(0,vel-lim),
-      _dia:parseDia(i.data), notificado:i.notificado===true||i.notificado==="true"};
+      _dia:parseDia(i.data), notificado:i.notificado===true||i.notificado==="true", manual:i.manual===true};   /* v0.14.109: manual = fechada sem envio */
   }).sort((a,b)=> b._dia-a._dia || (b.hora>a.hora?1:-1));
 }
 
@@ -10438,7 +10439,7 @@ function renderTabela(atual){
       <td><span class="vel-celula"><span class="vel-num">${i.velocidade}</span><span style="color:var(--texto-2);font-size:11px">km/h</span><span class="placa-limite" title="Limite da via: ${i.limite} km/h">${i.limite}</span></span></td>
       <td><span class="excesso e-${cs}">+${i.excesso} km/h</span></td>
       <td><span class="badge b-${cs} clicavel" data-filtra="classificacao" data-v="${esc(i.classificacao)}" title="Filtrar por ${esc(i.classificacao)}">${esc(i.classificacao)}</span></td>
-      <td>${i.notificado?`<span class="notif sim">● Enviada</span>${podeEditar("infracoes")?`<button class="btn-mini" data-envio="${vi}" title="Reenviar notificação deste caso" style="background:var(--asfalto)">📨</button>`:""}`:`<span class="notif nao">○ Pendente</span>${podeEditar("infracoes")?`<button class="btn-mini" data-envio="${vi}" title="Enviar notificação deste caso">📨</button><button class="btn-mini" data-marcar="${vi}" title="Marcar como notificada sem enviar">✓</button>`:""}`}</td>
+      <td>${i.notificado?`<span class="notif ${i.manual?"man":"sim"}" title="${i.manual?"Fechada pelo painel, sem WhatsApp":"Notificação enviada por WhatsApp"}">${i.manual?"● Fechada manualmente":"● Enviada"}</span>${podeEditar("infracoes")?`<button class="btn-mini" data-envio="${vi}" title="${i.manual?"Enviar notificação deste caso":"Reenviar notificação deste caso"}" style="background:var(--asfalto)">📨</button>`:""}`:`<span class="notif nao">○ Pendente</span>${podeEditar("infracoes")?`<button class="btn-mini" data-envio="${vi}" title="Enviar notificação deste caso">📨</button><button class="btn-mini" data-marcar="${vi}" title="Marcar como notificada sem enviar">✓</button>`:""}`}</td>
     </tr>`;}).join("");
   /* Clique-filtra (melhoria vinda do SAC) */
   corpo.querySelectorAll("[data-mot]").forEach(b=>b.addEventListener("click",(e)=>{ e.stopPropagation(); if(window.infMotDoItem) window.infMotDoItem(vis[+b.dataset.mot]); }));   /* v0.14.107 */
@@ -10516,8 +10517,8 @@ async function buscar(url){
   const q=(lid,sel,campoData)=>graphAll(`/sites/${SITE}/lists/${lid}/items?$expand=fields${sel==="*"?"":`($select=${sel})`}`+
       (campoData?`&$filter=fields/${campoData} ge '${desde}'&$orderby=fields/${campoData} desc`:"")+`&$top=999`,H);
   const [ar,ve,ca]=await Promise.all([
-    q("eadd141f-df88-47b3-97ab-5fa08888776c","Id,Title,Matricula,Motorista,Localiza_x00e7__x00e3_o,Data,Hora,Velocidade,LimitedeVelocidade,Classifica_x00e7__x00e3_o,_x00c1_reaRestrita,ChaveUnica,Notificado","Data"),
-    q("7dc67837-e6b7-47d6-a2e1-d482e85424e3","Id,Title,Matricula,Motorista,Localiza_x00e7__x00e3_o,VelocidadeM_x00e9_dia,VelocidadeM_x00e1_xima,InicioViola_x00e7__x00e3_o,HoraInicial,HoraFinal,TempodeViola_x00e7__x00e3_o,ChaveUnica,Notificado,Classifica_x00e7__x00e3_o","InicioViola_x00e7__x00e3_o"),
+    q("eadd141f-df88-47b3-97ab-5fa08888776c","*","Data"),   /* v0.14.109: todas as colunas (FechamentoManual entra quando existir) */
+    q("7dc67837-e6b7-47d6-a2e1-d482e85424e3","*","InicioViola_x00e7__x00e3_o"),
     q("a173599e-73e1-4de8-8d95-9e02e9a7837a","*",null)   /* v0.14.107: + identidade, habilitação e validade da CNH · v0.14.108: todas as colunas (CPF e Matrícula (RH) entram quando existirem) */
   ]);
   return {geradoEm:new Date().toISOString(),areaRestrita:{value:ar},velocidadeExcedida:{value:ve},cadastro:{value:ca}};
@@ -10581,6 +10582,7 @@ async function enviarDirigido(){
     }
     if(msg) campos.msg = msg;
     await erpWebhookResposta(await erpWebhook(webhookEnvioUrl, campos, 30000));
+    if(escopo==="item" && modalItem.manual){ try{ await graph(`/sites/${window.__INF.SITE}/lists/${campos.listaId}/items/${modalItem.id}/fields`,{method:"PATCH",body:{FechamentoManual:false}}); modalItem.manual=false; }catch(e){} }   /* v0.14.109: enviou de verdade, deixa de ser "fechada manualmente" */
     fecharModalEnvio();
     bannerOk("<b>Envio dirigido disparado!</b> "+(escopo==="item"?"O caso selecionado":"Os casos pendentes do motorista")+
       (msg?" seguem com a mensagem da gestão anexada.":" foram enviados.")+
@@ -10645,7 +10647,7 @@ function exportarExcel(){
     {h:"Limite (km/h)",v:i=>i.limite},
     {h:"Excesso (km/h)",v:i=>i.excesso},
     {h:"Classificação",v:i=>i.classificacao||""},
-    {h:"Notificado",v:i=>i.notificado?"Sim":"Não"}
+    {h:"Notificado",v:i=>i.notificado?(i.manual?"Fechada manualmente":"Sim"):"Não"}
   ];
   const wsData=[COLS.map(c=>c.h),...rows.map(i=>COLS.map(c=>c.v(i)))];
   const ws=XLSX.utils.aoa_to_sheet(wsData);
@@ -10938,7 +10940,7 @@ function relHist(mesFim,mat,n,frase){
   html+=`<div class="alerta ${reinc||rec>ant||(metade&&mesFim===infMesAtual())?"":"ok"}"><b>Tendência:</b> ${esc(tend)}${metade&&mesFim===infMesAtual()?esc(INF_PARCIAL):""}. ${reinc?`<b>Reincidência:</b> infrações graves ou gravíssimas em ${mesesGraves.size} meses diferentes do período.`:"Sem infrações graves em mais de um mês do período."}${carros?` <b>Carros:</b> ${esc(carros)}.`:""}${loc?` <b>Locais mais frequentes:</b> ${esc(loc)}.`:""}</div>`;
   html+=printSec("Mês a mês","por gravidade",1)+`<div class="gr">${infSvgPilha(porMes.map(x=>({l:infMesCurto(x.k),c:x.c})),720,170)}</div>`;
   html+=`<table class="t"><thead><tr><th>Mês</th>${ORDEM_CLASS.map(c=>`<th class="r">${c}</th>`).join("")}<th class="r">Total</th><th class="r">Excesso médio</th><th class="r">Notificadas</th></tr></thead><tbody>${porMes.map(x=>x.sem?`<tr><td>${esc(relLabelMes(x.k))}</td><td colspan="7" class="mut">sem registros no sistema (antes de ${esc(relLabelMes(pm))})</td></tr>`:`<tr><td>${esc(relLabelMes(x.k))}</td>${ORDEM_CLASS.map(c=>`<td class="r">${x.c[c]||""}</td>`).join("")}<td class="r"><b>${x.a.length}</b></td><td class="r">${x.a.length?"+"+infMedia(x.a,i=>i.excesso).toFixed(0)+" km/h":"—"}</td><td class="r">${x.a.length?infPct(x.a.filter(i=>i.notificado).length,x.a.length):"—"}</td></tr>`).join("")}</tbody></table>`;
-  html+=printSec("Infrações do período",`${cur.length} registro(s)`,2)+`<table class="t"><thead><tr>${INF_TH}<th>Notificação</th></tr></thead><tbody>${cur.map(i=>infLinhaTab(i,`<td>${i.notificado?"Enviada":"Pendente"}</td>`)).join("")||`<tr><td colspan="9">Nenhuma infração no período. Parabéns!</td></tr>`}</tbody></table>`;
+  html+=printSec("Infrações do período",`${cur.length} registro(s)`,2)+`<table class="t"><thead><tr>${INF_TH}<th>Notificação</th></tr></thead><tbody>${cur.map(i=>infLinhaTab(i,`<td>${i.notificado?(i.manual?"Fechada manualmente":"Enviada"):"Pendente"}</td>`)).join("")||`<tr><td colspan="9">Nenhuma infração no período. Parabéns!</td></tr>`}</tbody></table>`;
   html+=`<div class="termo"><h3>Termo de ciência</h3>Declaro que tomei ciência das infrações listadas neste relatório, registradas pelo sistema de monitoramento da frota da Transportadora Nova Macabu de ${esc(relLabelMes(meses[0]))} a ${esc(relLabelMes(mesFim))}, e das orientações da empresa sobre direção segura e respeito aos limites de velocidade.${frase?`<br><br><b>Recado da gestão:</b> ${esc(frase)}`:""}<br><br>Data: ____/____/________${printAssin([["Motorista",`${nome} · matrícula ${mat}`],["Responsável Operacional",""],["Recursos Humanos",""]])}</div>`;
   html+=printRodape("Operacional · Infrações · documento pessoal");
   return html;
@@ -21236,6 +21238,7 @@ window.rhfImportar = () => {
         prog.innerHTML = `<p><b>Importando ${n + 1} de ${total}…</b> ${esc(l.Title)}</p>`;
         try {
           if (l._ex) { const f = limpa(l); delete f.Title; /* o nome vale o do ERP; a planilha completa o resto */
+            if (f.Observacoes && typeof rhfObsLinhas === "function" && String(l._ex.Observacoes || "").trim()[0] === "[") f.Observacoes = rhfObsTexto(rhfObsLinhas(l._ex.Observacoes).concat([{ autor: "Importação de planilha", e: "", data: new Date().toISOString(), texto: String(f.Observacoes).slice(0, 1500) }]));   /* v0.14.109: não apaga os lançamentos */
             if (!f.Situacao && l._ex.Situacao) delete f.Situacao;
             await SP.update(RHDB_STATE.site.id, RHDB_STATE.list.id, l._ex._id, f); }
           else if (l._criado) { const f = limpa(l); if (!f.Situacao) f.Situacao = "Ativo"; await SP.update(RHDB_STATE.site.id, RHDB_STATE.list.id, l._criado, f); }   /* v0.12.56: já criado numa tentativa anterior — completa o próprio registro */
@@ -57382,7 +57385,8 @@ async function infRhGravar(m, criar) {
   const matRh = String(m.matRh || "").trim() || (infDigs(m.mat).length === 11 ? "" : String(m.mat || "").trim());   /* v0.14.108: CPF nunca vira matrícula do RH */
   if (f) { const campos = { Contato: fone }; if (!String(f.Matricula || "").trim() && matRh) campos.Matricula = matRh; await SP.update(INFM.rhSite.id, INFM.rhList.id, f._id, campos); Object.assign(f, campos); }   /* o RH manda no nome e na matrícula dele; daqui vai o contato (e a matrícula se o RH não tinha) */
   else if (criar) { const campos = { Title: m.nome, Matricula: matRh || null, Contato: fone, Cargo: "Motorista", Departamento: "Operacional", Setor: "Tráfego", Situacao: m.sit === "Inativo" ? "Afastado" : "Ativo", Observacoes: `Cadastro criado pelo Painel de Infrações em ${fmtDate(todayISO())} por ${(session.me && session.me.displayName) || "—"}; aguarda aprovação do RH.` };
-    if (await infRhTemCol("Aprovacao")) campos.Aprovacao = "Pendente";
+    if (!(await infRhTemCol("Aprovacao"))) throw new Error('O RH ainda não tem a coluna "Aprovação do cadastro": rode Sistema › Configuração › Executar tudo antes de criar funcionários pelo painel.');   /* v0.14.109: nunca entra direto no quadro */
+    campos.Aprovacao = "Pendente";
     if (m.cpf && infDigs(m.cpf).length === 11 && rhPesAtivo()) campos.CPF = rhfCpfFmt(infDigs(m.cpf));
     const it = await SP.create(INFM.rhSite.id, INFM.rhList.id, campos); f = Object.assign({ _id: String(it && it.id) }, campos); INFM.rh.push(f); }
   else return null;
@@ -57495,9 +57499,11 @@ window.infMotDoItem = async i => {
 
 /* ---------- marcar como notificada sem envio ---------- */
 async function infMarcarItens(lista) {
-  const I = window.__INF, reqs = lista.map(i => ({ method: "PATCH", url: `/sites/${I.SITE}/lists/${I.LISTAS[i.lista]}/items/${i.id}/fields`, body: { Notificado: true } }));
+  const I = window.__INF, tem = {}; for (const k of Object.keys(I.LISTAS)) { try { if (typeof MST === "object" && MST.colsLista) delete MST.colsLista[I.LISTAS[k]]; tem[k] = (await mstColsDe(I.SITE, I.LISTAS[k])).has("FechamentoManual"); } catch (e) { tem[k] = false; } }   /* v0.14.109: coluna criada pela Configuração */
+  const reqs = lista.map(i => ({ method: "PATCH", url: `/sites/${I.SITE}/lists/${I.LISTAS[i.lista]}/items/${i.id}/fields`, body: tem[i.lista] ? { Notificado: true, FechamentoManual: true } : { Notificado: true } }));
   const r = await graphBatch(reqs), ok = r.filter(x => x && x.ok).length;
-  lista.forEach((i, k) => { if (r[k] && r[k].ok) i.notificado = true; });
+  lista.forEach((i, k) => { if (r[k] && r[k].ok) { i.notificado = true; if (tem[i.lista]) i.manual = true; } });
+  if (!Object.values(tem).every(Boolean)) toast("Coluna 'Fechamento manual' ainda não existe na lista: rode Sistema › Configuração › Executar tudo para o painel distinguir enviada de fechada.", 8000);
   return { ok, falhas: r.length - ok };
 }
 window.infMarcarUm = async i => {
@@ -57509,15 +57515,18 @@ window.infMarcarAte = async () => {
   const I = window.__INF; if (!I.podeEd()) return;
   const hoje = todayISO();
   openModal("Marcar notificadas sem envio", `<p class="sup">Todas as infrações <b>pendentes</b> até a data escolhida (qualquer classificação, com ou sem motorista) ficam como notificadas, <b>sem</b> WhatsApp. Serve para fechar o passado antes de começar a enviar pelo painel.</p>
-    <div class="form-grid"><div class="field"><label>Até a data<span class="req">*</span></label><input type="date" id="maAte" max="${hoje}"></div><div class="field"><label>&nbsp;</label><span class="sup" id="maN">Escolha a data para ver quantas são.</span></div></div><div class="err-msg" id="maErr" style="display:none"></div>`, async () => {
+    <div class="form-grid"><div class="field"><label>Até a data<span class="req">*</span></label><input type="date" id="maAte" max="${hoje}"></div><div class="field"><label>&nbsp;</label><span class="sup" id="maN">Escolha a data para ver quantas são.</span></div>
+    <div class="field" style="grid-column:1/-1"><label style="display:flex;gap:8px;align-items:center;text-transform:none;font-weight:600"><input type="checkbox" id="maTbm"> Também carimbar como <b>fechada manualmente</b> as que já constam como notificadas até essa data</label><div class="hint">Use só para corrigir fechamentos feitos antes desta versão (ex.: 26/11): o painel passa a mostrá-las como "Fechada manualmente" em vez de "Enviada". Não mexe no WhatsApp.</div></div></div><div class="err-msg" id="maErr" style="display:none"></div>`, async () => {
     const ate = $("maAte").value; if (!ate) { const e = $("maErr"); e.textContent = "Informe a data."; e.style.display = "block"; return false; }
     if (I.janela < 800) { try { await I.ampliar(); } catch (e) {} }
-    const lista = I.dados.filter(i => !i.notificado && ymd(i._dia) <= ate); if (!lista.length) { toast("Nenhuma infração pendente até essa data."); return true; }
-    if (!(await erpConfirmar({ titulo: "Confirmar", html: `Marcar <b>${lista.length}</b> infração(ões) pendente(s) até ${esc(fmtDate(ate))} como notificadas, sem envio?${I.janela < 800 ? " <b>Só os últimos 92 dias foram lidos</b> (o histórico completo não carregou)." : ""} Isso não se desfaz em lote.`, sim: "Marcar todas", perigo: true }))) return false;
+    const tbm = $("maTbm") && $("maTbm").checked;   /* v0.14.109: corrigir fechamentos antigos sem a marca "manual" */
+    const lista = I.dados.filter(i => ymd(i._dia) <= ate && (!i.notificado || (tbm && !i.manual))); if (!lista.length) { toast(tbm ? "Nada a marcar até essa data." : "Nenhuma infração pendente até essa data."); return true; }
+    if (!(await erpConfirmar({ titulo: "Confirmar", html: `Marcar <b>${lista.length}</b> infração(ões) até ${esc(fmtDate(ate))} como <b>fechadas manualmente</b> (sem envio)?${I.janela < 800 ? " <b>Só os últimos 92 dias foram lidos</b> (o histórico completo não carregou)." : ""} Isso não se desfaz em lote.`, sim: "Marcar todas", perigo: true }))) return false;
     try { const r = await infMarcarItens(lista); I.renderizar(); if (r.falhas) I.bannerErro(`<b>${r.ok} marcada(s)</b>; ${r.falhas} falharam. Clique em ↻ Atualizar dados e tente de novo nas que sobraram.`); else I.bannerOk(`<b>${r.ok} infração(ões) marcada(s) como notificadas</b> até ${esc(fmtDate(ate))}, sem envio.`); return true; }
     catch (e) { const x = $("maErr"); if (x) { x.textContent = "Não foi possível gravar: " + e.message; x.style.display = "block"; return false; } I.bannerErro("<b>Não foi possível gravar:</b> " + esc(e.message)); return true; }
   });
-  const d = $("maAte"); if (d) d.addEventListener("change", async () => { if (!d.value) return; const n = $("maN"); n.textContent = "Contando…"; if (I.janela < 800) { try { await I.ampliar(); } catch (e) {} } const q = I.dados.filter(i => !i.notificado && ymd(i._dia) <= d.value); n.innerHTML = `<b>${q.length}</b> pendente(s) até ${esc(fmtDate(d.value))}${I.janela < 800 ? " (só dos últimos 92 dias: o histórico não carregou)" : ""}.`; });
+  const cb = $("maTbm"); if (cb) cb.addEventListener("change", () => { const d0 = $("maAte"); if (d0 && d0.value) d0.dispatchEvent(new Event("change")); });
+  const d = $("maAte"); if (d) d.addEventListener("change", async () => { if (!d.value) return; const n = $("maN"); n.textContent = "Contando…"; if (I.janela < 800) { try { await I.ampliar(); } catch (e) {} } const tbm = $("maTbm") && $("maTbm").checked; const q = I.dados.filter(i => ymd(i._dia) <= d.value && (!i.notificado || (tbm && !i.manual))); n.innerHTML = `<b>${q.length}</b> ${tbm ? "a marcar" : "pendente(s)"} até ${esc(fmtDate(d.value))}${I.janela < 800 ? " (só dos últimos 92 dias: o histórico não carregou)" : ""}.`; });
 };
 Object.assign(window, { INFM, infFoneNorm, infFoneFmt, infMotCarregar, infRhDe, infDif, infMarcarItens });
 (function () { const st = document.createElement("style"); st.id = "erp-v014107";
@@ -57562,19 +57571,19 @@ LISTS.rh_func.columns.push({ name: "Aprovacao", displayName: "Aprovação do cad
 { const r0 = RHDB_READ.funcs; RHDB_READ.funcs = () => { const r = r0(); if (r && typeof r === "object" && $("rdFuRG")) r.RG = ($("rdFuRG").value || "").trim() || null; return r; }; }
 
 /* ---------- fila de aprovação em RH › Funcionários ---------- */
-const rhfPend = x => String(x.Aprovacao || "") === "Pendente";
+const rhfPend = x => String(x.Aprovacao || "") === "Pendente" || (!String(x.Aprovacao || "") && /^Cadastro criado pelo Painel de Infrações/.test(rhfObsResumo(x.Observacoes)));   /* v0.14.109: quem veio do painel antes da coluna Aprovação existir também espera aprovação */
 window.rhfAprovar = async id => {
   if (!podeEditar("rh_db")) { toast("Seu acesso ao RH é só de leitura."); return; }
   const x = (RHDB_STATE.itens || []).find(i => String(i._id) === String(id)); if (!x) return;
   if (!(await erpConfirmar({ titulo: "Aprovar cadastro", html: `Aprovar o cadastro de <b>${esc(x.Title)}</b> (${esc(x.Cargo || "")}, matrícula ${esc(x.Matricula || "—")})? Confira antes CPF, admissão e CNPJ pelo "Abrir". Depois de aprovado ele sai da fila e segue como os demais.`, sim: "Aprovar" }))) return;
-  try { await SP.update(RHDB_STATE.site.id, RHDB_STATE.list.id, x._id, { Aprovacao: "Aprovado" }); x.Aprovacao = "Aprovado"; toast("Cadastro aprovado."); paintRhDbSub("funcs"); } catch (e) { toast("Não foi possível aprovar: " + e.message, 7000); }
+  try { await SP.update(RHDB_STATE.site.id, RHDB_STATE.list.id, x._id, { Aprovacao: "Aprovado" }); x.Aprovacao = "Aprovado"; toast("Cadastro aprovado."); paintRhDbSub("funcs"); } catch (e) { toast("Não foi possível aprovar: " + e.message + (/Aprovacao/i.test(e.message) ? ' — rode Sistema › Configuração › Executar tudo (coluna "Aprovação do cadastro").' : ""), 9000); }
 };
 { const p0 = paintRhDbSub; paintRhDbSub = function (sub) { const r = p0.apply(this, arguments);
     try { if (sub !== "funcs" || !RHDB_STATE.ready) return r; const body = $("rhdbBody"); if (!body || body.querySelector(".rhf-fila")) return r;
       const pend = (RHDB_STATE.itens || []).filter(rhfPend).sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR")); if (!pend.length) return r;
       const ed = !!podeEditar("rh_db") && !(typeof vcAtivo === "function" && vcAtivo());
       body.insertAdjacentHTML("afterbegin", `<div class="cap-card rhf-fila"><div class="cap-card-h"><h3>Cadastros aguardando aprovação</h3><span class="cap-card-s">${pend.length} vindo(s) do Painel de Infrações · já valem lá; aqui faltam conferência e aprovação</span></div>
-        <div class="table-wrap"><table class="cap-table"><thead><tr><th>Nome</th><th>Matrícula</th><th>Função</th><th>Contato</th><th>Origem</th><th></th></tr></thead><tbody>${pend.map(x => `<tr><td><b>${esc(x.Title || "")}</b></td><td>${esc(x.Matricula || "—")}</td><td>${esc(x.Cargo || "—")}</td><td>${esc(x.Contato || "—")}</td><td class="sup">${esc(String(x.Observacoes || "").split(";")[0])}</td>
+        <div class="table-wrap"><table class="cap-table"><thead><tr><th>Nome</th><th>Matrícula</th><th>Função</th><th>Contato</th><th>Origem</th><th></th></tr></thead><tbody>${pend.map(x => `<tr><td><b>${esc(x.Title || "")}</b></td><td>${esc(x.Matricula || "—")}</td><td>${esc(x.Cargo || "—")}</td><td>${esc(x.Contato || "—")}</td><td class="sup">${esc(String(rhfObsResumo(x.Observacoes)).split(";")[0])}</td>
           <td class="nw"><button class="btn mini" onclick="rhfAbrir('${esc(x._id)}')">Abrir</button>${ed ? ` <button class="btn mini primary" onclick="rhfAprovar('${esc(x._id)}')">Aprovar</button>` : ""}</td></tr>`).join("")}</tbody></table></div></div>`);
       body.querySelectorAll("tr.rhf-linha").forEach(tr => { const x = pend.find(p => String(p._id) === tr.dataset.id); if (x) { const td = tr.querySelector("td"); if (td && !td.querySelector(".rhf-pend")) td.insertAdjacentHTML("beforeend", ` <span class="rhf-pend" title="Aguarda aprovação do RH">pendente</span>`); } });
     } catch (e) {} return r; }; }
@@ -57712,6 +57721,126 @@ CONFIG.version = "v0.14.105";   /* Diretoria › Relatórios › Painel de Opera
 CONFIG.version = "v0.14.106";   /* Frota › página do ônibus › Estrutura (2D e 3D, catálogo por modelo, situação pelas manutenções); colunas Componentes em Manutenção e NC */
 CONFIG.version = "v0.14.107";   /* Painel de Infrações: Banco de Dados de motoristas ligado ao RH (sincronização nos dois sentidos), associar infração não identificada, marcar notificadas sem envio */
 CONFIG.version = "v0.14.108";   /* Motoristas ↔ RH pela pessoa (CNH, identidade, CPF); CPF e Matrícula (RH) no Cadastro Motoristas (CPF é a chave); Identidade no RH; dados pessoais separados dos bancários; fila de aprovação dos cadastros do painel; Associar centralizado */
+/* =====================================================================
+   v0.14.109 (Rafael, 26/11 17:16 e 17:27)
+   - Fundo padrão (#F3F4F6) nos módulos que ainda pintavam a página por conta própria: Escala Agência (tema claro),
+     Painel de Operação, Controle de Diesel (lista em tela cheia). Varredura: bench/scan_fundo.py em 96 rotas.
+   - RH: "Funcionários" volta ao menu principal do RH (#/rh/funcionarios); sai do hub Banco de Dados.
+     Campos do formulário com texto de exemplo (padrão descritivo) mesmo vazios.
+   - Painel de Infrações: "Associar/Cadastrar" em tom claro; "Limpar filtros" sem contorno; linha da tabela com
+     hover em contraste; "Fechada manualmente" (coluna FechamentoManual nas duas listas, pela Configuração)
+     distinta de "Enviada" (WhatsApp).
+   ===================================================================== */
+LISTS.inf_ar = { key: "inf_ar", displayName: "Velocidade Excedida em Área Restrita", siteKey: "operacional",
+  description: "Operacional NMB · infrações da telemetria (área restrita). Lista alimentada pelo Make; o ERP só completa colunas.",
+  columns: [ { name: "Notificado", displayName: "Notificado", boolean: {} }, { name: "FechamentoManual", displayName: "Fechamento manual", boolean: {} } ] };
+LISTS.inf_ve = { key: "inf_ve", displayName: "Velocidade Excedida", siteKey: "operacional",
+  description: "Operacional NMB · infrações da telemetria (velocidade excedida). Lista alimentada pelo Make; o ERP só completa colunas.",
+  columns: [ { name: "Notificado", displayName: "Notificado", boolean: {} }, { name: "FechamentoManual", displayName: "Fechamento manual", boolean: {} } ] };
+SETUP_ORDER.push("inf_ar", "inf_ve");
+SETUP_TEXT.inf_ar = `Completa no site Operacional a lista "Velocidade Excedida em Área Restrita" (já existe; nada é apagado): coluna "Fechamento manual", para o Painel de Infrações distinguir infração fechada pelo painel de notificação enviada por WhatsApp.`;
+SETUP_TEXT.inf_ve = `Completa no site Operacional a lista "Velocidade Excedida" (já existe; nada é apagado): coluna "Fechamento manual".`;
+
+/* RH › Funcionários no menu principal */
+{ const i = MODULES.findIndex(m => m.id === "rh_db");
+  MODULES.splice(i < 0 ? MODULES.length : i, 0, { id: "rh_funcs", path: "#/rh/funcionarios", icon: "people", name: "Funcionários", area: "Recursos Humanos", groups: ["rh", "diretoria"], status: "piloto" });
+  const p0 = pageRhDb; pageRhDb = function () { const bak = RHDB_CARDS.slice(); RHDB_CARDS.length = 0; RHDB_CARDS.push(...bak.filter(x => x.id !== "funcs"));   /* o cartão sai do hub; a rota #/rh/banco-de-dados/funcs continua valendo */
+    try { return p0.apply(this, arguments); } finally { RHDB_CARDS.length = 0; RHDB_CARDS.push(...bak); } };
+  /* permissão: a mesma de RH › Banco de Dados › Funcionários (página rh_db.funcs) — nada novo na matriz */
+  const pm = permModulo; permModulo = id => id === "rh_funcs" ? pm("rh_db.funcs") : pm(id);
+  const ps = window.permModuloSo; if (typeof ps === "function") window.permModuloSo = id => id === "rh_funcs" ? ps("rh_db") : ps(id);
+  const pa0 = permAreas; permAreas = function () { return pa0.apply(this, arguments).map(a => Object.assign({}, a, { mods: a.mods.filter(m => m[0] !== "rh_funcs") })).filter(a => a.mods.length); };
+}
+{ const r0 = window.route; window.route = function () {
+    const hash = location.hash || "#/inicio";
+    if (hash === "#/rh/funcionarios" || hash.startsWith("#/rh/funcionarios/")) {
+      const m = MODULES.find(x => x.id === "rh_funcs"); if (!canSee(m)) { location.hash = "#/inicio"; return; }
+      if (hash.startsWith("#/rh/funcionarios/")) { location.hash = "#/rh/banco-de-dados/funcs/" + hash.slice("#/rh/funcionarios/".length); return; }
+      session.modAtual = "rh_db"; session.pagAtual = "rh_db.funcs"; document.body.classList.remove("wide", "nav-open");   /* guardas de só-leitura e permissão da página valem como em Banco de Dados › Funcionários */
+      $("main").innerHTML = pageRhDbSub("funcs").replace('<a href="#/rh/banco-de-dados">Banco de Dados</a><span>›</span>', ""); renderRhDbSub("funcs"); navAtivo("rh_funcs"); window.scrollTo(0, 0); return;
+    }
+    r0.apply(this, arguments);
+    if (hash.startsWith("#/rh/banco-de-dados/funcs")) navAtivo("rh_funcs");
+  }; }
+
+/* RH › Funcionários: texto de exemplo nos campos vazios (padrão descritivo) */
+{ const f0 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function () { let h = f0.apply(this, arguments);
+    const ph = { rdFuN: "Nome completo", rdFuM: "Ex.: 000123", rdFuPIS: "000.00000.00-0", rdFuTel: "(00) 0000-0000", rdFuT: "(00) 0.0000-0000", rdFuE: "nome@empresa.com.br", rdFuRG: "00.000.000-0", rdFuCNHn: "00000000000 (11 dígitos)" };
+    for (const [id, t] of Object.entries(ph)) h = h.replace(new RegExp(`(<input[^>]*id="${id}"(?:(?!placeholder=)[^>])*)>`), `$1 placeholder="${t}">`);
+    h = h.replace(/(<textarea id="rdFuO"[^>]*)>/, `$1 placeholder="Anotações livres sobre o funcionário">`);
+    return h; }; }
+
+/* RH › Funcionários: seções organizadas (Rafael, 17:28) — identificação; dados pessoais e documentos (CPF, RG, nascimento, PIS, CNH);
+   contato; vínculo com a empresa; dados bancários; observações. Campos que não forem reconhecidos ficam onde estavam. */
+{ const f1 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function () { const h = f1.apply(this, arguments);
+    try {
+      const box = document.createElement("div"); box.innerHTML = h; const grid = box.querySelector(".form-grid"); if (!grid) return h;
+      const campo = id => { const el = grid.querySelector("#" + id); return el ? el.closest(".field") : null; };
+      const secs = [
+        ["", ["rdFuFoto", "rdFuN", "rdFuSob", "rdFuSit"]],
+        ["Dados pessoais e documentos", ["rdFuCPF", "rdFuRG", "rdFuNasc", "rdFuPIS", "rdFuCNHn", "rdFuCNHc", "rdFuCNHv"]],
+        ["Contato", ["rdFuTel", "rdFuT", "rdFuE"]],
+        ["Vínculo com a empresa", ["rdFuM", "rdFuCNPJ", "rdFuDep", "rdFuS", "rdFuC", "rdFuA", "rdFuDem"]],
+        ["Dados bancários", ["rdFuBanco", "rdFuAg", "rdFuConta", "rdFuPix", "rdFuTipoConta"]],
+        ["Observações", ["rdFuO", "rdFuObsBox"]]
+      ];
+      const usados = new Set(), ordem = [];
+      secs.forEach(([t, ids]) => { const els = ids.map(campo).filter(Boolean); els.forEach(e => usados.add(e)); if (!els.length) return; if (t) { const sec = document.createElement("div"); sec.className = "field full form-sec"; sec.textContent = t; ordem.push(sec); } ordem.push(...els); });
+      const sobras = [...grid.children].filter(e => !usados.has(e) && !e.classList.contains("form-sec"));
+      if (sobras.length) { const sec = document.createElement("div"); sec.className = "field full form-sec"; sec.textContent = "Outros"; ordem.splice(Math.max(0, ordem.length - 2), 0, sec, ...sobras); }   /* antes do título "Observações" */
+      grid.innerHTML = ""; ordem.forEach(e => grid.appendChild(e));
+      return box.innerHTML;
+    } catch (e) { return h; } }; }
+
+/* RH › Funcionários: Observações como lançamentos soltos (Rafael, 17:55) — como os comentários das Máquinas PagBank.
+   Guardadas na coluna Observacoes (JSON [{autor, e, data, texto, ed}]); texto antigo vira o primeiro lançamento. Editar/remover: administrador, proprietário do módulo ou o autor. */
+function rhfObsLinhas(s) { s = String(s == null ? "" : s).trim(); if (!s) return []; if (s[0] === "[") { try { const a = JSON.parse(s); if (Array.isArray(a)) return a.filter(x => x && typeof x === "object"); } catch (e) {} } return [{ texto: s, autor: "", data: "", legado: true }]; }
+function rhfObsTexto(lista) { const L = (lista || []).filter(x => x && String(x.texto || "").trim()); return L.length ? JSON.stringify(L) : null; }
+function rhfObsResumo(s) { const L = rhfObsLinhas(s); return L.length ? String(L[0].texto || "") : ""; }
+const rhfObsEu = () => normEmail((session.me && (session.me.mail || session.me.userPrincipalName)) || "");
+const rhfObsPode = h => !vcAtivo() && podeEditar("rh_db") && (!!session.n1 || permModulo("rh_db") === "proprietario" || (h && h.e && rhfObsEu() && normEmail(h.e) === rhfObsEu()));
+const RHF_OBS = { lista: [], edit: null };
+window.rhfObsPintar = function () { const el = $("rdFuObsBox"); if (el) el.innerHTML = rhfObsHtml(); };
+function rhfObsHtml() {
+  const el = { innerHTML: "" }; const L = RHF_OBS.lista, fmt = d => { try { return d ? new Date(d).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : ""; } catch (e) { return ""; } };
+  el.innerHTML = L.length ? `<ul class="pb-hist">${L.map((h, i) => ({ h, i })).reverse().map(({ h, i }) => {
+    const acoes = rhfObsPode(h) ? `<span class="pb-hist-acoes"><button type="button" class="btn-copy" title="Editar observação" onclick="rhfObsEditar(${i})">✎</button><button type="button" class="btn-copy" title="Remover observação" onclick="rhfObsRemover(${i})">×</button></span>` : "";
+    const ed = h.ed ? ` <span class="sup">· editada em ${esc(fmt(h.ed.em))} por ${esc(h.ed.por || "—")}</span>` : "";
+    const quem = h.legado ? `<b>Texto anterior</b>` : `<b>${esc(h.autor || "—")}</b> · <span class="sup">${esc(fmt(h.data))}</span>`;
+    if (RHF_OBS.edit === i) return `<li><div class="pb-hist-top">${quem}</div><textarea id="rdFuObsEd" rows="2">${esc(h.texto || "")}</textarea><div style="margin-top:6px"><button type="button" class="btn sm primary" onclick="rhfObsOk()">Ok</button> <button type="button" class="btn sm ghost" onclick="RHF_OBS.edit=null; rhfObsPintar()">Cancelar</button></div></li>`;
+    return `<li><div class="pb-hist-top">${quem}${ed}${acoes}</div><div class="pb-hist-txt">${esc(h.texto || "").replace(/\n/g, "<br>")}</div></li>`;
+  }).join("")}</ul>` : `<div class="sup" style="padding:6px 0">Nenhuma observação ainda.</div>`;
+  return el.innerHTML;
+}
+window.rhfObsLancar = function () { const t = $("rdFuObsNova"); const v = String((t && t.value) || "").trim(); if (!v) { toast("Escreva a observação antes de lançar."); return; }
+  RHF_OBS.lista.push({ autor: (session.me && session.me.displayName) || "—", e: rhfObsEu(), data: new Date().toISOString(), texto: v.slice(0, 1500) }); t.value = ""; rhfObsPintar(); try { $("modal").dataset.sujo = "1"; } catch (e) {} };
+window.rhfObsEditar = i => { if (RHF_OBS.edit != null && $("rdFuObsEd") && !rhfObsOk()) return; RHF_OBS.edit = i; rhfObsPintar(); const t = $("rdFuObsEd"); if (t) t.focus(); };
+window.rhfObsOk = () => { const i = RHF_OBS.edit; if (i == null) return true; const v = String(($("rdFuObsEd") || {}).value || "").trim(); if (!v) { toast("A observação não pode ficar vazia. Para tirar, use o ×."); return false; }
+  const h = RHF_OBS.lista[i]; if (h && rhfObsPode(h) && h.texto !== v) RHF_OBS.lista[i] = Object.assign({}, h, { texto: v, ed: { por: (session.me && session.me.displayName) || "—", e: rhfObsEu(), em: new Date().toISOString() } });
+  RHF_OBS.edit = null; rhfObsPintar(); try { $("modal").dataset.sujo = "1"; } catch (e) {} return true; };
+window.rhfObsRemover = async i => { const h = RHF_OBS.lista[i]; if (!h || !rhfObsPode(h)) return; if (!(await erpConfirmar({ titulo: "Remover observação", html: "Remover esta observação? Vale ao salvar o cadastro.", sim: "Remover", perigo: true }))) return; RHF_OBS.lista.splice(i, 1); RHF_OBS.edit = null; rhfObsPintar(); try { $("modal").dataset.sujo = "1"; } catch (e) {} };
+{ const f2 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function (v) { let h = f2.apply(this, arguments);
+    RHF_OBS.lista = rhfObsLinhas(v && v.Observacoes).slice(); RHF_OBS.edit = null;
+    const pode = podeEditar("rh_db") && !vcAtivo();
+    h = h.replace(/<div class="field full[^"]*"><label>Observações<\/label><textarea id="rdFuO"[^>]*>[\s\S]*?<\/textarea><\/div>/,
+      `<div class="field full"><div id="rdFuObsBox">${rhfObsHtml()}</div>${pode ? `<div class="rhf-obs-add"><textarea id="rdFuObsNova" rows="2" maxlength="1500" placeholder="Nova observação: ex. advertência verbal, elogio, troca de setor…" style="margin-top:8px"></textarea><div style="margin-top:6px;display:flex;gap:8px;align-items:center"><button type="button" class="btn sm" onclick="rhfObsLancar()">+ Lançar observação</button><span class="hint" style="margin:0">Cada lançamento guarda quem escreveu e quando. Fica gravado ao salvar o cadastro.</span></div></div>` : ""}</div>`);
+    return h; }; }
+{ const r1 = RHDB_READ.funcs; RHDB_READ.funcs = function () { const o = r1.apply(this, arguments);
+    if ($("rdFuObsBox")) { const t = $("rdFuObsNova"); const v = String((t && t.value) || "").trim(); if (v) { RHF_OBS.lista.push({ autor: (session.me && session.me.displayName) || "—", e: rhfObsEu(), data: new Date().toISOString(), texto: v.slice(0, 1500) }); t.value = ""; }
+      if (RHF_OBS.edit != null) rhfObsOk(); o.Observacoes = rhfObsTexto(RHF_OBS.lista); }
+    return o; }; }
+(function () { const st = document.createElement("style"); st.id = "erp-v014109"; st.textContent = `
+#esc-root.light{--bg:var(--canvas);background:var(--canvas)!important}
+#dipRoot{--dbg:var(--canvas)}
+#dsl-root{--paper:var(--canvas)}
+#inf-root .inf-mot-btn{background:#FFE4DE;color:#9A2E1B;border:1px solid #F2BDB2}
+#inf-root .inf-mot-btn:hover{background:#FFD3C9}
+#inf-root .fab-limpar{border:none}
+#inf-root tbody tr:hover{background:#E4ECF6}
+#inf-root .notif.man{color:#5B6068}
+.rhf-cad .rhf-obs-add,.rhf-cad .pb-hist-acoes{display:none}
+`; document.head.appendChild(st); })();
+CONFIG.version = "v0.14.109";   /* fundo padrão nos módulos; Funcionários no menu do RH com campos descritivos; painel: Associar claro, Limpar sem contorno, hover em contraste, "Fechada manualmente" ≠ "Enviada" */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

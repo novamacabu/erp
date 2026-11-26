@@ -10028,7 +10028,7 @@ function adaptarPayload(p){
       inf.push({id:String(it.id||f.id||""),lista:"Área Restrita",matricula:String(f.Matricula??""),motoristaLinha:f.Motorista&&f.Motorista!=="-"?f.Motorista:null,veiculo:f.Title||"",localizacao:f["Localiza_x00e7__x00e3_o"]||"—",data:String(f.Data||"").slice(0,10),hora:String(f.Hora||"").slice(0,5),velocidade:Math.round(Number(f.Velocidade)||0),limite:Number(f.LimitedeVelocidade)||0,classificacao:normCls(f["Classifica_x00e7__x00e3_o"]),notificado:f.Notificado===true});});
     ((p.velocidadeExcedida||{}).value||[]).forEach(it=>{const f=it.fields||{};
       inf.push({id:String(it.id||f.id||""),lista:"Velocidade Excedida",matricula:String(f.Matricula??""),motoristaLinha:f.Motorista&&f.Motorista!=="-"?f.Motorista:null,veiculo:f.Title||"",localizacao:f["Localiza_x00e7__x00e3_o"]||"—",data:String(f["InicioViola_x00e7__x00e3_o"]||"").slice(0,10),hora:String(f.HoraInicial||"").slice(0,5),velocidade:Math.round(Number(f["VelocidadeM_x00e1_xima"])||0),limite:85,classificacao:normCls(f["Classifica_x00e7__x00e3_o"]),notificado:f.Notificado===true});});
-    const motoristas=(((p.cadastro||{}).value)||[]).map(it=>{const f=it.fields||{};return {id:String(it.id||""),matricula:String(f.Matricula??"").trim(),nome:f.Title||"",contato:f.Contato||"",situacao:f["Situa_x00e7__x00e3_o"]||"",identidade:f.Identidade||"",habilitacao:f["Habilita_x00e7__x00e3_o"]||"",validadeCNH:f.ValidadeCNH||""};});   /* v0.14.107 */
+    const motoristas=(((p.cadastro||{}).value)||[]).map(it=>{const f=it.fields||{};return {id:String(it.id||""),matricula:String(f.Matricula??"").trim(),nome:f.Title||"",contato:f.Contato||"",situacao:f["Situa_x00e7__x00e3_o"]||"",identidade:f.Identidade||"",habilitacao:f["Habilita_x00e7__x00e3_o"]||"",validadeCNH:f.ValidadeCNH||"",cpf:String(f.CPF||"").replace(/\D/g,""),matRh:String(f.MatriculaRH||"").trim()};});   /* v0.14.107 · v0.14.108: CPF e matrícula do RH */
     return {geradoEm:p.geradoEm,infracoes:inf.filter(i=>i.data&&/^\d{4}-\d{2}-\d{2}$/.test(i.data)),motoristas};
   }
   return {infracoes:[],motoristas:[]};
@@ -10036,6 +10036,7 @@ function adaptarPayload(p){
 function normalizar(){
   payload = Object.assign({}, payload, adaptarPayload(payload));
   mapaMotoristas = new Map((payload.motoristas||[]).map(m=>[String(m.matricula),m]));
+  (payload.motoristas||[]).forEach(m=>{ if(m.cpf && !mapaMotoristas.has(m.cpf)) mapaMotoristas.set(m.cpf,m); if(m.matRh && !mapaMotoristas.has(m.matRh)) mapaMotoristas.set(m.matRh,m); });   /* v0.14.108: a telemetria pode enviar o CPF no lugar da matrícula */
   dados = (payload.infracoes||[]).map(i=>{
     const m = mapaMotoristas.get(String(i.matricula));
     const vel=Number(i.velocidade)||0, lim=Number(i.limite)||0;
@@ -10384,7 +10385,7 @@ function renderCharts(atual,j,X,f){
   /* v0.12.16: Motoristas com menos infrações graves — quem tem matrícula, menos Grave+Gravíssima primeiro, depois menos infrações no total */
   const melhores=[...porMot.values()].filter(t=>t.mat).sort((a,b)=> a.sev!==b.sev ? a.sev-b.sev : (a.sev+a.leve)-(b.sev+b.leve) || String(a.nome||a.mat).localeCompare(String(b.nome||b.mat),"pt-BR")).slice(0,10);
   const comInfracao=new Set(X.motorista.filter(i=>i.matricula).map(i=>String(i.matricula)));
-  const ativosSem=[...mapaMotoristas.values()].filter(m=>m.matricula && normTxt(m.situacao||"").indexOf("ativ")===0 && !comInfracao.has(String(m.matricula))).length;
+  const ativosSem=[...new Set(mapaMotoristas.values())].filter(m=>m.matricula && normTxt(m.situacao||"").indexOf("ativ")===0 && !comInfracao.has(String(m.matricula))).length;
   const outroFiltro = !!(f.classificacao || f.lista || f.local || f.notif || f.busca);
   const nm=$("melhores-nota"); if(nm) nm.textContent = !melhores.length ? "Sem dados no filtro." : mapaMotoristas.size ? `${ativosSem} motorista(s) ativo(s) do Cadastro sem nenhuma infração ${outroFiltro ? "dentro deste filtro" : "no período"}` : "";
   destruir("melhores");
@@ -10512,12 +10513,12 @@ async function buscar(url){
   const SITE="novamacabu.sharepoint.com,b3157f32-09da-493f-8144-219675455eb7,7cc490ec-91fd-4413-9497-1751706abff6";
   const desde=new Date(Date.now()-infJanela*864e5).toISOString().slice(0,10);
   const H={headers:{Prefer:"HonorNonIndexedQueriesWarningMayFailRandomly"}};
-  const q=(lid,sel,campoData)=>graphAll(`/sites/${SITE}/lists/${lid}/items?$expand=fields($select=${sel})`+
+  const q=(lid,sel,campoData)=>graphAll(`/sites/${SITE}/lists/${lid}/items?$expand=fields${sel==="*"?"":`($select=${sel})`}`+
       (campoData?`&$filter=fields/${campoData} ge '${desde}'&$orderby=fields/${campoData} desc`:"")+`&$top=999`,H);
   const [ar,ve,ca]=await Promise.all([
     q("eadd141f-df88-47b3-97ab-5fa08888776c","Id,Title,Matricula,Motorista,Localiza_x00e7__x00e3_o,Data,Hora,Velocidade,LimitedeVelocidade,Classifica_x00e7__x00e3_o,_x00c1_reaRestrita,ChaveUnica,Notificado","Data"),
     q("7dc67837-e6b7-47d6-a2e1-d482e85424e3","Id,Title,Matricula,Motorista,Localiza_x00e7__x00e3_o,VelocidadeM_x00e9_dia,VelocidadeM_x00e1_xima,InicioViola_x00e7__x00e3_o,HoraInicial,HoraFinal,TempodeViola_x00e7__x00e3_o,ChaveUnica,Notificado,Classifica_x00e7__x00e3_o","InicioViola_x00e7__x00e3_o"),
-    q("a173599e-73e1-4de8-8d95-9e02e9a7837a","Title,Matricula,Contato,Situa_x00e7__x00e3_o,Identidade,Habilita_x00e7__x00e3_o,ValidadeCNH",null)   /* v0.14.107: + identidade, habilitação e validade da CNH */
+    q("a173599e-73e1-4de8-8d95-9e02e9a7837a","*",null)   /* v0.14.107: + identidade, habilitação e validade da CNH · v0.14.108: todas as colunas (CPF e Matrícula (RH) entram quando existirem) */
   ]);
   return {geradoEm:new Date().toISOString(),areaRestrita:{value:ar},velocidadeExcedida:{value:ve},cadastro:{value:ca}};
 }
@@ -10797,7 +10798,7 @@ function relMural(mes,mostrarRanking,frase){
   const [a,m]=mes.split("-").map(Number); const semanas=[]; for(let d=1;d<=new Date(a,m,0).getDate();d+=7){const fim=Math.min(d+6,new Date(a,m,0).getDate());semanas.push({l:`${d}–${fim}`,v:cur.filter(i=>{const dd=+i.data.slice(8,10);return dd>=d&&dd<=fim;}).length});}
   const porMot=new Map(); cur.forEach(i=>{if(!i.matricula) return; const k=i.matricula;const o=porMot.get(k)||{nome:i.motorista||`Matrícula ${k}`,n:0,g:0};o.n++;if(relGrave(i))o.g++;porMot.set(k,o);});
   const semId=cur.filter(i=>!i.matricula).length;                  // v0.12.11: sem matrícula fica fora do ranking e da contagem
-  const ativos=[...mapaMotoristas.values()].filter(x=>normTxt(x.situacao)==="ativo");
+  const ativos=[...new Set(mapaMotoristas.values())].filter(x=>normTxt(x.situacao)==="ativo");
   const semInf=ativos.filter(x=>!porMot.has(String(x.matricula))).map(x=>x.nome).sort((p,q)=>p.localeCompare(q,"pt-BR"));
   const locais=[...cur.reduce((mm,i)=>{const k=i.localizacao||"—";mm.set(k,(mm.get(k)||0)+1);return mm;},new Map())].sort((p,q)=>q[1]-p[1]).slice(0,5);
   const ranking=[...porMot.values()].sort((p,q)=>q.g-p.g||q.n-p.n).slice(0,10);
@@ -57331,38 +57332,59 @@ async function infMotCarregar(force) {
   if (!force && INFM.em && Date.now() - INFM.em < 60000) return Promise.resolve();
   INFM.carregando = (async () => {
     const I = window.__INF; if (!I) return;
-    const its = await graphAll(`/sites/${I.SITE}/lists/${I.MOT}/items?$expand=fields($select=Title,Matricula,Contato,Situa_x00e7__x00e3_o,Identidade,Habilita_x00e7__x00e3_o,ValidadeCNH)&$top=999`);
-    INFM.its = its.map(it => { const f = it.fields || {}; return { _id: String(it.id), nome: String(f.Title || "").trim(), mat: String(f.Matricula == null ? "" : f.Matricula).trim(), contato: String(f.Contato || "").trim(), sit: f["Situa_x00e7__x00e3_o"] || "", rg: String(f.Identidade || "").trim(), cnh: String(f["Habilita_x00e7__x00e3_o"] || "").trim(), val: f.ValidadeCNH ? ymd(f.ValidadeCNH) : "" }; })
+    const its = await graphAll(`/sites/${I.SITE}/lists/${I.MOT}/items?$expand=fields&$top=999`);
+    try { const cols = await mstColsDe(I.SITE, I.MOT); INFM.temCpf = cols.has("CPF"); INFM.temMatRh = cols.has("MatriculaRH"); } catch (e) { INFM.temCpf = INFM.temMatRh = false; }
+    INFM.its = its.map(it => { const f = it.fields || {}; return { _id: String(it.id), nome: String(f.Title || "").trim(), mat: String(f.Matricula == null ? "" : f.Matricula).trim(), contato: String(f.Contato || "").trim(), sit: f["Situa_x00e7__x00e3_o"] || "", rg: String(f.Identidade || "").trim(), cnh: String(f["Habilita_x00e7__x00e3_o"] || "").trim(), val: f.ValidadeCNH ? ymd(f.ValidadeCNH) : "", cpf: String(f.CPF || "").replace(/\D/g, ""), matRh: String(f.MatriculaRH || "").trim() }; })
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-    INFM.rh = null; INFM.rhErro = "";
+    INFM.rh = null; INFM.rhIdx = null; INFM.rhErro = ""; if (force) INFM_COLS = null;
     try { INFM.rhSite = await SP.site(CONFIG.sites[LISTS.rh_func.siteKey]); const ls = await SP.lists(INFM.rhSite.id); INFM.rhList = ls.find(l => l.displayName === LISTS.rh_func.displayName) || null;
-      if (INFM.rhList) { INFM.rh = (await SP.items(INFM.rhSite.id, INFM.rhList.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})); try { await rhDocsCarregar(!!force); } catch (e) {} try { await rhPesCarregar(!!force); } catch (e) {} }
+      if (INFM.rhList) { INFM.rh = (await SP.items(INFM.rhSite.id, INFM.rhList.id)).map(it => Object.assign({ _id: String(it.id) }, it.fields || {})); try { await rhDocsCarregar(!!force); } catch (e) {} try { await rhPesCarregar(!!force); } catch (e) {} INFM.rhIdx = null; }
       else INFM.rhErro = "lista RH — Funcionários não encontrada";
     } catch (e) { INFM.rhErro = String((e && e.message) || e); }
     INFM.em = Date.now();
   })().finally(() => { INFM.carregando = null; });
   return INFM.carregando;
 }
-const infRhDe = mat => INFM.rh ? INFM.rh.find(f => infMatN(f.Matricula) && infMatN(f.Matricula) === infMatN(mat)) || null : null;
 const infRhRg = f => { const r = RH_PES.map.get(String(f._id)); return r && r.RG ? String(r.RG).trim() : String(f.RG || "").trim(); };
+const infRhCpf = f => { const r = RH_PES.map.get(String(f._id)); return rhfDig((r && r.CPF) || f.CPF || ""); };
 const infRhCnh = f => { try { return rhfCnhDe(f._id); } catch (e) { return { num: "", cat: "", val: "" }; } };
+/* v0.14.108: a ligação cadastro ↔ RH é pela pessoa (CNH, identidade, CPF), não pela matrícula — a telemetria usa o CPF como matrícula em parte dos motoristas */
+const infDigs = v => String(v == null ? "" : v).replace(/\D/g, "");
+function infRhIndexar() {   /* v0.14.108: índices por CNH, identidade, CPF e matrícula — uma passada pelo RH, depois só consultas */
+  const I = { cnh: new Map(), rg: new Map(), cpf: new Map(), mat: new Map() };
+  (INFM.rh || []).forEach(f => { const c = infDigs(infRhCnh(f).num); if (c && !I.cnh.has(c)) I.cnh.set(c, f); const r = infDigs(infRhRg(f)); if (r && !I.rg.has(r)) I.rg.set(r, f); const p = infRhCpf(f); if (p && !I.cpf.has(p)) I.cpf.set(p, f); const m = infMatN(f.Matricula); if (m && !I.mat.has(m)) I.mat.set(m, f); });
+  INFM.rhIdx = I; return I;
+}
+function infRhAcha(k) {   /* k: { mat, rg, cnh, cpf } → { f, por } | null */
+  if (!INFM.rh) return null; const I = INFM.rhIdx || infRhIndexar(); const cnh = infDigs(k.cnh), rg = infDigs(k.rg), cpf = infDigs(k.cpf) || (infDigs(k.mat).length === 11 ? infDigs(k.mat) : ""), mat = infMatN(k.mat); let f;
+  if (cnh && (f = I.cnh.get(cnh))) return { f, por: "CNH" }; if (rg && (f = I.rg.get(rg))) return { f, por: "identidade" }; if (cpf && (f = I.cpf.get(cpf))) return { f, por: "CPF" }; if (mat && (f = I.mat.get(mat))) return { f, por: "matrícula" }; return null;
+}
+const infRhDeM = m => { const r = infRhAcha(m); return r ? r.f : null; };
+const infRhDe = mat => infRhDeM({ mat });
+const infCadAcha = (k, ignorarId) => INFM.its.find(m => m._id !== ignorarId && ((infDigs(k.cnh) && infDigs(m.cnh) === infDigs(k.cnh)) || (infDigs(k.rg) && infDigs(m.rg) === infDigs(k.rg)) || (infDigs(k.cpf) && (infDigs(m.cpf) === infDigs(k.cpf) || infDigs(m.mat) === infDigs(k.cpf))) || (infMatN(k.mat) && infMatN(m.mat) === infMatN(k.mat)))) || null;
 /* o que o RH diz sobre um motorista do cadastro → campos do cadastro (só o que o RH tem preenchido) */
 function infRhCampos(f) {
   const c = infRhCnh(f), out = { nome: String(f.Title || "").trim(), sit: infRhSit(f) };
   const tel = infFoneNorm(f.Contato); if (tel) out.contato = tel;
   const rg = infRhRg(f); if (rg) out.rg = rg; if (c.num) out.cnh = c.num; if (c.val) out.val = c.val;
+  const cpf = infRhCpf(f); if (cpf.length === 11) out.cpf = cpf; const mr = String(f.Matricula || "").trim(); if (mr) out.matRh = mr;   /* v0.14.108: CPF é a chave; a matrícula do RH fica em campo próprio */
   return out;
 }
-function infDif(m, f) { const r = infRhCampos(f), d = []; if (r.nome && r.nome !== m.nome) d.push(["nome", m.nome, r.nome]); if (r.contato && r.contato !== infFoneNorm(m.contato)) d.push(["contato", infFoneFmt(m.contato), infFoneFmt(r.contato)]); if (r.sit !== (m.sit || "Ativo")) d.push(["situação", m.sit || "—", r.sit]); if (r.rg && r.rg !== m.rg) d.push(["identidade", m.rg || "—", r.rg]); if (r.cnh && r.cnh !== m.cnh) d.push(["habilitação", m.cnh || "—", r.cnh]); if (r.val && r.val !== m.val) d.push(["validade CNH", m.val ? fmtDate(m.val) : "—", fmtDate(r.val)]); return d; }
-const infMotCampos = m => ({ Title: m.nome, Matricula: m.mat, Contato: infFoneNorm(m.contato) || m.contato, "Situa_x00e7__x00e3_o": m.sit || "Ativo", Identidade: m.rg || null, "Habilita_x00e7__x00e3_o": m.cnh || null, ValidadeCNH: m.val || null });
+function infDif(m, f) { const r = infRhCampos(f), d = []; if (r.nome && r.nome !== m.nome) d.push(["nome", m.nome, r.nome]); if (r.contato && r.contato !== infFoneNorm(m.contato)) d.push(["contato", infFoneFmt(m.contato), infFoneFmt(r.contato)]); if (r.sit !== (m.sit || "Ativo")) d.push(["situação", m.sit || "—", r.sit]); if (r.rg && r.rg !== m.rg) d.push(["identidade", m.rg || "—", r.rg]); if (r.cnh && r.cnh !== m.cnh) d.push(["habilitação", m.cnh || "—", r.cnh]); if (r.val && r.val !== m.val) d.push(["validade CNH", m.val ? fmtDate(m.val) : "—", fmtDate(r.val)]); if (INFM.temCpf && r.cpf && r.cpf !== m.cpf) d.push(["CPF", m.cpf ? rhfCpfFmt(m.cpf) : "—", rhfCpfFmt(r.cpf)]); if (INFM.temMatRh && r.matRh && r.matRh !== m.matRh) d.push(["matrícula (RH)", m.matRh || "—", r.matRh]); return d; }
+let INFM_COLS = null; async function infRhTemCol(c) { try { if (!INFM_COLS) INFM_COLS = await mstColsDe(INFM.rhSite.id, INFM.rhList.id); return INFM_COLS.size ? INFM_COLS.has(c) : false; } catch (e) { return false; } }
+const infMotCampos = m => Object.assign({ Title: m.nome, Matricula: m.mat, Contato: infFoneNorm(m.contato) || m.contato, "Situa_x00e7__x00e3_o": m.sit || "Ativo", Identidade: m.rg || null, "Habilita_x00e7__x00e3_o": m.cnh || null, ValidadeCNH: m.val || null }, INFM.temCpf ? { CPF: m.cpf ? rhfCpfFmt(infDigs(m.cpf)) : null } : {}, INFM.temMatRh ? { MatriculaRH: m.matRh || null } : {});
 async function infMotGravar(m) { const I = window.__INF, f = infMotCampos(m); if (m._id) { await graph(`/sites/${I.SITE}/lists/${I.MOT}/items/${m._id}/fields`, { method: "PATCH", body: f }); return m._id; } const it = await graph(`/sites/${I.SITE}/lists/${I.MOT}/items`, { method: "POST", body: { fields: f } }); return String(it && it.id); }
 /* ponte inversa: o que foi salvo no cadastro vai para o RH (funcionário existente ou novo) */
 async function infRhGravar(m, criar) {
   if (!INFM.rhList || !INFM.rh) throw new Error("sem acesso à lista RH — Funcionários");
-  let f = infRhDe(m.mat);
-  const campos = { Title: m.nome, Matricula: m.mat, Contato: typeof rhfFone === "function" ? rhfFone(String(infFoneNorm(m.contato) || m.contato).replace(/^55/, "")) : infFoneFmt(m.contato) };
-  if (f) { await SP.update(INFM.rhSite.id, INFM.rhList.id, f._id, campos); Object.assign(f, campos); }
-  else if (criar) { Object.assign(campos, { Cargo: "Motorista", Departamento: "Operacional", Setor: "Tráfego", Situacao: m.sit === "Inativo" ? "Afastado" : "Ativo" }); const it = await SP.create(INFM.rhSite.id, INFM.rhList.id, campos); f = Object.assign({ _id: String(it && it.id) }, campos); INFM.rh.push(f); }
+  let f = infRhDeM(m);
+  const fone = typeof rhfFone === "function" ? rhfFone(String(infFoneNorm(m.contato) || m.contato).replace(/^55/, "")) : infFoneFmt(m.contato);
+  const matRh = String(m.matRh || "").trim() || (infDigs(m.mat).length === 11 ? "" : String(m.mat || "").trim());   /* v0.14.108: CPF nunca vira matrícula do RH */
+  if (f) { const campos = { Contato: fone }; if (!String(f.Matricula || "").trim() && matRh) campos.Matricula = matRh; await SP.update(INFM.rhSite.id, INFM.rhList.id, f._id, campos); Object.assign(f, campos); }   /* o RH manda no nome e na matrícula dele; daqui vai o contato (e a matrícula se o RH não tinha) */
+  else if (criar) { const campos = { Title: m.nome, Matricula: matRh || null, Contato: fone, Cargo: "Motorista", Departamento: "Operacional", Setor: "Tráfego", Situacao: m.sit === "Inativo" ? "Afastado" : "Ativo", Observacoes: `Cadastro criado pelo Painel de Infrações em ${fmtDate(todayISO())} por ${(session.me && session.me.displayName) || "—"}; aguarda aprovação do RH.` };
+    if (await infRhTemCol("Aprovacao")) campos.Aprovacao = "Pendente";
+    if (m.cpf && infDigs(m.cpf).length === 11 && rhPesAtivo()) campos.CPF = rhfCpfFmt(infDigs(m.cpf));
+    const it = await SP.create(INFM.rhSite.id, INFM.rhList.id, campos); f = Object.assign({ _id: String(it && it.id) }, campos); INFM.rh.push(f); }
   else return null;
   if (m.cnh || m.val) { try { if (!RHF_DOCS.list) throw new Error("lista de documentos do RH indisponível"); const c = infRhCnh(f); await rhfCnhGravar(f._id, m.nome, { num: m.cnh || c.num, cat: c.cat, val: m.val || c.val }); } catch (e) { toast("Funcionário gravado; a CNH não foi registrada no RH: " + e.message, 6000); } }
   if (m.rg) { try { if (rhPesAtivo()) await rhPesGravar(f._id, m.nome, { RG: m.rg }, false); else toast("Funcionário gravado; a identidade não foi registrada (lista restrita do RH indisponível).", 6000); } catch (e) { toast("Funcionário gravado; a identidade não foi registrada no RH: " + e.message, 6000); } }
@@ -57372,18 +57394,19 @@ async function infRhGravar(m, criar) {
 /* ---------- Banco de Dados (modal) ---------- */
 function infMotLinhaRh(m) {
   if (!INFM.rh) return `<span class="sup">${INFM.rhErro ? "RH indisponível" : "RH não lido"}</span>`;
-  const f = infRhDe(m.mat); if (!f) return `<span class="nao-cadastrado">não está no RH</span>`;
-  const d = infDif(m, f); return d.length ? `<span title="${esc(d.map(x => `${x[0]}: ${x[1]} → ${x[2]}`).join("\n"))}" style="color:var(--warn,#9a6a00);font-weight:700">⚠ ${d.length} diferença(s)</span>` : `<span style="color:var(--ok,#197a46);font-weight:700">✓ igual ao RH</span>`;
+  const a = infRhAcha(m); if (!a) return `<span class="nao-cadastrado">não está no RH</span>`; const f = a.f, pend = String(f.Aprovacao || "") === "Pendente";
+  const d = infDif(m, f), via = `<div class="sup">via ${esc(a.por)}${f.Matricula && infMatN(f.Matricula) !== infMatN(m.mat) ? ` · mat. RH ${esc(f.Matricula)}` : ""}${pend ? " · aguarda aprovação" : ""}</div>`;
+  return (d.length ? `<span title="${esc(d.map(x => `${x[0]}: ${x[1]} → ${x[2]}`).join("\n"))}" style="color:var(--warn,#9a6a00);font-weight:700">⚠ ${d.length} diferença(s)</span>` : `<span style="color:var(--ok,#197a46);font-weight:700">✓ igual ao RH</span>`) + via;
 }
 function infMotHtml() {
   const ed = window.__INF.podeEd(), q = normName(INFM.q), its = INFM.its.filter(m => !q || normName(m.nome + " " + m.mat + " " + m.contato).includes(q));
-  const semRh = INFM.rh ? INFM.rh.filter(f => infRhMot(f) && String(f.Situacao || "") !== "Desligado" && !INFM.its.some(m => infMatN(m.mat) === infMatN(f.Matricula))) : [];
+  const ligados = new Set(INFM.its.map(infRhDeM)); const semRh = INFM.rh ? INFM.rh.filter(f => infRhMot(f) && String(f.Situacao || "") !== "Desligado" && !ligados.has(f)) : [];
   return `<div class="inf-mot">
     <div class="cap-tools" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><input id="imQ" placeholder="Buscar nome, matrícula ou contato" value="${esc(INFM.q)}" style="flex:1;min-width:180px">${ed ? `<button class="btn primary" onclick="infMotForm(null)">+ Novo motorista</button><button class="btn" onclick="infMotSync()" ${INFM.rh ? "" : "disabled"} title="Compara o cadastro com RH › Funcionários e mostra o que mudaria">⇄ Sincronizar com o RH</button>` : ""}<button class="btn ghost" onclick="infMotAbrir(true)">↻</button></div>
-    <p class="sup" style="margin:0 0 8px">${INFM.its.length} motorista(s) no cadastro${INFM.rh ? ` · ${INFM.rh.filter(infRhMot).length} com cargo de motorista no RH` : ` · ${esc(INFM.rhErro || "RH não lido")}`}${semRh.length ? ` · <b>${semRh.length}</b> do RH ainda sem cadastro aqui` : ""}. O contato gravado na lista é o número do WhatsApp (55 + DDD + 9 dígitos).</p>
-    <div class="table-wrap"><table class="cap-table"><thead><tr><th>Motorista</th><th>Matrícula</th><th>Contato</th><th>Situação</th><th>Identidade</th><th>Habilitação</th><th>Validade CNH</th><th>RH</th><th></th></tr></thead><tbody>
-      ${its.map(m => `<tr><td><b>${esc(m.nome || "—")}</b></td><td>${esc(m.mat || "—")}</td><td class="nw">${infFoneNorm(m.contato) ? esc(infFoneFmt(m.contato)) : `<span class="nao-cadastrado" title="Fora do padrão 55 + DDD + 9 dígitos">${esc(m.contato || "—")}</span>`}</td><td>${m.sit === "Ativo" ? `<span style="color:var(--ok,#197a46);font-weight:700">Ativo</span>` : `<span class="sup">${esc(m.sit || "—")}</span>`}</td><td>${esc(m.rg || "—")}</td><td>${esc(m.cnh || "—")}</td><td>${m.val ? esc(fmtDate(m.val)) : "—"}</td><td>${infMotLinhaRh(m)}</td>
-        <td class="nw">${ed ? `<button class="btn mini" onclick="infMotForm('${esc(m._id)}')">Editar</button> ${INFM.rh && !infRhDe(m.mat) ? `<button class="btn mini" onclick="infMotCriarRh('${esc(m._id)}')" title="Cria o funcionário no RH com os dados daqui">→ RH</button> ` : ""}${session.n1 || permModulo("infracoes") === "proprietario" ? `<button class="btn mini danger" onclick="infMotRemover('${esc(m._id)}')">Remover</button>` : ""}` : ""}</td></tr>`).join("") || `<tr><td colspan="9" class="sup">Nenhum motorista${q ? " nesta busca" : " cadastrado"}.</td></tr>`}</tbody></table></div>
+    <p class="sup" style="margin:0 0 8px">${INFM.its.length} motorista(s) no cadastro · ligação com o RH por CNH, identidade, CPF ou matrícula${INFM.rh ? ` · ${INFM.rh.filter(infRhMot).length} com cargo de motorista no RH` : ` · ${esc(INFM.rhErro || "RH não lido")}`}${semRh.length ? ` · <b>${semRh.length}</b> do RH ainda sem cadastro aqui` : ""}. O contato gravado na lista é o número do WhatsApp (55 + DDD + 9 dígitos).</p>
+    <div class="table-wrap"><table class="cap-table"><thead><tr><th>Motorista</th><th>Matrícula${INFM.temCpf || INFM.temMatRh ? " (telemetria)" : ""}</th>${INFM.temCpf ? "<th>CPF</th>" : ""}${INFM.temMatRh ? "<th>Matrícula (RH)</th>" : ""}<th>Contato</th><th>Situação</th><th>Identidade</th><th>Habilitação</th><th>Validade CNH</th><th>RH</th><th></th></tr></thead><tbody>
+      ${its.map(m => `<tr><td><b>${esc(m.nome || "—")}</b></td><td>${esc(m.mat || "—")}</td>${INFM.temCpf ? `<td class="nw">${m.cpf ? esc(rhfCpfFmt(m.cpf)) : `<span class="nao-cadastrado">sem CPF</span>`}</td>` : ""}${INFM.temMatRh ? `<td>${esc(m.matRh || "—")}</td>` : ""}<td class="nw">${infFoneNorm(m.contato) ? esc(infFoneFmt(m.contato)) : `<span class="nao-cadastrado" title="Fora do padrão 55 + DDD + 9 dígitos">${esc(m.contato || "—")}</span>`}</td><td>${m.sit === "Ativo" ? `<span style="color:var(--ok,#197a46);font-weight:700">Ativo</span>` : `<span class="sup">${esc(m.sit || "—")}</span>`}</td><td>${esc(m.rg || "—")}</td><td>${esc(m.cnh || "—")}</td><td>${m.val ? esc(fmtDate(m.val)) : "—"}</td><td>${infMotLinhaRh(m)}</td>
+        <td class="nw">${ed ? `<button class="btn mini" onclick="infMotForm('${esc(m._id)}')">Editar</button> ${INFM.rh && !infRhDeM(m) ? `<button class="btn mini" onclick="infMotCriarRh('${esc(m._id)}')" title="Cria o funcionário no RH (fila de aprovação) com os dados daqui">→ RH</button> ` : ""}${session.n1 || permModulo("infracoes") === "proprietario" ? `<button class="btn mini danger" onclick="infMotRemover('${esc(m._id)}')">Remover</button>` : ""}` : ""}</td></tr>`).join("") || `<tr><td colspan="9" class="sup">Nenhum motorista${q ? " nesta busca" : " cadastrado"}.</td></tr>`}</tbody></table></div>
     ${semRh.length && ed ? `<div class="import-help" style="margin-top:10px"><b>No RH e fora do cadastro:</b> ${semRh.map(f => `${esc(f.Title)} (${esc(f.Matricula || "sem matrícula")})`).join(", ")}. Use "Sincronizar com o RH" para trazê-los.</div>` : ""}</div>`;
 }
 window.infMotAbrir = async force => {
@@ -57395,48 +57418,60 @@ function infMotPintar() { const x = $("imBody"); if (!x) return; x.innerHTML = i
 /* formulário: novo (pre = valores iniciais) ou editar (id) */
 window.infMotForm = (id, pre) => {
   if (!window.__INF.podeEd()) { toast("Seu acesso ao Painel de Infrações é só de leitura."); return; }
-  const m = id ? INFM.its.find(x => x._id === String(id)) : Object.assign({ nome: "", mat: "", contato: "", sit: "Ativo", rg: "", cnh: "", val: "" }, pre || {}); if (!m) return;
-  const f = m.mat ? infRhDe(m.mat) : null, doRh = f ? infRhCampos(f) : null;
+  const m = id ? INFM.its.find(x => x._id === String(id)) : Object.assign({ nome: "", mat: "", contato: "", sit: "Ativo", rg: "", cnh: "", val: "", cpf: "" }, pre || {}); if (!m) return;
+  const a0 = infRhAcha(m), f = a0 ? a0.f : null, doRh = f ? infRhCampos(f) : null;
   if (doRh) { Object.assign(m, Object.fromEntries(Object.entries(doRh).filter(([k, v]) => v && (!id ? !m[k] || k === "sit" : true)))); }   /* novo: completa o que falta; editar: o RH manda */
   openModal(id ? `Motorista · ${esc(m.nome)}` : "Novo motorista", `<div class="form-grid">
-      <div class="field"><label>Matrícula<span class="req">*</span></label><input id="imMat" value="${esc(m.mat)}" ${id ? "readonly" : ""} placeholder="Como vem na telemetria"><div class="hint">${id ? "A matrícula liga as infrações ao motorista e não muda aqui." : "A mesma matrícula da telemetria (crachá do motorista)."}</div></div>
+      <div class="field"><label>Matrícula (telemetria)${INFM.temCpf ? "" : `<span class="req">*</span>`}</label><input id="imMat" value="${esc(m.mat)}" ${id ? "readonly" : ""} placeholder="Código que a telemetria envia"><div class="hint">${id ? "Liga as infrações ao motorista e não muda aqui." : "O código que a telemetria envia hoje (crachá). Quando ela passar a enviar o CPF, a ligação é pelo CPF."}</div></div>
+      ${INFM.temMatRh ? `<div class="field"><label>Matrícula (RH)</label><input id="imMatRh" value="${esc(m.matRh || "")}" placeholder="Matrícula do funcionário"><div class="hint">A do RH › Funcionários; preenche sozinha ao achar a pessoa.</div></div>` : ""}
       <div class="field"><label>Situação</label><select id="imSit" ${doRh ? "disabled" : ""}><option ${m.sit !== "Inativo" ? "selected" : ""}>Ativo</option><option ${m.sit === "Inativo" ? "selected" : ""}>Inativo</option></select>${doRh ? `<div class="hint">Vem do RH (${esc(f.Situacao || "Ativo")}): ${doRh.sit}. Mude a situação no RH › Funcionários.</div>` : `<div class="hint">Sem funcionário no RH com esta matrícula: a situação fica só aqui.</div>`}</div>
       <div class="field full"><label>Nome<span class="req">*</span></label><input id="imNome" value="${esc(m.nome)}"></div>
       <div class="field"><label>Contato (WhatsApp)<span class="req">*</span></label><input id="imTel" value="${esc(infFoneNorm(m.contato) ? infFoneFmt(m.contato) : m.contato)}" placeholder="55 (22) 9.9999-0000" inputmode="tel"><div class="hint" id="imTelH">Grava na lista como 55 + DDD + 9 dígitos.</div></div>
+      <div class="field"><label>CPF${INFM.temCpf ? `<span class="req">*</span>` : ` <span class="sup" style="text-transform:none;font-weight:600">(só para achar no RH)</span>`}</label><input id="imCpf" value="${esc(m.cpf ? rhfCpfFmt(m.cpf) : "")}" inputmode="numeric" placeholder="000.000.000-00"><div class="hint">${INFM.temCpf ? "Chave do motorista: liga ao RH e às infrações quando a telemetria envia o CPF." : `A coluna CPF ainda não existe na lista: rode Sistema › Configuração › Executar tudo.`}</div></div>
       <div class="field"><label>Identidade (RG)</label><input id="imRg" value="${esc(m.rg)}"></div>
       <div class="field"><label>Habilitação (nº da CNH)<span class="req">*</span></label><input id="imCnh" value="${esc(m.cnh)}" inputmode="numeric" placeholder="11 dígitos"></div>
       <div class="field"><label>Validade da CNH</label><input type="date" id="imVal" value="${esc(m.val)}"></div>
-      <div class="field full"><label class="chk"><input type="checkbox" id="imRh" ${INFM.rh ? (id && f && !infDif(m, f).length ? "" : "checked") : "disabled"}> ${f ? `Atualizar também o funcionário no RH (${esc(f.Title)})` : "Criar também o funcionário no RH › Funcionários (cargo Motorista)"}</label>${INFM.rh ? "" : `<div class="hint">Sem acesso ao RH nesta sessão: só o cadastro é gravado.</div>`}</div></div>
+      <div class="field full" id="imRhBox"><label class="chk"><input type="checkbox" id="imRh" ${INFM.rh ? (id && f && !infDif(m, f).length ? "" : "checked") : "disabled"}> <span id="imRhTxt">${f ? `Atualizar o contato do funcionário no RH (${esc(f.Title)}, ligado por ${esc(a0.por)})` : "Criar também o funcionário no RH › Funcionários (fila de aprovação, cargo Motorista)"}</span></label>${INFM.rh ? "" : `<div class="hint">Sem acesso ao RH nesta sessão: só o cadastro é gravado.</div>`}<div class="hint" id="imDup"></div></div></div>
     <div class="err-msg" id="imErr" style="display:none"></div>`, async () => {
     const g = k => ($(k).value || "").trim(), err = t => { const e = $("imErr"); e.textContent = t; e.style.display = "block"; return false; };
-    const v = { _id: m._id, mat: g("imMat"), nome: g("imNome"), contato: infFoneNorm(g("imTel")), sit: $("imSit").value, rg: g("imRg"), cnh: g("imCnh").replace(/\D/g, ""), val: g("imVal") };
+    const v = { _id: m._id, mat: g("imMat"), nome: g("imNome"), contato: infFoneNorm(g("imTel")), sit: $("imSit").value, rg: g("imRg"), cnh: g("imCnh").replace(/\D/g, ""), val: g("imVal"), cpf: infDigs(g("imCpf")), matRh: $("imMatRh") ? g("imMatRh") : (m.matRh || "") };
+    if (INFM.temCpf && !m._id && !v.cpf) return err("Informe o CPF: é a chave do motorista.");   /* cadastro antigo sem CPF continua editável */
+    if (v.cpf && (v.cpf.length !== 11 || !rhfCpfOk(v.cpf))) return err("CPF inválido: confira os 11 dígitos.");
+    if (INFM.temCpf && !v.mat && v.cpf) v.mat = v.cpf;   /* sem código da telemetria: o CPF faz as vezes (é o que a telemetria passa a enviar) */
+    const dup = infCadAcha(v, m._id); if (dup) return err(`Já existe no cadastro: ${dup.nome} (matrícula ${dup.mat}) — mesma CNH, identidade, CPF ou matrícula. Edite o cadastro dele em vez de criar outro.`);
     if (!v.mat) return err("Informe a matrícula."); if (!v.nome) return err("Informe o nome."); if (!v.contato) return err("Contato fora do padrão: informe DDD e número de celular, ex.: 55 (22) 9.9999-0000."); if (!v.cnh) return err("Informe o número da habilitação (CNH)."); if (v.cnh.length !== 11) return err("A CNH tem 11 dígitos.");
-    if (!id && INFM.its.some(x => infMatN(x.mat) === infMatN(v.mat))) return err("Já existe motorista com esta matrícula no cadastro.");
     try { const nid = await infMotGravar(v); v._id = nid; if ($("imRh") && $("imRh").checked) { try { await infRhGravar(v, true); } catch (e) { toast("Cadastro gravado; o RH não: " + e.message, 7000); } }
       toast(id ? "Motorista atualizado." : "Motorista cadastrado."); await infMotCarregar(true); if ($("imBody")) infMotPintar(); else infMotAbrir(); if (window.__INF) window.__INF.atualizar(); return $("imBody") ? false : true; }
     catch (e) { return err("Não foi possível gravar: " + e.message); }
   });
+  const conf = () => { const g = k => ($(k) ? $(k).value : "").trim(), k = { mat: g("imMat"), rg: g("imRg"), cnh: g("imCnh"), cpf: g("imCpf") }, box = $("imDup"), tx = $("imRhTxt"); if (!box) return;
+    const dup = infCadAcha(k, m._id); if (dup) { box.innerHTML = `<b style="color:var(--err,#b3271e)">Já está no cadastro:</b> ${esc(dup.nome)} (matrícula ${esc(dup.mat)}).`; return; }
+    const a = infRhAcha(k); if (a) { const r = infRhCampos(a.f); box.innerHTML = `<b>Já está no RH:</b> ${esc(a.f.Title)}${a.f.Matricula ? ` · matrícula ${esc(a.f.Matricula)}` : ""} (ligado por ${esc(a.por)})${String(a.f.Aprovacao || "") === "Pendente" ? " · aguarda aprovação" : ""}. <a href="#" id="imPuxar">Preencher com os dados do RH</a>`; if (tx) tx.textContent = `Atualizar o contato do funcionário no RH (${a.f.Title})`;
+      const l = $("imPuxar"); if (l) l.onclick = e => { e.preventDefault(); if (r.nome && !$("imNome").value) $("imNome").value = r.nome; if (r.contato && !infFoneNorm($("imTel").value)) $("imTel").value = infFoneFmt(r.contato); if (r.rg) $("imRg").value = r.rg; if (r.cnh) $("imCnh").value = r.cnh; if (r.val) $("imVal").value = r.val; if (r.cpf && $("imCpf") && !infDigs($("imCpf").value)) $("imCpf").value = rhfCpfFmt(r.cpf); if (r.matRh && $("imMatRh") && !$("imMatRh").value) $("imMatRh").value = r.matRh; $("imSit").value = r.sit; conf(); }; }
+    else { box.innerHTML = INFM.rh ? "Não encontrado no RH por CNH, identidade, CPF ou matrícula." : ""; if (tx) tx.textContent = "Criar também o funcionário no RH › Funcionários (fila de aprovação, cargo Motorista)"; } };
+  ["imMat", "imRg", "imCnh", "imCpf"].forEach(k => { const e = $(k); if (e) e.addEventListener("blur", conf); }); if (!id) setTimeout(conf, 0);
   const t = $("imTel"); if (t) t.addEventListener("blur", () => { const n = infFoneNorm(t.value); const h = $("imTelH"); if (n) { t.value = infFoneFmt(n); h.textContent = `Grava na lista como ${n}.`; } else h.textContent = "Fora do padrão: use DDD + número de celular."; });
 };
 window.infMotRemover = async id => { const m = INFM.its.find(x => x._id === String(id)); if (!m) return;
   if (!(await erpConfirmar({ titulo: "Remover motorista", html: `Remover <b>${esc(m.nome)}</b> (matrícula ${esc(m.mat)}) do cadastro? As infrações continuam com a matrícula e passam a aparecer como "fora do Cadastro". O funcionário no RH não é alterado.`, sim: "Remover", perigo: true }))) return;
   try { await graph(`/sites/${window.__INF.SITE}/lists/${window.__INF.MOT}/items/${m._id}`, { method: "DELETE" }); toast("Motorista removido."); await infMotCarregar(true); infMotAbrir(); window.__INF.atualizar(); } catch (e) { toast("Não foi possível remover: " + e.message, 7000); } };
 window.infMotCriarRh = async id => { const m = INFM.its.find(x => x._id === String(id)); if (!m || !window.__INF.podeEd()) return;
-  if (!(await erpConfirmar({ titulo: "Criar no RH", html: `Criar <b>${esc(m.nome)}</b> em RH › Funcionários (matrícula ${esc(m.mat)}, cargo Motorista, setor Tráfego, situação ${m.sit === "Inativo" ? "Afastado" : "Ativo"}) com contato, CNH e identidade do cadastro? Admissão, CPF e demais dados se completam no RH.`, sim: "Criar" }))) return;
+  if (!(await erpConfirmar({ titulo: "Criar no RH", html: `Criar <b>${esc(m.nome)}</b> em RH › Funcionários (matrícula ${esc(m.mat)}, cargo Motorista, setor Tráfego, situação ${m.sit === "Inativo" ? "Afastado" : "Ativo"}) com contato, CNH e identidade do cadastro? Ele entra na <b>fila de aprovação</b> do RH; admissão, CPF e demais dados se completam lá.`, sim: "Criar" }))) return;
   try { await infRhGravar(m, true); toast("Funcionário criado no RH."); } catch (e) { toast("Não foi possível criar no RH: " + e.message, 7000); } infMotAbrir(); };
 /* sincronização: prévia nos dois sentidos, aplica só o marcado */
 window.infMotSync = () => {
   if (!INFM.rh) return; const acoes = [];
-  INFM.its.forEach(m => { const f = infRhDe(m.mat); if (!f) { if (m.mat && m.nome) acoes.push({ k: "rh+", m, txt: `Criar no RH: <b>${esc(m.nome)}</b> (${esc(m.mat)})` }); return; }
+  INFM.its.forEach(m => { const f = infRhDeM(m); if (!f) { if (m.mat && m.nome) acoes.push({ k: "rh+", m, txt: `Criar no RH (fila de aprovação): <b>${esc(m.nome)}</b> (${esc(m.mat)})` }); return; }
     const d = infDif(m, f); if (d.length) acoes.push({ k: "cad~", m, f, d, txt: `Atualizar <b>${esc(m.nome)}</b> pelo RH: ${d.map(x => `${x[0]} <s>${esc(x[1])}</s> → ${esc(x[2])}`).join(" · ")}` }); });
-  INFM.rh.filter(f => infRhMot(f) && String(f.Situacao || "") !== "Desligado" && !INFM.its.some(m => infMatN(m.mat) === infMatN(f.Matricula))).forEach(f => { const r = infRhCampos(f); acoes.push({ k: "cad+", f, txt: `Trazer do RH: <b>${esc(f.Title)}</b> (${esc(f.Matricula || "sem matrícula")})${!f.Matricula ? " — <i>sem matrícula no RH: preencha lá antes</i>" : ""}${!r.contato ? " — <i>sem contato válido no RH</i>" : ""}${!r.cnh ? " — <i>sem CNH no RH</i>" : ""}`, ok: !!(f.Matricula && r.contato && r.cnh) }); });
+  INFM.rh.filter(f => infRhMot(f) && String(f.Situacao || "") !== "Desligado" && !INFM.its.some(m => infRhDeM(m) === f)).forEach(f => { const r = infRhCampos(f); const chave = INFM.temCpf ? (r.cpf ? `CPF ${esc(rhfCpfFmt(r.cpf))}` : "") : (f.Matricula ? `matrícula ${esc(f.Matricula)} — <i>confira se é a da telemetria</i>` : "");
+    acoes.push({ k: "cad+", f, txt: `Trazer do RH: <b>${esc(f.Title)}</b> (${chave || "—"})${!chave ? (INFM.temCpf ? " — <i>sem CPF no RH: preencha lá antes</i>" : " — <i>sem matrícula no RH: preencha lá antes</i>") : ""}${!r.contato ? " — <i>sem contato válido no RH</i>" : ""}${!r.cnh ? " — <i>sem CNH no RH</i>" : ""}`, ok: !!(chave && r.contato && r.cnh) }); });
   if (!acoes.length) { toast("Cadastro e RH já estão iguais."); return; }
   openModal("Sincronizar com o RH", `<p class="sup">O RH manda nos dados do funcionário (nome, contato, situação, identidade, CNH). Marque o que aplicar:</p><div class="inf-sync">${acoes.map((a, i) => `<label class="chk" style="display:block;margin:4px 0"><input type="checkbox" data-i="${i}" ${a.ok === false ? "disabled" : "checked"}> ${a.txt}</label>`).join("")}</div><div class="err-msg" id="isErr" style="display:none"></div>`, async () => {
     const sel = [...document.querySelectorAll('.inf-sync input:checked')].map(c => acoes[+c.dataset.i]); if (!sel.length) return true;
     let n = 0, erros = [];
     for (const a of sel) { try {
       if (a.k === "cad~") { const r = infRhCampos(a.f), v = Object.assign({}, a.m, r); await infMotGravar(v); n++; }
-      else if (a.k === "cad+") { const r = infRhCampos(a.f); await infMotGravar({ mat: String(a.f.Matricula).trim(), nome: r.nome, contato: r.contato, sit: r.sit, rg: r.rg || "", cnh: r.cnh || "", val: r.val || "" }); n++; }
+      else if (a.k === "cad+") { const r = infRhCampos(a.f); await infMotGravar({ mat: (INFM.temCpf && r.cpf) || String(a.f.Matricula || "").trim(), nome: r.nome, contato: r.contato, sit: r.sit, rg: r.rg || "", cnh: r.cnh || "", val: r.val || "", cpf: r.cpf || "", matRh: r.matRh || "" }); n++; }
       else if (a.k === "rh+") { await infRhGravar(a.m, true); n++; }
     } catch (e) { erros.push(`${a.m ? a.m.nome : a.f.Title}: ${e.message}`); } }
     await infMotCarregar(true); if ($("imBody")) infMotPintar(); window.__INF.atualizar();
@@ -57447,7 +57482,7 @@ window.infMotSync = () => {
 /* na tabela: associar infração sem matrícula / cadastrar matrícula fora do cadastro */
 window.infMotDoItem = async i => {
   if (!window.__INF.podeEd()) return; try { await infMotCarregar(); } catch (e) {}
-  if (i.matricula) { infMotForm(null, { mat: i.matricula, nome: i.motoristaLinha || "" }); return; }
+  if (i.matricula) { const d = infDigs(i.matricula); infMotForm(null, { mat: i.matricula, nome: i.motoristaLinha || "", cpf: d.length === 11 && rhfCpfOk(d) ? d : "" }); return; }
   const I = window.__INF, lid = I.LISTAS[i.lista]; if (!lid) return;
   openModal("Associar infração a um motorista", `<p class="sup">${esc(fmtDate(ymd(i.data)))} ${esc(i.hora || "")} · veículo ${esc(i.veiculo || "—")} · ${esc(i.localizacao || "")} · ${esc(i.classificacao || "")}</p>
     <div class="form-grid"><div class="field full"><label>Motorista<span class="req">*</span></label><input id="iaQ" list="iaL" placeholder="Nome ou matrícula" autocomplete="off"><datalist id="iaL">${INFM.its.map(m => `<option value="${esc(m.mat)}">${esc(m.nome)} · ${esc(m.mat)}</option>`).join("")}</datalist><div class="hint">A infração recebe a matrícula e o nome; a notificação passa a valer para ele. Quem não está no cadastro: <a href="#" onclick="event.preventDefault();closeModal();infMotForm(null)">cadastrar antes</a>.</div></div></div><div class="err-msg" id="iaErr" style="display:none"></div>`, async () => {
@@ -57486,10 +57521,83 @@ window.infMarcarAte = async () => {
 };
 Object.assign(window, { INFM, infFoneNorm, infFoneFmt, infMotCarregar, infRhDe, infDif, infMarcarItens });
 (function () { const st = document.createElement("style"); st.id = "erp-v014107";
-  st.textContent = `#inf-root .inf-mot-btn{display:block;margin-top:3px;font-size:10.5px;padding:1px 6px}
+  st.textContent = `#inf-root .inf-mot-btn{display:block;margin:3px auto 0;font-size:10.5px;padding:1px 6px}
 #inf-root td .btn-mini[data-marcar]{margin-left:4px;background:var(--ok,#197a46)}
 #modal.inf-wide{max-width:min(1360px,96vw);width:96vw}.inf-mot .cap-table td b{font-weight:700}.inf-mot .cap-table td.nw{white-space:nowrap}
 .inf-sync label{font-size:13.5px;line-height:1.45}.inf-sync s{color:#8a9099}`;
+  document.head.appendChild(st); })();
+/* =====================================================================
+   v0.14.108 (26/11/2026) · Motoristas ↔ RH pela pessoa, Identidade no RH, dados pessoais separados dos bancários,
+   fila de aprovação dos cadastros vindos do Painel de Infrações (pedido do Rafael, 26/11 10:16–10:18).
+   - A ligação Cadastro Motoristas ↔ RH › Funcionários é por CNH, identidade (RG), CPF (a telemetria usa o CPF como
+     matrícula em parte dos motoristas) e, por último, matrícula. O formulário avisa quando a pessoa já existe no
+     cadastro ou no RH e preenche a partir do RH; não cria funcionário repetido.
+   - RH › Funcionários ganha Identidade (RG) na lista restrita de dados pessoais e uma seção "Dados pessoais e
+     documentos" (RG, CNH número/categoria/validade) separada de "Dados bancários".
+   - Funcionário criado pelo Painel de Infrações entra com Aprovação do cadastro = Pendente (coluna nova em
+     "RH — Funcionários", pela Configuração) e aparece numa fila no alto de RH › Funcionários, com "Aprovar";
+     no painel ele já vale desde a criação.
+   - "Associar" centralizado na célula do motorista.
+   ===================================================================== */
+LISTS.rh_func.columns.push({ name: "Aprovacao", displayName: "Aprovação do cadastro", choice: choice(["Pendente", "Aprovado"]) });
+/* RG antes de ir à lista restrita: sem a coluna (antes do Executar tudo), sai da gravação com aviso */
+{ const g0 = rhPesGravar; rhPesGravar = async function (funcId, nome, pes) {
+    try { if (pes && "RG" in pes) { const cols = await mstColsDe(RH_PES.site.id, RH_PES.list.id); if (cols.size && !cols.has("RG")) { const tinha = !rhPesVazio(pes.RG); delete pes.RG; if (tinha) toast(`A coluna "Identidade (RG)" ainda não existe na lista de dados pessoais: rode Sistema › Configuração › "Executar tudo". O resto foi gravado.`, 8000); } } } catch (e) {}
+    return g0.apply(this, arguments);
+  }; }
+/* formulário do funcionário: seção "Dados pessoais e documentos" com RG e CNH, antes de "Dados bancários" */
+{ const f0 = RHDB_FORMS.funcs;
+  RHDB_FORMS.funcs = v => {
+    const h = f0(v), box = document.createElement("div"); box.innerHTML = h;
+    const campo = id => { const e = box.querySelector("#" + id); return e ? e.closest(".field") : null; };
+    const cnh = ["rdFuCNHn", "rdFuCNHc", "rdFuCNHv"].map(campo).filter(Boolean);
+    const sec = document.createElement("div"); sec.className = "field full form-sec"; sec.textContent = "Dados pessoais e documentos";
+    const rg = document.createElement("div"); rg.className = "field"; rg.innerHTML = `<label>Identidade (RG)</label><input id="rdFuRG" value="${esc(v.RG || "")}" autocomplete="off" maxlength="20"><div class="hint">Fica na lista restrita de dados pessoais, como o CPF</div>`;
+    const banco = [...box.querySelectorAll(".form-sec")].find(e => /banc/i.test(e.textContent)), obs = box.querySelector("#rdFuO"), ancora = banco || (obs && obs.closest(".field")) || null;
+    const bloco = [sec].concat(rhPesAtivo() ? [rg] : []).concat(cnh); if (!cnh.length && !rhPesAtivo()) return h;
+    const grid = box.querySelector(".form-grid") || box; bloco.forEach(el => { if (ancora && ancora.parentNode) ancora.parentNode.insertBefore(el, ancora); else grid.appendChild(el); });
+    if (banco) banco.textContent = "Dados bancários";
+    return box.innerHTML;
+  }; }
+{ const r0 = RHDB_READ.funcs; RHDB_READ.funcs = () => { const r = r0(); if (r && typeof r === "object" && $("rdFuRG")) r.RG = ($("rdFuRG").value || "").trim() || null; return r; }; }
+
+/* ---------- fila de aprovação em RH › Funcionários ---------- */
+const rhfPend = x => String(x.Aprovacao || "") === "Pendente";
+window.rhfAprovar = async id => {
+  if (!podeEditar("rh_db")) { toast("Seu acesso ao RH é só de leitura."); return; }
+  const x = (RHDB_STATE.itens || []).find(i => String(i._id) === String(id)); if (!x) return;
+  if (!(await erpConfirmar({ titulo: "Aprovar cadastro", html: `Aprovar o cadastro de <b>${esc(x.Title)}</b> (${esc(x.Cargo || "")}, matrícula ${esc(x.Matricula || "—")})? Confira antes CPF, admissão e CNPJ pelo "Abrir". Depois de aprovado ele sai da fila e segue como os demais.`, sim: "Aprovar" }))) return;
+  try { await SP.update(RHDB_STATE.site.id, RHDB_STATE.list.id, x._id, { Aprovacao: "Aprovado" }); x.Aprovacao = "Aprovado"; toast("Cadastro aprovado."); paintRhDbSub("funcs"); } catch (e) { toast("Não foi possível aprovar: " + e.message, 7000); }
+};
+{ const p0 = paintRhDbSub; paintRhDbSub = function (sub) { const r = p0.apply(this, arguments);
+    try { if (sub !== "funcs" || !RHDB_STATE.ready) return r; const body = $("rhdbBody"); if (!body || body.querySelector(".rhf-fila")) return r;
+      const pend = (RHDB_STATE.itens || []).filter(rhfPend).sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR")); if (!pend.length) return r;
+      const ed = !!podeEditar("rh_db") && !(typeof vcAtivo === "function" && vcAtivo());
+      body.insertAdjacentHTML("afterbegin", `<div class="cap-card rhf-fila"><div class="cap-card-h"><h3>Cadastros aguardando aprovação</h3><span class="cap-card-s">${pend.length} vindo(s) do Painel de Infrações · já valem lá; aqui faltam conferência e aprovação</span></div>
+        <div class="table-wrap"><table class="cap-table"><thead><tr><th>Nome</th><th>Matrícula</th><th>Função</th><th>Contato</th><th>Origem</th><th></th></tr></thead><tbody>${pend.map(x => `<tr><td><b>${esc(x.Title || "")}</b></td><td>${esc(x.Matricula || "—")}</td><td>${esc(x.Cargo || "—")}</td><td>${esc(x.Contato || "—")}</td><td class="sup">${esc(String(x.Observacoes || "").split(";")[0])}</td>
+          <td class="nw"><button class="btn mini" onclick="rhfAbrir('${esc(x._id)}')">Abrir</button>${ed ? ` <button class="btn mini primary" onclick="rhfAprovar('${esc(x._id)}')">Aprovar</button>` : ""}</td></tr>`).join("")}</tbody></table></div></div>`);
+      body.querySelectorAll("tr.rhf-linha").forEach(tr => { const x = pend.find(p => String(p._id) === tr.dataset.id); if (x) { const td = tr.querySelector("td"); if (td && !td.querySelector(".rhf-pend")) td.insertAdjacentHTML("beforeend", ` <span class="rhf-pend" title="Aguarda aprovação do RH">pendente</span>`); } });
+    } catch (e) {} return r; }; }
+/* v0.14.108 (Rafael, 10:33): o CPF passa a ser a chave do motorista; a lista "Cadastro Motoristas" ganha CPF e Matrícula (RH) pela Configuração
+   (a coluna Matricula continua sendo o código que a telemetria envia; quando ela enviar o CPF, a ligação é pelo CPF — ver mapaMotoristas) */
+LISTS.inf_mot = {
+  key: "inf_mot", displayName: "Cadastro Motoristas", siteKey: "operacional", titleAs: "Colaborador",
+  description: "Operacional NMB · motoristas da telemetria (Painel de Infrações): código da telemetria, CPF (chave), contato do WhatsApp, situação, identidade, habilitação e matrícula do RH.",
+  columns: [
+    { name: "Matricula",    displayName: "Matricula",             text: { allowMultipleLines: false, maxLength: 255 } },
+    { name: "CPF",          displayName: "CPF",                   text: { allowMultipleLines: false, maxLength: 14 } },
+    { name: "MatriculaRH",  displayName: "Matrícula (RH)",        text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Contato",      displayName: "Contato",               text: { allowMultipleLines: false, maxLength: 255 } },
+    { name: "Situa_x00e7__x00e3_o", displayName: "Situação",      choice: choice(["Inativo", "Ativo"]) },
+    { name: "Identidade",   displayName: "Identidade",            text: { allowMultipleLines: false, maxLength: 255 } },
+    { name: "Habilita_x00e7__x00e3_o", displayName: "Habilitação", text: { allowMultipleLines: false, maxLength: 255 } },
+    { name: "ValidadeCNH",  displayName: "Validade CNH",          dateTime: dateOnly }
+  ]
+};
+SETUP_ORDER.push("inf_mot");
+SETUP_TEXT.inf_mot = `Completa no site Operacional a lista "Cadastro Motoristas" (já existe; nada é apagado): colunas CPF e Matrícula (RH). O Painel de Infrações passa a ligar o motorista ao RH e às infrações pelo CPF.`;
+(function () { const st = document.createElement("style"); st.id = "erp-v014108";
+  st.textContent = `.rhf-fila{margin-bottom:12px;border-left:3px solid var(--orange,#D6421F)}.rhf-pend{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--orange,#D6421F);border:1px dashed var(--orange,#D6421F);border-radius:2px;padding:1px 5px;margin-left:6px}`;
   document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
@@ -57603,6 +57711,7 @@ CONFIG.version = "v0.14.104";   /* Passageiros: Folha (PDF) em paisagem com quad
 CONFIG.version = "v0.14.105";   /* Diretoria › Relatórios › Painel de Operação (painel da TV no ERP, com receita estimada e disponibilidade); ocupação unificada: (pagantes + gratuidades) ÷ lugares */
 CONFIG.version = "v0.14.106";   /* Frota › página do ônibus › Estrutura (2D e 3D, catálogo por modelo, situação pelas manutenções); colunas Componentes em Manutenção e NC */
 CONFIG.version = "v0.14.107";   /* Painel de Infrações: Banco de Dados de motoristas ligado ao RH (sincronização nos dois sentidos), associar infração não identificada, marcar notificadas sem envio */
+CONFIG.version = "v0.14.108";   /* Motoristas ↔ RH pela pessoa (CNH, identidade, CPF); CPF e Matrícula (RH) no Cadastro Motoristas (CPF é a chave); Identidade no RH; dados pessoais separados dos bancários; fila de aprovação dos cadastros do painel; Associar centralizado */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

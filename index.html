@@ -57400,14 +57400,14 @@ function infMotLinhaRh(m) {
   if (!INFM.rh) return `<span class="sup">${INFM.rhErro ? "RH indisponível" : "RH não lido"}</span>`;
   const a = infRhAcha(m); if (!a) return `<span class="nao-cadastrado">não está no RH</span>`; const f = a.f, pend = String(f.Aprovacao || "") === "Pendente";
   const d = infDif(m, f), via = `<div class="sup">via ${esc(a.por)}${f.Matricula && infMatN(f.Matricula) !== infMatN(m.mat) ? ` · mat. RH ${esc(f.Matricula)}` : ""}${pend ? " · aguarda aprovação" : ""}</div>`;
-  return (d.length ? `<span title="${esc(d.map(x => `${x[0]}: ${x[1]} → ${x[2]}`).join("\n"))}" style="color:var(--warn,#9a6a00);font-weight:700">⚠ ${d.length} diferença(s)</span>` : `<span style="color:var(--ok,#197a46);font-weight:700">✓ igual ao RH</span>`) + via;
+  return (d.length ? `<span style="color:var(--warn,#9a6a00);font-weight:700">⚠ Difere do RH</span><div class="inf-dif">${d.map(x => `<div><b>${esc(x[0])}</b>: ${esc(x[1])} <span class="sup">(aqui)</span> → ${esc(x[2])} <span class="sup">(RH)</span></div>`).join("")}</div>` : `<span style="color:var(--ok,#197a46);font-weight:700">✓ igual ao RH</span>`) + via;   /* v0.14.111: a divergência fica escrita na linha, não só no título */
 }
 function infMotHtml() {
   const ed = window.__INF.podeEd(), q = normName(INFM.q), its = INFM.its.filter(m => !q || normName(m.nome + " " + m.mat + " " + m.contato).includes(q));
   const ligados = new Set(INFM.its.map(infRhDeM)); const semRh = INFM.rh ? INFM.rh.filter(f => infRhMot(f) && String(f.Situacao || "") !== "Desligado" && !ligados.has(f)) : [];
   return `<div class="inf-mot">
     <div class="cap-tools" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><input id="imQ" placeholder="Buscar nome, matrícula ou contato" value="${esc(INFM.q)}" style="flex:1;min-width:180px">${ed ? `<button class="btn primary" onclick="infMotForm(null)">+ Novo motorista</button><button class="btn" onclick="infMotSync()" ${INFM.rh ? "" : "disabled"} title="Compara o cadastro com RH › Funcionários e mostra o que mudaria">⇄ Sincronizar com o RH</button>` : ""}<button class="btn ghost" onclick="infMotAbrir(true)">↻</button></div>
-    <p class="sup" style="margin:0 0 8px">${INFM.its.length} motorista(s) no cadastro · ligação com o RH por CNH, identidade, CPF ou matrícula${INFM.rh ? ` · ${INFM.rh.filter(infRhMot).length} com cargo de motorista no RH` : ` · ${esc(INFM.rhErro || "RH não lido")}`}${semRh.length ? ` · <b>${semRh.length}</b> do RH ainda sem cadastro aqui` : ""}. O contato gravado na lista é o número do WhatsApp (55 + DDD + 9 dígitos).</p>
+    <p class="sup" style="margin:0 0 8px">${INFM.its.length} motorista(s) no cadastro · ligação com o RH por CNH, identidade, CPF ou matrícula${INFM.rh ? ` · ${INFM.rh.filter(infRhMot).length} com cargo de motorista no RH` : ` · ${esc(INFM.rhErro || "RH não lido")}`}${semRh.length ? ` · <b>${semRh.length}</b> do RH ainda sem cadastro aqui` : ""}${INFM.rh ? (() => { const n = INFM.its.filter(m => { const f = infRhDeM(m); return f && infDif(m, f).length; }).length; return n ? ` · <b style="color:var(--warn,#9a6a00)">${n}</b> com dados diferentes do RH (use ⇄ Sincronizar)` : ""; })() : ""}. O contato gravado na lista é o número do WhatsApp (55 + DDD + 9 dígitos).</p>
     <div class="table-wrap"><table class="cap-table"><thead><tr><th>Motorista</th><th>Matrícula${INFM.temCpf || INFM.temMatRh ? " (telemetria)" : ""}</th>${INFM.temCpf ? "<th>CPF</th>" : ""}${INFM.temMatRh ? "<th>Matrícula (RH)</th>" : ""}<th>Contato</th><th>Situação</th><th>Identidade</th><th>Habilitação</th><th>Validade CNH</th><th>RH</th><th></th></tr></thead><tbody>
       ${its.map(m => `<tr><td><b>${esc(m.nome || "—")}</b></td><td>${esc(m.mat || "—")}</td>${INFM.temCpf ? `<td class="nw">${m.cpf ? esc(rhfCpfFmt(m.cpf)) : `<span class="nao-cadastrado">sem CPF</span>`}</td>` : ""}${INFM.temMatRh ? `<td>${esc(m.matRh || "—")}</td>` : ""}<td class="nw">${infFoneNorm(m.contato) ? esc(infFoneFmt(m.contato)) : `<span class="nao-cadastrado" title="Fora do padrão 55 + DDD + 9 dígitos">${esc(m.contato || "—")}</span>`}</td><td>${m.sit === "Ativo" ? `<span style="color:var(--ok,#197a46);font-weight:700">Ativo</span>` : `<span class="sup">${esc(m.sit || "—")}</span>`}</td><td>${esc(m.rg || "—")}</td><td>${esc(m.cnh || "—")}</td><td>${m.val ? esc(fmtDate(m.val)) : "—"}</td><td>${infMotLinhaRh(m)}</td>
         <td class="nw">${ed ? `<button class="btn mini" onclick="infMotForm('${esc(m._id)}')">Editar</button> ${INFM.rh && !infRhDeM(m) ? `<button class="btn mini" onclick="infMotCriarRh('${esc(m._id)}')" title="Cria o funcionário no RH (fila de aprovação) com os dados daqui">→ RH</button> ` : ""}${session.n1 || permModulo("infracoes") === "proprietario" ? `<button class="btn mini danger" onclick="infMotRemover('${esc(m._id)}')">Remover</button>` : ""}` : ""}</td></tr>`).join("") || `<tr><td colspan="9" class="sup">Nenhum motorista${q ? " nesta busca" : " cadastrado"}.</td></tr>`}</tbody></table></div>
@@ -57617,19 +57617,22 @@ SETUP_TEXT.inf_mot = `Completa no site Operacional a lista "Cadastro Motoristas"
 function rhfPisFmt(v) { const d = rhfDig(v).slice(0, 11); if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 8)}.${d.slice(8, 10)}-${d.slice(10)}`; return d; }
 function rhfFoneFmt(v) { const d = rhfDig(v).slice(0, 11); if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 3)}.${d.slice(3, 7)}-${d.slice(7)}`; if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`; return d; }
 { const f0 = rhfFone; rhfFone = function (v) { const d = rhfDig(v); return d.length === 11 || d.length === 10 ? rhfFoneFmt(d) : f0.apply(this, arguments); }; }   /* celular gravado como (00) 0.0000-0000 */
-const RHF_MASCARAS = { rdFuCPF: ["cpf", 14], rdFuPIS: ["pis", 14], rdFuCNHn: ["dig11", 11], rdFuTel: ["fone", 15], rdFuT: ["fone", 16], rdFuRG: ["rg", 14] };
+const RHF_MASCARAS = { rdFuCPF: ["cpf", 14], rdFuPIS: ["pis", 14], rdFuCNHn: ["cnh", 14], rdFuTel: ["fone", 15], rdFuT: ["fone", 16], rdFuRG: ["rg", 14], rdFuAg: ["ag", 6], rdFuConta: ["conta", 14] };   /* v0.14.111: CNH 000.000.000-00, RG 00.000.000-0, agência 0000-0, conta até 12 dígitos + dígito */
 function rhfMascara(tipo, v) {
   if (tipo === "cpf") { const d = rhfDig(v).slice(0, 11); return d.length === 11 ? rhfCpfFmt(d) : d.replace(/^(\d{3})(\d)/, "$1.$2").replace(/^(\d{3}\.\d{3})(\d)/, "$1.$2").replace(/^(\d{3}\.\d{3}\.\d{3})(\d)/, "$1-$2"); }
   if (tipo === "pis") { const d = rhfDig(v).slice(0, 11); return d.length === 11 ? rhfPisFmt(d) : d.replace(/^(\d{3})(\d)/, "$1.$2").replace(/^(\d{3}\.\d{5})(\d)/, "$1.$2").replace(/^(\d{3}\.\d{5}\.\d{2})(\d)/, "$1-$2"); }
   if (tipo === "dig11") return rhfDig(v).slice(0, 11);
+  if (tipo === "cnh") { const d = rhfDig(v).slice(0, 11); return d.length === 11 ? rhfCpfFmt(d) : d.replace(/^(\d{3})(\d)/, "$1.$2").replace(/^(\d{3}\.\d{3})(\d)/, "$1.$2").replace(/^(\d{3}\.\d{3}\.\d{3})(\d)/, "$1-$2"); }
+  if (tipo === "ag") { const d = rhfDig(v).slice(0, 5); return d.length === 5 ? `${d.slice(0, 4)}-${d.slice(4)}` : d; }
+  if (tipo === "conta") { const t = String(v || "").toUpperCase().replace(/[^0-9X]/g, "").slice(0, 13); return t.length >= 2 ? `${t.slice(0, -1).replace(/X/g, "")}-${t.slice(-1)}` : t; }
   if (tipo === "fone") { const d = rhfDig(v).slice(0, 11); return d.length >= 10 ? rhfFoneFmt(d) : d.replace(/^(\d{2})(\d)/, "($1) $2"); }
-  if (tipo === "rg") return String(v || "").toUpperCase().replace(/[^0-9A-Z.\-\/]/g, "").slice(0, 14);
+  if (tipo === "rg") { const t = String(v || "").toUpperCase().replace(/[^0-9A-Z.\-\/]/g, ""); const d = rhfDig(t).slice(0, 9); if (rhfDig(t) === t.replace(/[.\-]/g, "")) return d.replace(/^(\d{2})(\d)/, "$1.$2").replace(/^(\d{2}\.\d{3})(\d)/, "$1.$2").replace(/^(\d{2}\.\d{3}\.\d{3})(\d)/, "$1-$2"); return t.slice(0, 14); }
   return v;
 }
 document.addEventListener("input", ev => { const el = ev.target; const m = el && el.id && RHF_MASCARAS[el.id]; if (!m) return; const nv = rhfMascara(m[0], el.value); if (nv !== el.value) { el.value = nv; try { el.setSelectionRange(nv.length, nv.length); } catch (e) {} } });
 { const f0 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function (v) { let h = f0.apply(this, arguments);
-    for (const [id, [tipo, max]] of Object.entries(RHF_MASCARAS)) h = h.replace(new RegExp(`(<input[^>]*id="${id}")((?:(?!maxlength=)[^>])*)>`), (_, a, b) => `${a}${b} maxlength="${max}">`);
-    for (const [id, tipo] of [["rdFuCPF", "cpf"], ["rdFuPIS", "pis"], ["rdFuCNHn", "dig11"], ["rdFuTel", "fone"], ["rdFuT", "fone"], ["rdFuRG", "rg"]]) h = h.replace(new RegExp(`(<input[^>]*id="${id}"[^>]*value=")([^"]*)(")`), (_, a, val, c) => a + esc(rhfMascara(tipo, val.replace(/&quot;/g, '"').replace(/&amp;/g, "&"))) + c);
+    for (const [id, [tipo, max]] of Object.entries(RHF_MASCARAS)) h = h.replace(new RegExp(`<input[^>]*id="${id}"[^>]*>`), tag => tag.replace(/\s*maxlength="\d+"/g, "").replace(/>$/, ` maxlength="${max}">`));
+    for (const [id, tipo] of [["rdFuCPF", "cpf"], ["rdFuPIS", "pis"], ["rdFuCNHn", "cnh"], ["rdFuTel", "fone"], ["rdFuT", "fone"], ["rdFuRG", "rg"], ["rdFuAg", "ag"], ["rdFuConta", "conta"]]) h = h.replace(new RegExp(`(<input[^>]*id="${id}"[^>]*value=")([^"]*)(")`), (_, a, val, c) => a + esc(rhfMascara(tipo, val.replace(/&quot;/g, '"').replace(/&amp;/g, "&"))) + c);
     return h; }; }
 { const r0 = RHDB_READ.funcs; RHDB_READ.funcs = function () { const o = r0.apply(this, arguments); const g = id => ($(id) ? $(id).value : "").trim();
     if ($("rdFuPIS")) { const d = rhfDig(g("rdFuPIS")); if (d && d.length !== 11) { const e = $("rdErr"); if (e) { e.style.display = "block"; e.textContent = "PIS inválido: são 11 dígitos (000.00000.00-0)."; } throw new Error("PIS inválido: são 11 dígitos."); } o.PIS = d ? rhfPisFmt(d) : null; }
@@ -57638,6 +57641,42 @@ document.addEventListener("input", ev => { const el = ev.target; const m = el &&
     if ($("rdFuTel") && "Telefone" in o && o.Telefone) { const d = rhfDig(o.Telefone); if (d.length !== 10 && d.length !== 11) { const e = $("rdErr"); if (e) { e.style.display = "block"; e.textContent = "Telefone: informe DDD e número, ex.: (00) 0000-0000."; } throw new Error("Telefone fora do padrão."); } o.Telefone = rhfFoneFmt(d); }
     if ($("rdFuT") && "Contato" in o && o.Contato) { const d = rhfDig(o.Contato); if (d.length !== 11) { const e = $("rdErr"); if (e) { e.style.display = "block"; e.textContent = "Celular: informe DDD e os 9 dígitos, ex.: (00) 0.0000-0000."; } throw new Error("Celular fora do padrão."); } o.Contato = rhfFoneFmt(d); }
     return o; }; }
+
+/* =====================================================================
+   v0.14.111 (Rafael, 26/11 18:59): RH › Funcionários — datas com limite e conferência (nascimento, admissão, demissão,
+   validade da CNH); CPF conferido ao digitar, como em Terceiros ("CPF válido" / "inválido" / "já cadastrado");
+   obrigatórios com *, inclusive CNH e celular para quem tem "Motorista" na função.
+   ===================================================================== */
+const RHF_DATAS = { rdFuNasc: "Data de nascimento", rdFuA: "Admissão", rdFuDem: "Data de demissão", rdFuCNHv: "CNH (validade)" };
+function rhfDataOk(v) { return /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= "1900-01-01" && v <= "2099-12-31" && !isNaN(new Date(v + "T00:00:00").getTime()); }
+function rhfCpfDup(cpfD, meuId) { if (!cpfD || typeof RH_PES !== "object" || !RH_PES.map) return null; for (const [fid, pes] of RH_PES.map) { if (String(fid) === String(meuId || "")) continue; if (rhfDig(pes.CPF) === cpfD) { const f = (RHDB_STATE.itens || []).find(i => String(i._id) === String(fid)); return f ? f.Title : "outro funcionário"; } } return null; }
+window.rhfCpfConferir = function () {
+  const el = $("rdFuCPF"), h = $("rdFuCPFHint"); if (!el || !h) return; const d = rhfDig(el.value);
+  if (!d) { h.textContent = "Obrigatório · 000.000.000-00"; h.className = "hint"; return; }
+  if (d.length < 11) { h.textContent = `Faltam ${11 - d.length} dígito(s)`; h.className = "hint warn"; return; }
+  if (!rhfCpfOk(d)) { h.textContent = "CPF inválido: confira os dígitos"; h.className = "hint warn"; return; }
+  const dup = rhfCpfDup(d, el.dataset.meu); h.textContent = dup ? `Já cadastrado: ${dup}` : "CPF válido"; h.className = "hint " + (dup ? "warn" : "ok");
+};
+document.addEventListener("input", ev => { if (ev.target && ev.target.id === "rdFuCPF") rhfCpfConferir(); });
+const rhfEhMot = () => /motorista/i.test(($("rdFuC") && $("rdFuC").value) || "");
+window.rhfReqMot = function () { const on = rhfEhMot(); ["rdFuCNHn", "rdFuCNHv", "rdFuT"].forEach(id => { const el = $(id); if (!el) return; const lab = el.closest(".field") && el.closest(".field").querySelector("label"); if (!lab) return; let r = lab.querySelector(".req.req-mot"); if (on && !r) { r = document.createElement("span"); r.className = "req req-mot"; r.textContent = "*"; r.title = "Obrigatório para motoristas"; lab.appendChild(r); } if (!on && r) r.remove(); }); };
+document.addEventListener("input", ev => { if (ev.target && ev.target.id === "rdFuC") rhfReqMot(); });
+document.addEventListener("change", ev => { if (ev.target && ev.target.id === "rdFuC") rhfReqMot(); });
+{ const f0 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function (v) { let h = f0.apply(this, arguments);
+    for (const id of Object.keys(RHF_DATAS)) h = h.replace(new RegExp(`(<input type="date" id="${id}")((?:(?!min=)[^>])*)>`), `$1 min="1900-01-01" max="2099-12-31"$2>`);
+    h = h.replace(/(<input[^>]*id="rdFuCPF"[^>]*>)(\s*<div class="hint"[^>]*>[^<]*<\/div>)?/, (_, a) => a.replace("id=\"rdFuCPF\"", `id="rdFuCPF" data-meu="${esc(String((v && v._id) || ""))}"`) + `<div class="hint" id="rdFuCPFHint">Obrigatório · 000.000.000-00</div>`);
+    setTimeout(() => { try { rhfCpfConferir(); rhfReqMot(); } catch (e) {} }, 0);
+    return h; }; }
+{ const r0 = RHDB_READ.funcs; RHDB_READ.funcs = function () { const g = id => ($(id) ? $(id).value : "").trim(); const falha = m => { const e = $("rdErr"); if (e) { e.style.display = "block"; e.textContent = m; } throw new Error(m); };
+    const hoje = todayISO();
+    for (const [id, rot] of Object.entries(RHF_DATAS)) { const v = g(id); if (v && !rhfDataOk(v)) falha(`${rot}: data inválida (use dia/mês/ano entre 1900 e 2099).`); }
+    const nasc = g("rdFuNasc"); if (nasc) { const lim = new Date(); lim.setFullYear(lim.getFullYear() - 14); if (nasc > ymd(lim)) falha("Data de nascimento: o funcionário precisa ter pelo menos 14 anos."); }
+    const adm = g("rdFuA"); if (adm && adm > hoje) falha("Admissão: não pode ser no futuro.");
+    const dem = g("rdFuDem"); if (dem && adm && dem < adm) falha("Data de demissão: anterior à admissão.");
+    if (nasc && adm && adm < nasc) falha("Admissão: anterior ao nascimento.");
+    const cpfD = rhfDig(g("rdFuCPF")); if ($("rdFuCPF") && cpfD.length === 11 && rhfCpfOk(cpfD)) { const dup = rhfCpfDup(cpfD, $("rdFuCPF").dataset.meu); if (dup) falha(`CPF já cadastrado para ${dup}. Edite o cadastro dele em vez de criar outro.`); }
+    if (rhfEhMot()) { if ($("rdFuCNHn") && rhfDig(g("rdFuCNHn")).length !== 11) falha("Motorista: informe a CNH (11 dígitos)."); if ($("rdFuCNHv") && !g("rdFuCNHv")) falha("Motorista: informe a validade da CNH."); if ($("rdFuT") && rhfDig(g("rdFuT")).length !== 11) falha("Motorista: informe o celular (DDD + 9 dígitos) — é por ele que o Painel de Infrações avisa."); }
+    return r0.apply(this, arguments); }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -57868,10 +57907,12 @@ window.rhfObsRemover = async i => { const h = RHF_OBS.lista[i]; if (!h || !rhfOb
 #inf-root .fab-limpar{border:none}
 #inf-root tbody tr:hover{background:#E4ECF6}
 #inf-root .notif.man{color:#5B6068}
+#inf-root .inf-dif{font-size:11px;line-height:1.35;color:#7a5200;margin-top:2px;max-width:320px}
 .rhf-cad .rhf-obs-add,.rhf-cad .pb-hist-acoes{display:none}
 `; document.head.appendChild(st); })();
 CONFIG.version = "v0.14.109";   /* fundo padrão nos módulos; Funcionários no menu do RH com campos descritivos; painel: Associar claro, Limpar sem contorno, hover em contraste, "Fechada manualmente" ≠ "Enviada" */
 CONFIG.version = "v0.14.110";   /* RH › Funcionários: máscaras, limites e padrão gravado de CPF, PIS, CNH, RG, celular e telefone */
+CONFIG.version = "v0.14.111";   /* RH › Funcionários: datas com limite e conferência; CPF conferido ao digitar; máscaras de CNH, RG, agência e conta; obrigatórios com * (CNH e celular para motoristas); Painel › Banco de Dados escreve a divergência com o RH na linha */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

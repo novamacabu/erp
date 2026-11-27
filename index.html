@@ -390,7 +390,12 @@
 #inf-root .btn-mini[data-envio][style*="asfalto"]{background:#EAF0F8!important;border-color:#C5D2E4!important;color:#0F1E3A!important}
 #inf-root .btn-mini[data-marcar]{background:#E3F3E9!important;border:1px solid #A9D6B9!important;color:#1E6B3D!important;font-weight:800}
 #inf-root .btn-mini[data-envio]:hover{filter:brightness(.96)}#inf-root .btn-mini[data-marcar]:hover{filter:brightness(.96)}
-#inf-root .inf-bt-campo{flex:0 1 auto}#inf-root .inf-seg{gap:5px}#inf-root .inf-seg button{white-space:nowrap}
+#inf-root .inf-bt-campo{flex:0 0 auto}#inf-root .inf-seg{gap:3px;flex-wrap:nowrap}#inf-root .seg.inf-seg button{white-space:nowrap;padding:3px 8px;font-size:12px}
+#inf-root .inf-busca-l{flex:0 1 220px!important;min-width:150px;flex-direction:row!important;align-items:center}#inf-root .inf-busca-l label{display:none}#inf-root .inf-busca-l input{width:100%;min-width:0!important}
+#inf-root section.filtros[aria-label="Filtros"]{flex-wrap:nowrap;justify-content:safe center;align-items:flex-end;gap:10px;padding-left:10px;padding-right:10px;overflow-x:auto;scrollbar-width:thin}
+#inf-root section.filtros[aria-label="Filtros"] .campo{flex:0 0 auto}
+#inf-root section.filtros[aria-label="Filtros"] .campo:has(#f-motorista){flex:0 1 170px;min-width:120px}#inf-root section.filtros[aria-label="Filtros"] #f-motorista{min-width:0;width:100%}
+#inf-root section.filtros[aria-label="Filtros"] .campo:has(#f-busca){flex:1 1 170px;min-width:140px}#inf-root section.filtros[aria-label="Filtros"] #f-busca{min-width:0;width:100%}
 #inf-root .inf-flut{position:sticky;top:var(--inf-top,0px);z-index:40;margin-top:16px}#inf-root .inf-flut .filtros{margin-top:0}#inf-root .inf-flut .filtros+.filtros{margin-top:10px}
 #inf-root .inf-flut-sen{height:1px;margin-bottom:-1px}
 #inf-root .inf-fh{display:none;align-items:center;gap:10px;min-height:38px;background:var(--card,#fff);border:1px solid var(--line,#E2E5E9);border-top:0;box-shadow:0 10px 24px rgba(16,24,40,.14);padding:4px 14px;border-radius:0 0 10px 10px}
@@ -10823,8 +10828,8 @@ $("tb-motorista").addEventListener("change",e=>{MULTI.motorista=new Set(); $("f-
   const GR=[["f-periodo","Período"],["f-classificacao","Classificação"],["f-lista","Origem"],["f-notif","Notificação"]];
   GR.forEach(([id])=>{ const sel=$(id); if(!sel||sel.dataset.bt) return; sel.dataset.bt="1"; const campo=sel.closest(".campo"); if(campo) campo.classList.add("inf-bt-campo");
     const box=document.createElement("div"); box.className="seg inf-seg"; box.dataset.sel=id; box.setAttribute("role","group");
-    [...sel.options].forEach(o=>{ const b=document.createElement("button"); b.type="button"; b.dataset.v=o.value; b.textContent=o.textContent.replace(/^Últimos /,"").replace(/^Todo o histórico$/,"Tudo"); b.title=o.textContent+(id==="f-classificacao"&&o.value?" · Ctrl + clique soma":""); box.appendChild(b); });
-    sel.style.display="none"; sel.after(box);
+    [...sel.options].forEach(o=>{ const b=document.createElement("button"); b.type="button"; b.dataset.v=o.value; b.textContent=o.textContent.replace(/^Últimos (\d+) dias$/,"$1d").replace(/^Todo o histórico$/,"Tudo").replace(/^Ambas as listas$/,"Ambas").replace(/^Velocidade Excedida$/,"Velocidade"); b.title=o.textContent+(id==="f-classificacao"&&o.value?" · Ctrl + clique soma":""); box.appendChild(b); });
+    sel.style.display="none"; sel.after(box); if(id==="f-periodo"){ const lb=campo&&campo.querySelector("label"); if(lb) lb.textContent="Período (dias)"; }
     box.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
       if(id==="f-classificacao"&&b.dataset.v){ escolher("classificacao",b.dataset.v,e); return; }
       if(id==="f-classificacao") MULTI.classificacao=new Set();
@@ -10832,6 +10837,7 @@ $("tb-motorista").addEventListener("change",e=>{MULTI.motorista=new Set(); $("f-
       sel.value=b.dataset.v; sel.dispatchEvent(new Event("change")); }); });
   /* quadro flutuante */
   const s1=document.querySelector("#inf-app section.filtros[aria-label='Filtros']"), s2=document.querySelector("#inf-app section.filtros[aria-label='Linha do tempo']");
+  const cb=$("f-busca")&&$("f-busca").closest(".campo"); if(cb&&s2&&!s2.contains(cb)){ cb.classList.add("inf-busca-l"); s2.appendChild(cb); }   /* v0.14.126: a busca vai para a linha dos meses e os filtros cabem numa linha */
   if(s1&&!document.getElementById("infFlut")){ const fl=document.createElement("div"); fl.id="infFlut"; fl.className="inf-flut"; s1.parentNode.insertBefore(fl,s1);
     const sen=document.createElement("div"); sen.className="inf-flut-sen"; fl.parentNode.insertBefore(sen,fl);
     fl.innerHTML=`<div class="inf-fh"><b class="inf-ft">Filtros</b><span class="inf-fr"></span><span class="grow"></span><button type="button" class="inf-fb" aria-expanded="false">Mostrar filtros</button></div><div class="inf-corpo"></div>`;
@@ -21396,19 +21402,20 @@ RHDB_COLS.funcs = [["Title", "Nome"], ["Matricula", "Matrícula"], ["Cargo", "Fu
     const kpis = `<div class="cap-kpis">${kpi("ativos", "pago", "Ativos", nAt, "em atividade, férias ou afastados")}${kpi("desligados", "venc", "Desligados", nDes, "situação Desligado")}${kpi("todos", "", "Todos", all.length, "cadastrados")}<div class="kpi"><div class="lbl">Motoristas</div><div class="val">${nMot}</div><div class="sub">ativos com "Motorista" na função</div></div></div>`;
     const filtros = `<div class="cap-filtros"><input class="busca" id="rhfQ" placeholder="Buscar por nome, matrícula, CPF, função…" value="${esc(S.q)}" autocomplete="off">
       <select id="rhfDep" aria-label="Centro de custo"><option value="">Todos os centros de custo</option>${deps.map(d => `<option ${S.dep === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select>
-      <select id="rhfFun" aria-label="Função"><option value="">Todas as funções</option>${funs.map(d => `<option ${S.fun === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select></div>`;
+      <select id="rhfFun" aria-label="Função"><option value="">Todas as funções</option>${funs.map(d => `<option ${S.fun === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select>${S.q || S.dep || S.fun ? `<button type="button" class="btn ghost rhf-limpar" onclick="rhfLimpar()" title="Limpar busca, centro de custo e função">✕ Limpar filtros</button>` : ""}</div>`;   /* v0.14.126 */
     const cols = RHDB_COLS.funcs;
     const linha = x => `<tr class="rhf-linha" data-id="${esc(x._id)}" ondblclick="rhfAbrir('${esc(x._id)}')" title="Duplo clique: abre o cadastro">${cols.map(([k, , r]) => `<td>${r ? r(x[k], x) : esc(x[k] == null ? "" : String(x[k]))}</td>`).join("")}<td>${rhAptoPill(x)}</td><td class="act nw"><button class="btn mini" onclick="event.stopPropagation(); rhfAbrir('${esc(x._id)}')">Abrir</button></td></tr>`;   /* v0.12.58: Abrir no botão; duplo clique abre o cadastro na mesma aba (v0.12.70); coluna Apto */
     const faltam = typeof rhfColsFaltam === "function" ? rhfColsFaltam() : [];
     const aviso = faltam.length ? `<div class="rhf-aviso">A lista "RH — Funcionários" ainda não tem a(s) coluna(s) <b>${faltam.map(k => esc(RHF_ROTULO[k] || k)).join(", ")}</b>. ${session.n1 ? `Rode <a href="#/configuracao">Sistema › Configuração › "Executar tudo na ordem"</a>` : "Peça a um administrador para rodar Sistema › Configuração › \"Executar tudo na ordem\""}; até lá esses campos não são gravados.</div>` : "";
     body.innerHTML = aviso + kpis + filtros + (vis.length
       ? `<div class="table-wrap"><table class="cap-table"><thead><tr>${cols.map(([, lbl]) => `<th>${esc(lbl)}</th>`).join("")}<th title="Documentos obrigatórios em dia">Apto</th><th></th></tr></thead><tbody>${vis.map(linha).join("")}</tbody></table></div><p class="cap-dica">${vis.length} de ${all.length} funcionário(s) · <b>Abrir</b> mostra o cadastro e os documentos; duplo clique na linha abre o cadastro${S.sit === "ativos" ? " · desligados ocultos" : ""}. Quem tem "Motorista" na função aparece primeiro nas listas de motoristas (Roletas e Recebimento).</p>`
-      : `<div class="cap-empty"><h3>${all.length ? "Nenhum funcionário com este filtro" : "Nenhum funcionário cadastrado"}</h3>${edita && !all.length ? `<p>Use <b>Importar planilha</b> para cadastrar todos de uma vez, ou "+ Novo".</p>` : ""}</div>`);
+      : `<div class="cap-empty"><h3>${all.length ? "Nenhum funcionário com este filtro" : "Nenhum funcionário cadastrado"}</h3>${all.length && (S.q || S.dep || S.fun || S.sit !== "ativos") ? `<p><button type="button" class="btn" onclick="rhfLimpar(true)">✕ Limpar filtros</button></p>` : ""}${edita && !all.length ? `<p>Use <b>Importar planilha</b> para cadastrar todos de uma vez, ou "+ Novo".</p>` : ""}</div>`);
     const qEl = $("rhfQ"); if (qEl) { qEl.addEventListener("input", () => { S.q = qEl.value; erpDeb("rhfQ", () => { if (!$("rhfQ")) return; const pos = (qEl.isConnected ? qEl : $("rhfQ")).selectionStart; paintRhDbSub("funcs"); const e2 = $("rhfQ"); if (e2) { e2.focus(); try { e2.setSelectionRange(pos, pos); } catch (e) {} } }); }); }
     const dEl = $("rhfDep"); if (dEl) dEl.addEventListener("change", () => { S.dep = dEl.value; paintRhDbSub("funcs"); });
     const fEl = $("rhfFun"); if (fEl) fEl.addEventListener("change", () => { S.fun = fEl.value; paintRhDbSub("funcs"); });
   };
   window.rhfSit = v => { RHF_STATE.sit = v; paintRhDbSub("funcs"); };
+  window.rhfLimpar = tudo => { RHF_STATE.q = ""; RHF_STATE.dep = ""; RHF_STATE.fun = ""; if (tudo) RHF_STATE.sit = "todos"; paintRhDbSub("funcs"); };
 }
 /* formulário com todos os campos */
 RHDB_FORMS.funcs = v => {
@@ -60112,6 +60119,7 @@ CONFIG.version = "v0.14.122";   /* Painel de Infrações: botões de enviar/reen
 CONFIG.version = "v0.14.123";   /* Painel de Infrações: Regras de Classificação (versões com vigência, reclassificação pelo ERP) e locais da Área Restrita ativos/inativos */
 CONFIG.version = "v0.14.124";   /* Painel de Infrações: Destinatários (coordenadores do RH, fora do RH, time de teste) e modos de envio (normal, só coordenadores, teste) */
 CONFIG.version = "v0.14.125";   /* Destinatários e Regras: sem aviso falso de "sair sem salvar" (tudo grava na hora) */
+CONFIG.version = "v0.14.126";   /* Painel de Infrações: filtros numa linha só (busca na linha dos meses) · RH › Funcionários: Limpar filtros */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

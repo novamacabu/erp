@@ -19862,7 +19862,7 @@ function erpConfirmar(o) {
       <div class="modal-foot"><button class="btn" id="cfNao">${esc(o.nao || "Voltar")}</button><button class="btn ${o.perigo ? "danger-solid" : "primary"}" id="cfSim">${esc(o.sim || "Confirmar")}</button></div>`);
     $("modal").className = "modal conf";
     let feito = false; const fim = v => { if (feito) return; feito = true; document.removeEventListener("keydown", tecla, true);
-      if (guardada && !v) { mA.innerHTML = ""; mA.appendChild(guardada.frag); mA.className = guardada.cls; mA.dataset.sujo = guardada.sujo; bA.classList.add("on"); bA.onclick = ev => { if (ev.target === bA && bA._ini === bA) fecharModalComCuidado(); bA._ini = null; }; document.addEventListener("keydown", escClose); }
+      if (guardada && (!v || o.volta)) {   /* v0.14.114: o.volta = depois de confirmar, volta à janela que estava aberta */ mA.innerHTML = ""; mA.appendChild(guardada.frag); mA.className = guardada.cls; mA.dataset.sujo = guardada.sujo; bA.classList.add("on"); bA.onclick = ev => { if (ev.target === bA && bA._ini === bA) fecharModalComCuidado(); bA._ini = null; }; document.addEventListener("keydown", escClose); }
       else closeModal();
       res(v); };
     const tecla = ev => { if (ev.key === "Escape") { ev.stopImmediatePropagation(); fim(null); } };   /* fechar sem escolher = null */
@@ -58152,6 +58152,34 @@ window.ferAviso = (fid, rid) => { const f = FERP.funcs.find(x => x._id === Strin
     }
     return f0.apply(this, arguments);
   }; }
+
+/* v0.14.114 (Rafael, 27/11 10:11 e 10:15): remover observação volta para o formulário (salva com "Salvar");
+   lista de Funcionários: duplo clique abre uma janela rápida sobre a lista, com os botões "Cadastro" e "Perfil completo" na lateral;
+   na linha, os mesmos dois botões no lugar de "Abrir". */
+window.rhfRapido = id => {
+  const x = (RHDB_STATE.itens || []).find(i => String(i._id) === String(id)); if (!x) return;
+  const pes = (typeof RH_PES === "object" && RH_PES.map && RH_PES.map.get(String(id))) || {}, cnh = typeof rhfCnhDe === "function" ? rhfCnhDe(String(id)) : {};
+  const it = (r, v) => `<div class="rhq-it"><span>${esc(r)}</span><b>${v || "—"}</b></div>`;
+  const ed = podeEditar("rh_db") && !vcAtivo();
+  $("modal").className = "modal";
+  openModal(x.Title || "Funcionário", `<div class="rhq">
+      <div class="rhq-info"><div class="rhq-top">${typeof erpAvatar === "function" ? erpAvatar(x, 56) : ""}<div><div class="rhq-nome">${esc(x.Title || "")}</div><div class="sup">${esc([x.Cargo, x.Departamento, x.Setor].filter(Boolean).join(" · "))}</div><div style="margin-top:4px">${typeof rhAptoPill === "function" ? rhAptoPill(x) : ""}</div></div></div>
+        <div class="rhq-grid">${it("Matrícula", esc(x.Matricula || ""))}${it("Situação", esc(x.Situacao || ""))}${it("Admissão", x.Admissao ? esc(fmtDate(ymd(x.Admissao))) : "")}${it("CPF", pes.CPF ? esc(rhfCpfFmt(pes.CPF)) : "")}${it("Celular", esc(x.Contato || ""))}${it("E-mail", esc(x.Email || ""))}${it("CNH", cnh && cnh.num ? esc(cnh.num + (cnh.cat ? " · " + cnh.cat : "")) : "")}${it("Validade CNH", cnh && cnh.val ? esc(fmtDate(cnh.val)) : "")}${it("CNPJ", esc(x.CNPJ || ""))}</div></div>
+      <div class="rhq-bts"><button class="btn primary" onclick="closeModal(); rhDbForm('funcs', '${esc(String(id))}')">${ed ? "Cadastro" : "Ver cadastro"}<small>${ed ? "editar dados" : "dados do funcionário"}</small></button><button class="btn" onclick="closeModal(); rhfAbrir('${esc(String(id))}')">Perfil completo<small>documentos, ponto e histórico</small></button></div></div>`, async () => true);
+  const s = $("mSave"); if (s) { s.textContent = "Fechar"; const c = s.previousElementSibling; if (c && c.tagName === "BUTTON") c.style.display = "none"; }
+};
+{ const p4 = paintRhDbSub; paintRhDbSub = function (sub) { const r = p4.apply(this, arguments);
+    if (sub === "funcs") { const body = $("rhdbBody"); if (body) {
+      body.querySelectorAll("tr.rhf-linha").forEach(tr => { const id = tr.dataset.id; if (!id) return; tr.ondblclick = ev => { ev.preventDefault(); rhfRapido(id); }; tr.title = "Duplo clique: janela rápida"; const a = tr.querySelector("td.act"); if (a && !a.dataset.rhq) { a.dataset.rhq = "1"; a.innerHTML = `<button class="btn mini" onclick="event.stopPropagation(); rhDbForm('funcs', '${esc(id)}')">Cadastro</button> <button class="btn mini ghost" onclick="event.stopPropagation(); rhfAbrir('${esc(id)}')">Perfil</button>`; } });
+      const d = body.querySelector(".cap-dica"); if (d && !d.dataset.rhq) { d.dataset.rhq = "1"; d.innerHTML = d.innerHTML.replace(/·[\s\S]*$/, "· <b>Duplo clique</b> na linha abre a janela rápida; <b>Cadastro</b> edita os dados e <b>Perfil</b> abre a página completa (documentos, ponto, histórico)."); } } }
+    return r; }; }
+(function () { const st = document.createElement("style"); st.id = "erp-v014114"; st.textContent = `
+.rhq{display:grid;grid-template-columns:1fr 190px;gap:18px;align-items:start}
+.rhq-top{display:flex;gap:12px;align-items:center;margin-bottom:12px}.rhq-nome{font-size:17px;font-weight:800}
+.rhq-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px}.rhq-it{display:flex;flex-direction:column;font-size:13px}.rhq-it span{font-size:11px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.03em;font-weight:700}
+.rhq-bts{display:flex;flex-direction:column;gap:10px}.rhq-bts .btn{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:12px 14px;height:auto}.rhq-bts small{font-weight:500;font-size:11.5px;opacity:.8;margin-top:2px}
+@media (max-width:640px){.rhq{grid-template-columns:1fr}.rhq-bts{flex-direction:row}.rhq-bts .btn{flex:1}}
+`; document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -58362,7 +58390,7 @@ window.rhfObsEditar = i => { if (RHF_OBS.edit != null && $("rdFuObsEd") && !rhfO
 window.rhfObsOk = () => { const i = RHF_OBS.edit; if (i == null) return true; const v = String(($("rdFuObsEd") || {}).value || "").trim(); if (!v) { toast("A observação não pode ficar vazia. Para tirar, use o ×."); return false; }
   const h = RHF_OBS.lista[i]; if (h && rhfObsPode(h) && h.texto !== v) RHF_OBS.lista[i] = Object.assign({}, h, { texto: v, ed: { por: (session.me && session.me.displayName) || "—", e: rhfObsEu(), em: new Date().toISOString() } });
   RHF_OBS.edit = null; rhfObsPintar(); try { $("modal").dataset.sujo = "1"; } catch (e) {} return true; };
-window.rhfObsRemover = async i => { const h = RHF_OBS.lista[i]; if (!h || !rhfObsPode(h)) return; if (!(await erpConfirmar({ titulo: "Remover observação", html: "Remover esta observação? Vale ao salvar o cadastro.", sim: "Remover", perigo: true }))) return; RHF_OBS.lista.splice(i, 1); RHF_OBS.edit = null; rhfObsPintar(); try { $("modal").dataset.sujo = "1"; } catch (e) {} };
+window.rhfObsRemover = async i => { const h = RHF_OBS.lista[i]; if (!h || !rhfObsPode(h)) return; if (!(await erpConfirmar({ titulo: "Remover observação", html: "Remover esta observação? Vale ao salvar o cadastro.", sim: "Remover", perigo: true, volta: true }))) return; RHF_OBS.lista.splice(i, 1); RHF_OBS.edit = null; rhfObsPintar(); try { $("modal").dataset.sujo = "1"; } catch (e) {} };
 { const f2 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function (v) { let h = f2.apply(this, arguments);
     RHF_OBS.lista = rhfObsLinhas(v && v.Observacoes).slice(); RHF_OBS.edit = null;
     const pode = podeEditar("rh_db") && !vcAtivo();
@@ -58390,7 +58418,7 @@ CONFIG.version = "v0.14.110";   /* RH › Funcionários: máscaras, limites e pa
 CONFIG.version = "v0.14.111";   /* RH › Funcionários: datas com limite e conferência; CPF conferido ao digitar; máscaras de CNH, RG, agência e conta; obrigatórios com * (CNH e celular para motoristas); Painel › Banco de Dados escreve a divergência com o RH na linha */
 CONFIG.version = "v0.14.112";   /* RH › Funcionários: volta da ficha para a lista sem a página subir e descer (rolagem controlada pelo ERP) */
 CONFIG.version = "v0.14.113";   /* RH › Programação de Férias: cronograma no molde do MS Project, períodos e limites da CLT, conflitos por centro de custo, pendências, aviso de férias */
-CONFIG.version = "v0.14.114";   /* RH › Funcionários: formulário espera os dados pessoais carregarem (não abre mais na versão sem CPF/Identidade) */
+CONFIG.version = "v0.14.114";   /* RH › Funcionários: formulário espera os dados pessoais carregarem; remover observação volta ao formulário; duplo clique abre janela rápida com Cadastro e Perfil completo */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

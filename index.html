@@ -10124,7 +10124,7 @@ function aplicarFiltrosTabela(linhas){ return linhas; }
 function segAtivo(id, v){ const s=$(id); if(s) s.querySelectorAll("button").forEach(b=>b.classList.toggle("ativo", v instanceof Set ? v.has(b.dataset.v) : b.dataset.v===v)); }
 function sincronizarControles(f){
   segAtivo("seg-tend-cls", f.set_classificacao || f.classificacao); segAtivo("seg-cls", f.set_classificacao || f.classificacao); segAtivo("seg-origem", f.lista);
-  const tbm=$("tb-motorista"); if(tbm && tbm.value!==f.motorista) tbm.value=f.motorista;
+  const tbm=$("tb-motorista"); if(tbm && !f.set_motorista && tbm.value!==f.motorista) tbm.value=f.motorista;
   const de=$("tb-de"), ate=$("tb-ate"); if(de && ate){ de.value = diaFiltro ? diaFiltro.de : ""; ate.value = diaFiltro ? diaFiltro.ate : ""; }
 }
 const rotMot = m => m==="__nc" ? "fora do Cadastro" : m===SEM_MAT ? "sem matrícula" : (nomeMot(m) || "Mat. "+m);
@@ -10468,7 +10468,7 @@ function renderTabela(atual){
     e.stopPropagation();
     const tipo=el.dataset.filtra, v=el.dataset.v;
     if(tipo==="local"){ escolher("local",v,e); return; }   /* v0.12.16 · v0.14.117: Ctrl soma */
-    if((tipo==="classificacao"||tipo==="motorista") && ctrlSel(e)){ escolher(tipo,v,e); return; }
+    if(tipo==="classificacao"||tipo==="motorista"){ escolher(tipo,v,e); return; }
     const sel=$("f-"+tipo); if(!sel) return;
     sel.value = (sel.value===v ? "" : v);
     renderizar();
@@ -57463,6 +57463,7 @@ window.infMotForm = (id, pre) => {
     if (!id) {   /* v0.14.117: espelho do RH — o novo motorista vai para a aprovação do RH e só entra no espelho depois de aprovado */
       if (!INFM.rh) return err("Sem acesso ao RH nesta sessão: o motorista novo precisa ser cadastrado no RH (fila de aprovação).");
       const ja = infRhAcha(v); if (ja) return err(`${ja.f.Title} já está no RH (ligado por ${ja.por}). Use "Atualizar espelho pelo RH" para trazê-lo.`);
+      const jb = INFM.achaBruto && INFM.achaBruto(v); if (jb) return err(`A ${jb.por} informada já é de ${jb.f.Title} no RH. Confira a matrícula/CPF antes de cadastrar.`);
       try { await infRhGravar(v, true); toast("Enviado ao RH para aprovação. Fica como \"Em aprovação\" aqui até o RH aprovar.", 8000); await infMotCarregar(true); if ($("imBody")) infMotPintar(); else infMotAbrir(); return $("imBody") ? false : true; }
       catch (e) { return err("Não foi possível enviar ao RH: " + e.message); }
     }
@@ -58534,7 +58535,7 @@ window.rhfExcluirAqui = async id => {
 const infNomeTok = n => normName(n || "").split(/\s+/).filter(t => t && !["de", "da", "do", "das", "dos", "e"].includes(t));
 function infNomeParece(a, b) { const A = infNomeTok(a), B = infNomeTok(b); if (!A.length || !B.length) return true; const sb = new Set(B), com = A.filter(t => sb.has(t)).length; return (A[0] === B[0] && com / Math.min(A.length, B.length) >= 0.5) || com / Math.min(A.length, B.length) >= 0.67; }
 INFM.conflitos = new Map();
-{ const a0 = infRhAcha; infRhAcha = function (k) { const r = a0.apply(this, arguments); if (!r || !k || !k.nome) return r;
+{ const a0 = infRhAcha; INFM.achaBruto = a0; infRhAcha = function (k) { const r = a0.apply(this, arguments); if (!r || !k || !k.nome) return r;
     const porDoc = r.por === "CNH" || r.por === "identidade" || (r.por === "CPF" && infDigs(k.cpf).length === 11);
     if (!porDoc && !infNomeParece(k.nome, r.f.Title)) { if (k._id) INFM.conflitos.set(String(k._id), { f: r.f, por: r.por }); return null; }
     if (k._id) INFM.conflitos.delete(String(k._id)); return r; }; }
@@ -58616,16 +58617,18 @@ window.infMotSync = () => {
 };
 /* infração de quem está em aprovação no RH */
 { const d0 = window.infMotDoItem; window.infMotDoItem = async i => { try { await infMotCarregar(); } catch (e) {}
-    const k = infDigs(i.matricula), p = INFM.rh && i.matricula ? INFM.rh.find(f => infRhPend(f) && (infRhCpf(f) === k || infMatN(f.Matricula) === infMatN(i.matricula))) : null;
+    const k = infDigs(i.matricula), p = INFM.rh && i.matricula ? INFM.rh.find(f => infRhPend(f) && ((k.length === 11 && infRhCpf(f) === k) || (f.Matricula && infMatN(f.Matricula) === infMatN(i.matricula)))) : null;
     if (p) { toast(`${p.Title} já foi cadastrado e está em aprovação no RH. Depois de aprovado, use "Atualizar espelho pelo RH".`, 8000); return; }
     return d0(i); }; }
 /* editar: dados que vêm do RH ficam travados quando o motorista está ligado ao RH */
 { const f0 = window.infMotForm; window.infMotForm = function (id) { const r = f0.apply(this, arguments);
     try { if (!id) { const t = document.querySelector("#modal .modal-head h2"); if (t) t.textContent = "Novo motorista · vai para aprovação do RH"; const bx = $("imRhBox"); if (bx) { const lb = bx.querySelector("label.chk"); if (lb) lb.style.display = "none"; bx.insertAdjacentHTML("beforeend", `<div class="hint">O cadastro vai para RH › Funcionários (fila de aprovação, cargo Motorista) e aparece aqui como "Em aprovação". Depois de aprovado, entra no espelho pelo "Atualizar espelho pelo RH".</div>`); } return r; }
-      const m = INFM.its.find(x => String(x._id) === String(id)), f = m && infRhDeM(m); if (!f) return r;
+      const m = INFM.its.find(x => String(x._id) === String(id)), f = m && infRhDeM(m), cf = m && INFM.conflitos.get(String(m._id));
+      if (cf) { const ck = $("imRh"); if (ck) { ck.checked = false; ck.disabled = true; } const tx = $("imRhTxt"); if (tx) tx.textContent = `Conflito: a ${cf.por} é de ${cf.f.Title} no RH. Confira no RH antes de ligar este motorista.`; return r; }
+      if (!f) return r;
       ["imNome", "imTel", "imRg", "imCnh", "imVal", "imCpf", "imMatRh", "imSit"].forEach(k => { const el = $(k); if (el) { el.disabled = true; el.title = "Vem do RH: altere em Recursos Humanos › Funcionários"; } });
-      const g = document.querySelector("#modal .form-grid"); if (g) g.insertAdjacentHTML("afterbegin", `<div class="field full"><div class="import-help">Ligado ao RH: <b>${esc(f.Title)}</b>. Nome, contato, situação, documentos e CPF vêm do RH — altere em <a href="#/rh/banco-de-dados/funcs/${esc(f._id)}" onclick="closeModal()">Recursos Humanos › Funcionários</a> e depois use "Atualizar espelho pelo RH". Aqui só muda a matrícula da telemetria.</div></div>`);
-      const mt = $("imMat"); if (mt) { mt.readOnly = false; const h = mt.closest(".field").querySelector(".hint"); if (h) h.textContent = "Código que a telemetria envia (crachá). Se a telemetria enviar o CPF, pode deixar o CPF aqui."; }
+      const g = document.querySelector("#modal .form-grid"); if (g) g.insertAdjacentHTML("afterbegin", `<div class="field full"><div class="import-help">Ligado ao RH: <b>${esc(f.Title)}</b>. Nome, contato, situação, documentos e CPF vêm do RH — altere em <a href="#/rh/banco-de-dados/funcs/${esc(f._id)}" onclick="closeModal()">Recursos Humanos › Funcionários</a> e depois use "Atualizar espelho pelo RH". A matrícula da telemetria liga as infrações e não muda aqui.</div></div>`);
+
     } catch (e) {} return r; }; }
 (function () { const st = document.createElement("style"); st.id = "erp-v014117a"; st.textContent = `
 .inf-mot-t{min-width:900px}.inf-mot-t td{vertical-align:middle;padding:9px 12px}.inf-mot-t th{padding:9px 12px}
@@ -58815,7 +58818,7 @@ function tieCalcular() {
   const por = new Map(TIE.itens.map(it => [it._id, { saldo: 0, cm: 0, ent: 0, sai: 0 }]));
   const ord = TIE.movs.slice().sort((x, y) => (timD(x.Data) || "").localeCompare(timD(y.Data) || "") || Number(x._id) - Number(y._id));
   ord.forEach(m => { const s = por.get(String(m.ItemId)); if (!s) return; const q = tieN(m.Quantidade);
-    if (m.Tipo === "Entrada") { const c = tieN(m.CustoUnitario); if (q > 0) { s.cm = s.saldo + q > 0 && c > 0 ? (s.saldo * s.cm + q * c) / (s.saldo + q) : s.cm || c; s.saldo += q; s.ent += q; } }
+    if (m.Tipo === "Entrada") { const c = tieN(m.CustoUnitario); if (q > 0) { const b = Math.max(s.saldo, 0); if (c > 0) s.cm = b + q > 0 ? (b * s.cm + q * c) / (b + q) : c; s.saldo += q; s.ent += q; } }
     else if (m.Tipo === "Devolução") s.saldo += q;
     else if (m.Tipo === "Saída") { s.saldo -= q; s.sai += q; }
     else if (m.Tipo === "Baixa") s.saldo -= q;
@@ -58823,6 +58826,12 @@ function tieCalcular() {
   TIE.itens.forEach(it => { const s = por.get(it._id); it._saldo = tieSerie(it) ? TIE.uns.filter(u => String(u.ItemId) === it._id && u.Status === "Em estoque").length : s.saldo; it._cm = s.cm || tieN(it.CustoMedio);
     it._emUso = TIE.uns.filter(u => String(u.ItemId) === it._id && u.Status === "Em uso").length;
     const min = tieN(it.Minimo); it._sit = it.Bloqueado ? "Bloqueado" : it._saldo <= 0 && min > 0 ? "Zerado" : min > 0 && it._saldo < min ? "Repor" : it._saldo <= 0 ? "Sem saldo" : "OK"; });
+}
+/* menor saldo ao longo do tempo de um item por quantidade, com uma movimentação a mais (ou a menos): não deixa o histórico ficar negativo */
+function tieSaldoMin(itemId, extra, semId) {
+  const ms = TIE.movs.filter(m => String(m.ItemId) === String(itemId) && m._id !== semId).concat(extra ? [extra] : []).sort((x, y) => (timD(x.Data) || "").localeCompare(timD(y.Data) || "") || (x === extra ? 1 : y === extra ? -1 : Number(x._id) - Number(y._id)));
+  let s = 0, min = 0, dt = null; ms.forEach(m => { const q = tieN(m.Quantidade); s += m.Tipo === "Entrada" || m.Tipo === "Devolução" || m.Tipo === "Ajuste" ? q : m.Tipo === "Saída" || m.Tipo === "Baixa" ? -q : 0; if (s < min) { min = s; dt = timD(m.Data); } });
+  return { min, dt };
 }
 const tieSitPill = s => `<span class="status ${({ OK: "st-pago", Repor: "st-pend", Zerado: "st-venc", Bloqueado: "st-cinza", "Sem saldo": "st-cinza" })[s] || "st-cinza"}">${esc(s)}</span>`;
 const tieUstPill = s => `<span class="status ${({ "Em estoque": "st-pago", "Em uso": "st-aguardando", "Em manutenção": "st-pend", Emprestado: "st-pend", Baixado: "st-cinza" })[s] || "st-cinza"}">${esc(s || "—")}</span>`;
@@ -58887,6 +58896,7 @@ window.tieMovVer = id => { const m = TIE.movs.find(x => x._id === String(id)); i
   modal(`<div class="modal-head"><h2>${esc(m.Title || "Movimentação")} · ${esc(m.Tipo || "")}</h2><button class="x" onclick="closeModal()">×</button></div><div class="modal-body"><dl class="tim-dl">${dl("Data", m.Data ? fmtDate(m.Data) : "")}${dl("Item", esc(m.Item || ""))}${dl("Quantidade", tieQ(m.Quantidade))}${dl("Custo unitário", m.CustoUnitario ? fmtBRL(m.CustoUnitario) : "")}${dl("Valor", m.Valor ? fmtBRL(Math.abs(tieN(m.Valor))) : "")}${dl("Funcionário", esc(m.Funcionario || ""))}${dl("Departamento", esc(m.Departamento || ""))}${dl("Chamado", esc(m.Chamado || ""))}${dl("Local", esc(m.Local || ""))}${dl("Nº de série", esc(m.Series || "").replace(/\n/g, "<br>"))}${dl("Nota fiscal", esc(m.NotaFiscal || ""))}${dl("Fornecedor", esc(m.Fornecedor || ""))}${dl("Motivo / observação", esc(m.Motivo || "").replace(/\n/g, "<br>"))}${dl("Lançado por", esc(m.LancadoPor || ""))}</dl></div><div class="modal-foot">${tiePode() && podeExcluir("ti_estoque") ? `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="tieMovExcluir(${jsArg(m._id)})">Excluir</button>` : ""}<button class="btn" onclick="closeModal()">Fechar</button></div>`); };
 window.tieMovExcluir = async id => { const m = TIE.movs.find(x => x._id === String(id)); if (!m) return;
   if (m.Series) { toast("Movimentação com número de série: corrija com uma nova movimentação (devolução, ajuste) para manter o histórico das unidades.", 7000); return; }
+  { const it = tieItem(m.ItemId); if (it && !tieSerie(it)) { const r = tieSaldoMin(m.ItemId, null, m._id); if (r.min < 0) { toast(`Sem esta movimentação o saldo ficaria negativo em ${fmtDate(r.dt)}. Corrija com um ajuste.`, 7000); return; } } }
   if (!(await erpConfirmar({ titulo: "Excluir movimentação", html: `Excluir <b>${esc(m.Title)}</b> (${esc(m.Tipo)} de ${tieQ(m.Quantidade)} · ${esc(m.Item || "")})? O saldo é recalculado. Vai para a Lixeira por 30 dias.`, sim: "Excluir", perigo: true }))) return;
   try { await SP.delete(TIE.site.id, TIE.L.m.id, m._id); TIE.movs = TIE.movs.filter(x => x !== m); tieCalcular(); await tieSaldoGravar(tieItem(m.ItemId)); closeModal(); toast("Movimentação excluída."); paintTiEstoque(); } catch (e) { toast("Não foi possível excluir: " + e.message, 6000); } };
 async function tieSaldoGravar(it) { if (!it) return; try { const f = { Saldo: Math.round(it._saldo), CustoMedio: it._cm ? Math.round(it._cm * 100) / 100 : null }; if (tieN(it.Saldo) !== f.Saldo || tieN(it.CustoMedio) !== tieN(f.CustoMedio)) { await SP.update(TIE.site.id, TIE.L.i.id, it._id, f); Object.assign(it, f); } } catch (e) {} }
@@ -59030,24 +59040,31 @@ window.tieMov = async (tipo, itemId, unIds) => {
       qtd = Number(g("tmQtd")); if (!Number.isInteger(qtd) || qtd === 0 || (tp !== "Ajuste" && qtd < 0) || Math.abs(qtd) > 99999) return err(tp === "Ajuste" ? "Ajuste: número inteiro diferente de 0 (negativo tira, positivo põe)." : "Quantidade: número inteiro maior que 0.");
       if ((tp === "Saída" || tp === "Baixa") && qtd > it._saldo) return err(`Saldo insuficiente: há ${tieQ(it._saldo)} ${it.Unidade || "un"}.`);
       if (tp === "Ajuste" && it._saldo + qtd < 0) return err(`O ajuste deixaria o saldo negativo (há ${tieQ(it._saldo)}).`);
+      if (tp === "Saída" || tp === "Baixa" || (tp === "Ajuste" && qtd < 0)) { const r = tieSaldoMin(it._id, { Tipo: tp, Data: data, Quantidade: qtd, _id: "novo" }); if (r.min < 0) return err(`Nesta data (${fmtDate(data)}) o saldo não cobre a quantidade: ficaria negativo em ${fmtDate(r.dt)}. Confira a data.`); }
     }
     if (tp === "Entrada") { custo = g("tmCusto") === "" ? null : Number(g("tmCusto")); if (custo != null && (isNaN(custo) || custo < 0 || custo > 9999999)) return err("Custo unitário inválido."); }
     const cu = tp === "Entrada" ? custo : (it._cm || null), sinal = tp === "Saída" || tp === "Baixa" ? -1 : 1;
-    const f = Object.assign({}, base, { Title: tieProto(), Quantidade: tp === "Transferência" ? qtd : qtd, CustoUnitario: cu != null ? Math.round(cu * 100) / 100 : null, Valor: cu != null && tp !== "Transferência" ? Math.round(sinal * Math.abs(qtd) * cu * 100) / 100 : null, Series: series.length ? series.join("\n") : null });
-    try {
-      const mv = await SP.create(TIE.site.id, TIE.L.m.id, f); TIE.movs.push(Object.assign({ _id: String(mv.id) }, mv.fields || f));
-      if (ser) {
+    const f = Object.assign({}, base, { Title: tieProto(), Quantidade: tp === "Transferência" ? qtd : qtd, CustoUnitario: cu != null ? Math.round(cu * 100) / 100 : null, Valor: cu != null && tp !== "Transferência" ? Math.round((tp === "Ajuste" ? qtd : sinal * Math.abs(qtd)) * cu * 100) / 100 : null, Series: series.length ? series.join("\n") : null });
+    /* v0.14.117: unidades primeiro, movimentação por último (só com as séries que gravaram) */
+    const feitas = []; let falha = null;
+    if (ser) {
+      try {
         if (tp === "Entrada") { const gar = g("tmGar") || null;
           for (const s of series) { const uf = { Title: s, ItemId: it._id, Item: tieRot(it), Status: "Em estoque", Local: loc || it.Local || null, DataEntrada: data, Custo: custo, NotaFiscal: nf || null, GarantiaAte: gar, Historico: tieHist(null, `entrada ${f.Title}${nf ? " · NF " + nf : ""}`) };
-            const nu = await SP.create(TIE.site.id, TIE.L.u.id, uf); TIE.uns.push(Object.assign({ _id: String(nu.id) }, nu.fields || uf)); } }
+            const nu = await SP.create(TIE.site.id, TIE.L.u.id, uf); TIE.uns.push(Object.assign({ _id: String(nu.id) }, nu.fields || uf)); feitas.push(s); } }
         else for (const u of unsSel) {
           const uf = tp === "Saída" ? { Status: "Em uso", Usuario: func, Departamento: dep || null, Local: loc || u.Local || null }
             : tp === "Devolução" ? { Status: "Em estoque", Usuario: null, Departamento: null, Local: loc || it.Local || u.Local || null }
             : tp === "Baixa" ? { Status: "Baixado" } : { Local: loc };
           uf.Historico = tieHist(u.Historico, `${tp.toLowerCase()} ${f.Title}${func ? " · " + func : ""}${loc ? " · " + loc : ""}${mot ? " · " + mot : ""}`);
-          await SP.update(TIE.site.id, TIE.L.u.id, u._id, uf); Object.assign(u, uf); }
-      }
-    } catch (e) { await tieCarregar(true).catch(() => {}); paintTiEstoque(); return err("Não foi possível gravar tudo: " + e.message + ". A tela foi relida; confira antes de repetir."); }
+          await SP.update(TIE.site.id, TIE.L.u.id, u._id, uf); Object.assign(u, uf); feitas.push(u.Title); }
+      } catch (e) { falha = e; }
+      if (!feitas.length) { await tieCarregar(true).catch(() => {}); paintTiEstoque(); return err("Nada foi gravado: " + falha.message); }
+      if (falha) { f.Series = feitas.join("\n"); f.Quantidade = feitas.length; if (f.CustoUnitario != null && tp !== "Transferência") f.Valor = Math.round((tp === "Saída" || tp === "Baixa" ? -1 : 1) * feitas.length * f.CustoUnitario * 100) / 100; }
+    }
+    try { const mv = await SP.create(TIE.site.id, TIE.L.m.id, f); TIE.movs.push(Object.assign({ _id: String(mv.id) }, mv.fields || f)); }
+    catch (e) { await tieCarregar(true).catch(() => {}); paintTiEstoque(); return err(ser ? `As unidades foram atualizadas, mas a movimentação não foi registrada (${e.message}). Avise o administrador antes de repetir.` : "Não foi possível gravar: " + e.message); }
+    if (falha) { tieCalcular(); await tieSaldoGravar(it); paintTiEstoque(); return err(`Gravado em parte: ${feitas.length} de ${series.length} unidade(s) (${f.Title}). Falhou: ${falha.message}. Lance de novo só as que faltaram.`); }
     tieCalcular(); await tieSaldoGravar(it);
     toast(`${tp} lançada (${f.Title}).`); paintTiEstoque(); return true;
   });
@@ -59624,7 +59641,7 @@ CONFIG.version = "v0.14.113";   /* RH › Programação de Férias: cronograma n
 CONFIG.version = "v0.14.114";   /* RH › Funcionários: formulário espera os dados pessoais carregarem; remover observação volta ao formulário; duplo clique abre janela rápida com Cadastro e Perfil completo */
 CONFIG.version = "v0.14.115";   /* RH › Funcionários: editar cadastro na própria página; apelido, sexo, código de integração, RFID, carga horária, endereço, emissão/órgão da identidade, emissão/1ª habilitação da CNH, contato de emergência */
 CONFIG.version = "v0.14.116";   /* Sistema › Lixeira (administradores): cópia de toda exclusão por 30 dias, com quem/quando/de onde, restaurar e excluir de vez; Excluir na página do funcionário */
-CONFIG.version = "v0.14.117";   /* Painel de Infrações: Banco de Dados como espelho do RH (novo motorista em aprovação, tabela legível, diferenças destacadas, atualização por grupos, conflito de matrícula) */
+CONFIG.version = "v0.14.117";   /* Infrações: Banco de Dados espelho do RH (seções, diferenças na célula, em aprovação, conflito de matrícula, atualização por grupos) e Ctrl+clique nos gráficos · TI: Controle de Estoque, painel executivo da Manutenção, Painel de Operação da TI, cadastro do ativo (local novo, usuário do RH, observações) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

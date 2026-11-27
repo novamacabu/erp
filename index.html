@@ -9946,7 +9946,7 @@ async function renderCAP() {
 /* =====================================================================
    MÓDULO PAINEL DE INFRAÇÕES — v0.9 (migrado do repo painel-infracoes)
    ===================================================================== */
-const INF_HTML = '<div class="wrap" id="inf-app">\n\n  <header class="topo">\n    <div class="marca">\n      <div class="placa-logo" aria-hidden="true">40</div>\n      <div class="titulo">\n        <h1>Painel de Infrações</h1>\n        <p>Velocidade e área restrita · Transportadora Nova Macabu</p>\n      </div>\n    </div>\n    <div class="topo-acoes">\n      <span id="quem" class="pill" style="background:rgba(255,255,255,.12);color:#fff"></span>\n      <span id="status-pill" class="pill demo"><span class="dot"></span><span id="status-texto">Dados de demonstração</span></span>\n      <button id="btn-disparar" class="btn btn-vermelho" title="Executa o cenário de envio de notificações no Make">📨 Disparar envio</button><button id="btn-marcar" class="btn btn-fantasma" title="Marcar infrações pendentes como notificadas, sem enviar WhatsApp (até uma data)">✓ Marcar notificadas</button>\n      <button id="btn-motoristas" class="btn btn-fantasma" title="Cadastro de motoristas (lista Cadastro Motoristas), ligado ao RH › Funcionários">👤 Banco de Dados</button><button id="btn-relatorios" class="btn btn-fantasma" title="Painel principal, relatórios de gestão (gerencial, veículo, horário, pendências) e dos motoristas (histórico, mural, individuais)">🖨 Relatórios</button><button id="btn-atualizar" class="btn btn-amarelo">↻ Atualizar dados</button>\n      <button id="btn-config" class="btn btn-fantasma">Conexão</button>\n      <button id="btn-sair" class="btn btn-fantasma" title="Encerrar sessão">Sair</button>\n    </div>\n    <div class="atualizado-em" id="atualizado-em"></div>\n  </header>\n\n  <div id="aviso-demo" class="aviso demo">\n    <span aria-hidden="true">⚠</span>\n    <div><b>Conectando ao SharePoint…</b> O painel busca as infrações reais automaticamente após o login. Se esta faixa não sumir em alguns segundos, clique em <b>Atualizar dados</b> ou veja o painel <b>Conexão</b> ao final da página.</div>\n    <button class="fechar" onclick="this.parentElement.classList.add(\'oculto\')" aria-label="Fechar aviso">✕</button>\n  </div>\n  <div id="aviso-erro" class="aviso erro oculto">\n    <span aria-hidden="true">✕</span>\n    <div id="aviso-erro-texto"></div>\n    <button class="fechar" onclick="this.parentElement.classList.add(\'oculto\')" aria-label="Fechar aviso">✕</button>\n  </div>\n  <div id="aviso-ok" class="aviso ok oculto">\n    <span aria-hidden="true">✔</span>\n    <div id="aviso-ok-texto"></div>\n    <button class="fechar" onclick="this.parentElement.classList.add(\'oculto\')" aria-label="Fechar aviso">✕</button>\n  </div>\n\n  <section class="filtros" aria-label="Filtros">\n    <div class="campo">\n      <label for="f-periodo">Período</label>\n      <select id="f-periodo">\n        <option value="7">Últimos 7 dias</option>\n        <option value="15">Últimos 15 dias</option>\n        <option value="30" selected>Últimos 30 dias</option>\n        <option value="60">Últimos 60 dias</option>\n        <option value="90">Últimos 90 dias</option>\n        <option value="0">Todo o histórico</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-classificacao">Classificação</label>\n      <select id="f-classificacao">\n        <option value="">Todas</option>\n        <option value="Gravíssima">Gravíssima</option>\n        <option value="Grave">Grave</option>\n        <option value="Média">Média</option>\n        <option value="Baixa">Baixa</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-lista">Origem</label>\n      <select id="f-lista">\n        <option value="">Ambas as listas</option>\n        <option value="Área Restrita">Área Restrita</option>\n        <option value="Velocidade Excedida">Velocidade Excedida</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-motorista">Motorista</label>\n      <select id="f-motorista"><option value="">Todos</option></select>\n    </div>\n    <div class="campo">\n      <label for="f-notif">Notificação</label>\n      <select id="f-notif">\n        <option value="">Todas</option>\n        <option value="sim">Notificadas</option>\n        <option value="nao">Pendentes</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-busca">Buscar</label>\n      <input type="search" id="f-busca" placeholder="Motorista, veículo, local…">\n    </div>\n  </section>\n\n  <section class="filtros" aria-label="Linha do tempo" style="padding:10px 16px">\n    <div class="seg" id="seg-tempo">\n      <button data-v="" class="ativo">Período</button>\n      <button data-v="1">Jan</button><button data-v="2">Fev</button><button data-v="3">Mar</button>\n      <button data-v="4">Abr</button><button data-v="5">Mai</button><button data-v="6">Jun</button>\n      <button data-v="7">Jul</button><button data-v="8">Ago</button><button data-v="9">Set</button>\n      <button data-v="10">Out</button><button data-v="11">Nov</button><button data-v="12">Dez</button>\n    </div>\n    <div class="campo"><select id="f-ano" title="Ano"></select></div>\n  </section>\n\n  <section class="kpis" aria-label="Indicadores">\n    <div class="kpi k-total">\n      <div class="rotulo">Infrações no período</div>\n      <div class="valor" id="kpi-total">–</div>\n      <div class="sub" id="kpi-total-var"></div>\n    </div>\n    <div class="kpi k-graves">\n      <div class="rotulo">Graves + Gravíssimas</div>\n      <div class="valor" id="kpi-graves">–</div>\n      <div class="sub" id="kpi-graves-sub"></div>\n    </div>\n    <div class="kpi k-motoristas">\n      <div class="rotulo">Motoristas envolvidos</div>\n      <div class="valor" id="kpi-motoristas">–</div>\n      <div class="sub" id="kpi-motoristas-sub"></div>\n    </div>\n    <div class="kpi k-excesso">\n      <div class="rotulo">Excesso médio</div>\n      <div class="valor" id="kpi-excesso">–</div>\n      <div class="sub">acima do limite da via</div>\n    </div>\n    <div class="kpi k-notif">\n      <div class="rotulo">Notificadas via WhatsApp</div>\n      <div class="valor" id="kpi-notif">–</div>\n      <div class="sub" id="kpi-notif-sub"></div>\n    </div>\n  </section>\n\n  <div id="inf-ativos" class="inf-ativos oculto" aria-live="polite"></div>\n\n  <section class="linha-graficos g-1">\n    <div class="grafico">\n      <div class="grafico-top">\n        <h3>Evolução Diária por Gravidade</h3>\n        <span class="grafico-nota" id="tend-nota"></span>\n      </div>\n      <div class="dica">Composição das infrações dia a dia · clique em um dia para filtrar o painel · a gravidade escolhida aqui filtra a página toda</div>\n      <div class="controles-grafico">\n        <span class="rot">Gravidade</span>\n        <div class="seg" id="seg-tend-cls">\n          <button data-v="" class="ativo">Todas</button>\n          <button data-v="Gravíssima">Gravíssima</button>\n          <button data-v="Grave">Grave</button>\n          <button data-v="Média">Média</button>\n          <button data-v="Baixa">Baixa</button>\n        </div>\n        <span class="rot">Gráfico</span>\n        <div class="seg" id="seg-tend-tipo">\n          <button data-v="barras" class="ativo">Barras</button>\n          <button data-v="linhas">Linhas</button>\n        </div>\n      </div>\n      <div class="ch-wrap alta"><canvas id="ch-tendencia"></canvas></div>\n    </div>\n    <div class="grafico">\n      <h3>Distribuição por Classificação</h3>\n      <div class="dica">Clique em uma fatia para filtrar o painel</div>\n      <div class="ch-wrap"><canvas id="ch-classificacao"></canvas></div>\n    </div>\n  </section>\n\n  <section class="linha-graficos g-2">\n    <div class="grafico">\n      <h3>Top 10 Motoristas</h3>\n      <div class="dica">Ordenado pelos mais graves · clique numa barra para ver só esse motorista · em itálico: fora do Cadastro ou sem matrícula</div>\n      <div class="ch-wrap"><canvas id="ch-motoristas"></canvas></div>\n    </div>\n    <div class="grafico">\n      <h3>Locais com mais Ocorrências</h3>\n      <div class="dica">Pontos que concentram infrações no período · clique numa barra para filtrar o painel</div>\n      <div class="ch-wrap"><canvas id="ch-locais"></canvas></div>\n    </div>\n    <div class="grafico">\n      <h3>Motoristas com menos infrações graves</h3>\n      <div class="dica">Quem teve menos Grave + Gravíssima no período, entre os que aparecem nas listas · clique numa barra para ver só esse motorista</div>\n      <span class="grafico-nota" id="melhores-nota"></span>\n      <div class="ch-wrap"><canvas id="ch-melhores"></canvas></div>\n    </div>\n  </section>\n\n  <section class="secao-tabela">\n    <div class="tabela-topo">\n      <h3>Detalhamento das Infrações</h3>\n      <span class="cont" id="tabela-cont"></span>\n      <div class="acoes">\n        <button id="btn-excel" class="btn btn-claro">⬇ Exportar Excel</button>\n        <button id="btn-imprimir" class="btn btn-claro">Imprimir</button>\n      </div>\n    </div>\n    <div class="filtros-tabela">\n      <div class="campo">\n        <label>Origem</label>\n        <div class="seg" id="seg-origem">\n          <button data-v="" class="ativo">Ambas</button>\n          <button data-v="Área Restrita">Área Restrita</button>\n          <button data-v="Velocidade Excedida">Vel. Excedida</button>\n        </div>\n      </div>\n      <div class="campo">\n        <label>Classificação</label>\n        <div class="seg" id="seg-cls">\n          <button data-v="" class="ativo">Todas</button>\n          <button data-v="Gravíssima">Gravíssima</button>\n          <button data-v="Grave">Grave</button>\n          <button data-v="Média">Média</button>\n          <button data-v="Baixa">Baixa</button>\n        </div>\n      </div>\n      <div class="campo">\n        <label for="tb-motorista">Motorista</label>\n        <select id="tb-motorista"><option value="">Todos</option></select>\n      </div>\n      <div class="campo">\n        <label for="tb-de">De</label>\n        <input type="date" id="tb-de">\n      </div>\n      <div class="campo">\n        <label for="tb-ate">Até</label>\n        <input type="date" id="tb-ate">\n      </div>\n    </div>\n    <div class="rolagem">\n      <table id="tabela">\n        <thead>\n          <tr>\n            <th data-col="data">Data <span class="seta"></span></th>\n            <th data-col="hora">Hora <span class="seta"></span></th>\n            <th data-col="motorista">Motorista <span class="seta"></span></th>\n            <th data-col="veiculo">Veículo <span class="seta"></span></th>\n            <th data-col="localizacao">Local <span class="seta"></span></th>\n            <th data-col="lista">Origem <span class="seta"></span></th>\n            <th data-col="velocidade">Velocidade <span class="seta"></span></th>\n            <th data-col="excesso">Excesso <span class="seta"></span></th>\n            <th data-col="classificacao">Classificação <span class="seta"></span></th>\n            <th data-col="notificado">Notificação <span class="seta"></span></th>\n          </tr>\n        </thead>\n        <tbody id="tabela-corpo"></tbody>\n      </table>\n    </div>\n    <div class="paginacao">\n      <span id="pag-info"></span>\n      <button id="pag-ant">‹ Anterior</button>\n      <button id="pag-prox">Próxima ›</button>\n    </div>\n  </section>\n\n  <details class="conexao" id="painel-conexao">\n    <summary><span class="indicador">›</span> Conexão com o SharePoint (webhook Make)</summary>\n    <div class="conexao-corpo">\n      <p><b>Integração configurada.</b> O painel lê as três listas do SharePoint (Área Restrita, Velocidade Excedida e\n      Cadastro Motoristas) pelo cenário <code>📊 Painel de Infrações — API de Dados</code> no Make — somente leitura.\n      O botão <b>Disparar envio</b> aciona o cenário <code>🔐 Portão de login (disparo v2)</code> (ID 6408679), que confere o login Microsoft e só então aciona o envio por WhatsApp.</p>\n      <p>Cada <b>Atualizar dados</b> consome ~8 créditos Make; cada <b>Disparar envio</b> consome os créditos normais do envio.</p>\n      <div class="linha-url">\n        <input type="url" id="input-webhook" placeholder="(preenchida automaticamente após o login)" aria-label="URL do webhook Make">\n        <button id="btn-testar" class="btn btn-amarelo">Testar conexão</button>\n      </div>\n      <p><b>Se a atualização falhar</b>, verifique no Make se os cenários estão ligados (ON) e se a conexão\n      "Nova Macabu SharePoint" está válida. Este arquivo deve ser aberto diretamente no navegador.</p>\n      <p><b>Segurança:</b> desde a v0.12.13 cada disparo leva o login Microsoft de quem usa o ERP e o Make só envia para os grupos\n      Operacional e Diretoria e para os administradores fixos do ERP — ter o endereço do webhook não basta. Para suspender os disparos, desative no Make o webhook do cenário 🔐 Portão de login (ID 6408679) — com o cenário só desligado, os pedidos ficam na fila.</p>\n    </div>\n  </details>\n\n  <div id="modal-envio" class="modal-fundo oculto">\n    <div class="modal">\n      <h4>📨 Enviar notificação por WhatsApp</h4>\n      <div class="m-sub" id="m-motorista"></div>\n      <div class="m-resumo" id="m-resumo"></div>\n      <label class="m-op"><input type="radio" name="m-escopo" value="item" checked> <span><b>Somente esta infração</b><span id="m-reenvio" style="color:var(--pendente);font-weight:700"> · reenvio</span><br><span style="color:var(--texto-2);font-size:12px">Envia e marca apenas este caso</span></span></label>\n      <label class="m-op"><input type="radio" name="m-escopo" value="motorista"> <span><b>Todas as pendentes deste motorista</b> <span id="m-qtd" style="color:var(--texto-2)"></span><br><span style="color:var(--texto-2);font-size:12px">Uma mensagem consolidada com todos os casos</span></span></label>\n      <textarea id="m-msg" maxlength="200" placeholder="Mensagem da gestão (opcional) — será anexada ao final da notificação"></textarea>\n      <div class="m-aviso" id="m-aviso-nc" style="display:none">⚠ Motorista fora do Cadastro: o caso será apenas marcado como tratado — não há contato para WhatsApp.</div>\n      <div class="m-acoes">\n        <button id="m-cancelar" class="btn btn-claro">Cancelar</button>\n        <button id="m-enviar" class="btn btn-vermelho">📨 Enviar agora</button>\n      </div>\n    </div>\n  </div>\n\n  <button id="fab-limpar" class="fab-limpar" title="Limpar todos os filtros">🧹 Limpar filtros</button>\n\n  <footer class="rodape">\n    <span>Fontes: SharePoint · Área Restrita, Velocidade Excedida e Cadastro Motoristas (site Operacional)</span>\n    <span>Painel de Infrações · Projeto Notificação de Infrações</span>\n  </footer>\n</div>\n<div id="tela-login" class="tela-login oculto"><input id="login-user"><input id="login-senha"><button id="btn-entrar"></button><div id="login-msg"></div></div>';
+const INF_HTML = '<div class="wrap" id="inf-app">\n\n  <header class="topo">\n    <div class="marca">\n      <div class="placa-logo" aria-hidden="true">40</div>\n      <div class="titulo">\n        <h1>Painel de Infrações</h1>\n        <p>Velocidade e área restrita · Transportadora Nova Macabu</p>\n      </div>\n    </div>\n    <div class="topo-acoes">\n      <span id="quem" class="pill" style="background:rgba(255,255,255,.12);color:#fff"></span>\n      <span id="status-pill" class="pill demo"><span class="dot"></span><span id="status-texto">Dados de demonstração</span></span>\n      <button id="btn-disparar" class="btn btn-vermelho" title="Executa o cenário de envio de notificações no Make">📨 Disparar envio</button><button id="btn-marcar" class="btn btn-fantasma" title="Marcar infrações pendentes como notificadas, sem enviar WhatsApp (até uma data)">✓ Marcar notificadas</button>\n      <button id="btn-motoristas" class="btn btn-fantasma" title="Cadastro de motoristas (lista Cadastro Motoristas), ligado ao RH › Funcionários">👤 Banco de Dados</button><button id="btn-relatorios" class="btn btn-fantasma" title="Painel principal, relatórios de gestão (gerencial, veículo, horário, pendências) e dos motoristas (histórico, mural, individuais)">🖨 Relatórios</button><button id="btn-atualizar" class="btn btn-amarelo">↻ Atualizar dados</button>\n      <button id="btn-config" class="btn btn-fantasma">Conexão</button>\n      <button id="btn-sair" class="btn btn-fantasma" title="Encerrar sessão">Sair</button>\n    </div>\n    <div class="atualizado-em" id="atualizado-em"></div>\n  </header>\n\n  <div id="aviso-demo" class="aviso demo">\n    <span aria-hidden="true">⚠</span>\n    <div><b>Conectando ao SharePoint…</b> O painel busca as infrações reais automaticamente após o login. Se esta faixa não sumir em alguns segundos, clique em <b>Atualizar dados</b> ou veja o painel <b>Conexão</b> ao final da página.</div>\n    <button class="fechar" onclick="this.parentElement.classList.add(\'oculto\')" aria-label="Fechar aviso">✕</button>\n  </div>\n  <div id="aviso-erro" class="aviso erro oculto">\n    <span aria-hidden="true">✕</span>\n    <div id="aviso-erro-texto"></div>\n    <button class="fechar" onclick="this.parentElement.classList.add(\'oculto\')" aria-label="Fechar aviso">✕</button>\n  </div>\n  <div id="aviso-ok" class="aviso ok oculto">\n    <span aria-hidden="true">✔</span>\n    <div id="aviso-ok-texto"></div>\n    <button class="fechar" onclick="this.parentElement.classList.add(\'oculto\')" aria-label="Fechar aviso">✕</button>\n  </div>\n\n  <section class="filtros" aria-label="Filtros">\n    <div class="campo">\n      <label for="f-periodo">Período</label>\n      <select id="f-periodo">\n        <option value="7">Últimos 7 dias</option>\n        <option value="15">Últimos 15 dias</option>\n        <option value="30" selected>Últimos 30 dias</option>\n        <option value="60">Últimos 60 dias</option>\n        <option value="90">Últimos 90 dias</option>\n        <option value="0">Todo o histórico</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-classificacao">Classificação</label>\n      <select id="f-classificacao">\n        <option value="">Todas</option>\n        <option value="Gravíssima">Gravíssima</option>\n        <option value="Grave">Grave</option>\n        <option value="Média">Média</option>\n        <option value="Baixa">Baixa</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-lista">Origem</label>\n      <select id="f-lista">\n        <option value="">Ambas as listas</option>\n        <option value="Área Restrita">Área Restrita</option>\n        <option value="Velocidade Excedida">Velocidade Excedida</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-motorista">Motorista</label>\n      <select id="f-motorista"><option value="">Todos</option></select>\n    </div>\n    <div class="campo">\n      <label for="f-notif">Notificação</label>\n      <select id="f-notif">\n        <option value="">Todas</option>\n        <option value="sim">Notificadas</option>\n        <option value="nao">Pendentes</option>\n      </select>\n    </div>\n    <div class="campo">\n      <label for="f-busca">Buscar</label>\n      <input type="search" id="f-busca" placeholder="Motorista, veículo, local…">\n    </div>\n  </section>\n\n  <section class="filtros" aria-label="Linha do tempo" style="padding:10px 16px">\n    <div class="seg" id="seg-tempo">\n      <button data-v="" class="ativo">Período</button>\n      <button data-v="1">Jan</button><button data-v="2">Fev</button><button data-v="3">Mar</button>\n      <button data-v="4">Abr</button><button data-v="5">Mai</button><button data-v="6">Jun</button>\n      <button data-v="7">Jul</button><button data-v="8">Ago</button><button data-v="9">Set</button>\n      <button data-v="10">Out</button><button data-v="11">Nov</button><button data-v="12">Dez</button>\n    </div>\n    <div class="campo"><select id="f-ano" title="Ano"></select></div>\n  </section>\n\n  <section class="kpis" aria-label="Indicadores">\n    <div class="kpi k-total">\n      <div class="rotulo">Infrações no período</div>\n      <div class="valor" id="kpi-total">–</div>\n      <div class="sub" id="kpi-total-var"></div>\n    </div>\n    <div class="kpi k-graves">\n      <div class="rotulo">Graves + Gravíssimas</div>\n      <div class="valor" id="kpi-graves">–</div>\n      <div class="sub" id="kpi-graves-sub"></div>\n    </div>\n    <div class="kpi k-motoristas">\n      <div class="rotulo">Motoristas envolvidos</div>\n      <div class="valor" id="kpi-motoristas">–</div>\n      <div class="sub" id="kpi-motoristas-sub"></div>\n    </div>\n    <div class="kpi k-excesso">\n      <div class="rotulo">Excesso médio</div>\n      <div class="valor" id="kpi-excesso">–</div>\n      <div class="sub">acima do limite da via</div>\n    </div>\n    <div class="kpi k-notif">\n      <div class="rotulo">Notificadas via WhatsApp</div>\n      <div class="valor" id="kpi-notif">–</div>\n      <div class="sub" id="kpi-notif-sub"></div>\n    </div>\n  </section>\n\n  <div id="inf-ativos" class="inf-ativos oculto" aria-live="polite"></div>\n\n  <section class="linha-graficos g-1">\n    <div class="grafico">\n      <div class="grafico-top">\n        <h3>Evolução Diária por Gravidade</h3>\n        <span class="grafico-nota" id="tend-nota"></span>\n      </div>\n      <div class="dica">Composição das infrações dia a dia · clique em um dia para filtrar o painel (Ctrl + clique estende o intervalo) · a gravidade escolhida aqui filtra a página toda (Ctrl + clique soma gravidades)</div>\n      <div class="controles-grafico">\n        <span class="rot">Gravidade</span>\n        <div class="seg" id="seg-tend-cls">\n          <button data-v="" class="ativo">Todas</button>\n          <button data-v="Gravíssima">Gravíssima</button>\n          <button data-v="Grave">Grave</button>\n          <button data-v="Média">Média</button>\n          <button data-v="Baixa">Baixa</button>\n        </div>\n        <span class="rot">Gráfico</span>\n        <div class="seg" id="seg-tend-tipo">\n          <button data-v="barras" class="ativo">Barras</button>\n          <button data-v="linhas">Linhas</button>\n        </div>\n      </div>\n      <div class="ch-wrap alta"><canvas id="ch-tendencia"></canvas></div>\n    </div>\n    <div class="grafico">\n      <h3>Distribuição por Classificação</h3>\n      <div class="dica">Clique em uma fatia para filtrar o painel · Ctrl + clique soma (ex.: Gravíssima + Grave)</div>\n      <div class="ch-wrap"><canvas id="ch-classificacao"></canvas></div>\n    </div>\n  </section>\n\n  <section class="linha-graficos g-2">\n    <div class="grafico">\n      <h3>Top 10 Motoristas</h3>\n      <div class="dica">Ordenado pelos mais graves · clique numa barra para ver só esse motorista (Ctrl + clique soma vários) · em itálico: fora do Cadastro ou sem matrícula</div>\n      <div class="ch-wrap"><canvas id="ch-motoristas"></canvas></div>\n    </div>\n    <div class="grafico">\n      <h3>Locais com mais Ocorrências</h3>\n      <div class="dica">Pontos que concentram infrações no período · clique numa barra para filtrar o painel (Ctrl + clique soma vários)</div>\n      <div class="ch-wrap"><canvas id="ch-locais"></canvas></div>\n    </div>\n    <div class="grafico">\n      <h3>Motoristas com menos infrações graves</h3>\n      <div class="dica">Quem teve menos Grave + Gravíssima no período, entre os que aparecem nas listas · clique numa barra para ver só esse motorista (Ctrl + clique soma vários)</div>\n      <span class="grafico-nota" id="melhores-nota"></span>\n      <div class="ch-wrap"><canvas id="ch-melhores"></canvas></div>\n    </div>\n  </section>\n\n  <section class="secao-tabela">\n    <div class="tabela-topo">\n      <h3>Detalhamento das Infrações</h3>\n      <span class="cont" id="tabela-cont"></span>\n      <div class="acoes">\n        <button id="btn-excel" class="btn btn-claro">⬇ Exportar Excel</button>\n        <button id="btn-imprimir" class="btn btn-claro">Imprimir</button>\n      </div>\n    </div>\n    <div class="filtros-tabela">\n      <div class="campo">\n        <label>Origem</label>\n        <div class="seg" id="seg-origem">\n          <button data-v="" class="ativo">Ambas</button>\n          <button data-v="Área Restrita">Área Restrita</button>\n          <button data-v="Velocidade Excedida">Vel. Excedida</button>\n        </div>\n      </div>\n      <div class="campo">\n        <label>Classificação</label>\n        <div class="seg" id="seg-cls">\n          <button data-v="" class="ativo">Todas</button>\n          <button data-v="Gravíssima">Gravíssima</button>\n          <button data-v="Grave">Grave</button>\n          <button data-v="Média">Média</button>\n          <button data-v="Baixa">Baixa</button>\n        </div>\n      </div>\n      <div class="campo">\n        <label for="tb-motorista">Motorista</label>\n        <select id="tb-motorista"><option value="">Todos</option></select>\n      </div>\n      <div class="campo">\n        <label for="tb-de">De</label>\n        <input type="date" id="tb-de">\n      </div>\n      <div class="campo">\n        <label for="tb-ate">Até</label>\n        <input type="date" id="tb-ate">\n      </div>\n    </div>\n    <div class="rolagem">\n      <table id="tabela">\n        <thead>\n          <tr>\n            <th data-col="data">Data <span class="seta"></span></th>\n            <th data-col="hora">Hora <span class="seta"></span></th>\n            <th data-col="motorista">Motorista <span class="seta"></span></th>\n            <th data-col="veiculo">Veículo <span class="seta"></span></th>\n            <th data-col="localizacao">Local <span class="seta"></span></th>\n            <th data-col="lista">Origem <span class="seta"></span></th>\n            <th data-col="velocidade">Velocidade <span class="seta"></span></th>\n            <th data-col="excesso">Excesso <span class="seta"></span></th>\n            <th data-col="classificacao">Classificação <span class="seta"></span></th>\n            <th data-col="notificado">Notificação <span class="seta"></span></th>\n          </tr>\n        </thead>\n        <tbody id="tabela-corpo"></tbody>\n      </table>\n    </div>\n    <div class="paginacao">\n      <span id="pag-info"></span>\n      <button id="pag-ant">‹ Anterior</button>\n      <button id="pag-prox">Próxima ›</button>\n    </div>\n  </section>\n\n  <details class="conexao" id="painel-conexao">\n    <summary><span class="indicador">›</span> Conexão com o SharePoint (webhook Make)</summary>\n    <div class="conexao-corpo">\n      <p><b>Integração configurada.</b> O painel lê as três listas do SharePoint (Área Restrita, Velocidade Excedida e\n      Cadastro Motoristas) pelo cenário <code>📊 Painel de Infrações — API de Dados</code> no Make — somente leitura.\n      O botão <b>Disparar envio</b> aciona o cenário <code>🔐 Portão de login (disparo v2)</code> (ID 6408679), que confere o login Microsoft e só então aciona o envio por WhatsApp.</p>\n      <p>Cada <b>Atualizar dados</b> consome ~8 créditos Make; cada <b>Disparar envio</b> consome os créditos normais do envio.</p>\n      <div class="linha-url">\n        <input type="url" id="input-webhook" placeholder="(preenchida automaticamente após o login)" aria-label="URL do webhook Make">\n        <button id="btn-testar" class="btn btn-amarelo">Testar conexão</button>\n      </div>\n      <p><b>Se a atualização falhar</b>, verifique no Make se os cenários estão ligados (ON) e se a conexão\n      "Nova Macabu SharePoint" está válida. Este arquivo deve ser aberto diretamente no navegador.</p>\n      <p><b>Segurança:</b> desde a v0.12.13 cada disparo leva o login Microsoft de quem usa o ERP e o Make só envia para os grupos\n      Operacional e Diretoria e para os administradores fixos do ERP — ter o endereço do webhook não basta. Para suspender os disparos, desative no Make o webhook do cenário 🔐 Portão de login (ID 6408679) — com o cenário só desligado, os pedidos ficam na fila.</p>\n    </div>\n  </details>\n\n  <div id="modal-envio" class="modal-fundo oculto">\n    <div class="modal">\n      <h4>📨 Enviar notificação por WhatsApp</h4>\n      <div class="m-sub" id="m-motorista"></div>\n      <div class="m-resumo" id="m-resumo"></div>\n      <label class="m-op"><input type="radio" name="m-escopo" value="item" checked> <span><b>Somente esta infração</b><span id="m-reenvio" style="color:var(--pendente);font-weight:700"> · reenvio</span><br><span style="color:var(--texto-2);font-size:12px">Envia e marca apenas este caso</span></span></label>\n      <label class="m-op"><input type="radio" name="m-escopo" value="motorista"> <span><b>Todas as pendentes deste motorista</b> <span id="m-qtd" style="color:var(--texto-2)"></span><br><span style="color:var(--texto-2);font-size:12px">Uma mensagem consolidada com todos os casos</span></span></label>\n      <textarea id="m-msg" maxlength="200" placeholder="Mensagem da gestão (opcional) — será anexada ao final da notificação"></textarea>\n      <div class="m-aviso" id="m-aviso-nc" style="display:none">⚠ Motorista fora do Cadastro: o caso será apenas marcado como tratado — não há contato para WhatsApp.</div>\n      <div class="m-acoes">\n        <button id="m-cancelar" class="btn btn-claro">Cancelar</button>\n        <button id="m-enviar" class="btn btn-vermelho">📨 Enviar agora</button>\n      </div>\n    </div>\n  </div>\n\n  <button id="fab-limpar" class="fab-limpar" title="Limpar todos os filtros">🧹 Limpar filtros</button>\n\n  <footer class="rodape">\n    <span>Fontes: SharePoint · Área Restrita, Velocidade Excedida e Cadastro Motoristas (site Operacional)</span>\n    <span>Painel de Infrações · Projeto Notificação de Infrações</span>\n  </footer>\n</div>\n<div id="tela-login" class="tela-login oculto"><input id="login-user"><input id="login-senha"><button id="btn-entrar"></button><div id="login-msg"></div></div>';
 function pageInf() { return `<div id="inf-root">${INF_HTML}</div>`; }
 function initInfracoes(){
 
@@ -10013,6 +10013,21 @@ let tendTipo = "barras";       /* v0.12.16: classificação, origem e motorista 
 let localFiltro = "";          /* v0.12.16: clique em "Locais com mais Ocorrências" ou no local de uma linha */
 let diaFiltro = null;
 let mesFiltro = null;          // 1-12 quando um mês da linha do tempo está ativo (diaFiltro = {de,ate} vale para a página toda)
+/* v0.14.117: Ctrl (ou ⌘/Shift) + clique soma itens no filtro do gráfico (ex.: Gravíssima + Grave); clique simples volta a um só */
+let MULTI = { classificacao: new Set(), motorista: new Set(), local: new Set() };
+const ctrlSel = e => { const n = e && (e.native || e); return !!(n && (n.ctrlKey || n.metaKey || n.shiftKey)); };
+const SINGLE = { classificacao: { get: () => $("f-classificacao").value, set: v => { $("f-classificacao").value = v; } },
+                 motorista: { get: () => $("f-motorista").value, set: v => { $("f-motorista").value = v; } },
+                 local: { get: () => localFiltro, set: v => { localFiltro = v; } } };
+function escolher(dim, v, e){
+  const s1 = SINGLE[dim];
+  if(ctrlSel(e)){ const S = new Set(MULTI[dim].size ? MULTI[dim] : (s1.get() ? [s1.get()] : [])); S.has(v) ? S.delete(v) : S.add(v);
+    MULTI[dim] = S.size > 1 ? S : new Set(); s1.set(S.size === 1 ? [...S][0] : ""); }
+  else { MULTI[dim] = new Set(); s1.set(s1.get() === v ? "" : v); }
+  pagina = 0; renderizar();
+}
+const fSel = (f, k, v) => f["set_" + k] ? f["set_" + k].has(v) : v === f[k];
+const motOk = (v, i) => v === "__nc" ? !i.cadastrado : v === SEM_MAT ? !i.matricula : i.matricula === v;
 let charts = {};
 const CANVAS = {tendencia:"ch-tendencia",classificacao:"ch-classificacao",motoristas:"ch-motoristas",locais:"ch-locais",melhores:"ch-melhores"};
 
@@ -10060,18 +10075,18 @@ function nomeMot(mat){
 
 /* ── Filtros ── */
 function lerFiltros(){
-  return { periodo:+$("f-periodo").value, classificacao:$("f-classificacao").value, lista:$("f-lista").value,
+  const f = { periodo:+$("f-periodo").value, classificacao:$("f-classificacao").value, lista:$("f-lista").value,
            motorista:$("f-motorista").value, notif:$("f-notif").value, busca:normTxt($("f-busca").value.trim()), local:localFiltro };
+  for(const k of ["classificacao","motorista","local"]) if(MULTI[k].size > 1){ f["set_"+k] = MULTI[k]; f[k] = k === "motorista" ? "__multi" : [...MULTI[k]].join(" + "); }   /* v0.14.117 */
+  return f;
 }
 function filtrarBase(f, sem){   /* v0.12.16: "sem" = dimensão que um gráfico deixa de fora do próprio filtro (destaque cruzado) */
   return dados.filter(i=>{
-    if(sem!=="classificacao" && f.classificacao && i.classificacao!==f.classificacao) return false;
+    if(sem!=="classificacao" && f.classificacao && !fSel(f,"classificacao",i.classificacao)) return false;
     if(sem!=="lista" && f.lista && i.lista!==f.lista) return false;
-    if(sem!=="local" && f.local && i.localizacao!==f.local) return false;
+    if(sem!=="local" && f.local && !fSel(f,"local",i.localizacao)) return false;
     if(sem!=="motorista" && f.motorista){
-      if(f.motorista==="__nc"){ if(i.cadastrado) return false; }
-      else if(f.motorista===SEM_MAT){ if(i.matricula) return false; }
-      else if(i.matricula!==f.motorista) return false;
+      if(!(f.set_motorista ? [...f.set_motorista].some(v=>motOk(v,i)) : motOk(f.motorista,i))) return false;
     }
     if(f.notif==="sim" && !i.notificado) return false;
     if(f.notif==="nao" &&  i.notificado) return false;
@@ -10106,9 +10121,9 @@ function janelas(f){
 /* v0.12.16: os controles do Detalhamento (origem, classificação, motorista, de/até) são os mesmos filtros da página toda */
 function resetFiltrosTabela(){ $("tb-de").value="";$("tb-ate").value=""; }
 function aplicarFiltrosTabela(linhas){ return linhas; }
-function segAtivo(id, v){ const s=$(id); if(s) s.querySelectorAll("button").forEach(b=>b.classList.toggle("ativo",b.dataset.v===v)); }
+function segAtivo(id, v){ const s=$(id); if(s) s.querySelectorAll("button").forEach(b=>b.classList.toggle("ativo", v instanceof Set ? v.has(b.dataset.v) : b.dataset.v===v)); }
 function sincronizarControles(f){
-  segAtivo("seg-tend-cls", f.classificacao); segAtivo("seg-cls", f.classificacao); segAtivo("seg-origem", f.lista);
+  segAtivo("seg-tend-cls", f.set_classificacao || f.classificacao); segAtivo("seg-cls", f.set_classificacao || f.classificacao); segAtivo("seg-origem", f.lista);
   const tbm=$("tb-motorista"); if(tbm && tbm.value!==f.motorista) tbm.value=f.motorista;
   const de=$("tb-de"), ate=$("tb-ate"); if(de && ate){ de.value = diaFiltro ? diaFiltro.de : ""; ate.value = diaFiltro ? diaFiltro.ate : ""; }
 }
@@ -10116,10 +10131,10 @@ const rotMot = m => m==="__nc" ? "fora do Cadastro" : m===SEM_MAT ? "sem matríc
 function pintarAtivos(f){
   const box=$("inf-ativos"); if(!box) return;
   const chips=[]; const add=(rot,val,limpar)=>chips.push({rot,val,limpar});
-  if(f.classificacao) add("Classificação", f.classificacao, ()=>{ $("f-classificacao").value=""; });
+  if(f.classificacao) add("Classificação", f.classificacao, ()=>{ $("f-classificacao").value=""; MULTI.classificacao=new Set(); });
   if(f.lista) add("Origem", f.lista, ()=>{ $("f-lista").value=""; });
-  if(f.motorista) add("Motorista", rotMot(f.motorista), ()=>{ $("f-motorista").value=""; });
-  if(f.local) add("Local", f.local, ()=>{ localFiltro=""; });
+  if(f.motorista) add("Motorista", f.set_motorista ? [...f.set_motorista].map(rotMot).join(" + ") : rotMot(f.motorista), ()=>{ $("f-motorista").value=""; MULTI.motorista=new Set(); });
+  if(f.local) add("Local", f.local, ()=>{ localFiltro=""; MULTI.local=new Set(); });
   if(diaFiltro) add("Período", diaFiltro.de.split("-").reverse().join("/")+(diaFiltro.ate!==diaFiltro.de?" – "+diaFiltro.ate.split("-").reverse().join("/"):""), ()=>{ diaFiltro=null; });
   if(f.notif) add("Notificação", f.notif==="sim"?"notificadas":"pendentes", ()=>{ $("f-notif").value=""; });
   if(f.busca) add("Busca", $("f-busca").value.trim(), ()=>{ $("f-busca").value=""; });
@@ -10252,7 +10267,7 @@ function renderCharts(atual,j,X,f){
   nota.classList.toggle("ativo", !!diaFiltro);
   nota.title = diaFiltro ? "Clique para remover o filtro de dia" : "";
   // Classes exibidas conforme o chip de gravidade do gráfico
-  const clsExibidas = f.classificacao ? [f.classificacao] : ["Baixa","Média","Grave","Gravíssima"];
+  const clsExibidas = f.set_classificacao ? ["Baixa","Média","Grave","Gravíssima"].filter(c=>f.set_classificacao.has(c)) : f.classificacao ? [f.classificacao] : ["Baixa","Média","Grave","Gravíssima"];
   const ehLinha = tendTipo==="linhas";
   const dsTend = clsExibidas.map(c=>({
     label:c, data:series[c],
@@ -10285,6 +10300,7 @@ function renderCharts(atual,j,X,f){
           de=k+"-01";
           const ult=new Date(a,m,0); ate=chaveDia(ult);
         }
+        if(ctrlSel(e) && diaFiltro){ diaFiltro = { de: de<diaFiltro.de ? de : diaFiltro.de, ate: ate>diaFiltro.ate ? ate : diaFiltro.ate }; renderizar(); return; }   /* v0.14.117: Ctrl estende o intervalo até a barra clicada */
         diaFiltro = (diaFiltro && diaFiltro.de===de && diaFiltro.ate===ate) ? null : {de,ate};
         renderizar();
       }}}); }catch(e){ console.error("Gráfico falhou:",e); }
@@ -10304,13 +10320,12 @@ function renderCharts(atual,j,X,f){
     });ctx.restore();
   }};
   try{ charts.classificacao=new Chart($("ch-classificacao"),{type:"doughnut",
-    data:{labels:ORDEM_CLASS,datasets:[{data:porCls,backgroundColor:ORDEM_CLASS.map(c=>f.classificacao&&c!==f.classificacao?DIM(CORES[c]):CORES[c]),borderWidth:2,borderColor:"#fff"}]},
+    data:{labels:ORDEM_CLASS,datasets:[{data:porCls,backgroundColor:ORDEM_CLASS.map(c=>f.classificacao&&!fSel(f,"classificacao",c)?DIM(CORES[c]):CORES[c]),borderWidth:2,borderColor:"#fff"}]},
     plugins:[doughnutLabels],
     options:{responsive:true,maintainAspectRatio:false,devicePixelRatio:Math.max(window.devicePixelRatio||1,2),animation:false,cutout:"58%",
       plugins:{legend:{position:"bottom"},
         tooltip:{callbacks:{label:ctx=>` ${ctx.label}: ${nf.format(ctx.raw)} (${baseCls.length?(ctx.raw/baseCls.length*100).toFixed(0):0}%)`}}},
-      onClick:(e,els)=>{if(els.length){const c=ORDEM_CLASS[els[0].index];
-        $("f-classificacao").value=$("f-classificacao").value===c?"":c;renderizar();}}}}); }catch(e){ console.error("Gráfico falhou:",e); }
+      onClick:(e,els)=>{if(els.length){const c=ORDEM_CLASS[els[0].index]; escolher("classificacao",c,e);}}}}); }catch(e){ console.error("Gráfico falhou:",e); }
 
   /* Top 10 Motoristas — Grave+Gravíssima primeiro (base sem o filtro de motorista; barra escolhida em destaque) */
   const porMot=new Map();
@@ -10319,7 +10334,8 @@ function renderCharts(atual,j,X,f){
     const o=porMot.get(k); if(!o.nome&&i.matricula&&i.motorista) o.nome=i.motorista;
     (i.classificacao==="Grave"||i.classificacao==="Gravíssima")?o.sev++:o.leve++;});
   const top=[...porMot.values()].sort((a,b)=> b.sev!==a.sev ? b.sev-a.sev : (b.sev+b.leve)-(a.sev+a.leve)).slice(0,10);
-  const motSel = t => !f.motorista || (f.motorista==="__nc" ? !t.cad : (t.mat||SEM_MAT)===f.motorista);
+  const motSel1 = (v,t) => v==="__nc" ? !t.cad : (t.mat||SEM_MAT)===v;
+  const motSel = t => !f.motorista || (f.set_motorista ? [...f.set_motorista].some(v=>motSel1(v,t)) : motSel1(f.motorista,t));
   const corMot = (lista, cor) => lista.map(t=>motSel(t)?cor:DIM(cor));
   destruir("motoristas");
   const barTotalRight={id:"barTotalRight",afterDatasetsDraw(ch){
@@ -10360,7 +10376,7 @@ function renderCharts(atual,j,X,f){
         font:c=>{const t=top[c.index];return {weight:"600",size:12,style:t&&t.cad?"normal":"italic"};}}}},
       onClick:(e,els)=>{if(els.length){const t=top[els[0].index]; if(!t) return;
         const alvo=t.mat||SEM_MAT;                                  // v0.12.11: filtra só a barra clicada
-        $("f-motorista").value=$("f-motorista").value===alvo?"":alvo;renderizar();}}}}); }catch(e){ console.error("Gráfico falhou:",e); }
+        escolher("motorista",alvo,e);}}}}); }catch(e){ console.error("Gráfico falhou:",e); }
 
   /* Locais (base sem o filtro de local; clique filtra o painel) */
   const porLoc=new Map();
@@ -10374,14 +10390,14 @@ function renderCharts(atual,j,X,f){
     ctx.restore();
   }};
   try{ charts.locais=new Chart($("ch-locais"),{type:"bar",
-    data:{labels:locs.map(l=>l[0]),datasets:[{data:locs.map(l=>l[1]),backgroundColor:locs.map(l=>f.local&&l[0]!==f.local?DIM("#3A4854"):"#3A4854"),borderRadius:2}]},
+    data:{labels:locs.map(l=>l[0]),datasets:[{data:locs.map(l=>l[1]),backgroundColor:locs.map(l=>f.local&&!fSel(f,"local",l[0])?DIM("#3A4854"):"#3A4854"),borderRadius:2}]},
     plugins:[barTotalRightLoc],
     options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,devicePixelRatio:Math.max(window.devicePixelRatio||1,2),animation:false,
       layout:{padding:{right:30}},
       plugins:{legend:{display:false}},
       scales:{x:{beginAtZero:true,ticks:{precision:0}},y:{grid:{display:false},ticks:{color:"#1D242B",font:{weight:"600",size:11.5},
         callback:function(v){const l=String(this.getLabelForValue(v)); return l.length>22 ? l.slice(0,21).trim()+"…" : l;}}}},   /* v0.12.16: nome longo não é cortado pela borda (o nome inteiro fica na dica) */
-      onClick:(e,els)=>{if(els.length){const l=locs[els[0].index]; if(!l) return; localFiltro = localFiltro===l[0] ? "" : l[0]; renderizar();}}}}); }catch(e){ console.error("Gráfico falhou:",e); }
+      onClick:(e,els)=>{if(els.length){const l=locs[els[0].index]; if(!l) return; escolher("local",l[0],e);}}}}); }catch(e){ console.error("Gráfico falhou:",e); }
 
   /* v0.12.16: Motoristas com menos infrações graves — quem tem matrícula, menos Grave+Gravíssima primeiro, depois menos infrações no total */
   const melhores=[...porMot.values()].filter(t=>t.mat).sort((a,b)=> a.sev!==b.sev ? a.sev-b.sev : (a.sev+a.leve)-(b.sev+b.leve) || String(a.nome||a.mat).localeCompare(String(b.nome||b.mat),"pt-BR")).slice(0,10);
@@ -10403,7 +10419,7 @@ function renderCharts(atual,j,X,f){
         color:c=>{const t=melhores[c.index];return t&&t.cad?"#1D242B":"#8A5A00";},
         font:c=>{const t=melhores[c.index];return {weight:"600",size:12,style:t&&t.cad?"normal":"italic"};}}}},
       onClick:(e,els)=>{if(els.length){const t=melhores[els[0].index]; const alvo=t.mat||SEM_MAT;
-        $("f-motorista").value=$("f-motorista").value===alvo?"":alvo;renderizar();}}}}); }catch(e){ console.error("Gráfico falhou:",e); }
+        escolher("motorista",alvo,e);}}}}); }catch(e){ console.error("Gráfico falhou:",e); }
 }
 
 /* ── Tabela ── */
@@ -10451,7 +10467,8 @@ function renderTabela(atual){
   corpo.querySelectorAll("[data-filtra]").forEach(el=>el.addEventListener("click",(e)=>{
     e.stopPropagation();
     const tipo=el.dataset.filtra, v=el.dataset.v;
-    if(tipo==="local"){ localFiltro = localFiltro===v ? "" : v; renderizar(); return; }   /* v0.12.16 */
+    if(tipo==="local"){ escolher("local",v,e); return; }   /* v0.12.16 · v0.14.117: Ctrl soma */
+    if((tipo==="classificacao"||tipo==="motorista") && ctrlSel(e)){ escolher(tipo,v,e); return; }
     const sel=$("f-"+tipo); if(!sel) return;
     sel.value = (sel.value===v ? "" : v);
     renderizar();
@@ -10693,11 +10710,11 @@ async function fazerLogin(){
 }
 
 /* ── Eventos ── */
-["f-classificacao","f-lista","f-motorista","f-notif"].forEach(id=>$(id).addEventListener("change",renderizar));
+["f-classificacao","f-lista","f-motorista","f-notif"].forEach(id=>$(id).addEventListener("change",()=>{ if(id==="f-classificacao") MULTI.classificacao=new Set(); if(id==="f-motorista") MULTI.motorista=new Set(); renderizar(); }));
 $("f-periodo").addEventListener("change",()=>{ diaFiltro=null; renderizar(); if($("f-periodo").value==="0") infAmpliar().catch(()=>{}); });   /* v0.12.16: trocar o período solta o De/Até · v0.12.81: todo o histórico amplia a leitura */
 $("f-busca").addEventListener("input",()=>{clearTimeout(window.__debInf);window.__debInf=setTimeout(()=>{ if($("inf-app")) renderizar(); },250);});   /* v0.12.81: temporizador próprio e só com a página aberta */
 function limparTudo(){
-  diaFiltro=null; mesFiltro=null; localFiltro="";
+  diaFiltro=null; mesFiltro=null; localFiltro=""; MULTI={ classificacao:new Set(), motorista:new Set(), local:new Set() };
   tendTipo="barras";
   $("seg-tempo").querySelectorAll("button").forEach(x=>x.classList.toggle("ativo",x.dataset.v===""));
   $("seg-tend-cls").querySelectorAll("button").forEach(x=>x.classList.toggle("ativo",x.dataset.v===""));
@@ -10752,18 +10769,17 @@ function ligarSeg(idSeg,setter){
   }));
 }
 ligarSeg("seg-origem",v=>{ $("f-lista").value=v; });          /* v0.12.16: mesmo filtro da página */
-ligarSeg("seg-cls",v=>{ $("f-classificacao").value=v; });
-$("seg-tend-cls").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
-  $("f-classificacao").value=b.dataset.v;   /* v0.12.16: a gravidade do gráfico é o filtro de classificação da página */
-  $("seg-tend-cls").querySelectorAll("button").forEach(x=>x.classList.toggle("ativo",x===b));
-  renderizar();
-}));
+["seg-cls","seg-tend-cls"].forEach(id=>$(id).querySelectorAll("button").forEach(b=>b.addEventListener("click",e=>{   /* v0.14.117: Ctrl soma gravidades; "Todas" limpa */
+  if(b.dataset.v && ctrlSel(e)){ escolher("classificacao",b.dataset.v,e); return; }
+  MULTI.classificacao=new Set(); $("f-classificacao").value=b.dataset.v;   /* v0.12.16: a gravidade do gráfico é o filtro de classificação da página */
+  pagina=0; renderizar();
+})));
 $("seg-tend-tipo").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
   tendTipo=b.dataset.v;
   $("seg-tend-tipo").querySelectorAll("button").forEach(x=>x.classList.toggle("ativo",x===b));
   renderizar();
 }));
-$("tb-motorista").addEventListener("change",e=>{$("f-motorista").value=e.target.value;renderizar();});
+$("tb-motorista").addEventListener("change",e=>{MULTI.motorista=new Set(); $("f-motorista").value=e.target.value;renderizar();});
 
 
 /* ── v0.9.3 · Relatórios impressos (mural do mês + individual por motorista) ── */
@@ -52470,7 +52486,7 @@ window.timAtivoAbrir = id => {
     <div class="modal-body"><div class="tim-ficha-top">${timSitPill(a.Situacao)} ${timPlanoPill(p)}</div>
     <dl class="tim-dl">${dl("Marca / modelo", esc([a.Marca, a.Modelo].filter(Boolean).join(" ")))}${dl("Nº de série", esc(a.NumeroSerie || ""))}${dl("Hostname", esc(a.Hostname || ""))}${dl("Sistema", esc(a.SistemaOperacional || ""))}${dl("Configuração", esc(a.Configuracao || ""))}
       ${dl("Usuário", esc(a.Responsavel || ""))}${dl("Departamento", esc(a.Departamento || ""))}${dl("Local", esc(a.Local || ""))}${dl("Aquisição", a.DataAquisicao ? fmtDate(a.DataAquisicao) : "")}${dl("Garantia até", a.GarantiaAte ? fmtDate(a.GarantiaAte) : "")}
-      ${dl("Fornecedor", esc(a.Fornecedor || ""))}${dl("Valor", a.ValorAquisicao ? fmtBRL(a.ValorAquisicao) : "")}${dl("Preventiva", Number(a.PeriodicidadeMeses || 0) ? `a cada ${Number(a.PeriodicidadeMeses)} meses · última ${a.UltimaPreventiva ? fmtDate(a.UltimaPreventiva) : "nunca"} · próxima ${p.prox ? fmtDate(p.prox) : "—"}` : "sem preventiva programada")}${dl("Observações", esc(a.Observacoes || ""))}</dl>
+      ${dl("Fornecedor", esc(a.Fornecedor || ""))}${dl("Valor", a.ValorAquisicao ? fmtBRL(a.ValorAquisicao) : "")}${dl("Preventiva", Number(a.PeriodicidadeMeses || 0) ? `a cada ${Number(a.PeriodicidadeMeses)} meses · última ${a.UltimaPreventiva ? fmtDate(a.UltimaPreventiva) : "nunca"} · próxima ${p.prox ? fmtDate(p.prox) : "—"}` : "sem preventiva programada")}</dl>${a.Observacoes ? `<h3 class="tim-h3">Observações</h3>${tioLeitura(a.Observacoes)}` : ""}
     <h3 class="tim-h3">Histórico de manutenções <span class="sup">${mans.length} registro(s) · custo ${fmtBRL(custo)}</span></h3>
     ${mans.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Protocolo</th><th>Tipo</th><th>Status</th><th>Data</th><th>Serviços</th><th class="n">Custo</th></tr></thead><tbody>${mans.map(m => { const sv = timJson(m.Servicos, []); return `<tr onclick="timManForm(${jsArg(m._id)})"><td class="nw"><b>${esc(m.Title || "")}</b></td><td>${esc(m.Tipo || "")}</td><td>${timStPill(timStatusEf(m))}</td><td class="nw">${fmtDate(timD(m.DataConclusao) || timD(m.DataPrevista) || "")}</td><td>${esc(sv.slice(0, 3).join("; "))}${sv.length > 3 ? ` <span class="sup">+${sv.length - 3}</span>` : ""}</td><td class="n nw">${m.Custo ? fmtBRL(m.Custo) : "—"}</td></tr>`; }).join("")}</tbody></table></div>` : `<p class="sup">Nenhuma manutenção registrada para este equipamento.</p>`}
     </div><div class="modal-foot">${ed && podeExcluir("ti_manut") && !mans.length ? `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="timAtivoExcluir(${jsArg(a._id)})">Excluir</button>` : ""}<button class="btn" onclick="closeModal()">Fechar</button>${ed ? `<button class="btn" onclick="timAtivoForm(${jsArg(a._id)})">Editar Cadastro</button><button class="btn primary" onclick="timManForm(null, { AtivoId: ${jsArg(a._id)} })">Nova Manutenção</button>` : ""}</div>`);
@@ -57444,6 +57460,12 @@ window.infMotForm = (id, pre) => {
     if (INFM.temCpf && !v.mat && v.cpf) v.mat = v.cpf;   /* sem código da telemetria: o CPF faz as vezes (é o que a telemetria passa a enviar) */
     const dup = infCadAcha(v, m._id); if (dup) return err(`Já existe no cadastro: ${dup.nome} (matrícula ${dup.mat}) — mesma CNH, identidade, CPF ou matrícula. Edite o cadastro dele em vez de criar outro.`);
     if (!v.mat) return err("Informe a matrícula."); if (!v.nome) return err("Informe o nome."); if (!v.contato) return err("Contato fora do padrão: informe DDD e número de celular, ex.: 55 (22) 9.9999-0000."); if (!v.cnh) return err("Informe o número da habilitação (CNH)."); if (v.cnh.length !== 11) return err("A CNH tem 11 dígitos.");
+    if (!id) {   /* v0.14.117: espelho do RH — o novo motorista vai para a aprovação do RH e só entra no espelho depois de aprovado */
+      if (!INFM.rh) return err("Sem acesso ao RH nesta sessão: o motorista novo precisa ser cadastrado no RH (fila de aprovação).");
+      const ja = infRhAcha(v); if (ja) return err(`${ja.f.Title} já está no RH (ligado por ${ja.por}). Use "Atualizar espelho pelo RH" para trazê-lo.`);
+      try { await infRhGravar(v, true); toast("Enviado ao RH para aprovação. Fica como \"Em aprovação\" aqui até o RH aprovar.", 8000); await infMotCarregar(true); if ($("imBody")) infMotPintar(); else infMotAbrir(); return $("imBody") ? false : true; }
+      catch (e) { return err("Não foi possível enviar ao RH: " + e.message); }
+    }
     try { const nid = await infMotGravar(v); v._id = nid; if ($("imRh") && $("imRh").checked) { try { await infRhGravar(v, true); } catch (e) { toast("Cadastro gravado; o RH não: " + e.message, 7000); } }
       toast(id ? "Motorista atualizado." : "Motorista cadastrado."); await infMotCarregar(true); if ($("imBody")) infMotPintar(); else infMotAbrir(); if (window.__INF) window.__INF.atualizar(); return $("imBody") ? false : true; }
     catch (e) { return err("Não foi possível gravar: " + e.message); }
@@ -58497,6 +58519,193 @@ window.rhfExcluirAqui = async id => {
 .lix-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 16px;margin-bottom:10px}.lix-meta>div{display:flex;flex-direction:column;font-size:13px}.lix-meta span{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-2)}.lix-meta small{color:var(--ink-2);font-size:11.5px;word-break:break-all}
 .lix-kv th{width:220px;text-align:left;font-weight:600;color:var(--ink-2);white-space:nowrap}.lix-kv td{word-break:break-word}
 `; document.head.appendChild(st); })();
+
+/* =====================================================================
+   v0.14.117 (Rafael, 27/11 11:32) · Painel de Infrações › Banco de Dados = espelho do RH
+   - RH › Funcionários é a fonte; "Cadastro Motoristas" (SharePoint) é só o espelho que o Make lê.
+   - Motorista novo pelo painel vai para a fila de aprovação do RH e aparece aqui como "Em aprovação"; só entra no
+     espelho (e passa a receber WhatsApp) depois de aprovado, pelo "Atualizar espelho pelo RH".
+   - Tabela enxuta: um motorista por linha; o campo que difere do RH fica destacado na própria célula, com o valor do RH.
+   - "Atualizar espelho pelo RH": grupos (atualizar · trazer · fora do RH · conflitos), cada motorista com uma mini-tabela
+     Campo | Hoje no espelho | No RH.
+   - Ligação por matrícula (ou por CPF guardado na matrícula) só vale se os nomes baterem: evita trocar um motorista por
+     outro que tem a mesma matrícula no RH (caso Julio × Gilvan); o par vira "conflito" para conferir à mão.
+   ===================================================================== */
+const infNomeTok = n => normName(n || "").split(/\s+/).filter(t => t && !["de", "da", "do", "das", "dos", "e"].includes(t));
+function infNomeParece(a, b) { const A = infNomeTok(a), B = infNomeTok(b); if (!A.length || !B.length) return true; const sb = new Set(B), com = A.filter(t => sb.has(t)).length; return (A[0] === B[0] && com / Math.min(A.length, B.length) >= 0.5) || com / Math.min(A.length, B.length) >= 0.67; }
+INFM.conflitos = new Map();
+{ const a0 = infRhAcha; infRhAcha = function (k) { const r = a0.apply(this, arguments); if (!r || !k || !k.nome) return r;
+    const porDoc = r.por === "CNH" || r.por === "identidade" || (r.por === "CPF" && infDigs(k.cpf).length === 11);
+    if (!porDoc && !infNomeParece(k.nome, r.f.Title)) { if (k._id) INFM.conflitos.set(String(k._id), { f: r.f, por: r.por }); return null; }
+    if (k._id) INFM.conflitos.delete(String(k._id)); return r; }; }
+{ const c0 = infMotCarregar; infMotCarregar = async function () { const r = await c0.apply(this, arguments); INFM.conflitos = new Map(); INFM.rhIdx = null; return r; }; }
+const infRhPend = f => String(f.Aprovacao || "") === "Pendente";
+const INF_CAMPOS = [["nome", "Nome"], ["contato", "Contato"], ["situação", "Situação"], ["identidade", "Identidade"], ["habilitação", "Habilitação"], ["validade CNH", "Validade CNH"], ["CPF", "CPF"], ["matrícula (RH)", "Matrícula (RH)"]];
+const infDifMapa = (m, f) => { const d = f ? infDif(m, f) : []; return new Map(d.map(x => [x[0], { aqui: x[1], rh: x[2] }])); };
+function infMotHtml() {
+  const ed = window.__INF.podeEd(), q = normName(INFM.q);
+  const linhas = INFM.its.map(m => { const f = infRhDeM(m), conf = INFM.conflitos.get(String(m._id)); return { m, f, conf, d: infDifMapa(m, f) }; });
+  const ligados = new Set(linhas.map(l => l.f).filter(Boolean));
+  const pend = INFM.rh ? INFM.rh.filter(f => infRhPend(f) && infRhMot(f) && !ligados.has(f)) : [];
+  const falta = INFM.rh ? INFM.rh.filter(f => !infRhPend(f) && infRhMot(f) && String(f.Situacao || "") !== "Desligado" && !ligados.has(f)) : [];
+  const busca = t => !q || normName(t).includes(q);
+  const vis = linhas.filter(l => busca(`${l.m.nome} ${l.m.mat} ${l.m.contato} ${l.m.cpf || ""}`));
+  const nDif = linhas.filter(l => l.d.size).length, nFora = linhas.filter(l => !l.f).length;
+  const cel = (l, chave, val, cls) => { const x = l.d.get(chave); return x ? `<td class="${cls || ""} inf-dif-c" title="No RH: ${esc(x.rh)}"><span class="inf-old">${val}</span><span class="inf-rh">RH: ${esc(x.rh)}</span></td>` : `<td class="${cls || ""}">${val}</td>`; };
+  const chip = l => l.conf ? `<span class="inf-chip c" title="A matrícula bate com ${esc(l.conf.f.Title)} no RH, mas o nome não">⚠ Conferir: ${esc(l.conf.f.Title)}</span>` : !INFM.rh ? `<span class="inf-chip n">RH não lido</span>` : !l.f ? `<span class="inf-chip r">Fora do RH</span>` : l.d.size ? `<span class="inf-chip a">${l.d.size} campo(s) diferente(s)</span>` : `<span class="inf-chip ok" title="Ligado ao RH por ${esc((infRhAcha(l.m) || {}).por || "")}">✓ Igual ao RH</span>`;
+  const linha = l => { const m = l.m;
+    const tel = infFoneNorm(m.contato) ? esc(infFoneFmt(m.contato)) : `<span class="nao-cadastrado" title="Fora do padrão 55 + DDD + 9 dígitos">${esc(m.contato || "—")}</span>`;
+    const sit = m.sit === "Ativo" ? `<span style="color:var(--ok,#197a46);font-weight:700">Ativo</span>` : `<span class="sup">${esc(m.sit || "—")}</span>`;
+    const docs = `${l.d.get("identidade") ? `<div class="inf-dif-l" title="No RH: ${esc(l.d.get("identidade").rh)}">RG <span class="inf-old">${esc(m.rg || "—")}</span> <span class="inf-rh">RH: ${esc(l.d.get("identidade").rh)}</span></div>` : `<div>RG ${esc(m.rg || "—")}</div>`}${l.d.get("habilitação") ? `<div class="inf-dif-l">CNH <span class="inf-old">${esc(m.cnh || "—")}</span> <span class="inf-rh">RH: ${esc(l.d.get("habilitação").rh)}</span></div>` : `<div>CNH ${esc(m.cnh || "—")}</div>`}${l.d.get("validade CNH") ? `<div class="inf-dif-l">val. <span class="inf-old">${m.val ? esc(fmtDate(m.val)) : "—"}</span> <span class="inf-rh">RH: ${esc(l.d.get("validade CNH").rh)}</span></div>` : m.val ? `<div class="sup">val. ${esc(fmtDate(m.val))}</div>` : ""}`;
+    const nome = l.d.get("nome") ? `<b class="inf-old">${esc(m.nome || "—")}</b><span class="inf-rh">RH: ${esc(l.d.get("nome").rh)}</span>` : `<b>${esc(m.nome || "—")}</b>`;
+    const cpf = INFM.temCpf ? (l.d.get("CPF") ? `<span class="inf-old">${m.cpf ? esc(rhfCpfFmt(m.cpf)) : "sem CPF"}</span> <span class="inf-rh">RH: ${esc(l.d.get("CPF").rh)}</span>` : m.cpf ? esc(rhfCpfFmt(m.cpf)) : `<span class="nao-cadastrado">sem CPF</span>`) : "";
+    return `<tr class="${l.d.size || !l.f || l.conf ? "inf-tr-a" : ""}"><td class="inf-td-nome ${l.d.get("nome") ? "inf-dif-c" : ""}">${nome}<div class="sup">${cpf}${INFM.temMatRh && (m.matRh || l.d.get("matrícula (RH)")) ? ` · RH ${l.d.get("matrícula (RH)") ? `<span class="inf-rh">${esc(l.d.get("matrícula (RH)").rh)}</span>` : esc(m.matRh)}` : ""}</div></td>
+      <td class="nw">${esc(m.mat || "—")}</td>${cel(l, "contato", tel, "nw")}${cel(l, "situação", sit)}<td class="inf-docs ${l.d.get("identidade") || l.d.get("habilitação") || l.d.get("validade CNH") ? "inf-dif-c" : ""}">${docs}</td>
+      <td>${chip(l)}</td><td class="nw act">${ed ? `<button class="btn mini" onclick="infMotForm('${esc(m._id)}')">Editar</button>${INFM.rh && !l.f && !l.conf ? ` <button class="btn mini" onclick="infMotCriarRh('${esc(m._id)}')" title="Cria o funcionário no RH (fila de aprovação) com os dados daqui">→ RH</button>` : ""}${session.n1 || permModulo("infracoes") === "proprietario" ? ` <button class="btn mini danger" onclick="infMotRemover('${esc(m._id)}')">Remover</button>` : ""}` : ""}</td></tr>`; };
+  const pendL = pend.filter(f => busca(`${f.Title} ${f.Matricula || ""}`)).map(f => { const r = infRhCampos(f); return `<tr class="inf-tr-p"><td><b>${esc(f.Title || "")}</b><div class="sup">${r.cpf ? esc(rhfCpfFmt(r.cpf)) : "sem CPF"}${f.Matricula ? " · RH " + esc(f.Matricula) : ""}</div></td><td class="nw">—</td><td class="nw">${r.contato ? esc(infFoneFmt(r.contato)) : "—"}</td><td><span class="sup">${esc(r.sit || "—")}</span></td><td class="inf-docs"><div>RG ${esc(r.rg || "—")}</div><div>CNH ${esc(r.cnh || "—")}</div></td><td><span class="inf-chip p" title="Cadastro enviado ao RH; entra no espelho depois da aprovação">⏳ Em aprovação no RH</span></td><td></td></tr>`; }).join("");
+  const faltaL = falta.filter(f => busca(`${f.Title} ${f.Matricula || ""}`)).map(f => { const r = infRhCampos(f); return `<tr class="inf-tr-a"><td><b>${esc(f.Title || "")}</b><div class="sup">${r.cpf ? esc(rhfCpfFmt(r.cpf)) : "sem CPF"}${f.Matricula ? " · RH " + esc(f.Matricula) : ""}</div></td><td class="nw">—</td><td class="nw">${r.contato ? esc(infFoneFmt(r.contato)) : "—"}</td><td><span class="sup">${esc(r.sit || "—")}</span></td><td class="inf-docs"><div>RG ${esc(r.rg || "—")}</div><div>CNH ${esc(r.cnh || "—")}</div></td><td><span class="inf-chip a" title="Aprovado no RH como motorista, ainda não está no espelho">No RH, fora do espelho</span></td><td></td></tr>`; }).join("");
+  const ordem = l => l.conf ? 0 : l.d.size ? 1 : 2;
+  const ajuste = INFM.rh ? vis.filter(l => l.conf || !l.f || l.d.size).sort((x, y) => ordem(x) - ordem(y) || String(x.m.nome).localeCompare(String(y.m.nome), "pt-BR")) : [];
+  const deAcordo = INFM.rh ? vis.filter(l => !l.conf && l.f && !l.d.size) : vis;
+  const secao = (cls, tit, sub, n, corpo) => `<tr class="inf-sec ${cls}"><th colspan="7"><b>${tit}</b> <span class="inf-cnt">${n}</span> <span class="sup">${sub}</span></th></tr>${corpo}`;
+  const nAj = ajuste.length + (faltaL ? falta.length : 0);
+  const corpo = !INFM.rh ? (vis.map(linha).join("") || `<tr><td colspan="7" class="sup">Nenhum motorista${q ? " nesta busca" : " no espelho"}.</td></tr>`)
+    : secao("aj", "Precisam de ajuste", "diferentes do RH, fora do RH ou com conflito — resolva em \"Atualizar espelho pelo RH\"", nAj, ajuste.map(linha).join("") + faltaL || `<tr><td colspan="7" class="sup">Nenhum${q ? " nesta busca" : ": o espelho está igual ao RH"}.</td></tr>`)
+      + (pendL ? secao("ap", "Em aprovação no RH", "entram no espelho depois que o RH aprovar", pend.length, pendL) : "")
+      + secao("ok", "De acordo com o RH", "", deAcordo.length, deAcordo.map(linha).join("") || `<tr><td colspan="7" class="sup">Nenhum${q ? " nesta busca" : ""}.</td></tr>`);
+  return `<div class="inf-mot">
+    <div class="cap-tools" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><input id="imQ" placeholder="Buscar nome, matrícula, CPF ou contato" value="${esc(INFM.q)}" style="flex:1;min-width:180px">${ed ? `<button class="btn primary" onclick="infMotForm(null)" title="Vai para a aprovação do RH">+ Novo motorista</button><button class="btn" onclick="infMotSync()" ${INFM.rh ? "" : "disabled"} title="Compara o espelho com RH › Funcionários e mostra o que muda">⇄ Atualizar espelho pelo RH</button>` : ""}<button class="btn ghost" onclick="infMotAbrir(true)" title="Ler de novo">↻</button></div>
+    <div class="inf-resumo"><span><b>${INFM.its.length}</b> no espelho</span>${INFM.rh ? `<span class="${nDif ? "a" : "ok"}"><b>${nDif}</b> com campo diferente do RH</span><span class="${falta.length ? "a" : ""}"><b>${falta.length}</b> no RH e fora do espelho</span><span class="${nFora ? "r" : ""}"><b>${nFora}</b> fora do RH</span><span><b>${pend.length}</b> em aprovação</span>` : `<span class="r">${esc(INFM.rhErro || "RH não lido")}</span>`}</div>
+    <p class="sup" style="margin:0 0 8px">O RH (Recursos Humanos › Funcionários) é quem manda nos dados; este cadastro é o espelho que o envio de WhatsApp usa. Em <span class="inf-old" style="padding:0 4px">amarelo</span>, o que está diferente do RH — o valor do RH aparece logo abaixo.</p>
+    <div class="table-wrap"><table class="cap-table inf-mot-t"><thead><tr><th>Motorista</th><th>Matrícula (telemetria)</th><th>Contato (WhatsApp)</th><th>Situação</th><th>Documentos</th><th>RH</th><th></th></tr></thead><tbody>
+      ${corpo}</tbody></table></div></div>`;
+}
+/* sincronização: grupos e mini-tabelas */
+window.infMotSync = () => {
+  if (!INFM.rh) return;
+  const linhas = INFM.its.map(m => ({ m, f: infRhDeM(m), conf: INFM.conflitos.get(String(m._id)) }));
+  const ligados = new Set(linhas.map(l => l.f).filter(Boolean));
+  const G = { upd: [], add: [], fora: [], conf: [] };
+  linhas.forEach(l => { if (l.conf) { G.conf.push(l); return; } if (!l.f) { G.fora.push(l); return; } const d = infDif(l.m, l.f); if (d.length) G.upd.push(Object.assign(l, { d })); });
+  INFM.rh.filter(f => !infRhPend(f) && infRhMot(f) && String(f.Situacao || "") !== "Desligado" && !ligados.has(f)).forEach(f => { const r = infRhCampos(f); const chave = INFM.temCpf ? r.cpf : String(f.Matricula || "").trim(); const usa = chave && INFM.its.find(x => infMatN(x.mat) === infMatN(chave) || (r.cpf && infDigs(x.cpf) === r.cpf));
+    G.add.push({ f, r, ok: !!(chave && r.contato && !usa), falta: [!chave ? (INFM.temCpf ? "CPF" : "matrícula") : "", !r.contato ? "celular" : ""].filter(Boolean), usa }); });
+  if (!G.upd.length && !G.add.length && !G.fora.length && !G.conf.length) { toast("O espelho já está igual ao RH."); return; }
+  const mini = rows => `<table class="inf-mini"><thead><tr><th>Campo</th><th>Hoje no espelho</th><th>No RH (fica)</th></tr></thead><tbody>${rows.map(([c, a, b]) => `<tr><td>${esc(c)}</td><td><s>${esc(a || "—")}</s></td><td><b>${esc(b || "—")}</b></td></tr>`).join("")}</tbody></table>`;
+  let i = 0; const acoes = [];
+  const sec = (tit, sub, itens, html, marcado) => itens.length ? `<section class="inf-sg"><div class="inf-sg-h"><label class="chk"><input type="checkbox" class="inf-sg-all" ${marcado ? "checked" : ""}> <b>${tit}</b> <span class="inf-cnt">${itens.length}</span></label><span class="sup">${sub}</span></div>${itens.map(html).join("")}</section>` : "";
+  const item = (txt, corpo, ok, marcado, a) => { acoes.push(a); return `<div class="inf-si"><label class="chk"><input type="checkbox" data-i="${i++}" ${ok === false ? "disabled" : marcado ? "checked" : ""}> ${txt}</label>${corpo || ""}</div>`; };
+  const html = sec("Atualizar pelo RH", "o espelho passa a ter o que está no RH", G.upd, l => item(`<b>${esc(l.m.nome)}</b> <span class="sup">${l.d.length} campo(s)</span>`, mini(l.d), true, true, { k: "cad~", m: l.m, f: l.f }), true)
+    + sec("Trazer do RH", "motoristas aprovados no RH que ainda não estão no espelho", G.add, a => item(`<b>${esc(a.f.Title)}</b> <span class="sup">${a.r.cpf ? "CPF " + esc(rhfCpfFmt(a.r.cpf)) : ""}${a.r.contato ? " · " + esc(infFoneFmt(a.r.contato)) : ""}</span>${a.falta.length ? ` <span class="inf-chip r">falta no RH: ${esc(a.falta.join(", "))}</span>` : ""}${a.usa ? ` <span class="inf-chip r">a matrícula já é de ${esc(a.usa.nome)} no espelho — resolva o conflito antes</span>` : ""}`, "", a.ok, true, { k: "cad+", f: a.f }), true)
+    + sec("Fora do RH", "estão no espelho, mas não foram achados no RH — mande para a aprovação do RH ou desative", G.fora, l => item(`<b>${esc(l.m.nome)}</b> <span class="sup">matrícula ${esc(l.m.mat || "—")}</span> <select class="inf-fora" data-j="${i}"><option value="rh">Enviar ao RH (aprovação)</option><option value="inativo">Desativar no espelho</option></select>`, "", true, false, { k: "fora", m: l.m }), false)
+    + sec("Conflitos para conferir", "a matrícula bate com outra pessoa no RH; nada é aplicado — confira no RH", G.conf, l => item(`<b>${esc(l.m.nome)}</b> × RH: <b>${esc(l.conf.f.Title)}</b> <span class="sup">(mesma ${esc(l.conf.por)})</span>`, "", false, false, { k: "conf" }), false);
+  $("modal").className = "modal wide";
+  openModal("Atualizar espelho pelo RH", `<p class="sup" style="margin:0 0 10px">O RH manda nos dados. Confira e desmarque o que não quiser aplicar.</p><div class="inf-sync">${html}</div><div class="err-msg" id="isErr" style="display:none"></div>`, async () => {
+    const sel = [...document.querySelectorAll(".inf-sync input[data-i]:checked")].map(c => Object.assign({ _sel: c }, acoes[+c.dataset.i])); if (!sel.length) return true;
+    let n = 0; const erros = [];
+    for (const a of sel) { try {
+      if (a.k === "cad~") { const r = infRhCampos(a.f); await infMotGravar(Object.assign({}, a.m, r)); n++; }
+      else if (a.k === "cad+") { const r = infRhCampos(a.f); await infMotGravar({ mat: (INFM.temCpf && r.cpf) || String(a.f.Matricula || "").trim(), nome: r.nome, contato: r.contato, sit: r.sit, rg: r.rg || "", cnh: r.cnh || "", val: r.val || "", cpf: r.cpf || "", matRh: r.matRh || "" }); n++; }
+      else if (a.k === "fora") { const op = a._sel.closest(".inf-si").querySelector(".inf-fora").value; if (op === "rh") await infRhGravar(a.m, true); else await infMotGravar(Object.assign({}, a.m, { sit: "Inativo" })); n++; }
+    } catch (e) { erros.push(`${a.m ? a.m.nome : a.f.Title}: ${e.message}`); } }
+    await infMotCarregar(true); if (window.__INF) window.__INF.atualizar();
+    if (erros.length) { const x = $("isErr"); if (x) { x.innerHTML = `${n} aplicado(s). Falhou: ${erros.map(esc).join("; ")}`; x.style.display = "block"; return false; } toast(`${n} aplicado(s). Falhou: ${erros.join("; ")}`, 9000); }
+    else toast(`${n} alteração(ões) aplicada(s) no espelho.`);
+    infMotAbrir(); return false;
+  });
+  document.querySelectorAll(".inf-sync .inf-sg").forEach(sg => { const all = sg.querySelector(".inf-sg-all"); if (all) all.addEventListener("change", () => sg.querySelectorAll("input[data-i]:not(:disabled)").forEach(c => { c.checked = all.checked; })); });
+};
+/* infração de quem está em aprovação no RH */
+{ const d0 = window.infMotDoItem; window.infMotDoItem = async i => { try { await infMotCarregar(); } catch (e) {}
+    const k = infDigs(i.matricula), p = INFM.rh && i.matricula ? INFM.rh.find(f => infRhPend(f) && (infRhCpf(f) === k || infMatN(f.Matricula) === infMatN(i.matricula))) : null;
+    if (p) { toast(`${p.Title} já foi cadastrado e está em aprovação no RH. Depois de aprovado, use "Atualizar espelho pelo RH".`, 8000); return; }
+    return d0(i); }; }
+/* editar: dados que vêm do RH ficam travados quando o motorista está ligado ao RH */
+{ const f0 = window.infMotForm; window.infMotForm = function (id) { const r = f0.apply(this, arguments);
+    try { if (!id) { const t = document.querySelector("#modal .modal-head h2"); if (t) t.textContent = "Novo motorista · vai para aprovação do RH"; const bx = $("imRhBox"); if (bx) { const lb = bx.querySelector("label.chk"); if (lb) lb.style.display = "none"; bx.insertAdjacentHTML("beforeend", `<div class="hint">O cadastro vai para RH › Funcionários (fila de aprovação, cargo Motorista) e aparece aqui como "Em aprovação". Depois de aprovado, entra no espelho pelo "Atualizar espelho pelo RH".</div>`); } return r; }
+      const m = INFM.its.find(x => String(x._id) === String(id)), f = m && infRhDeM(m); if (!f) return r;
+      ["imNome", "imTel", "imRg", "imCnh", "imVal", "imCpf", "imMatRh", "imSit"].forEach(k => { const el = $(k); if (el) { el.disabled = true; el.title = "Vem do RH: altere em Recursos Humanos › Funcionários"; } });
+      const g = document.querySelector("#modal .form-grid"); if (g) g.insertAdjacentHTML("afterbegin", `<div class="field full"><div class="import-help">Ligado ao RH: <b>${esc(f.Title)}</b>. Nome, contato, situação, documentos e CPF vêm do RH — altere em <a href="#/rh/banco-de-dados/funcs/${esc(f._id)}" onclick="closeModal()">Recursos Humanos › Funcionários</a> e depois use "Atualizar espelho pelo RH". Aqui só muda a matrícula da telemetria.</div></div>`);
+      const mt = $("imMat"); if (mt) { mt.readOnly = false; const h = mt.closest(".field").querySelector(".hint"); if (h) h.textContent = "Código que a telemetria envia (crachá). Se a telemetria enviar o CPF, pode deixar o CPF aqui."; }
+    } catch (e) {} return r; }; }
+(function () { const st = document.createElement("style"); st.id = "erp-v014117a"; st.textContent = `
+.inf-mot-t{min-width:900px}.inf-mot-t td{vertical-align:middle;padding:9px 12px}.inf-mot-t th{padding:9px 12px}
+.inf-td-nome{min-width:200px}.inf-docs{font-size:12.5px;line-height:1.35;white-space:nowrap}
+.inf-dif-c{background:#FFF7E0}.inf-old{background:#FCE7A8;border-radius:3px;padding:0 3px}.inf-rh{display:block;font-size:11px;font-weight:700;color:#8A5B00;margin-top:2px}.inf-dif-l .inf-rh{display:inline;margin:0}
+.inf-sec th{position:sticky;top:0;z-index:1;text-align:left;font-size:13px;padding:10px 12px;border-top:2px solid var(--line);text-transform:none;letter-spacing:0}.inf-sec.aj th{background:#FFF4D6;color:#6B4700}.inf-sec.ap th{background:#E8F0FB;color:#1F4E86}.inf-sec.ok th{background:#E9F5EE;color:#1E5A37}.inf-sec .sup{font-weight:400}
+.inf-mot-t thead th{position:static}
+.inf-tr-p td{background:#F4F6FA;color:#3B4656}.inf-tr-a td:first-child{box-shadow:inset 3px 0 0 #D99100}
+.inf-chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap;background:#EEF1F5;color:#3B4656}.inf-chip.ok{background:#E7F4EC;color:#21643D}.inf-chip.a{background:#FFF1C7;color:#8A5B00}.inf-chip.r{background:#FBE9E7;color:#9F1E16}.inf-chip.c{background:#FBE9E7;color:#9F1E16;white-space:normal}.inf-chip.p{background:#E8F0FB;color:#1F5FA8}
+.inf-resumo{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;margin:0 0 6px}.inf-resumo .a b{color:#9A6100}.inf-resumo .r b{color:#B3261E}.inf-resumo .ok b{color:#21643D}
+.inf-sg{border:1px solid var(--line);border-radius:8px;margin:0 0 12px;overflow:hidden}.inf-sg-h{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;padding:8px 12px;background:#F6F7F9;border-bottom:1px solid var(--line)}.inf-cnt{display:inline-block;min-width:22px;text-align:center;padding:0 6px;border-radius:999px;background:#0F1E3A;color:#fff;font-size:11px}
+.inf-si{padding:8px 12px;border-bottom:1px solid var(--line-2,#EDEFF2)}.inf-si:last-child{border-bottom:0}.inf-si .chk{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.inf-mini{margin:6px 0 2px 26px;border-collapse:collapse;font-size:12.5px;min-width:0}.inf-mini th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-2);text-align:left;padding:2px 14px 2px 0;font-weight:700}.inf-mini td{padding:2px 14px 2px 0;vertical-align:top}.inf-mini s{color:#8A9099}
+.inf-fora{font:inherit;font-size:12px;padding:2px 6px;border:1px solid var(--line);border-radius:4px}
+`; document.head.appendChild(st); })();
+
+/* =====================================================================
+   v0.14.117 (Rafael, 27/11 11:17 · item 4) · TI › Manutenção de Equipamentos › cadastro do equipamento
+   - Local: lista com os locais padrão + os já usados; digitar um novo (ex.: Sub-Agência) registra e ele passa a aparecer.
+   - Usuário: ligado a RH › Funcionários (lista para escolher; avisa se o nome não está no RH; preenche o departamento).
+   - Observações: lançamentos soltos com autor e data (JSON no mesmo campo); o administrador edita/remove todos, cada
+     usuário só os seus. Texto antigo aparece como "Texto anterior".
+   ===================================================================== */
+const TIO = { lista: [], edit: null };
+const tioEu = () => normEmail((session.me && (session.me.mail || session.me.userPrincipalName)) || "");
+const tioAdm = () => !!session.n1 || permModulo("ti_manut") === "proprietario";
+const tioPode = h => timPode() && (tioAdm() || (h && h.e && tioEu() && normEmail(h.e) === tioEu()));
+const tioFmt = d => { try { return d ? new Date(d).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : ""; } catch (e) { return ""; } };
+function tioLeitura(s) { const L = rhfObsLinhas(s); if (!L.length) return ""; return `<ul class="pb-hist">${L.slice().reverse().map(h => `<li><div class="pb-hist-top">${h.legado ? "<b>Texto anterior</b>" : `<b>${esc(h.autor || "—")}</b> · <span class="sup">${esc(tioFmt(h.data))}</span>`}${h.ed ? ` <span class="sup">· editada por ${esc(h.ed.por || "—")}</span>` : ""}</div><div class="pb-hist-txt">${esc(h.texto || "").replace(/\n/g, "<br>")}</div></li>`).join("")}</ul>`; }
+const timObsResumo = s => rhfObsResumo(s);
+function tioHtml() {
+  const L = TIO.lista;
+  return L.length ? `<ul class="pb-hist">${L.map((h, i) => ({ h, i })).reverse().map(({ h, i }) => {
+    const acoes = tioPode(h) ? `<span class="pb-hist-acoes"><button type="button" class="btn-copy" title="Editar observação" onclick="tioEditar(${i})">✎</button><button type="button" class="btn-copy" title="Remover observação" onclick="tioRemover(${i})">×</button></span>` : "";
+    const ed = h.ed ? ` <span class="sup">· editada em ${esc(tioFmt(h.ed.em))} por ${esc(h.ed.por || "—")}</span>` : "";
+    const quem = h.legado ? `<b>Texto anterior</b>` : `<b>${esc(h.autor || "—")}</b> · <span class="sup">${esc(tioFmt(h.data))}</span>`;
+    if (TIO.edit === i) return `<li><div class="pb-hist-top">${quem}</div><textarea id="tioEd" rows="2" maxlength="1500">${esc(h.texto || "")}</textarea><div style="margin-top:6px"><button type="button" class="btn sm primary" onclick="tioOk()">Ok</button> <button type="button" class="btn sm ghost" onclick="TIO.edit=null; tioPintar()">Cancelar</button></div></li>`;
+    return `<li><div class="pb-hist-top">${quem}${ed}${acoes}</div><div class="pb-hist-txt">${esc(h.texto || "").replace(/\n/g, "<br>")}</div></li>`;
+  }).join("")}</ul>` : `<div class="sup" style="padding:6px 0">Nenhuma observação ainda.</div>`;
+}
+window.tioPintar = () => { const el = $("tioBox"); if (el) el.innerHTML = tioHtml(); };
+window.tioLancar = () => { const t = $("tioNova"), v = String((t && t.value) || "").trim(); if (!v) { toast("Escreva a observação antes de lançar."); return; }
+  TIO.lista.push({ autor: (session.me && session.me.displayName) || "—", e: tioEu(), data: new Date().toISOString(), texto: v.slice(0, 1500) }); t.value = ""; tioPintar(); };
+window.tioEditar = i => { if (TIO.edit != null && $("tioEd") && !tioOk()) return; TIO.edit = i; tioPintar(); const t = $("tioEd"); if (t) t.focus(); };
+window.tioOk = () => { const i = TIO.edit; if (i == null) return true; const v = String(($("tioEd") || {}).value || "").trim(); if (!v) { toast("A observação não pode ficar vazia. Para tirar, use o ×."); return false; }
+  const h = TIO.lista[i]; if (h && tioPode(h) && h.texto !== v) TIO.lista[i] = Object.assign({}, h, { texto: v, ed: { por: (session.me && session.me.displayName) || "—", e: tioEu(), em: new Date().toISOString() } });
+  TIO.edit = null; tioPintar(); return true; };
+window.tioRemover = async i => { const h = TIO.lista[i]; if (!h || !tioPode(h)) return; if (!(await erpConfirmar({ titulo: "Remover observação", html: "Remover esta observação? Vale ao salvar o equipamento.", sim: "Remover", perigo: true, volta: true }))) return; TIO.lista.splice(i, 1); TIO.edit = null; tioPintar(); };
+const timLocais = () => { const set = new Map(); TIM_LOCAIS.filter(l => l !== "Outro").forEach(l => set.set(normName(l), l)); TIM.ativos.forEach(a => { const l = String(a.Local || "").trim(); if (l && l !== "Outro" && !set.has(normName(l))) set.set(normName(l), l); }); return [...set.values()].sort((a, b) => a.localeCompare(b, "pt-BR")); };
+{ const f0 = window.timAtivoForm; window.timAtivoForm = function (id) {
+    const r = f0.apply(this, arguments);
+    try {
+      const x = id ? timAtivo(id) : null;
+      /* Local */
+      const loc = $("taLocal"), locL = $("taLocalL");
+      if (loc && locL) { const ls = timLocais(); locL.innerHTML = ls.map(o => `<option value="${esc(o)}">`).join(""); loc.maxLength = 80; loc.placeholder = "Escolha ou digite um novo local";
+        loc.closest(".field").insertAdjacentHTML("beforeend", `<div class="hint" id="taLocalH">Digite para registrar um local novo (ex.: Sub-Agência); ele passa a aparecer na lista.</div>`);
+        const chk = () => { const v = loc.value.trim(), h = $("taLocalH"); if (!h) return; const ach = ls.find(o => normName(o) === normName(v)); if (ach && ach !== v) loc.value = ach; h.innerHTML = !v || ach ? "Digite para registrar um local novo (ex.: Sub-Agência); ele passa a aparecer na lista." : `<b>Local novo:</b> “${esc(v)}” será registrado ao salvar.`; };
+        loc.addEventListener("change", chk); loc.addEventListener("blur", chk); }
+      /* Usuário ligado ao RH */
+      const us = $("taResp");
+      if (us) { const fld = us.closest(".field"); fld.querySelector("label").textContent = "Usuário (RH › Funcionários)"; us.setAttribute("list", "taRespL"); us.autocomplete = "off"; us.placeholder = "Nome do funcionário";
+        fld.insertAdjacentHTML("beforeend", `<datalist id="taRespL"></datalist><div class="hint" id="taRespH">Carregando funcionários do RH…</div>`);
+        tercRhFuncs().then(fs => { const dl = $("taRespL"), h = $("taRespH"); if (!dl || !h) return; TIO.funcs = fs;
+          dl.innerHTML = fs.map(f => `<option value="${esc(f.Title || "")}">${esc([f.Cargo, f.Departamento || f.Setor].filter(Boolean).join(" · "))}</option>`).join("");
+          const chk = () => { const v = us.value.trim(); if (!v) { h.textContent = fs.length ? "Escolha na lista de funcionários do RH. Equipamento sem usuário fixo: deixe em branco." : "Lista do RH indisponível nesta sessão: digite o nome."; return; }
+            const f = fs.find(z => z.Title === v) || fs.find(z => normName(z.Title) === normName(v));
+            if (f) { if (f.Title !== v) us.value = f.Title; h.innerHTML = `✓ ${esc([f.Cargo, f.Departamento || f.Setor].filter(Boolean).join(" · ") || "Funcionário do RH")}`; const dep = $("taDep"); if (dep && !dep.value && (f.Departamento || f.Setor)) dep.value = f.Departamento || f.Setor; }
+            else h.innerHTML = fs.length ? `<span style="color:var(--err,#b3271e)">“${esc(v)}” não está em RH › Funcionários.</span> Confira o nome ou cadastre no RH.` : "Lista do RH indisponível nesta sessão.";
+          };
+          us.addEventListener("change", chk); us.addEventListener("blur", chk); chk();
+        }).catch(() => { const h = $("taRespH"); if (h) h.textContent = "Lista do RH indisponível nesta sessão: digite o nome."; }); }
+      /* Observações em lançamentos */
+      const ob = $("taObs");
+      if (ob) { TIO.lista = rhfObsLinhas(x && x.Observacoes).slice(); TIO.edit = null; ob.style.display = "none";
+        const fld = ob.closest(".field"); fld.insertAdjacentHTML("beforeend", `<div id="tioBox" class="rhf-obs-box"></div><div class="rhf-obs-nova" style="display:flex;gap:8px;align-items:flex-start;margin-top:6px"><textarea id="tioNova" rows="2" maxlength="1500" placeholder="Nova observação (fica com seu nome e a data)" style="flex:1"></textarea><button type="button" class="btn" onclick="tioLancar()">Lançar</button></div><div class="hint">O administrador edita e remove qualquer observação; cada usuário, só as suas. Vale ao salvar o equipamento.</div>`);
+        tioPintar();
+        const sv = $("mSave"); if (sv) sv.addEventListener("click", ev => { if (TIO.edit != null && !tioOk()) { ev.stopImmediatePropagation(); ev.preventDefault(); return; } const n = $("tioNova"); if (n && n.value.trim()) tioLancar(); const o = $("taObs"); if (o) o.value = rhfObsTexto(TIO.lista) || ""; }, true); }
+    } catch (e) { console.warn("timAtivoForm v0.14.117", e); }
+    return r; }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -58738,6 +58947,7 @@ CONFIG.version = "v0.14.113";   /* RH › Programação de Férias: cronograma n
 CONFIG.version = "v0.14.114";   /* RH › Funcionários: formulário espera os dados pessoais carregarem; remover observação volta ao formulário; duplo clique abre janela rápida com Cadastro e Perfil completo */
 CONFIG.version = "v0.14.115";   /* RH › Funcionários: editar cadastro na própria página; apelido, sexo, código de integração, RFID, carga horária, endereço, emissão/órgão da identidade, emissão/1ª habilitação da CNH, contato de emergência */
 CONFIG.version = "v0.14.116";   /* Sistema › Lixeira (administradores): cópia de toda exclusão por 30 dias, com quem/quando/de onde, restaurar e excluir de vez; Excluir na página do funcionário */
+CONFIG.version = "v0.14.117";   /* Painel de Infrações: Banco de Dados como espelho do RH (novo motorista em aprovação, tabela legível, diferenças destacadas, atualização por grupos, conflito de matrícula) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

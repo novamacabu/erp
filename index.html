@@ -58274,6 +58274,229 @@ window.rhfEditarAqui = async id => {
 .rhf-dock{padding:12px 16px 0}
 .rhf-dock-foot{position:sticky;bottom:0;background:var(--surface,#fff);border-top:1px solid var(--line);margin:12px -16px 0;padding:12px 16px;display:flex;gap:8px;justify-content:flex-end;z-index:5}
 `; document.head.appendChild(st); })();
+
+/* =====================================================================
+   v0.14.116 (Rafael, 27/11 10:52) · Sistema › Lixeira (só administradores) e Excluir na página do funcionário
+   - Toda exclusão feita pelo ERP (item de lista ou arquivo, avulsa ou em lote) passa antes por uma cópia na lista
+     "ERP — Lixeira" do mesmo site (criada pela Configuração em cada site): o que era, de que lista, quem excluiu, quando,
+     de que módulo e página. A cópia fica no mesmo site para respeitar quem tem acesso aos dados.
+   - Se a cópia não puder ser gravada (sem acesso), a exclusão é cancelada. Se o site ainda não tem a lista (antes do
+     Executar tudo), a exclusão segue e o ERP avisa.
+   - A página Sistema › Lixeira junta as lixeiras de todos os sites: ver os dados, restaurar (cria de novo na lista de
+     origem; o item ganha um novo número) e excluir definitivamente. Itens com mais de 30 dias saem sozinhos.
+     Funcionário restaurado traz junto os registros ligados (dados pessoais etc.) excluídos com ele, já apontando para
+     o novo número. Arquivos não voltam pelo ERP: ficam na lixeira do SharePoint do site (link na tela).
+   ===================================================================== */
+const LIX_NOME = "ERP — Lixeira", LIX_DIAS = 30;
+Object.keys(CONFIG.sites).forEach(k => {
+  LISTS["lix_" + k] = { key: "lix_" + k, displayName: LIX_NOME, siteKey: k, titleAs: "Item",
+    description: "ERP NMB · cópia do que foi excluído pelo ERP neste site (quem, quando, de onde e os dados), por 30 dias. Restauração em Sistema › Lixeira.",
+    columns: [
+      { name: "Tipo", displayName: "Tipo", choice: choice(["Item", "Arquivo", "Lote"]) },
+      { name: "ListaNome", displayName: "Lista de origem", text: { allowMultipleLines: false, maxLength: 255 } },
+      { name: "ListaId", displayName: "Id da lista", text: { allowMultipleLines: false, maxLength: 255 } },
+      { name: "ItemId", displayName: "Id do item", text: { allowMultipleLines: false, maxLength: 255 } },
+      { name: "Dados", displayName: "Dados excluídos (JSON)", text: { allowMultipleLines: true, textType: "plain" } },
+      { name: "ExcluidoPor", displayName: "Excluído por", text: { allowMultipleLines: false, maxLength: 120 } },
+      { name: "ExcluidoPorEmail", displayName: "E-mail de quem excluiu", text: { allowMultipleLines: false, maxLength: 160 } },
+      { name: "ExcluidoEm", displayName: "Excluído em", dateTime: { displayAs: "standard", format: "dateTime" } },
+      { name: "Modulo", displayName: "Módulo", text: { allowMultipleLines: false, maxLength: 120 } },
+      { name: "Pagina", displayName: "Página", text: { allowMultipleLines: false, maxLength: 255 } },
+      { name: "Situacao", displayName: "Situação", choice: choice(["Na lixeira", "Restaurado", "Excluído definitivamente"]) },
+      { name: "RestauradoPor", displayName: "Restaurado por", text: { allowMultipleLines: false, maxLength: 120 } },
+      { name: "RestauradoEm", displayName: "Restaurado em", dateTime: { displayAs: "standard", format: "dateTime" } },
+      { name: "NovoId", displayName: "Novo id", text: { allowMultipleLines: false, maxLength: 255 } }
+    ] };
+  SETUP_ORDER.push("lix_" + k);
+  SETUP_TEXT["lix_" + k] = `Cria no site "${k}" a lista "${LIX_NOME}": cópia por 30 dias de tudo que o ERP excluir neste site (Sistema › Lixeira).`;
+});
+{ const i = MODULES.findIndex(m => m.id === "perm");
+  MODULES.splice(i < 0 ? MODULES.length : i + 1, 0, { id: "lixeira", path: "#/sistema/lixeira", icon: "trash", name: "Lixeira", area: "Sistema", groups: [], wide: true }); }
+{ const pa0 = permAreas; permAreas = function () { return pa0.apply(this, arguments).map(a => Object.assign({}, a, { mods: a.mods.filter(m => m[0] !== "lixeira") })).filter(a => a.mods.length); }; }   /* só administradores: fora da matriz */
+if (typeof ICONS === "object" && !ICONS.trash) ICONS.trash = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>`;
+
+const LIX = { sites: null, lix: new Map(), ids: new Set(), listas: new Map(), avisou: new Set(), recentes: new Map(), itens: [], erro: "", q: "", site: "", sit: "Na lixeira", carregado: false };
+const LIX_RESTRITAS = /dívidas|dividas|links seguros|senha/i;   /* listas de acesso restrito: só o registro de quem/quando, sem copiar os dados (a lixeira herda o acesso do site) */
+const lixGuid = id => String(id || "").toLowerCase().split(",").find(x => /^[0-9a-f-]{36}$/.test(x)) || String(id || "").toLowerCase();
+async function lixSites() {   /* chave do CONFIG.sites → site (id, webUrl), resolvido uma vez */
+  if (LIX.sites) return LIX.sites;
+  const out = {}; await Promise.all(Object.entries(CONFIG.sites).map(async ([k, p]) => { try { out[k] = await SP.site(p); } catch (e) {} }));
+  LIX.sites = out; return out;
+}
+async function lixListaDoSite(siteId) {   /* "ERP — Lixeira" do site: null só quando a lista não existe (não guarda o "não existe": a Configuração pode criá-la a qualquer momento) */
+  const g = lixGuid(siteId); if (LIX.lix.get(g)) return LIX.lix.get(g);
+  const ls = await SP.lists(siteId); const l = ls.find(x => x.displayName === LIX_NOME) || null; if (l) { LIX.lix.set(g, l); LIX.ids.add(l.id); } return l;
+}
+async function lixInfoLista(siteId, listId) { const k = siteId + "|" + listId; if (LIX.listas.has(k)) return LIX.listas.get(k); const l = await graph(`/sites/${siteId}/lists/${listId}?$select=id,displayName,webUrl`); LIX.listas.set(k, l); if (l.displayName === LIX_NOME) LIX.ids.add(l.id); return l; }
+const lixQuem = () => ({ nome: (session.me && session.me.displayName) || "—", email: (session.me && (session.me.mail || session.me.userPrincipalName)) || "" });
+const lixModulo = () => { const m = MODULES.find(x => x.id === session.modAtual); return m ? m.name : (session.modAtual || ""); };
+const lixDescr = f => { f = f || {}; for (const k of ["Title", "Nome", "Descricao", "Funcionario", "Fornecedor", "Placa", "Numero"]) if (f[k] && typeof f[k] !== "object") return String(f[k]); const s = Object.entries(f).find(([k, v]) => typeof v === "string" && v && !k.startsWith("@") && !/^(id|ContentType|_)/.test(k)); return s ? String(s[1]) : ""; };
+function lixAlvo(path) {
+  const p = String(path || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").split("?")[0];
+  if (/\.erp-probe-/.test(p)) return null;   /* teste de escrita da Configuração */
+  let m = p.match(/^\/?sites\/([^/:]+)\/lists\/([^/]+)\/items\/([^/]+)\/?$/); if (m) return { tipo: "Item", siteId: decodeURIComponent(m[1]), listId: decodeURIComponent(m[2]), itemId: decodeURIComponent(m[3]) };
+  m = p.match(/^\/?sites\/([^/:]+)\/drive\/items\/([^/]+)\/?$/); if (m) return { tipo: "Arquivo", url: `/sites/${m[1]}/drive/items/${m[2]}`, siteId: decodeURIComponent(m[1]) };
+  m = p.match(/^\/?drives\/([^/]+)\/items\/([^/]+)\/?$/); if (m) return { tipo: "Arquivo", url: `/drives/${m[1]}/items/${m[2]}` };
+  m = p.match(/^\/?drives\/([^/]+)\/root:(.+?):?\/?$/); if (m && !/:\//.test(m[2])) return { tipo: "Arquivo", url: `/drives/${m[1]}/root:${m[2]}` };
+  return null;
+}
+/* lê o que vai ser excluído (um $batch de leituras) e grava as cópias (um $batch de gravações); devolve as entradas criadas */
+async function lixGuardar(g0, alvos) {
+  const agora = Date.now(); for (const [k, t] of LIX.recentes) if (agora - t > 60000) LIX.recentes.delete(k);
+  alvos = alvos.filter(a => a && !LIX.recentes.has(a.url || `${a.siteId}|${a.listId}|${a.itemId}`)); if (!alvos.length) return [];
+  for (const a of alvos) if (a.tipo === "Item") { const L = await lixInfoLista(a.siteId, a.listId); a.listaNome = L.displayName; a.restrita = LIX_RESTRITAS.test(L.displayName || ""); }
+  alvos = alvos.filter(a => a.tipo !== "Item" || a.listaNome !== LIX_NOME); if (!alvos.length) return [];   /* limpeza da própria lixeira */
+  const leit = alvos.map((a, i) => ({ id: String(i + 1), method: "GET", url: a.tipo === "Item" ? `/sites/${a.siteId}/lists/${a.listId}/items/${a.itemId}?$expand=fields` : `${a.url}?$select=id,name,size,webUrl,parentReference,file,folder,lastModifiedBy,lastModifiedDateTime` }));
+  const lidas = [];
+  for (let i = 0; i < leit.length; i += 20) { const r = await g0("/$batch", { method: "POST", body: { requests: leit.slice(i, i + 20).map((q, k) => Object.assign({}, q, { id: String(k + 1) })) } }); const por = new Map((r.responses || []).map(x => [x.id, x])); leit.slice(i, i + 20).forEach((q, k) => lidas.push(por.get(String(k + 1)) || { status: 0 })); }
+  const prontos = [];
+  alvos.forEach((a, i) => { const x = lidas[i];
+    if (x.status === 404) return;   /* já não existe: nada a guardar */
+    if (!(x.status >= 200 && x.status < 300)) throw new Error(`Não foi possível ler o item para a Lixeira (erro ${x.status}). A exclusão foi cancelada.`);
+    const it = x.body || {};
+    if (a.tipo === "Item") a.dados = a.restrita ? { id: String(it.id), restrita: true } : { id: String(it.id), fields: it.fields || {}, criado: it.createdDateTime, criadoPor: it.createdBy && it.createdBy.user && it.createdBy.user.displayName, alterado: it.lastModifiedDateTime, alteradoPor: it.lastModifiedBy && it.lastModifiedBy.user && it.lastModifiedBy.user.displayName };
+    else { a.siteId = a.siteId || (it.parentReference && it.parentReference.siteId); a.itemId = it.id; a.dados = { id: it.id, name: it.name, size: it.size, webUrl: it.webUrl, pasta: it.parentReference && it.parentReference.path, driveId: it.parentReference && it.parentReference.driveId, pastaOuArquivo: it.folder ? "pasta" : "arquivo", alteradoPor: it.lastModifiedBy && it.lastModifiedBy.user && it.lastModifiedBy.user.displayName, alterado: it.lastModifiedDateTime }; a.listaNome = "Arquivos (" + ((it.parentReference && it.parentReference.path || "").replace(/^\/drives\/[^/]+\/root:?/, "") || "/") + ")"; a.titulo = it.name; }
+    if (a.siteId) prontos.push(a); });
+  if (!prontos.length) return [];
+  const quem = lixQuem(), quando = new Date().toISOString(), porSite = new Map();
+  prontos.forEach(a => { const g = lixGuid(a.siteId); if (!porSite.has(g)) porSite.set(g, { siteId: a.siteId, itens: [] }); porSite.get(g).itens.push(a); });
+  const criadas = [];
+  for (const { siteId, itens } of porSite.values()) {
+    let lix; try { lix = await lixListaDoSite(siteId); } catch (e) { throw new Error(`Não foi possível acessar a Lixeira (${e.message}). A exclusão foi cancelada.`); }
+    if (!lix) { if (!LIX.avisou.has(lixGuid(siteId))) { LIX.avisou.add(lixGuid(siteId)); setTimeout(() => toast(`Este site ainda não tem a "${LIX_NOME}": a exclusão foi feita sem cópia. ${session.n1 ? "Rode Sistema › Configuração › Executar tudo." : "Avise um administrador."}`, 9000), 600); } continue; }
+    const reqs = itens.map((a, k) => { let dados = JSON.stringify(a.dados); if (dados.length > 60000) dados = JSON.stringify({ id: a.dados.id, cortado: true, fields: Object.fromEntries(Object.entries(a.dados.fields || {}).map(([c, v]) => [c, typeof v === "string" && v.length > 1500 ? v.slice(0, 1500) : v])) }); if (dados.length > 60000) dados = JSON.stringify({ id: a.dados.id, cortado: true, fields: { Title: lixDescr(a.dados.fields) } });
+      return { id: String(k + 1), method: "POST", url: `/sites/${siteId}/lists/${lix.id}/items`, headers: { "Content-Type": "application/json" }, body: { fields: { Title: `${a.listaNome} · ${a.titulo || lixDescr(a.dados.fields) || "#" + a.itemId}`.slice(0, 255), Tipo: a.tipo, ListaNome: String(a.listaNome || "").slice(0, 255), ListaId: String(a.listId || a.dados.driveId || "").slice(0, 255), ItemId: String(a.itemId || "").slice(0, 255), Dados: dados, ExcluidoPor: quem.nome, ExcluidoPorEmail: quem.email, ExcluidoEm: quando, Modulo: lixModulo(), Pagina: (location.hash || "").slice(0, 255), Situacao: "Na lixeira" } } }; });
+    for (let i = 0; i < reqs.length; i += 20) {
+      const fatia = reqs.slice(i, i + 20).map((q, k) => Object.assign({}, q, { id: String(k + 1) }));
+      let r; try { r = await g0("/$batch", { method: "POST", body: { requests: fatia } }); } catch (e) { throw new Error(`Não foi possível guardar a cópia na Lixeira (${e.message}). A exclusão foi cancelada.`); }
+      const por = new Map((r.responses || []).map(x => [x.id, x]));
+      for (let k = 0; k < fatia.length; k++) { const x = por.get(String(k + 1)) || { status: 0 }, a = itens[i + k];
+        if (!(x.status >= 200 && x.status < 300)) { await lixDesfazer(g0, criadas); throw new Error(`Não foi possível guardar a cópia na Lixeira (erro ${x.status}${x.body && x.body.error ? ": " + x.body.error.message : ""}). A exclusão foi cancelada.`); }
+        criadas.push({ siteId, lix: lix.id, id: String(x.body && x.body.id), alvo: a }); LIX.recentes.set(a.url || `${a.siteId}|${a.listId}|${a.itemId}`, Date.now()); }
+    }
+  }
+  return criadas;
+}
+async function lixDesfazer(g0, criadas) {   /* a exclusão não aconteceu: tira as cópias */
+  if (!criadas.length) return;
+  const reqs = criadas.map((c, k) => ({ id: String(k + 1), method: "DELETE", url: `/sites/${c.siteId}/lists/${c.lix}/items/${c.id}` }));
+  for (let i = 0; i < reqs.length; i += 20) { try { await g0("/$batch", { method: "POST", body: { requests: reqs.slice(i, i + 20).map((q, k) => Object.assign({}, q, { id: String(k + 1) })) } }); } catch (e) {} }
+  criadas.forEach(c => LIX.recentes.delete(c.alvo.url || `${c.alvo.siteId}|${c.alvo.listId}|${c.alvo.itemId}`));
+}
+/* a guarda de escrita do ERP não barra a gravação na própria Lixeira (o direito de excluir já foi conferido na exclusão) */
+{ const ge0 = guardaEscrita; guardaEscrita = function (method, path, body) { const p = String(path || ""); if (LIX.ids.size && [...LIX.ids].some(id => p.includes("/lists/" + id + "/"))) return; return ge0.apply(this, arguments); }; }
+{ const g0 = graph; graph = async function (path, opts, attempt) {
+    const o = opts || {}, met = String(o.method || "GET").toUpperCase();
+    if (attempt || o.semLixeira) return g0.apply(this, arguments);
+    if (met === "DELETE") { const a = lixAlvo(path); if (!a) return g0.apply(this, arguments);
+      const cs = await lixGuardar(g0, [a]);
+      try { return await g0.apply(this, arguments); } catch (e) { if (e && e.status !== 404) await lixDesfazer(g0, cs); throw e; } }
+    if (met === "POST" && /\/\$batch$/.test(String(path).split("?")[0]) && o.body && Array.isArray(o.body.requests)) {
+      const rs = o.body.requests, idx = [], alvos = [];
+      rs.forEach((r, i) => { if (String(r.method || "").toUpperCase() !== "DELETE") return; const a = lixAlvo("/" + String(r.url || "").replace(/^https?:\/\/graph\.microsoft\.com\/v1\.0/, "").replace(/^\/+/, "")); if (a) { idx.push(r.id); alvos.push(a); } });
+      if (!alvos.length) return g0.apply(this, arguments);
+      const cs = await lixGuardar(g0, alvos);
+      let res; try { res = await g0.apply(this, arguments); } catch (e) { await lixDesfazer(g0, cs); throw e; }
+      try { const st = new Map((res.responses || []).map(x => [String(x.id), x.status])); const falhou = cs.filter(c => { const i = alvos.indexOf(c.alvo), s = st.get(String(idx[i])); return !(s >= 200 && s < 300) && s !== 404; }); if (falhou.length) await lixDesfazer(g0, falhou); } catch (e) {}
+      return res;
+    }
+    return g0.apply(this, arguments);
+  }; }
+
+/* ---------- página Sistema › Lixeira ---------- */
+async function lixCarregar() {
+  LIX.erro = ""; const S = await lixSites(), out = [], semLista = [];
+  await Promise.all(Object.entries(S).map(async ([k, s]) => { try { LIX.lix.delete(lixGuid(s.id)); const l = await lixListaDoSite(s.id); if (!l) { semLista.push(k); return; }
+    LIX.ids.add(l.id); const its = await SP.items(s.id, l.id); its.forEach(it => out.push(Object.assign({ _id: String(it.id), _site: k, _siteId: s.id, _siteWeb: s.webUrl, _lix: l.id }, it.fields || {}))); } catch (e) { semLista.push(k + " (" + e.message + ")"); } }));
+  /* expirados: mais de 30 dias → saem de vez */
+  const lim = Date.now() - LIX_DIAS * 864e5, velhos = out.filter(x => x.ExcluidoEm && new Date(x.ExcluidoEm).getTime() < lim);
+  let ok = new Set(); if (velhos.length) { try { const r = await graphBatch(velhos.map(x => ({ method: "DELETE", url: `/sites/${x._siteId}/lists/${x._lix}/items/${x._id}` }))); velhos.forEach((x, k) => { if (r[k] && (r[k].ok || r[k].status === 404)) ok.add(x); }); } catch (e) {} }
+  const vs = ok; velhos.length = 0; velhos.push(...ok);
+  LIX.itens = out.filter(x => !vs.has(x)).sort((a, b) => String(b.ExcluidoEm || "").localeCompare(String(a.ExcluidoEm || ""))); LIX.semLista = semLista; LIX.removidos = velhos.length; LIX.carregado = true;
+}
+function pageLixeira() {
+  return `<div class="page"><nav class="crumbs"><a href="#/inicio">Início</a><span>›</span><span>Sistema</span><span>›</span><b>Lixeira</b></nav>
+    <div class="page-head"><div><h1>Lixeira</h1><p class="lead">Tudo o que foi excluído pelo ERP nos últimos ${LIX_DIAS} dias: quem excluiu, quando, de onde e os dados. Restaure ou exclua de vez. Só administradores veem esta página.</p></div>
+    <div class="page-actions"><button class="btn ghost" onclick="lixAbrir()">↻ Atualizar</button></div></div><div id="lixBody"><div class="cap-empty"><h3>Carregando…</h3></div></div></div>`;
+}
+window.lixAbrir = async () => { const b = $("lixBody"); if (!b) return; b.innerHTML = `<div class="cap-empty"><h3>Carregando…</h3></div>`; try { await lixCarregar(); } catch (e) { LIX.erro = e.message; } lixPintar(); };
+const lixFmt = iso => { try { return iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—"; } catch (e) { return "—"; } };
+const lixDias = x => x.ExcluidoEm ? Math.max(0, Math.ceil((new Date(x.ExcluidoEm).getTime() + LIX_DIAS * 864e5 - Date.now()) / 864e5)) : LIX_DIAS;
+function lixPintar() {
+  const b = $("lixBody"); if (!b) return;
+  if (LIX.erro) { b.innerHTML = `<div class="cap-empty"><h3>Não foi possível ler a Lixeira</h3><p>${esc(LIX.erro)}</p></div>`; return; }
+  const q = normName(LIX.q), T = LIX.itens, na = T.filter(x => (x.Situacao || "Na lixeira") === "Na lixeira");
+  const L = T.filter(x => (!LIX.sit || (x.Situacao || "Na lixeira") === LIX.sit) && (!LIX.site || x._site === LIX.site) && (!q || normName(`${x.Title} ${x.ListaNome} ${x.ExcluidoPor} ${x.Modulo}`).includes(q)));
+  const sites = [...new Set(T.map(x => x._site))].sort();
+  b.innerHTML = `${LIX.semLista && LIX.semLista.length ? `<div class="import-help" style="margin-bottom:12px"><b>Sites sem "${LIX_NOME}":</b> ${esc(LIX.semLista.join(", "))}. Exclusões nesses sites não estão indo para a Lixeira — rode <a href="#/configuracao">Sistema › Configuração › Executar tudo</a>.</div>` : ""}${LIX.removidos ? `<div class="sup" style="margin:-4px 0 10px">${LIX.removidos} item(ns) com mais de ${LIX_DIAS} dias saíram da Lixeira agora.</div>` : ""}
+    <div class="cap-kpis"><div class="kpi"><div class="lbl">Na lixeira</div><div class="val">${na.length}</div><div class="sub">restauráveis</div></div><div class="kpi venc"><div class="lbl">Saem em 7 dias</div><div class="val">${na.filter(x => lixDias(x) <= 7).length}</div><div class="sub">depois disso, só pela lixeira do SharePoint</div></div><div class="kpi pago"><div class="lbl">Restaurados</div><div class="val">${T.filter(x => x.Situacao === "Restaurado").length}</div><div class="sub">últimos ${LIX_DIAS} dias</div></div><div class="kpi"><div class="lbl">Quem mais excluiu</div><div class="val" style="font-size:16px">${(() => { const c = {}; na.forEach(x => { c[x.ExcluidoPor || "—"] = (c[x.ExcluidoPor || "—"] || 0) + 1; }); const t = Object.entries(c).sort((a, b) => b[1] - a[1])[0]; return t ? esc(t[0]) + ` <span class="sup">(${t[1]})</span>` : "—"; })()}</div><div class="sub">itens na lixeira</div></div></div>
+    <div class="cap-filtros"><input class="busca" id="lixQ" placeholder="Buscar item, lista, pessoa ou módulo…" value="${esc(LIX.q)}"><select id="lixSite"><option value="">Todos os sites</option>${sites.map(s => `<option ${LIX.site === s ? "selected" : ""}>${esc(s)}</option>`).join("")}</select><select id="lixSit">${["Na lixeira", "Restaurado", ""].map(s => `<option value="${s}" ${LIX.sit === s ? "selected" : ""}>${s || "Todos"}</option>`).join("")}</select></div>
+    ${L.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Excluído em</th><th>O quê</th><th>Lista / site</th><th>Por</th><th>Módulo</th><th>Situação</th><th></th></tr></thead><tbody>${L.map(x => `<tr onclick="lixVer('${esc(x._site)}','${esc(x._id)}')" style="cursor:pointer"><td class="nw">${esc(lixFmt(x.ExcluidoEm))}</td><td><b>${esc(x.Title || "")}</b>${x.Tipo === "Lote" ? ` <span class="sup">(lote)</span>` : x.Tipo === "Arquivo" ? ` <span class="sup">(arquivo)</span>` : ""}</td><td>${esc(x.ListaNome || "")}<div class="sup">${esc(x._site)}</div></td><td>${esc(x.ExcluidoPor || "—")}<div class="sup">${esc(x.ExcluidoPorEmail || "")}</div></td><td>${esc(x.Modulo || "—")}</td><td>${(x.Situacao || "Na lixeira") === "Na lixeira" ? `<span class="pill st-pend">sai em ${lixDias(x)} dia(s)</span>` : `<span class="pill st-cinza">${esc(x.Situacao)}</span>${x.RestauradoPor ? `<div class="sup">${esc(x.RestauradoPor)} · ${esc(lixFmt(x.RestauradoEm))}</div>` : ""}`}</td><td class="act nw">${(x.Situacao || "Na lixeira") === "Na lixeira" && x.Tipo !== "Arquivo" ? `<button class="btn mini" onclick="event.stopPropagation(); lixRestaurar('${esc(x._site)}','${esc(x._id)}')">Restaurar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<div class="cap-empty"><h3>Nada aqui</h3><p>${T.length ? "Nenhum item com esse filtro." : "Nenhuma exclusão nos últimos " + LIX_DIAS + " dias."}</p></div>`}`;
+  const qi = $("lixQ"); if (qi) qi.addEventListener("input", ev => { LIX.q = ev.target.value; erpDeb("lixQ", () => keepFocus(lixPintar)); });
+  const si = $("lixSite"); if (si) si.onchange = ev => { LIX.site = ev.target.value; lixPintar(); };
+  const st = $("lixSit"); if (st) st.onchange = ev => { LIX.sit = ev.target.value; lixPintar(); };
+}
+const lixAcha = (site, id) => LIX.itens.find(x => x._site === site && x._id === String(id));
+const lixDadosDe = x => { try { return JSON.parse(x.Dados || "null"); } catch (e) { return null; } };
+const LIX_OCULTOS = /^(@odata|_|ContentType$|Edit$|LinkTitle|ItemChildCount|FolderChildCount|AppAuthor|AppEditor|AuthorLookupId|EditorLookupId|Attachments$|DocIcon$|ComplianceAssetId$)/;
+window.lixVer = (site, id) => {
+  const x = lixAcha(site, id); if (!x) return; const D = lixDadosDe(x), lista = Array.isArray(D) ? D : D && D.itens ? D.itens : [D].filter(Boolean);
+  const tab = d => d && d.fields ? `<table class="cap-table lix-kv"><tbody>${Object.entries(d.fields).filter(([k]) => !LIX_OCULTOS.test(k)).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(typeof v === "object" ? JSON.stringify(v) : String(v))}</td></tr>`).join("")}</tbody></table>${d.criado ? `<div class="sup" style="margin:4px 0 10px">Criado em ${esc(lixFmt(d.criado))}${d.criadoPor ? " por " + esc(d.criadoPor) : ""}${d.alterado ? ` · última alteração ${esc(lixFmt(d.alterado))}${d.alteradoPor ? " por " + esc(d.alteradoPor) : ""}` : ""}</div>` : ""}`
+    : d ? `<table class="cap-table lix-kv"><tbody>${[["Arquivo", d.name], ["Tamanho", d.size != null ? Math.round(d.size / 1024) + " KB" : ""], ["Pasta", d.pasta], ["Última alteração", (d.alteradoPor || "") + " · " + lixFmt(d.alterado)]].map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v || "—")}</td></tr>`).join("")}</tbody></table>` : "";
+  const na = (x.Situacao || "Na lixeira") === "Na lixeira";
+  $("modal").className = "modal wide";
+  openModal(x.Title || "Item excluído", `<div class="lix-meta"><div><span>Excluído por</span><b>${esc(x.ExcluidoPor || "—")}</b><small>${esc(x.ExcluidoPorEmail || "")}</small></div><div><span>Quando</span><b>${esc(lixFmt(x.ExcluidoEm))}</b><small>${na ? `sai da Lixeira em ${lixDias(x)} dia(s)` : esc(x.Situacao || "")}</small></div><div><span>De onde</span><b>${esc(x.Modulo || "—")}</b><small>${esc(x.Pagina || "")}</small></div><div><span>Lista</span><b>${esc(x.ListaNome || "—")}</b><small>site ${esc(x._site)} · item ${esc(x.ItemId || "")}</small></div></div>
+    ${x.Situacao === "Restaurado" ? `<div class="import-help">Restaurado por <b>${esc(x.RestauradoPor || "")}</b> em ${esc(lixFmt(x.RestauradoEm))} — novo número ${esc(x.NovoId || "")}.</div>` : ""}
+    ${x.Tipo === "Arquivo" ? `<div class="import-help">Arquivos voltam pela lixeira do SharePoint do site (até 93 dias): <a href="${esc((x._siteWeb || "") + "/_layouts/15/RecycleBin.aspx")}" target="_blank" rel="noopener">abrir a lixeira do site ${esc(x._site)}</a>.</div>` : ""}
+    ${lista.some(d => d && d.restrita) ? `<div class="import-help">Lista de acesso restrito: por segurança, a Lixeira do ERP guarda só quem excluiu e quando. Os dados voltam pela <a href="${esc((x._siteWeb || "") + "/_layouts/15/RecycleBin.aspx")}" target="_blank" rel="noopener">lixeira do SharePoint do site</a> (até 93 dias).</div>` : ""}
+    <h4 style="margin:12px 0 6px">Dados no momento da exclusão${lista.length > 1 ? ` (${lista.length} itens)` : ""}</h4>${lista.map(tab).join("<hr style='border:0;border-top:1px solid var(--line);margin:10px 0'>") || `<p class="sup">Sem dados.</p>`}
+    <div style="display:flex;gap:8px;margin-top:14px">${na && x.Tipo !== "Arquivo" ? `<button class="btn primary" onclick="lixRestaurar('${esc(site)}','${esc(String(id))}')">Restaurar</button>` : ""}${na ? `<button class="btn" style="color:var(--err)" onclick="lixApagar('${esc(site)}','${esc(String(id))}')">Excluir definitivamente</button>` : ""}</div>`, async () => true);
+  const s = $("mSave"); if (s) { s.textContent = "Fechar"; const c = s.previousElementSibling; if (c && c.tagName === "BUTTON") c.style.display = "none"; }
+};
+async function lixCamposGravaveis(siteId, listId) { const cs = await graphAll(`/sites/${siteId}/lists/${listId}/columns?$select=name,readOnly,hidden`); return new Set(cs.filter(c => !c.readOnly).map(c => c.name)); }
+function lixLimpar(fields, ok) { const out = {}; Object.entries(fields || {}).forEach(([k, v]) => { if (LIX_OCULTOS.test(k) || ["id", "Created", "Modified", "Author", "Editor"].includes(k)) return; const base = k.endsWith("LookupId") ? k.slice(0, -8) : k; if (!ok.has(base) && !ok.has(k)) return; out[k] = v; if (Array.isArray(v)) out[k + "@odata.type"] = k.endsWith("LookupId") ? "Collection(Edm.Int32)" : "Collection(Edm.String)"; }); return out; }
+window.lixRestaurar = async (site, id) => {
+  const x = lixAcha(site, id); if (!x) return; const D = lixDadosDe(x); const itens = Array.isArray(D) ? D : D && D.itens ? D.itens : [D].filter(Boolean);
+  if (itens.some(i => i && i.restrita)) { toast("Lista de acesso restrito: os dados não foram copiados para a Lixeira do ERP. Restaure pela lixeira do SharePoint do site (até 93 dias).", 9000); return; }
+  if (!itens.length || !x.ListaId) { toast("Este item não tem dados para restaurar.", 6000); return; }
+  if (D && D.cortado && !(await erpConfirmar({ titulo: "Dados incompletos", html: "Este item era grande demais e alguns textos longos não foram guardados. Restaurar mesmo assim?", sim: "Restaurar" }))) return;
+  const ehFunc = x.ListaNome === LISTS.rh_func.displayName;
+  const ligados = ehFunc ? LIX.itens.filter(y => y !== x && (y.Situacao || "Na lixeira") === "Na lixeira" && y.Tipo !== "Arquivo" && Math.abs(new Date(y.ExcluidoEm) - new Date(x.ExcluidoEm)) < 15 * 60e3 && (() => { const d = lixDadosDe(y), ys = Array.isArray(d) ? d : [d].filter(Boolean); return ys.some(z => z && z.fields && itens.some(i => String(z.fields.FuncId) === String(i.id))); })()) : [];
+  if (!(await erpConfirmar({ titulo: "Restaurar", html: `Criar de novo ${itens.length > 1 ? `os <b>${itens.length}</b> itens` : "o item"} em <b>${esc(x.ListaNome || "")}</b> (site ${esc(site)})? ${itens.length > 1 ? "Eles ganham" : "Ele ganha"} um número novo.${ligados.length ? `<br><br>Também serão restaurados <b>${ligados.length}</b> registro(s) ligado(s) excluídos junto (${esc(ligados.map(y => y.ListaNome).join(", "))}), já apontando para o novo número.` : ""}${ehFunc ? "<br><br>Registros que <b>não</b> foram excluídos com ele (avaliações, férias, fotos, consumíveis) continuam com o número antigo e precisam ser religados à mão." : ""}`, sim: "Restaurar" }))) return;
+  const quem = lixQuem(); const mapa = new Map();
+  const restaurar = async (y, its, troca) => { const ok = await lixCamposGravaveis(y._siteId, y.ListaId); const novos = [];
+    for (const i of its) { const f = lixLimpar(i.fields, ok); if (troca && f.FuncId && troca.has(String(f.FuncId))) f.FuncId = troca.get(String(f.FuncId)); const r = await SP.create(y._siteId, y.ListaId, f); novos.push(String(r.id)); mapa.set(String(i.id), String(r.id)); await graph(`/sites/${y._siteId}/lists/${y._lix}/items/${y._id}/fields`, { method: "PATCH", body: { NovoId: novos.join(",").slice(0, 255) } }).catch(() => {}); }
+    await graph(`/sites/${y._siteId}/lists/${y._lix}/items/${y._id}/fields`, { method: "PATCH", body: { Situacao: "Restaurado", RestauradoPor: quem.nome, RestauradoEm: new Date().toISOString(), NovoId: novos.join(",").slice(0, 255) } }); return novos; };
+  try { const n = await restaurar(x, itens);
+    for (const y of ligados) { const d = lixDadosDe(y); await restaurar(y, Array.isArray(d) ? d : [d], mapa); }
+    toast(`Restaurado: novo número ${n.join(", ")}.${ligados.length ? ` ${ligados.length} registro(s) ligado(s) também.` : ""}`, 7000); closeModal(); await lixAbrir();
+  } catch (e) { toast("Não foi possível restaurar: " + e.message, 9000); }
+};
+window.lixApagar = async (site, id) => { const x = lixAcha(site, id); if (!x) return;
+  if (!(await erpConfirmar({ titulo: "Excluir definitivamente", html: `Tirar <b>${esc(x.Title || "")}</b> da Lixeira do ERP? Depois disso não dá para restaurar por aqui.`, sim: "Excluir definitivamente", perigo: true }))) return;
+  try { await graph(`/sites/${x._siteId}/lists/${x._lix}/items/${x._id}`, { method: "DELETE", semLixeira: true }); toast("Excluído definitivamente."); await lixAbrir(); } catch (e) { toast("Não foi possível: " + e.message, 7000); } };
+{ const r0 = window.route; window.route = function () {
+    const hash = (location.hash || "#/inicio").split("?")[0];
+    if (hash === "#/sistema/lixeira") { if (!session.n1) { location.hash = "#/inicio"; return; } session.modAtual = "lixeira"; session.pagAtual = ""; document.body.classList.add("wide"); document.body.classList.remove("nav-open"); $("main").innerHTML = pageLixeira(); navAtivo("lixeira"); window.scrollTo(0, 0); lixAbrir(); return; }
+    return r0.apply(this, arguments);
+  }; }
+
+/* ---------- Excluir na página do funcionário ---------- */
+window.rhfExcluirAqui = async id => {
+  const f = (RHDB_STATE.itens || []).find(x => String(x._id) === String(id)); if (!f) return;
+  if (!(await erpConfirmar({ titulo: "Excluir funcionário", html: `Excluir o cadastro de <b>${esc(f.Title || "")}</b>? ${session.n1 ? "Ele vai para a Lixeira (Sistema › Lixeira) e pode ser restaurado por 30 dias." : "Ele vai para a Lixeira do ERP e um administrador pode restaurá-lo por 30 dias."} Se a pessoa só saiu da empresa, prefira marcar a situação como <b>Desligado</b>.`, sim: "Excluir", perigo: true }))) return;
+  const c0 = window.confirm; window.confirm = () => true;
+  try { await rhDbExcluir("funcs", String(id)); } finally { window.confirm = c0; }
+  if (!(RHDB_STATE.itens || []).some(x => String(x._id) === String(id))) location.hash = "#/rh/funcionarios";
+};
+{ const p0 = rhFuncPintar; rhFuncPintar = function () { const r = p0.apply(this, arguments);
+    const top = $("rhFuncTopo"), acts = top && top.querySelector(".page-actions"); const id = RHF_PAG.id;
+    if (acts && id && podeExcluir("rh_db") && !(typeof vcAtivo === "function" && vcAtivo()) && !acts.querySelector("[data-rhf-del]")) acts.insertAdjacentHTML("beforeend", `<button class="btn" data-rhf-del="1" style="color:var(--err)" onclick="rhfExcluirAqui('${esc(id)}')">Excluir</button>`);
+    return r; }; }
+(function () { const st = document.createElement("style"); st.id = "erp-v014116"; st.textContent = `
+.lix-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 16px;margin-bottom:10px}.lix-meta>div{display:flex;flex-direction:column;font-size:13px}.lix-meta span{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-2)}.lix-meta small{color:var(--ink-2);font-size:11.5px;word-break:break-all}
+.lix-kv th{width:220px;text-align:left;font-weight:600;color:var(--ink-2);white-space:nowrap}.lix-kv td{word-break:break-word}
+`; document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -58514,6 +58737,7 @@ CONFIG.version = "v0.14.112";   /* RH › Funcionários: volta da ficha para a l
 CONFIG.version = "v0.14.113";   /* RH › Programação de Férias: cronograma no molde do MS Project, períodos e limites da CLT, conflitos por centro de custo, pendências, aviso de férias */
 CONFIG.version = "v0.14.114";   /* RH › Funcionários: formulário espera os dados pessoais carregarem; remover observação volta ao formulário; duplo clique abre janela rápida com Cadastro e Perfil completo */
 CONFIG.version = "v0.14.115";   /* RH › Funcionários: editar cadastro na própria página; apelido, sexo, código de integração, RFID, carga horária, endereço, emissão/órgão da identidade, emissão/1ª habilitação da CNH, contato de emergência */
+CONFIG.version = "v0.14.116";   /* Sistema › Lixeira (administradores): cópia de toda exclusão por 30 dias, com quem/quando/de onde, restaurar e excluir de vez; Excluir na página do funcionário */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -59662,14 +59662,14 @@ function infLocaisHtml() {
       return `<tr class="${ina ? "inf-loc-in" : ""}"><td><b>${esc(r.nome)}</b>${it && it.AlteradoPor ? `<div class="sup">alterado por ${esc(it.AlteradoPor)}</div>` : ""}</td><td class="n">${r.n}</td><td>${ina ? `<span class="inf-chip r">Inativo · não notifica</span>` : `<span class="inf-chip ok">Ativo</span>`}</td><td class="nw">${ed ? `<button class="btn mini" onclick="infLocalTrocar(${esc(jsArg(r.nome))}, ${ina ? "true" : "false"})">${ina ? "Ativar" : "Inativar"}</button>` : ""}</td></tr>`; }).join("") || `<tr><td colspan="4" class="sup">Nenhum local de Área Restrita nos dados carregados.</td></tr>`}</tbody></table></div>`;
 }
 function infRegrasPintar() {
-  const b = $("rgBody"); if (!b) return;
+  const b = $("rgBody"); if (!b) return; try { $("modal").dataset.sujo = ""; } catch (e) {}
   const abas = ["Velocidade Excedida", "Área Restrita", "Locais da Área Restrita"];
   b.innerHTML = `<div class="seg-tabs" role="tablist" style="margin-bottom:12px">${abas.map(a => `<button role="tab" class="${INFR.aba === a ? "on" : ""}" onclick="INFR.aba=${esc(jsArg(a))}; infRegrasPintar()">${esc(a)}</button>`).join("")}</div>
     ${INFR.erro ? `<div class="err-msg" style="display:block">Não foi possível ler as regras: ${esc(INFR.erro)}</div>` : ""}${INFR.aba === "Locais da Área Restrita" ? infLocaisHtml() : infRegraAbaHtml(INFR.aba)}`;
 }
 window.infRegrasAbrir = async () => {
   $("modal").className = "modal wide inf-wide";
-  modal(`<div class="modal-head"><h2>Regras de Classificação</h2><button class="x" onclick="closeModal()">×</button></div><div class="modal-body" id="rgBody"><p class="sup">Carregando…</p></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Fechar</button></div>`);
+  modal(`<div class="modal-head"><h2>Regras de Classificação</h2><button class="x" onclick="closeModal()">×</button></div><div class="modal-body" id="rgBody"><p class="sup">Carregando…</p></div><div class="modal-foot"><span class="sup" style="margin-right:auto">Regras: grava em "Salvar e reclassificar". Locais: grava na hora.</span><button class="btn" onclick="closeModal()">Fechar</button></div>`);
   await infRegrasCarregar(true); infRegrasPintar();
 };
 function infRegraLer() {
@@ -59793,7 +59793,7 @@ function infDestLinha(d, ed) {
     <td>${tg("Coordenador", "Recebe cópias")}</td><td>${tg("Teste", "Time de teste")}</td><td class="nw">${ed ? `${d.Origem !== "RH" ? `<button class="btn mini" onclick="infDestEditar(${esc(jsArg(d._id))}, this)">Editar</button> ` : ""}<button class="btn mini danger" onclick="infDestRemover(${esc(jsArg(d._id))})">Remover</button>` : ""}</td></tr>`;
 }
 function infDestPintar() {
-  const b = $("dtBody"); if (!b) return; const ed = infRegrasPode() && INFD.l;
+  const b = $("dtBody"); if (!b) return; try { $("modal").dataset.sujo = ""; } catch (e) {}   /* v0.14.125: aqui tudo grava na hora; sem aviso de "sair sem salvar" */ const ed = infRegrasPode() && INFD.l;
   const rh = INFD.its.filter(d => d.Origem === "RH").sort((a, z) => String(a.Title).localeCompare(String(z.Title), "pt-BR")), fora = INFD.its.filter(d => d.Origem !== "RH").sort((a, z) => String(a.Title).localeCompare(String(z.Title), "pt-BR"));
   const tab = (rows, vazio) => rows.length ? `<div class="table-wrap"><table class="cap-table inf-dt-t"><thead><tr><th>Nome</th><th>WhatsApp</th><th>Cópias</th><th>Teste</th><th></th></tr></thead><tbody>${rows.map(d => infDestLinha(d, ed)).join("")}</tbody></table></div>` : `<p class="sup">${vazio}</p>`;
   const funcs = (INFD.funcs || []).filter(f => !rh.some(d => String(d.FuncId) === String(f._id)));
@@ -59810,7 +59810,7 @@ function infDestPintar() {
 }
 window.infDestAbrir = async () => {
   $("modal").className = "modal wide inf-wide";
-  modal(`<div class="modal-head"><h2>Destinatários das Notificações</h2><button class="x" onclick="closeModal()">×</button></div><div class="modal-body" id="dtBody"><p class="sup">Carregando…</p></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Fechar</button></div>`);
+  modal(`<div class="modal-head"><h2>Destinatários das Notificações</h2><button class="x" onclick="closeModal()">×</button></div><div class="modal-body" id="dtBody"><p class="sup">Carregando…</p></div><div class="modal-foot"><span class="sup" style="margin-right:auto">Cada mudança é salva na hora (Adicionar, caixas, Ok, Remover).</span><button class="btn" onclick="closeModal()">Fechar</button></div>`);
   await infDestCarregar(); INFD.funcs = await tercRhFuncs(true).catch(() => []); const n = await infDestSyncRh(); infDestPintar(); if (n) toast(`${n} contato(s) atualizado(s) pelo RH.`);
 };
 const infDestErr = m => { const e = $("dtErr"); if (e) { e.textContent = m; e.style.display = "block"; } };
@@ -59838,7 +59838,7 @@ window.infDestEditar = (id, bt) => { const d = INFD.its.find(x => x._id === Stri
 window.infDestSalvar = async id => { const d = INFD.its.find(x => x._id === String(id)); if (!d) return; const nome = ($("deN").value || "").trim(), c = infFoneNorm($("deT").value || ""), fn = ($("deF").value || "").trim();
   if (nome.length < 3) return infDestErr("Informe o nome."); if (!c) return infDestErr("WhatsApp fora do padrão: 55 + DDD + 9 dígitos (celular).");
   try { const up = { Title: nome, Contato: c, Funcao: fn || null, AlteradoPor: infDestEu() }; await SP.update(INFD.site.id, INFD.l.id, d._id, up); Object.assign(d, up); infDestPintar(); } catch (e) { infDestErr("Não foi possível gravar: " + e.message); } };
-window.infDestTrocar = async (id, k, v) => { const d = INFD.its.find(x => x._id === String(id)); if (!d || !infRegrasPode()) return;
+window.infDestTrocar = async (id, k, v) => { const d = INFD.its.find(x => x._id === String(id)); if (!d || !infRegrasPode()) return; try { $("modal").dataset.sujo = ""; } catch (e) {}
   try { await SP.update(INFD.site.id, INFD.l.id, d._id, { [k]: !!v, AlteradoPor: infDestEu() }); d[k] = !!v; infDestPintar(); } catch (e) { infDestErr("Não foi possível gravar: " + e.message); infDestPintar(); } };
 window.infDestRemover = async id => { const d = INFD.its.find(x => x._id === String(id)); if (!d) return;
   if (!(await erpConfirmar({ titulo: "Remover destinatário", html: `Tirar <b>${esc(d.Title || "")}</b> dos destinatários? Deixa de receber cópias e testes.`, sim: "Remover", perigo: true, volta: true }))) return;
@@ -60111,6 +60111,7 @@ CONFIG.version = "v0.14.121";   /* Painel de Infrações: filtros em botões (Mo
 CONFIG.version = "v0.14.122";   /* Painel de Infrações: botões de enviar/reenviar e marcar com fundo claro (o ícone aparece); número branco nas barras verdes */
 CONFIG.version = "v0.14.123";   /* Painel de Infrações: Regras de Classificação (versões com vigência, reclassificação pelo ERP) e locais da Área Restrita ativos/inativos */
 CONFIG.version = "v0.14.124";   /* Painel de Infrações: Destinatários (coordenadores do RH, fora do RH, time de teste) e modos de envio (normal, só coordenadores, teste) */
+CONFIG.version = "v0.14.125";   /* Destinatários e Regras: sem aviso falso de "sair sem salvar" (tudo grava na hora) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

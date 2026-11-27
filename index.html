@@ -58208,13 +58208,12 @@ window.rhfRapido = id => {
    v0.14.115 (Rafael, 27/11 10:33 e 10:35) · RH › Funcionários
    1) "Editar cadastro" na página do funcionário edita ali mesmo, no cartão Cadastro (sem janela por cima).
    2) Campos novos, a partir da ficha do sistema da telemetria (Globalbus) e do que o RH costuma pedir:
-      - RH — Funcionários: Apelido, Sexo, Código de integração (telemetria), Identificação (RFID), Carga horária e período.
+      - RH — Funcionários: Sexo, Código de integração (telemetria), Identificação (RFID), Carga horária e período.
       - Lista restrita de dados pessoais: emissão e órgão emissor da identidade; emissão e 1ª habilitação da CNH;
         endereço (CEP, logradouro, número, complemento, bairro, cidade, UF); contato de emergência.
       - "Senha do dispositivo móvel" não entra: senha não se guarda no ERP.
    ===================================================================== */
 LISTS.rh_func.columns.push(
-  { name: "Apelido",           displayName: "Apelido",                        text: { allowMultipleLines: false, maxLength: 60 } },
   { name: "Sexo",              displayName: "Sexo",                           choice: choice(["Masculino", "Feminino", "Não informado"]) },
   { name: "CodigoIntegracao",  displayName: "Código de integração (telemetria)", text: { allowMultipleLines: false, maxLength: 40 } },
   { name: "RFID",              displayName: "Identificação (RFID)",           text: { allowMultipleLines: false, maxLength: 40 } },
@@ -58248,7 +58247,7 @@ setTimeout(() => { const f0 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function (v) 
       const inp = (id, rot, k, extra) => `<div class="field"><label>${rot}</label><input id="${id}" value="${esc(v[k] == null ? "" : String(v[k]))}" autocomplete="off" ${extra || ""}></div>`;
       const dat = (id, rot, k) => `<div class="field"><label>${rot}</label><input type="date" id="${id}" min="1900-01-01" max="2099-12-31" value="${esc(v[k] ? ymd(v[k]) : "")}"></div>`;
       const sel = (id, rot, k, ops) => `<div class="field"><label>${rot}</label><select id="${id}"><option value="">—</option>${ops.map(o => `<option ${v[k] === o ? "selected" : ""}>${o}</option>`).join("")}</select></div>`;
-      depois(campo("rdFuSob"), novo(inp("rdFuApel", "Apelido", "Apelido", `maxlength="60" placeholder="Como é chamado na operação"`) + sel("rdFuSexo", "Sexo", "Sexo", ["Masculino", "Feminino", "Não informado"])));
+      depois(campo("rdFuSob"), novo(sel("rdFuSexo", "Sexo", "Sexo", ["Masculino", "Feminino", "Não informado"])));
       const pes = rhPesAtivo();
       if (pes) {
         depois(campo("rdFuRG"), novo(dat("rdFuRGEm", "Identidade · emissão", "RGEmissao") + inp("rdFuRGOrg", "Identidade · órgão emissor", "RGOrgao", `maxlength="30" placeholder="Ex.: DETRAN/RJ"`)));
@@ -58263,7 +58262,7 @@ setTimeout(() => { const f0 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function (v) 
       return box.innerHTML;
     } catch (e) { return h; } }; }, 0);
 { const r0 = RHDB_READ.funcs; RHDB_READ.funcs = function () { const o = r0.apply(this, arguments); if (!o || typeof o !== "object") return o; const g = id => ($(id) ? $(id).value : "").trim();
-    if ($("rdFuApel")) Object.assign(o, { Apelido: g("rdFuApel") || null, Sexo: g("rdFuSexo") || null, CodigoIntegracao: g("rdFuCodInt") || null, RFID: g("rdFuRFID") || null, CargaHoraria: g("rdFuCH") === "" ? null : Math.max(0, parseInt(g("rdFuCH"), 10) || 0), PeriodoCarga: g("rdFuCHP") || null });
+    if ($("rdFuSexo")) Object.assign(o, { Sexo: g("rdFuSexo") || null, CodigoIntegracao: g("rdFuCodInt") || null, RFID: g("rdFuRFID") || null, CargaHoraria: g("rdFuCH") === "" ? null : Math.max(0, parseInt(g("rdFuCH"), 10) || 0), PeriodoCarga: g("rdFuCHP") || null });
     if ($("rdFuCEP")) { const cep = rhfDig(g("rdFuCEP")); if (cep && cep.length !== 8) { const e = $("rdErr"); if (e) { e.style.display = "block"; e.textContent = "CEP: são 8 dígitos (00000-000)."; } throw new Error("CEP inválido."); }
       Object.assign(o, { CEP: cep ? `${cep.slice(0, 5)}-${cep.slice(5)}` : null, Logradouro: g("rdFuLog") || null, Numero: g("rdFuNum") || null, Complemento: g("rdFuComp") || null, Bairro: g("rdFuBai") || null, Cidade: g("rdFuCid") || null, UF: g("rdFuUF").toUpperCase() || null, ContatoEmergencia: g("rdFuEmerg") || null }); }
     if ($("rdFuRGEm")) Object.assign(o, { RGEmissao: g("rdFuRGEm") || null, RGOrgao: g("rdFuRGOrg") || null });
@@ -59642,6 +59641,7 @@ CONFIG.version = "v0.14.114";   /* RH › Funcionários: formulário espera os d
 CONFIG.version = "v0.14.115";   /* RH › Funcionários: editar cadastro na própria página; apelido, sexo, código de integração, RFID, carga horária, endereço, emissão/órgão da identidade, emissão/1ª habilitação da CNH, contato de emergência */
 CONFIG.version = "v0.14.116";   /* Sistema › Lixeira (administradores): cópia de toda exclusão por 30 dias, com quem/quando/de onde, restaurar e excluir de vez; Excluir na página do funcionário */
 CONFIG.version = "v0.14.117";   /* Infrações: Banco de Dados espelho do RH (seções, diferenças na célula, em aprovação, conflito de matrícula, atualização por grupos) e Ctrl+clique nos gráficos · TI: Controle de Estoque, painel executivo da Manutenção, Painel de Operação da TI, cadastro do ativo (local novo, usuário do RH, observações) */
+CONFIG.version = "v0.14.118";   /* RH › Funcionários: sai o campo Apelido (pedido do Rafael: sem informalidade nos dados) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

@@ -57645,7 +57645,7 @@ document.addEventListener("input", ev => { const el = ev.target; const m = el &&
 /* =====================================================================
    v0.14.111 (Rafael, 26/11 18:59): RH › Funcionários — datas com limite e conferência (nascimento, admissão, demissão,
    validade da CNH); CPF conferido ao digitar, como em Terceiros ("CPF válido" / "inválido" / "já cadastrado");
-   obrigatórios com *, inclusive CNH e celular para quem tem "Motorista" na função.
+   obrigatórios com *, inclusive o celular para quem tem "Motorista" na função (a CNH deixou de ser obrigatória na v0.14.114).
    ===================================================================== */
 const RHF_DATAS = { rdFuNasc: "Data de nascimento", rdFuA: "Admissão", rdFuDem: "Data de demissão", rdFuCNHv: "CNH (validade)" };
 function rhfDataOk(v) { return /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= "1900-01-01" && v <= "2099-12-31" && !isNaN(new Date(v + "T00:00:00").getTime()); }
@@ -57659,7 +57659,7 @@ window.rhfCpfConferir = function () {
 };
 document.addEventListener("input", ev => { if (ev.target && ev.target.id === "rdFuCPF") rhfCpfConferir(); });
 const rhfEhMot = () => /motorista/i.test(($("rdFuC") && $("rdFuC").value) || "");
-window.rhfReqMot = function () { const on = rhfEhMot(); ["rdFuCNHn", "rdFuCNHv", "rdFuT"].forEach(id => { const el = $(id); if (!el) return; const lab = el.closest(".field") && el.closest(".field").querySelector("label"); if (!lab) return; let r = lab.querySelector(".req.req-mot"); if (on && !r) { r = document.createElement("span"); r.className = "req req-mot"; r.textContent = "*"; r.title = "Obrigatório para motoristas"; lab.appendChild(r); } if (!on && r) r.remove(); }); };
+window.rhfReqMot = function () { const on = rhfEhMot(); ["rdFuT"].forEach(id => { const el = $(id); if (!el) return; const lab = el.closest(".field") && el.closest(".field").querySelector("label"); if (!lab) return; let r = lab.querySelector(".req.req-mot"); if (on && !r) { r = document.createElement("span"); r.className = "req req-mot"; r.textContent = "*"; r.title = "Obrigatório para motoristas"; lab.appendChild(r); } if (!on && r) r.remove(); }); };
 document.addEventListener("input", ev => { if (ev.target && ev.target.id === "rdFuC") rhfReqMot(); });
 document.addEventListener("change", ev => { if (ev.target && ev.target.id === "rdFuC") rhfReqMot(); });
 { const f0 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function (v) { let h = f0.apply(this, arguments);
@@ -57675,7 +57675,7 @@ document.addEventListener("change", ev => { if (ev.target && ev.target.id === "r
     const dem = g("rdFuDem"); if (dem && adm && dem < adm) falha("Data de demissão: anterior à admissão.");
     if (nasc && adm && adm < nasc) falha("Admissão: anterior ao nascimento.");
     const cpfD = rhfDig(g("rdFuCPF")); if ($("rdFuCPF") && cpfD.length === 11 && rhfCpfOk(cpfD)) { const dup = rhfCpfDup(cpfD, $("rdFuCPF").dataset.meu); if (dup) falha(`CPF já cadastrado para ${dup}. Edite o cadastro dele em vez de criar outro.`); }
-    if (rhfEhMot()) { if ($("rdFuCNHn") && rhfDig(g("rdFuCNHn")).length !== 11) falha("Motorista: informe a CNH (11 dígitos)."); if ($("rdFuCNHv") && !g("rdFuCNHv")) falha("Motorista: informe a validade da CNH."); if ($("rdFuT") && rhfDig(g("rdFuT")).length !== 11) falha("Motorista: informe o celular (DDD + 9 dígitos) — é por ele que o Painel de Infrações avisa."); }
+    if (rhfEhMot()) { /* v0.14.114: CNH não é obrigatória (Rafael, 27/11 10:21) */ if ($("rdFuT") && rhfDig(g("rdFuT")).length !== 11) falha("Motorista: informe o celular (DDD + 9 dígitos) — é por ele que o Painel de Infrações avisa."); }
     return r0.apply(this, arguments); }; }
 
 /* =====================================================================

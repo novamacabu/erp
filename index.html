@@ -385,7 +385,7 @@
 #inf-root .grafico-nota.ativo{color:var(--sinal-vermelho);cursor:pointer;font-weight:700}
 #inf-root .controles-grafico .rot{font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--texto-2)}
 #inf-root .ch-wrap{position:relative;width:100%;height:280px}
-#inf-root .ch-wrap.alta{height:300px}
+#inf-root .ch-wrap.alta{height:360px}
 #inf-root .ch-wrap canvas{display:block}
 /* ── Tabela ── */
 #inf-root .secao-tabela{background:var(--card);border-radius:var(--radius);box-shadow:var(--sombra);padding:16px 18px;margin-top:12px}
@@ -10277,9 +10277,17 @@ function renderCharts(atual,j,X,f){
   }));
   // Rótulos do eixo X apenas com o dia
   const rotulosX = mensal ? rotulos : chaves.map(k=>k.slice(8,10));
+  /* v0.14.120: rótulo de cada gravidade dentro do seu pedaço da coluna (além do total no topo); some só quando o pedaço não cabe o número */
+  const segRotulos={id:"segRotulos",afterDatasetsDraw(ch){ if(ehLinha) return; const {ctx}=ch; ctx.save(); ctx.textAlign="center"; ctx.textBaseline="middle";
+    ch.data.datasets.forEach((ds,di)=>{ const meta=ch.getDatasetMeta(di); if(meta.hidden) return; const escuro=["Média"].includes(ds.label);
+      meta.data.forEach((el,i)=>{ const v=+ds.data[i]||0; if(!v||!el) return; const h=Math.abs(el.base-el.y), w=el.width||0; if(w<11) return; const fs=Math.max(9,Math.min(11,w*.55)), cy=(el.y+el.base)/2+.5;
+        if(h>=fs+2){ ctx.font="700 "+fs+"px "+fontBody(); ctx.fillStyle=escuro?"#3A2A00":"#fff"; ctx.fillText(String(v), el.x, cy); return; }
+        /* pedaço fino: número menor com contorno, para aparecer mesmo assim */
+        ctx.font="800 9px "+fontBody(); ctx.lineWidth=3; ctx.strokeStyle="#fff"; ctx.lineJoin="round"; ctx.strokeText(String(v), el.x, cy); ctx.fillStyle=ds.label==="Baixa"?"#1E5A37":escuro?"#3A2A00":ds.label==="Grave"?"#8A2E0A":"#5E0E0E"; ctx.fillText(String(v), el.x, cy); }); });
+    ctx.restore(); }};
   try{ charts.tendencia=new Chart($("ch-tendencia"),{type:"bar",
     data:{labels:rotulosX,datasets:dsTend},
-    plugins:[stackTotalTop,eixoGrupos],
+    plugins:[stackTotalTop,eixoGrupos,segRotulos],
     options:{responsive:true,maintainAspectRatio:false,devicePixelRatio:Math.max(window.devicePixelRatio||1,2),animation:false,interaction:{mode:"index"},
       layout:{padding:{top:14}},
       plugins:{legend:{position:"bottom"},
@@ -59702,6 +59710,7 @@ CONFIG.version = "v0.14.116";   /* Sistema › Lixeira (administradores): cópia
 CONFIG.version = "v0.14.117";   /* Infrações: Banco de Dados espelho do RH (seções, diferenças na célula, em aprovação, conflito de matrícula, atualização por grupos) e Ctrl+clique nos gráficos · TI: Controle de Estoque, painel executivo da Manutenção, Painel de Operação da TI, cadastro do ativo (local novo, usuário do RH, observações) */
 CONFIG.version = "v0.14.118";   /* RH › Funcionários: sai o campo Apelido (pedido do Rafael: sem informalidade nos dados) */
 CONFIG.version = "v0.14.119";   /* RH › Funcionários: Reprovar (exclui com confirmação) na fila de aprovação; CPF é a chave nos pedidos do Painel de Infrações; aviso de possível duplicado na fila */
+CONFIG.version = "v0.14.120";   /* Painel de Infrações: valor de cada gravidade dentro da coluna no gráfico diário */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

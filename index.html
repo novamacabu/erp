@@ -58136,6 +58136,22 @@ window.ferAviso = (fid, rid) => { const f = FERP.funcs.find(x => x._id === Strin
 .fer-regras{margin:12px 0 30px;font-size:13px}.fer-regras summary{cursor:pointer;font-weight:700}.fer-regras ul{margin:8px 0 0;padding-left:18px;line-height:1.55}
 @media (max-width:760px){.fer-lc{grid-template-columns:150px;gap:0}.fer-lc .fer-cc,.fer-lc .fer-ad,.fer-lc .fer-sd,.fer-lc .fer-li{display:none}.fer-scroll{max-height:none}}
 `; document.head.appendChild(st); })();
+
+/* =====================================================================
+   v0.14.114 (Rafael, 27/11 10:08): RH › Funcionários — o formulário às vezes abria na versão antiga (sem CPF, Identidade,
+   nascimento e PIS) e só ficava certo ao fechar e abrir de novo. Causa: os dados pessoais ficam na lista restrita, que é
+   relida depois de cada gravação; se o formulário abria durante essa releitura, ele saía sem esses campos.
+   Correção: "Editar"/"Novo" de Funcionários espera a lista restrita terminar de carregar antes de montar o formulário.
+   ===================================================================== */
+{ const c0 = rhPesCarregar; rhPesCarregar = function () { const pr = c0.apply(this, arguments); RH_PES.prom = pr; pr.finally(() => { if (RH_PES.prom === pr) RH_PES.prom = null; }); return pr; }; }
+{ const f0 = window.rhDbForm; window.rhDbForm = async function (sub) {
+    if (sub === "funcs") {
+      const falta = () => RH_PES.prom || RH_PES.list === undefined || (RH_PES.list && !RH_PES.ok && !RH_PES.erro);
+      if (falta()) { const t = setTimeout(() => toast("Carregando os dados pessoais…", 2500), 350); try { if (RH_PES.prom) await RH_PES.prom; if (RH_PES.list === undefined || (RH_PES.list && !RH_PES.ok && !RH_PES.erro)) await rhPesCarregar(); } catch (e) {} clearTimeout(t); }
+      try { if (typeof rhDocsCarregar === "function" && RHF_DOCS.carregando) await RHF_DOCS.carregando; } catch (e) {}
+    }
+    return f0.apply(this, arguments);
+  }; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -58374,6 +58390,7 @@ CONFIG.version = "v0.14.110";   /* RH › Funcionários: máscaras, limites e pa
 CONFIG.version = "v0.14.111";   /* RH › Funcionários: datas com limite e conferência; CPF conferido ao digitar; máscaras de CNH, RG, agência e conta; obrigatórios com * (CNH e celular para motoristas); Painel › Banco de Dados escreve a divergência com o RH na linha */
 CONFIG.version = "v0.14.112";   /* RH › Funcionários: volta da ficha para a lista sem a página subir e descer (rolagem controlada pelo ERP) */
 CONFIG.version = "v0.14.113";   /* RH › Programação de Férias: cronograma no molde do MS Project, períodos e limites da CLT, conflitos por centro de custo, pendências, aviso de férias */
+CONFIG.version = "v0.14.114";   /* RH › Funcionários: formulário espera os dados pessoais carregarem (não abre mais na versão sem CPF/Identidade) */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

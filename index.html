@@ -386,6 +386,18 @@
 #inf-root .controles-grafico .rot{font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--texto-2)}
 #inf-root .ch-wrap{position:relative;width:100%;height:280px}
 #inf-root .ch-wrap.alta{height:360px}
+#inf-root .inf-bt-campo{flex:0 1 auto}#inf-root .inf-seg{gap:5px}#inf-root .inf-seg button{white-space:nowrap}
+#inf-root .inf-flut{position:sticky;top:var(--inf-top,0px);z-index:40;margin-top:16px}#inf-root .inf-flut .filtros{margin-top:0}#inf-root .inf-flut .filtros+.filtros{margin-top:10px}
+#inf-root .inf-flut-sen{height:1px;margin-bottom:-1px}
+#inf-root .inf-fh{display:none;align-items:center;gap:10px;min-height:38px;background:var(--card,#fff);border:1px solid var(--line,#E2E5E9);border-top:0;box-shadow:0 10px 24px rgba(16,24,40,.14);padding:4px 14px;border-radius:0 0 10px 10px}
+#inf-root .inf-ft{color:var(--asfalto,#0F1E3A);font-size:14px}#inf-root .inf-fr{font-size:13px;color:var(--texto-2,#5B6670);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}#inf-root .inf-fh .grow{flex:1}
+#inf-root .inf-fb{font:inherit;font-size:12.5px;font-weight:700;padding:6px 12px;border:1px solid var(--linha,#D3D8DE);border-radius:999px;background:#fff;cursor:pointer;color:var(--texto,#1D242B)}
+@media (min-width:761px) and (min-height:621px){
+  #inf-root .inf-flut.preso .inf-fh{display:flex}
+  #inf-root .inf-flut.preso .inf-corpo{display:none;position:absolute;left:0;right:0;top:100%;background:var(--fundo,#F3F5F8);padding:8px;border-radius:0 0 12px 12px;box-shadow:0 14px 28px rgba(16,24,40,.18)}
+  #inf-root .inf-flut.preso.inf-abre .inf-corpo{display:block}
+}
+@media (max-width:760px),(max-height:620px){#inf-root .inf-flut{position:static}}
 #inf-root .ch-wrap canvas{display:block}
 /* ── Tabela ── */
 #inf-root .secao-tabela{background:var(--card);border-radius:var(--radius);box-shadow:var(--sombra);padding:16px 18px;margin-top:12px}
@@ -10788,6 +10800,47 @@ $("seg-tend-tipo").querySelectorAll("button").forEach(b=>b.addEventListener("cli
   renderizar();
 }));
 $("tb-motorista").addEventListener("change",e=>{MULTI.motorista=new Set(); $("f-motorista").value=e.target.value;renderizar();});
+/* v0.14.121 (Rafael, 27/11 12:56): Período, Classificação, Origem e Notificação em botões (Motorista segue em lista); os filtros
+   e a linha do tempo (Período/meses/ano) viram um quadro só que, ao rolar, recolhe numa faixa fina "Filtros · resumo" no topo.
+   Passar o mouse abre o quadro por cima; "Manter aberto" deixa fixo (igual à Estatística de Passageiros). */
+(function infFiltrosBotoes(){
+  const GR=[["f-periodo","Período"],["f-classificacao","Classificação"],["f-lista","Origem"],["f-notif","Notificação"]];
+  GR.forEach(([id])=>{ const sel=$(id); if(!sel||sel.dataset.bt) return; sel.dataset.bt="1"; const campo=sel.closest(".campo"); if(campo) campo.classList.add("inf-bt-campo");
+    const box=document.createElement("div"); box.className="seg inf-seg"; box.dataset.sel=id; box.setAttribute("role","group");
+    [...sel.options].forEach(o=>{ const b=document.createElement("button"); b.type="button"; b.dataset.v=o.value; b.textContent=o.textContent.replace(/^Últimos /,"").replace(/^Todo o histórico$/,"Tudo"); b.title=o.textContent+(id==="f-classificacao"&&o.value?" · Ctrl + clique soma":""); box.appendChild(b); });
+    sel.style.display="none"; sel.after(box);
+    box.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
+      if(id==="f-classificacao"&&b.dataset.v){ escolher("classificacao",b.dataset.v,e); return; }
+      if(id==="f-classificacao") MULTI.classificacao=new Set();
+      if(sel.value===b.dataset.v&&!(id==="f-classificacao")) return;
+      sel.value=b.dataset.v; sel.dispatchEvent(new Event("change")); }); });
+  /* quadro flutuante */
+  const s1=document.querySelector("#inf-app section.filtros[aria-label='Filtros']"), s2=document.querySelector("#inf-app section.filtros[aria-label='Linha do tempo']");
+  if(s1&&!document.getElementById("infFlut")){ const fl=document.createElement("div"); fl.id="infFlut"; fl.className="inf-flut"; s1.parentNode.insertBefore(fl,s1);
+    const sen=document.createElement("div"); sen.className="inf-flut-sen"; fl.parentNode.insertBefore(sen,fl);
+    fl.innerHTML=`<div class="inf-fh"><b class="inf-ft">Filtros</b><span class="inf-fr"></span><span class="grow"></span><button type="button" class="inf-fb" aria-expanded="false">Mostrar filtros</button></div><div class="inf-corpo"></div>`;
+    const corpo=fl.querySelector(".inf-corpo"); corpo.appendChild(s1); if(s2) corpo.appendChild(s2);
+    const F={fixo:false,hover:false,t:0}, bt=fl.querySelector(".inf-fb");
+    const aplica=()=>{ const ab=F.fixo||F.hover; fl.classList.toggle("inf-abre",ab); bt.textContent=F.fixo?"Recolher filtros":F.hover?"Manter aberto":"Mostrar filtros"; bt.setAttribute("aria-expanded",String(ab)); };
+    bt.addEventListener("click",e=>{ e.stopPropagation(); if(F.fixo){ F.fixo=false; F.hover=false; } else F.fixo=true; aplica(); });
+    fl.addEventListener("mouseenter",()=>{ clearTimeout(F.t); if(fl.classList.contains("preso")&&!F.hover){ F.hover=true; aplica(); } });
+    fl.addEventListener("mouseleave",()=>{ clearTimeout(F.t); F.t=setTimeout(()=>{ if(F.hover&&fl.isConnected){ F.hover=false; aplica(); } },350); });
+    const topo=()=>{ let t=0; try{ const tb=document.querySelector(".topbar"); if(tb){ const ps=getComputedStyle(tb).position; if(ps==="sticky"||ps==="fixed") t=Math.round(tb.getBoundingClientRect().height); } }catch(e){} fl.style.setProperty("--inf-top",t+"px"); return t; };
+    const preso=()=>{ if(!fl.isConnected){ window.removeEventListener("scroll",preso); window.removeEventListener("resize",preso); return; } const t=topo(); fl.classList.toggle("preso", sen.getBoundingClientRect().top < t+2); };
+    window.addEventListener("scroll",preso,{passive:true}); window.addEventListener("resize",preso); preso(); aplica(); }
+})();
+function infFiltrosSync(){ try{
+  document.querySelectorAll("#inf-app .inf-seg").forEach(box=>{ const sel=$(box.dataset.sel); if(!sel) return; const multi=box.dataset.sel==="f-classificacao"&&MULTI.classificacao.size>1?MULTI.classificacao:null;
+    box.querySelectorAll("button").forEach(b=>b.classList.toggle("ativo", multi ? multi.has(b.dataset.v) : b.dataset.v===sel.value)); });
+  const fr=document.querySelector("#infFlut .inf-fr"); if(!fr) return; const f=lerFiltros(), partes=[];
+  partes.push(diaFiltro ? (diaFiltro.ate!==diaFiltro.de ? `${diaFiltro.de.split("-").reverse().join("/")} a ${diaFiltro.ate.split("-").reverse().join("/")}` : diaFiltro.de.split("-").reverse().join("/")) : mesFiltro ? `${["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"][mesFiltro-1]} ${$("f-ano").value}` : $("f-periodo").selectedOptions[0].textContent);
+  if(f.classificacao) partes.push(f.classificacao); if(f.lista) partes.push(f.lista);
+  if(f.motorista) partes.push("Motorista: "+(f.set_motorista?[...f.set_motorista].map(rotMot).join(" + "):rotMot(f.motorista)));
+  if(f.local) partes.push("Local: "+f.local); if(f.notif) partes.push(f.notif==="sim"?"Notificadas":"Pendentes"); if(f.busca) partes.push(`"${$("f-busca").value.trim()}"`);
+  fr.textContent=partes.join(" · ");
+}catch(e){} }
+renderizar=(function(r0){ return function(){ const x=r0.apply(this,arguments); infFiltrosSync(); return x; }; })(renderizar);
+infFiltrosSync();
 
 
 /* ── v0.9.3 · Relatórios impressos (mural do mês + individual por motorista) ── */
@@ -59711,6 +59764,7 @@ CONFIG.version = "v0.14.117";   /* Infrações: Banco de Dados espelho do RH (se
 CONFIG.version = "v0.14.118";   /* RH › Funcionários: sai o campo Apelido (pedido do Rafael: sem informalidade nos dados) */
 CONFIG.version = "v0.14.119";   /* RH › Funcionários: Reprovar (exclui com confirmação) na fila de aprovação; CPF é a chave nos pedidos do Painel de Infrações; aviso de possível duplicado na fila */
 CONFIG.version = "v0.14.120";   /* Painel de Infrações: valor de cada gravidade dentro da coluna no gráfico diário */
+CONFIG.version = "v0.14.121";   /* Painel de Infrações: filtros em botões (Motorista segue em lista) e quadro de filtros flutuante (recolhe ao rolar, abre com o mouse, "Manter aberto") */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

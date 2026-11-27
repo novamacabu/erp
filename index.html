@@ -57705,6 +57705,437 @@ setTimeout(() => { const r1 = window.route; window.route = function () {   /* po
     if (volta) rhfListaRestaurar();
     return r;
   }; }, 0);
+
+/* =====================================================================
+   v0.14.113 (Rafael, 26/11 23:59) · RH › Programação de Férias — cronograma no molde do MS Project
+   - Lista "RH — Férias" (Configuração › Executar tudo): uma linha por parcela (FuncId, PeriodoInicio, Inicio, Fim, Dias,
+     AbonoDias, Status, FaltasPeriodo, Adiantar13, AvisoEntregue, Observacoes). Funcionários vêm de RH › Funcionários.
+   - Regras da CLT usadas: período aquisitivo de 12 meses a partir da admissão; concessivo nos 12 meses seguintes (art. 134);
+     depois disso, dias pagos em dobro (art. 137); direito pela tabela de faltas (art. 130: 30/24/18/12/0); até 3 parcelas,
+     uma com 14 dias ou mais e as demais com 5 ou mais (art. 134 §1º); proibido começar nos 2 dias antes de feriado ou do
+     repouso semanal (art. 134 §3º; repouso considerado no domingo); aviso por escrito com 30 dias (art. 135); pagamento até
+     2 dias antes (art. 145); abono pecuniário de até 1/3 do direito, pedido até 15 dias antes do fim do aquisitivo (art. 143).
+   - Sem histórico de gozo antes do sistema: períodos com concessivo encerrado há mais de 2 anos ficam fora da análise;
+     os mais recentes sem registro aparecem como "confira" e podem ser marcados como quitados (histórico).
+   ===================================================================== */
+LISTS.rh_ferias = {
+  key: "rh_ferias", displayName: "RH — Férias", siteKey: "rh", titleAs: "Funcionário",
+  description: "Recursos Humanos NMB · programação de férias: uma linha por parcela, ligada ao funcionário (FuncId) e ao período aquisitivo.",
+  columns: [
+    { name: "FuncId", displayName: "Id do funcionário", required: true, text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "PeriodoInicio", displayName: "Início do período aquisitivo", required: true, dateTime: dateOnly },
+    { name: "Inicio", displayName: "Início do gozo", dateTime: dateOnly },
+    { name: "Fim", displayName: "Fim do gozo", dateTime: dateOnly },
+    { name: "Dias", displayName: "Dias de gozo", number: { decimalPlaces: "none", displayAs: "number" } },
+    { name: "AbonoDias", displayName: "Dias vendidos (abono)", number: { decimalPlaces: "none", displayAs: "number" } },
+    { name: "Status", displayName: "Situação", choice: choice(["Planejada", "Aprovada", "Cancelada", "Quitada (histórico)"]) },
+    { name: "FaltasPeriodo", displayName: "Faltas injustificadas no período", number: { decimalPlaces: "none", displayAs: "number" } },
+    { name: "Adiantar13", displayName: "Adiantar 1ª parcela do 13º", boolean: {} },
+    { name: "AvisoEntregue", displayName: "Aviso entregue em", dateTime: dateOnly },
+    { name: "Observacoes", displayName: "Observações", text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+SETUP_ORDER.push("rh_ferias");
+SETUP_TEXT.rh_ferias = `Cria no site RH a lista "RH — Férias", usada por Recursos Humanos › Programação de Férias (uma linha por parcela de férias).`;
+{ const i = MODULES.findIndex(m => m.id === "rh_aval");
+  MODULES.splice(i < 0 ? MODULES.length : i, 0, { id: "rh_ferias", path: "#/rh/ferias", icon: "calendar", name: "Programação de Férias", area: "Recursos Humanos", groups: ["rh", "diretoria"], status: "piloto", wide: true }); }
+
+const FERP = { site: null, func: null, list: undefined, fer: null, itens: [], funcs: [], feriados: new Set(), erro: "", ok: false,
+  q: "", cc: "", sit: "ativos", alerta: "", zoom: "ano", ini: null, agrupar: true, aberto: new Set() };
+/* ---------- datas (sempre AAAA-MM-DD, em UTC) ---------- */
+const ferD = iso => new Date(iso + "T00:00:00Z");
+const ferIso = d => d.toISOString().slice(0, 10);
+const ferAdd = (iso, n) => { const d = ferD(iso); d.setUTCDate(d.getUTCDate() + n); return ferIso(d); };
+const ferAddAno = (iso, n) => { const [y, m, d] = iso.split("-").map(Number); const t = new Date(Date.UTC(y + n, m - 1, d)); if (t.getUTCMonth() !== m - 1) t.setUTCDate(0); return ferIso(t); };
+const ferAddMes = (iso, n) => { const [y, m] = iso.split("-").map(Number); return ferIso(new Date(Date.UTC(y, m - 1 + n, 1))); };
+const ferDif = (a, b) => Math.round((ferD(b) - ferD(a)) / 864e5);   /* b − a, em dias */
+const ferDow = iso => ferD(iso).getUTCDay();
+const ferFmt = iso => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}` : "—";
+const ferIsoDe = v => { if (!v) return ""; const s = String(v); return /^\d{4}-\d{2}-\d{2}/.test(s) ? ymd(s) : ""; };
+/* ---------- regras ---------- */
+const ferDireito = f => { f = Number(f) || 0; return f <= 5 ? 30 : f <= 14 ? 24 : f <= 23 ? 18 : f <= 32 ? 12 : 0; };   /* art. 130 */
+const FER_ATIVOS = ["Planejada", "Aprovada", "Quitada (histórico)"];
+function ferVedado(iso) { for (const k of [1, 2]) { const d = ferAdd(iso, k); if (ferDow(d) === 0 || FERP.feriados.has(d)) return d; } return null; }   /* art. 134 §3º */
+function ferRecEstado(r, hoje) {
+  if (r.Status === "Cancelada") return "cancelada"; if (r.Status === "Quitada (histórico)") return "historico";
+  if (!r.ini) return r.Status === "Aprovada" ? "aprovada" : "planejada";
+  if (r.fim < hoje) return r.Status === "Aprovada" ? "gozada" : "gozadaNA"; if (r.ini <= hoje) return "gozo";
+  return r.Status === "Aprovada" ? "aprovada" : "planejada";
+}
+const FER_REC_TXT = { planejada: "Planejada", aprovada: "Aprovada", gozo: "Em gozo", gozada: "Gozada", gozadaNA: "Gozada (não aprovada)", historico: "Quitada (histórico)", cancelada: "Cancelada" };
+
+/* ---------- carga ---------- */
+async function ferCarregar(force) {
+  if (FERP.ok && !force) return;
+  try {
+    const siteRh = FERP.site || (FERP.site = await SP.site(CONFIG.sites.rh));
+    const ls = await SP.lists(siteRh.id), ach = k => ls.find(l => l.displayName === LISTS[k].displayName) || null;
+    FERP.func = ach("rh_func"); FERP.list = ach("rh_ferias"); const lfer = ach("rh_feriados");
+    const [fs, its, frs] = await Promise.all([
+      FERP.func ? SP.items(siteRh.id, FERP.func.id) : Promise.resolve([]),
+      FERP.list ? SP.items(siteRh.id, FERP.list.id) : Promise.resolve([]),
+      lfer ? SP.items(siteRh.id, lfer.id).catch(() => []) : Promise.resolve([])]);
+    FERP.funcs = fs.map(it => Object.assign({ _id: String(it.id) }, it.fields || {}));
+    FERP.itens = its.map(it => { const f = it.fields || {}; return Object.assign({ _id: String(it.id) }, f, { per: ferIsoDe(f.PeriodoInicio), ini: ferIsoDe(f.Inicio), fim: ferIsoDe(f.Fim), dias: Number(f.Dias) || 0, abono: Number(f.AbonoDias) || 0 }); });
+    FERP.feriados = new Set(frs.filter(it => (it.fields || {}).Esfera !== "Ponto facultativo").map(it => ferIsoDe((it.fields || {}).Data)).filter(Boolean));   /* ponto facultativo não veda o início */
+    FERP.erro = ""; FERP.ok = true;
+  } catch (e) { FERP.erro = e.message; FERP.ok = false; }
+}
+
+/* ---------- análise por funcionário ---------- */
+function ferAnalisar(f, hoje) {
+  const adm = ferIsoDe(f.Admissao), recs = FERP.itens.filter(r => String(r.FuncId) === String(f._id) && r.Status !== "Cancelada");
+  const A = { f, adm, recs, per: [], alertas: [], nivel: 0, saldo: 0, limite: null, prox: null, gozoHoje: null };
+  if (!adm) { A.alertas.push({ k: "semadm", t: "Sem data de admissão no cadastro: não dá para calcular os períodos." }); A.nivel = 2; return A; }
+  const corte = ferAddAno(hoje, -2);
+  for (let k = 0; k < 80; k++) {
+    const aqIni = ferAddAno(adm, k); if (aqIni > hoje && !recs.some(r => r.per >= aqIni)) break;
+    const aqFim = ferAdd(ferAddAno(adm, k + 1), -1), conc = ferAdd(ferAddAno(adm, k + 2), -1);
+    const rs = recs.filter(r => r.per === aqIni);
+    if (conc < corte && !rs.length) continue;   /* anterior ao controle: considerado resolvido */
+    const faltas = Math.max(0, ...rs.map(r => Number(r.FaltasPeriodo) || 0)), direito = ferDireito(faltas);
+    const usados = rs.reduce((s, r) => s + r.dias + r.abono, 0), saldo = Math.max(0, direito - usados);
+    const programados = rs.filter(r => r.ini && r.fim >= hoje && r.Status !== "Quitada (histórico)");
+    const P = { k, aqIni, aqFim, conc, rs, faltas, direito, usados, saldo, est: "", limite: null, dobra: 0 };
+    rs.forEach(r => { if (r.fim && r.fim > conc) P.dobra += Math.min(r.dias, ferDif(conc, r.fim)); });
+    if (aqFim >= hoje) { P.est = "aquisicao"; P.limite = ferAdd(conc, -(direito || 30) + 1); }
+    else if (!saldo && programados.length) { P.est = "programado"; P.limite = null; }
+    else if (!saldo) P.est = "quitado";
+    else { P.limite = ferAdd(conc, -saldo + 1); const d = ferDif(hoje, P.limite); P.est = conc < hoje ? "vencido" : d < 0 ? "vencendo" : d <= 90 ? "vencendo" : "aberto"; P.diasLimite = d; }
+    if (P.est !== "aquisicao" && P.est !== "quitado" && !rs.length && aqFim < ferAddAno(hoje, -1)) P.confira = true;
+    A.per.push(P);
+  }
+  const abertos = A.per.filter(P => P.est !== "quitado");
+  A.saldo = A.per.filter(P => P.est !== "aquisicao").reduce((s, P) => s + P.saldo, 0);
+  const alvo = abertos.find(P => P.est !== "aquisicao" && P.saldo) || abertos.find(P => P.est === "aquisicao");
+  if (alvo) A.limite = { data: alvo.limite, P: alvo };
+  const futuras = recs.filter(r => r.ini && r.ini > hoje && r.Status !== "Quitada (histórico)").sort((a, b) => a.ini < b.ini ? -1 : 1);
+  A.prox = futuras[0] || null; A.gozoHoje = recs.find(r => r.ini && r.ini <= hoje && r.fim >= hoje && r.Status !== "Quitada (histórico)") || null;
+  const al = (k, t, n) => { A.alertas.push({ k, t }); A.nivel = Math.max(A.nivel, n); };
+  A.per.forEach(P => {
+    if (P.est === "vencido") al("vencida", `Período ${ferFmt(P.aqIni)}–${ferFmt(P.aqFim)}: concessivo acabou em ${ferFmt(P.conc)} com ${P.saldo} dia(s) sem gozo — pagamento em dobro (art. 137).${P.confira ? " Se já foram gozadas antes do sistema, marque como quitado." : ""}`, 3);
+    else if (P.est === "vencendo") { al("vencendo", `Período ${ferFmt(P.aqIni)}–${ferFmt(P.aqFim)}: ${P.saldo} dia(s) precisam começar até ${ferFmt(P.limite)}${P.diasLimite < 0 ? " (já passou: dias além do concessivo saem em dobro)" : ` (faltam ${P.diasLimite} dias)`}.`, 3); }
+    else if (P.est === "aberto") al("semprog", `Período ${ferFmt(P.aqIni)}–${ferFmt(P.aqFim)}: ${P.saldo} dia(s) sem programação; limite para começar ${ferFmt(P.limite)}.`, 1);
+    if (P.dobra) al("dobra", `Período ${ferFmt(P.aqIni)}–${ferFmt(P.aqFim)}: ${P.dobra} dia(s) programados depois de ${ferFmt(P.conc)} — saem em dobro.`, 3);
+    const parc = P.rs.filter(r => r.dias && r.Status !== "Quitada (histórico)");
+    if (parc.length > 3) al("frac", `Período ${ferFmt(P.aqIni)}: ${parc.length} parcelas (máximo 3).`, 2);
+    if (parc.length > 1 && !parc.some(r => r.dias >= 14) && P.saldo < 14) al("frac", `Período ${ferFmt(P.aqIni)}: nenhuma parcela com 14 dias ou mais (art. 134 §1º).`, 2);
+    parc.filter(r => r.dias < 5).forEach(r => al("frac", `Parcela de ${r.dias} dia(s) em ${ferFmt(r.ini)}: o mínimo é 5.`, 2));
+  });
+  recs.filter(r => r.ini && r.ini > hoje && r.Status !== "Quitada (histórico)").forEach(r => {
+    const d = ferDif(hoje, r.ini);
+    if (!r.AvisoEntregue && d <= 35) al("aviso", `Férias de ${ferFmt(r.ini)}: aviso por escrito ${d < 30 ? `deveria ter sido entregue até ${ferFmt(ferAdd(r.ini, -30))}` : `até ${ferFmt(ferAdd(r.ini, -30))}`} (art. 135).`, d < 30 ? 3 : 2);
+    if (r.Status === "Planejada" && d <= 45) al("aprovar", `Férias de ${ferFmt(r.ini)} ainda não aprovadas.`, 2);
+    if (d <= 10) al("pagar", `Férias de ${ferFmt(r.ini)}: pagamento até ${ferFmt(ferAdd(r.ini, -2))} (art. 145).`, 1);
+    const v = ferVedado(r.ini); if (v) al("vedado", `Férias de ${ferFmt(r.ini)} começam nos 2 dias antes de ${ferDow(v) === 0 ? "domingo (repouso)" : "feriado"} ${ferFmt(v)} (art. 134 §3º).`, 2);
+  });
+  const sitF = String(f.Situacao || "");
+  if (A.gozoHoje && sitF !== "Férias") al("situacao", `Está de férias hoje, mas no cadastro a situação é "${sitF || "—"}".`, 1);
+  if (!A.gozoHoje && sitF === "Férias") al("situacao", `No cadastro a situação é "Férias", mas não há férias programadas para hoje.`, 1);
+  return A;
+}
+
+/* ---------- conflitos por centro de custo ---------- */
+function ferMaxCc(n) { let v = ""; try { v = localStorage.getItem("erpFerMax") || ""; } catch (e) {} const x = parseInt(v, 10); return x > 0 ? x : Math.max(1, Math.floor(n * 0.2)); }
+function ferCarga(lista, de, ate) {   /* dia → quantos de férias */
+  const m = new Map();
+  lista.forEach(A => A.recs.forEach(r => { if (!r.ini || !r.fim || r.Status === "Quitada (histórico)") return; let d = r.ini < de ? de : r.ini; const fim = r.fim > ate ? ate : r.fim; while (d <= fim) { m.set(d, (m.get(d) || 0) + 1); d = ferAdd(d, 1); } }));
+  return m;
+}
+
+/* ---------- página ---------- */
+function pageFerias() {
+  return `<div class="page fer-page">
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/Recursos Humanos">Recursos Humanos</a><span>›</span><b>Programação de Férias</b></nav>
+    <div class="page-head"><div><h1>Programação de Férias</h1><p class="lead">Cronograma por funcionário: férias programadas, dias ativos até o limite legal e quem do mesmo centro de custo sai junto.</p></div>
+      <div class="page-actions">${podeEditar("rh_ferias") ? `<button class="btn primary" onclick="ferForm()">+ Programar férias</button>` : ""}<button class="btn ghost" onclick="ferAbrir(true)">↻ Atualizar</button></div></div>
+    <div id="ferBody"><div class="cap-empty"><h3>Carregando…</h3></div></div>
+  </div>`;
+}
+window.ferAbrir = async force => { const b = $("ferBody"); if (!b) return; if (force) b.innerHTML = `<div class="cap-empty"><h3>Carregando…</h3></div>`; await ferCarregar(!!force); ferpPintar(); };
+function ferJanela() {
+  const hoje = todayISO();
+  if (!FERP.ini) FERP.ini = ferAddMes(hoje, FERP.zoom === "mes" ? 0 : -1);
+  const meses = FERP.zoom === "ano" ? 18 : FERP.zoom === "tri" ? 8 : 3, dw = FERP.zoom === "ano" ? 2.2 : FERP.zoom === "tri" ? 6 : 22;
+  const de = FERP.ini, ate = ferAdd(ferAddMes(de, meses), -1);
+  return { de, ate, dias: ferDif(de, ate) + 1, dw, meses };
+}
+function ferpPintar() {
+  const b = $("ferBody"); if (!b) return;
+  if (FERP.erro) { b.innerHTML = `<div class="cap-empty"><h3>Não foi possível ler o RH</h3><p>${esc(FERP.erro)}</p></div>`; return; }
+  const hoje = todayISO(), ed = podeEditar("rh_ferias");
+  const todos = FERP.funcs.filter(f => FERP.sit === "todos" || String(f.Situacao || "") !== "Desligado").map(f => ferAnalisar(f, hoje));
+  const ccs = [...new Set(todos.map(A => String(A.f.Departamento || "Sem centro de custo")))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const J = ferJanela();
+  /* conflitos por centro de custo (próximos 12 meses) */
+  const confl = new Map();
+  ccs.forEach(cc => { const L = todos.filter(A => String(A.f.Departamento || "Sem centro de custo") === cc), mx = ferMaxCc(L.length), carga = ferCarga(L, hoje, ferAddAno(hoje, 1)); const dias = [...carga].filter(([, n]) => n > mx).map(([d]) => d).sort(); if (dias.length) confl.set(cc, { mx, dias, de: dias[0], ate: dias[dias.length - 1], pico: Math.max(...[...carga.values()]) }); });
+  todos.forEach(A => { const c = confl.get(String(A.f.Departamento || "Sem centro de custo")); if (c && A.recs.some(r => r.ini && r.fim && r.Status !== "Quitada (histórico)" && c.dias.some(d => d >= r.ini && d <= r.fim))) { A.alertas.push({ k: "conflito", t: `Centro de custo com mais de ${c.mx} pessoa(s) de férias ao mesmo tempo entre ${ferFmt(c.de)} e ${ferFmt(c.ate)} (pico de ${c.pico}).` }); A.nivel = Math.max(A.nivel, 2); } });
+  const tem = (A, ks) => A.alertas.some(a => ks.includes(a.k));
+  const K = {
+    vencida: todos.filter(A => tem(A, ["vencida", "dobra"])), vencendo: todos.filter(A => tem(A, ["vencendo"])), semprog: todos.filter(A => tem(A, ["semprog"])),
+    gozo: todos.filter(A => A.gozoHoje), saem: todos.filter(A => A.prox && ferDif(hoje, A.prox.ini) <= 30),
+    aviso: todos.filter(A => tem(A, ["aviso", "aprovar", "pagar"])), conflito: todos.filter(A => tem(A, ["conflito"])), regra: todos.filter(A => tem(A, ["frac", "vedado", "semadm", "situacao"]))
+  };
+  const q = normName(FERP.q);
+  let L = todos.filter(A => (!FERP.cc || String(A.f.Departamento || "Sem centro de custo") === FERP.cc) && (!q || normName(`${A.f.Title} ${A.f.Matricula || ""} ${A.f.Cargo || ""} ${A.f.Setor || ""}`).includes(q)));
+  if (FERP.alerta && K[FERP.alerta]) { const s = new Set(K[FERP.alerta]); L = L.filter(A => s.has(A)); }
+  L.sort((a, b) => (FERP.agrupar ? String(a.f.Departamento || "~").localeCompare(String(b.f.Departamento || "~"), "pt-BR") : 0) || String(a.f.Title || "").localeCompare(String(b.f.Title || ""), "pt-BR"));
+  const card = (k, rot, sub, cls) => `<button class="kpi fer-kpi ${cls} ${FERP.alerta === k ? "on" : ""}" onclick="FERP.alerta=FERP.alerta==='${k}'?'':'${k}';ferpPintar()"><span class="l">${rot}</span><b class="v">${K[k].length}</b><span class="s">${sub}</span></button>`;
+  const semLista = FERP.list === null;
+  b.innerHTML = `${semLista ? `<div class="import-help" style="margin-bottom:12px"><b>A lista "RH — Férias" ainda não existe.</b> O cronograma abaixo já mostra os períodos e limites calculados pela admissão; para programar férias, ${session.n1 ? `rode <a href="#/configuracao">Sistema › Configuração › Executar tudo</a>` : "peça a um administrador para rodar Sistema › Configuração › Executar tudo"}.</div>` : ""}
+    <div class="fer-kpis">
+      ${card("vencida", "Vencidas / em dobro", "concessivo acabou", "r")}${card("vencendo", "Vencem em 90 dias", "precisam começar logo", "a")}${card("semprog", "Sem programação", "saldo sem data", "a")}
+      ${card("gozo", "De férias hoje", ferFmt(hoje), "b")}${card("saem", "Saem em 30 dias", "próximas saídas", "b")}${card("aviso", "Aviso / aprovação / pagamento", "prazos dos próximos dias", "a")}
+      ${card("conflito", "Conflitos no setor", "muitos fora juntos", "r")}${card("regra", "Regras e cadastro", "fracionamento, início vedado, situação", "n")}
+    </div>
+    <div class="cap-tools fer-tools">
+      <input id="ferQ" placeholder="Buscar funcionário, matrícula, função…" value="${esc(FERP.q)}">
+      <select id="ferCc"><option value="">Todos os centros de custo</option>${ccs.map(c => `<option ${FERP.cc === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+      <select id="ferSit"><option value="ativos" ${FERP.sit === "ativos" ? "selected" : ""}>Sem desligados</option><option value="todos" ${FERP.sit === "todos" ? "selected" : ""}>Todos</option></select>
+      <span class="fer-zoom">${[["ano", "Ano"], ["tri", "Trimestre"], ["mes", "Mês"]].map(([z, r]) => `<button class="btn sm ${FERP.zoom === z ? "primary" : "ghost"}" onclick="ferZoom('${z}')">${r}</button>`).join("")}</span>
+      <span class="fer-nav"><button class="btn sm ghost" onclick="ferMover(-1)" title="Voltar">◀</button><button class="btn sm ghost" onclick="FERP.ini=null;ferpPintar();ferRolarHoje()">Hoje</button><button class="btn sm ghost" onclick="ferMover(1)" title="Avançar">▶</button></span>
+      <label class="fer-chk"><input type="checkbox" id="ferAgr" ${FERP.agrupar ? "checked" : ""}> Agrupar por centro de custo</label>
+      <label class="fer-chk" title="Máximo de pessoas do mesmo centro de custo de férias ao mesmo tempo (vazio = 20% do setor, no mínimo 1)">Máx. juntos <input id="ferMax" type="number" min="1" max="50" style="width:76px" value="${(() => { try { return localStorage.getItem("erpFerMax") || ""; } catch (e) { return ""; } })()}" placeholder="auto"></label>
+    </div>
+    ${FERP.alerta ? `<div class="fer-filtro">Mostrando: <b>${esc({ vencida: "vencidas / em dobro", vencendo: "vencem em 90 dias", semprog: "sem programação", gozo: "de férias hoje", saem: "saem em 30 dias", aviso: "aviso, aprovação ou pagamento", conflito: "conflitos no setor", regra: "regras e cadastro" }[FERP.alerta])}</b> · <a href="javascript:void 0" onclick="FERP.alerta='';ferpPintar()">limpar</a></div>` : ""}
+    ${ferGanttHtml(L, J, hoje, todos)}
+    ${ferPendHtml(L, ed)}
+    <details class="fer-regras"><summary>Como o cronograma calcula (regras da CLT)</summary><ul>
+      <li><b>Período aquisitivo:</b> 12 meses contados da admissão. <b>Concessivo:</b> os 12 meses seguintes — as férias precisam terminar dentro dele; o que passar é pago em dobro (arts. 134 e 137).</li>
+      <li><b>Direito:</b> 30 dias, reduzido pelas faltas injustificadas do período (art. 130): 6–14 faltas = 24 dias; 15–23 = 18; 24–32 = 12; mais de 32 = sem férias.</li>
+      <li><b>Fracionamento:</b> até 3 parcelas, uma com 14 dias ou mais e as demais com pelo menos 5 (art. 134 §1º). Não pode começar nos 2 dias antes de feriado ou do repouso semanal (aqui considerado o domingo; feriados de RH › Banco de Dados › Feriados).</li>
+      <li><b>Prazos:</b> aviso por escrito com 30 dias de antecedência (art. 135); pagamento até 2 dias antes do início (art. 145); abono pecuniário (venda) de até 1/3 do direito, pedido pelo funcionário até 15 dias antes do fim do período aquisitivo (art. 143).</li>
+      <li><b>Linha do funcionário:</b> barras = férias (tracejada planejada, cheia aprovada, verde em gozo, cinza gozada); linha fina = dias ativos até as próximas férias ou até o limite; ◆ = último dia para começar as férias do período em aberto; | vermelho = fim do concessivo.</li>
+      <li><b>Sem histórico:</b> períodos com concessivo encerrado há mais de 2 anos ficam fora; os mais recentes sem registro aparecem para conferência e podem ser marcados como quitados.</li></ul></details>`;
+  const qi = $("ferQ"); if (qi) qi.addEventListener("input", ev => { FERP.q = ev.target.value; erpDeb("ferQ", () => keepFocus(ferpPintar)); });
+  const cc = $("ferCc"); if (cc) cc.onchange = ev => { FERP.cc = ev.target.value; ferpPintar(); };
+  const st = $("ferSit"); if (st) st.onchange = ev => { FERP.sit = ev.target.value; ferpPintar(); };
+  const ag = $("ferAgr"); if (ag) ag.onchange = ev => { FERP.agrupar = ev.target.checked; ferpPintar(); };
+  const mx = $("ferMax"); if (mx) mx.onchange = ev => { try { const v = parseInt(ev.target.value, 10); if (v > 0) localStorage.setItem("erpFerMax", String(v)); else localStorage.removeItem("erpFerMax"); } catch (e) {} ferpPintar(); };
+}
+window.ferZoom = z => { FERP.zoom = z; FERP.ini = null; ferpPintar(); ferRolarHoje(); };
+window.ferMover = n => { const J = ferJanela(); FERP.ini = ferAddMes(J.de, n * (FERP.zoom === "ano" ? 3 : FERP.zoom === "tri" ? 2 : 1)); ferpPintar(); };
+window.ferRolarHoje = () => { const w = document.querySelector(".fer-scroll"), t = document.querySelector(".fer-scroll .fer-hoje"); if (w && t) w.scrollLeft = Math.max(0, t.offsetLeft - 120); };
+
+function ferGanttHtml(L, J, hoje, todos) {
+  const W = Math.round(J.dias * J.dw), x = iso => Math.round(ferDif(J.de, iso) * J.dw), dentro = (a, b) => b >= J.de && a <= J.ate;
+  const clamp = (a, b) => { const i = a < J.de ? J.de : a, f = b > J.ate ? J.ate : b; return { l: x(i), w: Math.max(2, Math.round((ferDif(i, f) + 1) * J.dw)) }; };
+  /* escala */
+  let mesesH = "", diasH = "", linhas = "";
+  for (let m = 0; m < J.meses; m++) { const a = ferAddMes(J.de, m), b = ferAdd(ferAddMes(J.de, m + 1), -1), l = x(a), w = Math.round((ferDif(a, b) + 1) * J.dw);
+    const MS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"], ML = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"], mi = Number(a.slice(5, 7)) - 1;
+    const rot = J.dw < 3 ? `${MS[mi]}/${a.slice(2, 4)}` : `${ML[mi]} ${a.slice(0, 4)}`;
+    mesesH += `<div class="fer-mes" style="left:${l}px;width:${w}px">${esc(rot)}</div>`; linhas += `<i style="left:${l}px"></i>`; }
+  if (J.dw >= 18) for (let d = 0; d < J.dias; d++) { const iso = ferAdd(J.de, d), dw = ferDow(iso); diasH += `<div class="fer-dia ${dw === 0 || dw === 6 ? "fds" : ""} ${FERP.feriados.has(iso) ? "fer" : ""}" style="left:${Math.round(d * J.dw)}px;width:${J.dw}px">${Number(iso.slice(8))}</div>`; }
+  else if (J.dw >= 5) for (let d = 0; d < J.dias; d++) { const iso = ferAdd(J.de, d); if (ferDow(iso) === 1) diasH += `<div class="fer-dia" style="left:${Math.round(d * J.dw)}px">${Number(iso.slice(8))}</div>`; }
+  const sab = (6 - ferDow(J.de) + 7) % 7;
+  const fundo = J.dw >= 5 ? `background-image:repeating-linear-gradient(90deg,transparent 0 ${5 * J.dw}px,rgba(15,30,58,.045) ${5 * J.dw}px ${7 * J.dw}px);background-position-x:${Math.round((sab - 5) * J.dw)}px;` : "";
+  const hojeX = dentro(hoje, hoje) ? `<div class="fer-hoje" style="left:${x(hoje)}px"></div>` : "";
+  const fer = J.dw >= 5 ? [...FERP.feriados].filter(d => dentro(d, d)).map(d => `<div class="fer-feriado" style="left:${x(d)}px;width:${Math.max(2, J.dw)}px"></div>`).join("") : "";
+  const trilho = inner => `<div class="fer-trk" style="width:${W}px;${fundo}"><div class="fer-ml">${linhas}</div>${fer}${hojeX}${inner}</div>`;
+  const linha = A => {
+    const f = A.f; let bars = "";
+    A.per.forEach(P => {   /* fim do concessivo e limite para começar */
+      if (P.est !== "quitado" && dentro(P.conc, P.conc)) bars += `<div class="fer-conc" style="left:${x(P.conc)}px" title="Fim do concessivo do período ${ferFmt(P.aqIni)}–${ferFmt(P.aqFim)}: ${ferFmt(P.conc)}"></div>`;
+      if (P.est !== "quitado" && P.limite && dentro(P.limite, P.limite)) bars += `<div class="fer-ms ms-${P.est}" style="left:${x(P.limite) - 5}px" title="Último dia para começar ${P.est === "aquisicao" ? (P.direito || 30) : P.saldo} dia(s) do período ${ferFmt(P.aqIni)}–${ferFmt(P.aqFim)}: ${ferFmt(P.limite)}"></div>`;
+      if (dentro(ferAdd(P.aqFim, 1), ferAdd(P.aqFim, 1)) && P.est !== "quitado") bars += `<div class="fer-adq" style="left:${x(ferAdd(P.aqFim, 1))}px" title="Direito adquirido em ${ferFmt(ferAdd(P.aqFim, 1))} (período ${ferFmt(P.aqIni)}–${ferFmt(P.aqFim)})"></div>`;
+    });
+    /* dias ativos até as próximas férias ou até o limite */
+    const seg0 = A.gozoHoje ? ferAdd(A.gozoHoje.fim, 1) : hoje, alvo = A.prox ? A.prox.ini : A.limite && A.limite.data;
+    if (alvo && alvo > seg0) { const n = ferDif(seg0, alvo); if (dentro(seg0, ferAdd(alvo, -1))) { const c = clamp(seg0, ferAdd(alvo, -1)); bars += `<div class="fer-ativo ${A.prox ? "" : "lim"}" style="left:${c.l}px;width:${c.w}px" title="${n} dia(s) ativo até ${A.prox ? "as férias de " + ferFmt(A.prox.ini) : "o limite " + ferFmt(alvo)}">${c.w > 90 ? `<span>${n} d ativo até ${A.prox ? "as férias" : "o limite"}</span>` : ""}</div>`; } }
+    A.recs.forEach(r => { if (!r.ini || !r.fim || !dentro(r.ini, r.fim)) return; const e = ferRecEstado(r, hoje), c = clamp(r.ini, r.fim); const P = A.per.find(p => p.aqIni === r.per);
+      const dobraW = P && r.fim > P.conc ? clamp(r.ini > P.conc ? r.ini : ferAdd(P.conc, 1), r.fim) : null;
+      bars += `<div class="fer-b st-${e}" style="left:${c.l}px;width:${c.w}px" title="${esc(`${f.Title} · ${FER_REC_TXT[e]} · ${ferFmt(r.ini)} a ${ferFmt(r.fim)} · ${r.dias} dia(s)${r.abono ? ` + ${r.abono} vendido(s)` : ""} · período ${ferFmt(r.per)}`)}" onclick="event.stopPropagation();ferForm('${esc(f._id)}','${esc(r._id)}')">${c.w > 26 ? `<span>${r.dias}d${r.abono && c.w > 60 ? ` +${r.abono} vend.` : ""}</span>` : ""}${dobraW ? `<i class="fer-dobra" style="left:${dobraW.l - c.l}px;width:${dobraW.w}px"></i>` : ""}</div>`; });
+    const nv = A.nivel >= 3 ? "r" : A.nivel === 2 ? "a" : A.nivel === 1 ? "i" : "";
+    const lim = A.limite && A.limite.P.est !== "aquisicao" ? A.limite.data : null, limTxt = lim ? `<span class="fer-lim ${ferDif(hoje, lim) < 0 ? "r" : ferDif(hoje, lim) <= 90 ? "a" : ""}">${ferFmt(lim)}</span>` : `<span class="sup">${A.limite ? "em aquisição" : "—"}</span>`;
+    return `<tr class="fer-row" onclick="ferDetalhe('${esc(f._id)}')"><td class="fer-l"><div class="fer-lc"><span class="fer-nm"><i class="fer-dot ${nv}" title="${esc(A.alertas.map(a => a.t).join("\n") || "Sem pendências")}"></i><b>${esc(f.Title || "—")}</b><small>${esc([f.Cargo, f.Matricula ? "mat. " + f.Matricula : ""].filter(Boolean).join(" · "))}</small></span><span class="fer-cc">${esc(f.Departamento || "—")}</span><span class="fer-ad">${ferFmt(A.adm)}</span><span class="fer-sd" title="Dias de férias adquiridos e ainda não gozados nem programados">${A.saldo || "—"}</span><span class="fer-li">${limTxt}</span></div></td><td class="fer-t">${trilho(bars)}</td></tr>`;
+  };
+  let corpo = "";
+  if (FERP.agrupar) {
+    const grupos = new Map(); L.forEach(A => { const k = String(A.f.Departamento || "Sem centro de custo"); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(A); });
+    for (const [cc, G] of grupos) {
+      const tot = todos.filter(A => String(A.f.Departamento || "Sem centro de custo") === cc), mx = ferMaxCc(tot.length), carga = ferCarga(tot, J.de, J.ate);
+      let seg = "", d = J.de; while (d <= J.ate) { const n = carga.get(d) || 0; let e = d; while (ferAdd(e, 1) <= J.ate && (carga.get(ferAdd(e, 1)) || 0) === n) e = ferAdd(e, 1); if (n) { const c = clamp(d, e); seg += `<div class="fer-load ${n > mx ? "over" : ""}" style="left:${c.l}px;width:${c.w}px;height:${Math.min(22, 5 + n * 4)}px" title="${n} de férias de ${ferFmt(d)} a ${ferFmt(e)}${n > mx ? ` — acima do máximo (${mx})` : ""}">${c.w > 14 ? n : ""}</div>`; } d = ferAdd(e, 1); }
+      corpo += `<tr class="fer-grp"><td class="fer-l"><div class="fer-lc"><b>${esc(cc)}</b><span class="sup">${tot.length} pessoa(s) · máx. ${mx} juntos</span></div></td><td class="fer-t">${trilho(`<div class="fer-loadw">${seg}</div>`)}</td></tr>` + G.map(linha).join("");
+    }
+  } else corpo = L.map(linha).join("");
+  if (!L.length) corpo = `<tr><td class="fer-l"><div class="fer-lc sup" style="padding:14px">Nenhum funcionário com esse filtro.</div></td><td class="fer-t">${trilho("")}</td></tr>`;
+  return `<div class="fer-scroll"><table class="fer-g"><thead><tr><th class="fer-l"><div class="fer-lc fer-hd"><span class="fer-nm">Funcionário</span><span class="fer-cc">Centro de custo</span><span class="fer-ad">Admissão</span><span class="fer-sd">Saldo</span><span class="fer-li">Limite</span></div></th><th class="fer-t"><div class="fer-esc" style="width:${W}px">${mesesH}<div class="fer-dias">${diasH}</div>${hojeX}</div></th></tr></thead><tbody>${corpo}</tbody></table></div>`;
+}
+function ferPendHtml(L, ed) {
+  const linhas = []; L.forEach(A => A.alertas.forEach(a => linhas.push({ A, a })));
+  const ordem = { vencida: 0, dobra: 0, vencendo: 1, aviso: 2, conflito: 3, aprovar: 4, pagar: 5, vedado: 6, frac: 7, semprog: 8, situacao: 9, semadm: 10 };
+  linhas.sort((p, q) => (ordem[p.a.k] ?? 20) - (ordem[q.a.k] ?? 20) || String(p.A.f.Title).localeCompare(String(q.A.f.Title), "pt-BR"));
+  const rot = { vencida: ["Vencida", "r"], dobra: ["Em dobro", "r"], vencendo: ["Vencendo", "a"], aviso: ["Aviso", "a"], conflito: ["Conflito", "a"], aprovar: ["Aprovar", "a"], pagar: ["Pagamento", "i"], vedado: ["Início vedado", "a"], frac: ["Fracionamento", "a"], semprog: ["Sem programação", "i"], situacao: ["Situação", "i"], semadm: ["Cadastro", "a"] };
+  const sit = L.filter(A => A.alertas.some(a => a.k === "situacao"));
+  return `<div class="cap-card fer-pend"><div class="cap-card-h"><h3>Pendências</h3><span class="cap-card-s">${linhas.length} item(ns) nos funcionários mostrados</span>${ed && podeEditar("rh_db") && sit.length ? `<button class="btn sm" style="margin-left:auto" onclick="ferAjustarSituacoes()" title="Põe 'Férias' em quem está de férias hoje e 'Ativo' em quem voltou">Ajustar situação no cadastro (${sit.length})</button>` : ""}</div>
+    ${linhas.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Tipo</th><th>Funcionário</th><th>Centro de custo</th><th>O que fazer</th></tr></thead><tbody>${linhas.slice(0, 300).map(({ A, a }) => `<tr onclick="ferDetalhe('${esc(A.f._id)}')" style="cursor:pointer"><td><span class="fer-tag ${rot[a.k] ? rot[a.k][1] : ""}">${esc(rot[a.k] ? rot[a.k][0] : a.k)}</span></td><td><b>${esc(A.f.Title || "")}</b></td><td>${esc(A.f.Departamento || "—")}</td><td>${esc(a.t)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="sup" style="padding:14px 16px">Nenhuma pendência. 👍</div>`}</div>`;
+}
+
+/* ---------- detalhe do funcionário ---------- */
+window.ferDetalhe = id => {
+  const f = FERP.funcs.find(x => x._id === String(id)); if (!f) return; const hoje = todayISO(), A = ferAnalisar(f, hoje), ed = podeEditar("rh_ferias") && FERP.list;
+  const estTxt = { aquisicao: ["Em aquisição", "n"], programado: ["Programado", "i"], quitado: ["Quitado", "ok"], vencido: ["Vencido", "r"], vencendo: ["Vencendo", "a"], aberto: ["Em aberto", "i"] };
+  const per = A.per.slice().reverse().map(P => `<tr><td class="nw">${ferFmt(P.aqIni)} a ${ferFmt(P.aqFim)}</td><td class="nw">até ${ferFmt(P.conc)}</td><td>${P.direito}${P.faltas ? ` <span class="sup">(${P.faltas} faltas)</span>` : ""}</td><td>${P.usados}</td><td><b>${P.est === "aquisicao" ? "—" : P.saldo}</b></td><td class="nw">${P.limite && P.est !== "quitado" ? ferFmt(P.limite) : "—"}</td><td><span class="fer-tag ${estTxt[P.est][1]}">${estTxt[P.est][0]}</span>${P.confira ? ` <span class="sup">confira</span>` : ""}</td>
+    <td class="nw">${ed && P.est !== "quitado" ? `<button class="btn mini" onclick="ferForm('${esc(f._id)}',null,'${P.aqIni}')">Programar</button>${P.est !== "aquisicao" && P.saldo ? ` <button class="btn mini ghost" onclick="ferQuitar('${esc(f._id)}','${P.aqIni}',${P.saldo})" title="Já gozadas antes do sistema">Quitado</button>` : ""}` : ""}</td></tr>`).join("");
+  const recs = A.recs.slice().sort((a, b) => (b.ini || b.per) < (a.ini || a.per) ? -1 : 1).map(r => { const e = ferRecEstado(r, hoje); return `<tr><td class="nw">${ferFmt(r.per)}</td><td class="nw">${ferFmt(r.ini)}</td><td class="nw">${ferFmt(r.fim)}</td><td>${r.dias || "—"}${r.abono ? ` <span class="sup">+${r.abono} vendidos</span>` : ""}</td><td><span class="fer-tag st-${e}">${FER_REC_TXT[e]}</span></td><td class="nw">${r.AvisoEntregue ? ferFmt(ferIsoDe(r.AvisoEntregue)) : r.ini ? `<span class="sup">até ${ferFmt(ferAdd(r.ini, -30))}</span>` : "—"}</td>
+    <td class="nw">${ed && e !== "historico" ? `<button class="btn mini" onclick="ferForm('${esc(f._id)}','${esc(r._id)}')">Editar</button> ` : ""}${ed && r.Status === "Planejada" && e === "planejada" ? `<button class="btn mini" onclick="ferAprovar('${esc(r._id)}')">Aprovar</button> ` : ""}${r.ini ? `<button class="btn mini ghost" onclick="ferAviso('${esc(f._id)}','${esc(r._id)}')">Aviso</button>` : ""}${ed && e === "historico" ? `<button class="btn mini ghost" onclick="ferCancelar('${esc(r._id)}')">Desfazer</button>` : ""}</td></tr>`; }).join("");
+  $("modal").className = "modal wide"; openModal(`Férias · ${f.Title || ""}`, `<p class="sup" style="margin:0 0 10px">${esc([f.Cargo, f.Departamento, f.Setor].filter(Boolean).join(" · "))} · admissão ${ferFmt(A.adm)} · situação ${esc(f.Situacao || "—")}</p>
+    ${A.alertas.length ? `<div class="fer-al">${A.alertas.map(a => `<div>• ${esc(a.t)}</div>`).join("")}</div>` : `<div class="sup" style="margin-bottom:10px">Sem pendências.</div>`}
+    <h4 style="margin:12px 0 6px">Períodos</h4><div class="table-wrap"><table class="cap-table"><thead><tr><th>Aquisitivo</th><th>Concessivo</th><th>Direito</th><th>Usados</th><th>Saldo</th><th>Começar até</th><th>Situação</th><th></th></tr></thead><tbody>${per || `<tr><td colspan="8" class="sup">—</td></tr>`}</tbody></table></div>
+    <h4 style="margin:14px 0 6px">Parcelas</h4><div class="table-wrap"><table class="cap-table"><thead><tr><th>Período</th><th>Início</th><th>Fim</th><th>Dias</th><th>Situação</th><th>Aviso</th><th></th></tr></thead><tbody>${recs || `<tr><td colspan="7" class="sup">Nenhuma férias registrada.</td></tr>`}</tbody></table></div>
+    ${ed ? `<div style="margin-top:12px"><button class="btn primary" onclick="ferForm('${esc(f._id)}')">+ Programar férias</button></div>` : ""}`, async () => true);
+  const s = $("mSave"); if (s) s.textContent = "Fechar";
+};
+
+/* ---------- programar / editar ---------- */
+window.ferForm = (fid, rid, perIni) => {
+  if (!podeEditar("rh_ferias")) { toast("Seu acesso à Programação de Férias é só de leitura."); return; }
+  if (!FERP.list) { toast('A lista "RH — Férias" ainda não existe: rode Sistema › Configuração › Executar tudo.', 7000); return; }
+  const hoje = todayISO(), r = rid ? FERP.itens.find(x => x._id === String(rid)) : null;
+  const fSel0 = String(fid || (r && r.FuncId) || ""); const funcs = FERP.funcs.filter(f => (String(f.Situacao || "") !== "Desligado" || f._id === fSel0) && ferIsoDe(f.Admissao)).sort((a, b) => String(a.Title).localeCompare(String(b.Title), "pt-BR"));
+  const fSel = String(fid || (r && r.FuncId) || "");
+  openModal(r ? "Editar férias" : "Programar férias", `<div class="form-grid">
+    <div class="field full"><label>Funcionário<span class="req">*</span></label><select id="feF" ${r ? "disabled" : ""}><option value="">— escolha —</option>${funcs.map(f => `<option value="${esc(f._id)}" ${fSel === f._id ? "selected" : ""}>${esc(f.Title)}${f.Departamento ? " · " + esc(f.Departamento) : ""}</option>`).join("")}</select></div>
+    <div class="field full"><label>Período aquisitivo<span class="req">*</span></label><select id="feP"></select><div class="hint" id="fePH"></div></div>
+    <div class="field"><label>Início do gozo<span class="req">*</span></label><input type="date" id="feI" min="1900-01-01" max="2099-12-31" value="${esc(r ? r.ini : "")}"></div>
+    <div class="field"><label>Dias de gozo<span class="req">*</span></label><input type="number" id="feD" min="5" max="30" value="${esc(r ? String(r.dias || "") : "")}"><div class="hint">Mínimo 5; uma das parcelas com 14 ou mais</div></div>
+    <div class="field"><label>Dias vendidos (abono)</label><input type="number" id="feA" min="0" max="10" value="${esc(r && r.abono ? String(r.abono) : "")}" placeholder="0"><div class="hint" id="feAH">Até 1/3 do direito (art. 143)</div></div>
+    <div class="field"><label>Faltas injustificadas no período</label><input type="number" id="feFa" min="0" max="365" value="${esc(r && r.FaltasPeriodo ? String(r.FaltasPeriodo) : "")}" placeholder="0"><div class="hint" id="feFaH">Reduz o direito (art. 130)</div></div>
+    <div class="field"><label>Situação</label><select id="feS"><option ${!r || r.Status === "Planejada" ? "selected" : ""}>Planejada</option><option ${r && r.Status === "Aprovada" ? "selected" : ""}>Aprovada</option>${r ? `<option>Cancelada</option>` : ""}</select></div>
+    <div class="field"><label>Aviso entregue em</label><input type="date" id="feAv" min="1900-01-01" max="2099-12-31" value="${esc(r ? ferIsoDe(r.AvisoEntregue) : "")}"><div class="hint">Por escrito, 30 dias antes (art. 135)</div></div>
+    <div class="field full"><label class="check" style="display:flex;gap:8px;align-items:center;text-transform:none;font-weight:600"><input type="checkbox" id="fe13" ${r && r.Adiantar13 ? "checked" : ""}> Adiantar a 1ª parcela do 13º junto com as férias</label></div>
+    <div class="field full"><label>Observações</label><textarea id="feO" rows="2" placeholder="Combinado com o funcionário, substituto, etc.">${esc(r ? r.Observacoes || "" : "")}</textarea></div>
+    <div class="field full"><div class="fer-resumo" id="feR"></div></div></div><div class="err-msg" id="feErr" style="display:none"></div>`, async () => {
+    const C = ferFormCalc(r); const err = m => { const e = $("feErr"); e.textContent = m; e.style.display = "block"; return false; };
+    if (C.erros.length) return err(C.erros[0]);
+    const campos = { Title: C.f.Title, FuncId: C.f._id, PeriodoInicio: C.P.aqIni, Inicio: C.ini || null, Fim: C.fim || null, Dias: C.dias, AbonoDias: C.abono || 0, Status: $("feS").value, FaltasPeriodo: C.faltas || 0, Adiantar13: $("fe13").checked, AvisoEntregue: $("feAv").value || null, Observacoes: $("feO").value.trim() || null };   /* lido antes da confirmação: ela troca o conteúdo da janela */
+    if (C.avisos.length && !(await erpConfirmar({ titulo: "Confira antes de gravar", html: `<ul style="margin:0;padding-left:18px">${C.avisos.map(a => `<li>${esc(a)}</li>`).join("")}</ul>`, sim: "Gravar assim" }))) return false;
+    try {
+      if (r) await SP.update(FERP.site.id, FERP.list.id, r._id, campos); else await SP.create(FERP.site.id, FERP.list.id, campos);
+      if (C.faltas !== C.P.faltas) for (const o of C.P.rs) if (!r || o._id !== r._id) { try { await SP.update(FERP.site.id, FERP.list.id, o._id, { FaltasPeriodo: C.faltas || 0 }); } catch (e) {} }
+      toast(r ? "Férias atualizadas." : "Férias programadas."); await ferCarregar(true); ferpPintar(); return true;
+    } catch (e) { if ($("feErr")) return err("Não foi possível gravar: " + e.message); toast("Não foi possível gravar: " + e.message, 8000); return true; }
+  });
+  const pinta = () => { const C = ferFormCalc(r); const box = $("feR"); if (!box) return;
+    box.innerHTML = C.f && C.P ? `<div><b>Fim:</b> ${ferFmt(C.fim)} · <b>Retorno:</b> ${C.fim ? ferFmt(ferAdd(C.fim, 1)) : "—"} · <b>Aviso até:</b> ${C.ini ? ferFmt(ferAdd(C.ini, -30)) : "—"} · <b>Pagar até:</b> ${C.ini ? ferFmt(ferAdd(C.ini, -2)) : "—"}</div><div><b>Direito:</b> ${C.direito} · <b>já usados/programados:</b> ${C.outros} · <b>saldo depois:</b> ${C.saldoDepois}</div>${C.erros.map(e => `<div class="fer-e">✖ ${esc(e)}</div>`).join("")}${C.avisos.map(e => `<div class="fer-w">⚠ ${esc(e)}</div>`).join("")}` : `<span class="sup">Escolha o funcionário e o período.</span>`; };
+  const carregaPer = () => { const fsel = $("feF").value, f = FERP.funcs.find(x => x._id === fsel), s = $("feP"); if (!s) return;
+    if (!f) { s.innerHTML = ""; pinta(); return; } const A = ferAnalisar(f, hoje);
+    const ops = A.per.filter(P => P.est !== "quitado" || (r && r.per === P.aqIni));
+    const cur = s.dataset.f === fsel ? s.value : ""; s.dataset.f = fsel;
+    const pre = ops.some(P => P.aqIni === cur) ? cur : r ? r.per : perIni || (ops.find(P => P.est !== "aquisicao" && P.saldo) || ops[0] || {}).aqIni;
+    s.innerHTML = ops.map(P => `<option value="${P.aqIni}" ${P.aqIni === pre ? "selected" : ""}>${ferFmt(P.aqIni)} a ${ferFmt(P.aqFim)} · ${P.est === "aquisicao" ? "em aquisição (direito em " + ferFmt(ferAdd(P.aqFim, 1)) + ")" : `saldo ${P.saldo} · começar até ${ferFmt(P.limite)}`}</option>`).join("") || `<option value="">Sem período disponível</option>`;
+    const P = ops.find(p => p.aqIni === s.value); if (P && !r) { if (!$("feD").value) $("feD").value = String(Math.min(30, P.est === "aquisicao" ? P.direito : P.saldo) || ""); if (!$("feFa").value && P.faltas) $("feFa").value = String(P.faltas); }
+    pinta(); };
+  $("feF").onchange = () => { $("feD").value = ""; carregaPer(); }; $("feP").onchange = () => { if (!r) $("feD").value = ""; carregaPer(); };
+  ["feI", "feD", "feA", "feFa", "feS"].forEach(id => { const el = $(id); if (el) { el.addEventListener("input", pinta); el.addEventListener("change", pinta); } });
+  carregaPer();
+};
+function ferFormCalc(r) {
+  const hoje = todayISO(), fid = $("feF") ? $("feF").value : "", f = FERP.funcs.find(x => x._id === fid); const C = { f, erros: [], avisos: [] }; if (!f) { C.erros.push("Escolha o funcionário."); return C; }
+  const A = ferAnalisar(f, hoje), P = A.per.find(p => p.aqIni === ($("feP") || {}).value); C.P = P; if (!P) { C.erros.push("Escolha o período aquisitivo."); return C; }
+  C.ini = $("feI").value; C.dias = parseInt($("feD").value, 10) || 0; C.abono = parseInt($("feA").value, 10) || 0; C.faltas = parseInt($("feFa").value, 10) || 0;
+  C.direito = ferDireito(C.faltas); const outros = P.rs.filter(o => !r || o._id !== r._id); C.outros = outros.reduce((s, o) => s + o.dias + o.abono, 0);
+  C.saldoDepois = C.direito - C.outros - C.dias - C.abono; C.fim = C.ini && C.dias ? ferAdd(C.ini, C.dias - 1) : "";
+  const st = $("feS") ? $("feS").value : "Planejada"; if (st === "Cancelada") return C;
+  if (!C.direito) C.erros.push("Com mais de 32 faltas injustificadas no período não há direito a férias (art. 130).");
+  if (!C.ini) C.erros.push("Informe o início do gozo."); else if (!/^\d{4}-\d{2}-\d{2}$/.test(C.ini) || C.ini < "1900-01-01" || C.ini > "2099-12-31") C.erros.push("Início: data inválida.");
+  if (!C.dias) C.erros.push("Informe os dias de gozo."); else if (C.dias < 5) C.erros.push("Cada parcela tem no mínimo 5 dias (art. 134 §1º).");
+  if (C.saldoDepois < 0) C.erros.push(`Passa do direito: sobram ${C.direito - C.outros} dia(s) neste período.`);
+  if (C.abono > Math.floor(C.direito / 3)) C.erros.push(`Abono: no máximo ${Math.floor(C.direito / 3)} dia(s) (1/3 do direito).`);
+  if (C.abono && outros.some(o => o.abono)) C.erros.push("O abono deste período já foi lançado em outra parcela.");
+  const parcelas = outros.filter(o => o.dias && o.Status !== "Quitada (histórico)").concat([{ dias: C.dias }]);
+  if (parcelas.length > 3) C.erros.push("Máximo de 3 parcelas por período (art. 134 §1º).");
+  const tem14 = parcelas.some(p => p.dias >= 14) || outros.some(o => o.Status === "Quitada (histórico)" && o.dias >= 14);
+  if (C.dias && C.saldoDepois >= 0 && !tem14 && !(parcelas.length === 1 && C.saldoDepois === 0) && (C.saldoDepois < 14 || parcelas.length >= 3)) C.erros.push("Uma das parcelas precisa ter 14 dias ou mais (art. 134 §1º).");
+  if (C.dias && C.saldoDepois > 0 && parcelas.length >= 3) C.erros.push(`Esta seria a 3ª parcela e ainda sobrariam ${C.saldoDepois} dia(s), que não poderiam mais ser gozados (máximo de 3 parcelas).`);
+  if (C.dias && C.saldoDepois > 0 && C.saldoDepois < 5) C.erros.push(`Sobrariam ${C.saldoDepois} dia(s): uma parcela futura precisa ter pelo menos 5. Ajuste os dias ou o abono.`);
+  if (C.ini && C.ini <= P.aqFim) C.erros.push(`O direito só é adquirido em ${ferFmt(ferAdd(P.aqFim, 1))}; as férias deste período começam a partir daí.`);
+  if (C.ini && C.fim) { const sob = outros.find(o => o.ini && o.fim && o.ini <= C.fim && o.fim >= C.ini) || A.recs.filter(o => o.per !== P.aqIni && (!r || o._id !== r._id)).find(o => o.ini && o.fim && o.ini <= C.fim && o.fim >= C.ini); if (sob) C.erros.push(`Sobrepõe as férias de ${ferFmt(sob.ini)} a ${ferFmt(sob.fim)}.`); }
+  if (C.erros.length) return C;
+  const v = ferVedado(C.ini); if (v) C.avisos.push(`Começa nos 2 dias antes de ${ferDow(v) === 0 ? "domingo (repouso semanal)" : "feriado"} ${ferFmt(v)} — vedado pelo art. 134 §3º (só vale se o repouso dele não for no domingo).`);
+  if (C.fim > P.conc) C.avisos.push(`Termina depois do fim do concessivo (${ferFmt(P.conc)}): ${Math.min(C.dias, ferDif(P.conc, C.fim))} dia(s) saem em dobro (art. 137).`);
+  if (!r || r.ini !== C.ini) { if (ferDif(hoje, C.ini) < 30) C.avisos.push(`Faltam ${ferDif(hoje, C.ini)} dia(s): o aviso por escrito precisa de 30 dias de antecedência (art. 135).`); if (C.ini < hoje) C.avisos.push("O início é no passado (registro de férias já gozadas)."); }
+  if (C.abono && hoje > ferAdd(P.aqFim, -15)) C.avisos.push(`O pedido de abono deveria ter sido feito até ${ferFmt(ferAdd(P.aqFim, -15))} (art. 143); depois disso depende de concordância da empresa.`);
+  if (String(f.Situacao || "") === "Afastado") C.avisos.push("No cadastro o funcionário está Afastado.");
+  const cc = String(f.Departamento || "Sem centro de custo"), mesmos = FERP.funcs.filter(x => String(x.Departamento || "Sem centro de custo") === cc && String(x.Situacao || "") !== "Desligado"), mx = ferMaxCc(mesmos.length);
+  const juntos = FERP.itens.filter(o => o.Status !== "Cancelada" && o.Status !== "Quitada (histórico)" && (!r || o._id !== r._id) && String(o.FuncId) !== f._id && o.ini && o.fim && o.ini <= C.fim && o.fim >= C.ini && mesmos.some(x => x._id === String(o.FuncId)));
+  let pico = 0; for (let d = C.ini; d <= C.fim; d = ferAdd(d, 1)) { const n = juntos.filter(o => o.ini <= d && o.fim >= d).length; if (n > pico) pico = n; }
+  if (pico + 1 > mx) C.avisos.push(`Até ${pico} pessoa(s) do centro de custo "${cc}" já estarão de férias ao mesmo tempo nesse período (${[...new Set(juntos.map(o => o.Title))].slice(0, 4).join(", ")}) — máximo de ${mx} juntos.`);
+  return C;
+}
+window.ferAprovar = async rid => { const r = FERP.itens.find(x => x._id === String(rid)); if (!r) return; if (!(await erpConfirmar({ titulo: "Aprovar férias", html: `Aprovar as férias de <b>${esc(r.Title)}</b> de ${ferFmt(r.ini)} a ${ferFmt(r.fim)}?`, sim: "Aprovar" }))) return;
+  try { await SP.update(FERP.site.id, FERP.list.id, r._id, { Status: "Aprovada" }); toast("Férias aprovadas."); await ferCarregar(true); ferpPintar(); ferDetalhe(r.FuncId); } catch (e) { toast("Não foi possível aprovar: " + e.message, 7000); } };
+window.ferCancelar = async rid => { const r = FERP.itens.find(x => x._id === String(rid)); if (!r) return; if (!(await erpConfirmar({ titulo: "Desfazer", html: `Desfazer o registro de <b>${esc(r.Title)}</b> (período ${ferFmt(r.per)})? Ele fica como Cancelado.`, sim: "Desfazer", perigo: true }))) return;
+  try { await SP.update(FERP.site.id, FERP.list.id, r._id, { Status: "Cancelada" }); await ferCarregar(true); ferpPintar(); ferDetalhe(r.FuncId); } catch (e) { toast("Não foi possível: " + e.message, 7000); } };
+window.ferQuitar = async (fid, per, saldo) => { const f = FERP.funcs.find(x => x._id === String(fid)); if (!f || !FERP.list) return;
+  if (!(await erpConfirmar({ titulo: "Marcar período como quitado", html: `Registrar que os <b>${saldo}</b> dia(s) do período que começou em ${ferFmt(per)} de <b>${esc(f.Title)}</b> já foram gozados (ou pagos) antes deste controle?`, sim: "Marcar quitado" }))) return;
+  try { await SP.create(FERP.site.id, FERP.list.id, { Title: f.Title, FuncId: f._id, PeriodoInicio: per, Dias: saldo, AbonoDias: 0, Status: "Quitada (histórico)", Observacoes: `Quitado (histórico) por ${(session.me && session.me.displayName) || "—"} em ${ferFmt(todayISO())}.` }); await ferCarregar(true); ferpPintar(); ferDetalhe(fid); } catch (e) { toast("Não foi possível: " + e.message, 7000); } };
+window.ferAjustarSituacoes = async () => {
+  if (!podeEditar("rh_db")) { toast("Para mudar a situação no cadastro é preciso poder editar RH › Funcionários."); return; }
+  const hoje = todayISO(), L = FERP.funcs.filter(f => String(f.Situacao || "") !== "Desligado").map(f => ferAnalisar(f, hoje)).filter(A => A.alertas.some(a => a.k === "situacao"));
+  if (!L.length || !(await erpConfirmar({ titulo: "Ajustar situação no cadastro", html: `Atualizar RH › Funcionários de <b>${L.length}</b> pessoa(s)?<ul style="margin:6px 0 0;padding-left:18px">${L.slice(0, 12).map(A => `<li>${esc(A.f.Title)} → ${A.gozoHoje ? "Férias" : "Ativo"}</li>`).join("")}</ul>`, sim: "Atualizar" }))) return;
+  let ok = 0; for (const A of L) { try { await SP.update(FERP.site.id, FERP.func.id, A.f._id, { Situacao: A.gozoHoje ? "Férias" : "Ativo" }); ok++; } catch (e) {} }
+  toast(`${ok} situação(ões) atualizada(s).`); await ferCarregar(true); ferpPintar(); };
+window.ferAviso = (fid, rid) => { const f = FERP.funcs.find(x => x._id === String(fid)), r = FERP.itens.find(x => x._id === String(rid)); if (!f || !r) return;
+  const PA = ferAnalisar(f, todayISO()).per.find(p => p.aqIni === r.per), aqFim = PA ? PA.aqFim : ferAdd(ferAddAno(r.per, 1), -1);
+  const html = `${printCab("Aviso de férias", `${f.Title} · art. 135 da CLT`)}
+    <p style="margin:16px 0">Comunicamos que, nos termos do art. 135 da CLT, as férias de <b>${esc(f.Title)}</b>${f.Matricula ? `, matrícula ${esc(f.Matricula)}` : ""}${f.Cargo ? `, ${esc(f.Cargo)}` : ""}, referentes ao período aquisitivo de <b>${ferFmt(r.per)}</b> a <b>${ferFmt(aqFim)}</b>, serão concedidas conforme abaixo:</p>
+    <table class="t"><tbody><tr><th>Início do gozo</th><td>${ferFmt(r.ini)}</td></tr><tr><th>Fim do gozo</th><td>${ferFmt(r.fim)}</td></tr><tr><th>Dias de gozo</th><td>${r.dias}</td></tr><tr><th>Dias convertidos em abono pecuniário</th><td>${r.abono || 0}</td></tr><tr><th>Retorno ao trabalho</th><td>${ferFmt(ferAdd(r.fim, 1))}</td></tr><tr><th>Pagamento até</th><td>${ferFmt(ferAdd(r.ini, -2))}</td></tr><tr><th>Adiantamento da 1ª parcela do 13º</th><td>${r.Adiantar13 ? "Sim" : "Não"}</td></tr></tbody></table>
+    <p style="margin:28px 0 6px">Local e data: ______________________________, ____/____/________</p>
+    <div style="display:flex;gap:40px;margin-top:56px"><div style="flex:1;border-top:1px solid #333;padding-top:4px;text-align:center">Transportadora Nova Macabu</div><div style="flex:1;border-top:1px solid #333;padding-top:4px;text-align:center">${esc(f.Title)}<br><span style="font-size:9px">ciente em ____/____/________</span></div></div>`;
+  printDoc({ titulo: `Aviso de férias - ${f.Title}`, html, fonte: 11 }); };
+
+/* ---------- rota ---------- */
+{ const r0 = window.route; window.route = function () {
+    const hash = (location.hash || "#/inicio").split("?")[0];
+    if (hash === "#/rh/ferias") { const m = MODULES.find(x => x.id === "rh_ferias"); if (!canSee(m)) { location.hash = "#/inicio"; return; }
+      session.modAtual = "rh_ferias"; session.pagAtual = ""; document.body.classList.add("wide"); document.body.classList.remove("nav-open"); $("main").innerHTML = pageFerias(); navAtivo("rh_ferias"); window.scrollTo(0, 0); ferAbrir(false).then(() => ferRolarHoje()); return; }
+    return r0.apply(this, arguments);
+  }; }
+(function () { const st = document.createElement("style"); st.id = "erp-v014113"; st.textContent = `
+.fer-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:12px}
+.fer-kpi{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--surface,#fff);border:1px solid var(--line);border-radius:var(--radius,10px);padding:10px 12px;cursor:pointer;font:inherit;box-shadow:var(--shadow)}
+.fer-kpi .l{font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2)}.fer-kpi .v{font-size:24px;line-height:1.1}.fer-kpi .s{font-size:11.5px;color:var(--ink-2)}
+.fer-kpi.r .v{color:#B3261E}.fer-kpi.a .v{color:#9A6100}.fer-kpi.b .v{color:#1F5FA8}.fer-kpi.on{outline:2px solid #0F1E3A;outline-offset:-2px}
+.fer-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px;margin-bottom:10px}.fer-tools #ferQ{flex:1;min-width:200px}
+.fer-zoom,.fer-nav{display:inline-flex;gap:4px}.fer-chk{display:inline-flex;gap:6px;align-items:center;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.fer-filtro{font-size:13px;margin:-2px 0 8px}
+.fer-scroll{overflow:auto;max-height:72vh;border:1px solid var(--line);border-radius:var(--radius,10px);background:var(--surface,#fff);box-shadow:var(--shadow);margin-bottom:14px}
+.fer-g{border-collapse:separate;border-spacing:0;font-size:12.5px}
+.fer-g th,.fer-g td{padding:0;border-bottom:1px solid var(--line-2,#EDEFF2);vertical-align:middle}
+.fer-g thead th{position:sticky;top:0;z-index:3;background:#F6F7F9;height:40px}
+.fer-l{position:sticky;left:0;z-index:2;background:var(--surface,#fff);border-right:1px solid var(--line)}.fer-g thead .fer-l{z-index:4;background:#F6F7F9}
+.fer-lc{display:grid;grid-template-columns:230px 120px 66px 46px 74px;align-items:center;gap:8px;padding:4px 10px;min-height:34px}
+.fer-hd{font-size:11px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.03em}
+.fer-nm{display:flex;flex-direction:column;min-width:0;position:relative;padding-left:14px}.fer-nm b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}.fer-nm small{color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+.fer-hd .fer-nm{padding-left:0}
+.fer-dot{position:absolute;left:0;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;background:#2F7D4F}.fer-dot.r{background:#B3261E}.fer-dot.a{background:#D99100}.fer-dot.i{background:#5B8CC6}
+.fer-cc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2)}.fer-sd{text-align:right;font-weight:700}.fer-li .fer-lim.r{color:#B3261E;font-weight:700}.fer-li .fer-lim.a{color:#9A6100;font-weight:700}
+.fer-row{cursor:pointer}.fer-row:hover td{background:#EEF3FA}.fer-row:hover .fer-l{background:#EEF3FA}
+.fer-grp td{background:#F3F4F6}.fer-grp .fer-l{background:#F3F4F6}.fer-grp .fer-lc{grid-template-columns:1fr;gap:0}
+.fer-esc{position:relative;height:40px}.fer-mes{position:absolute;top:0;height:20px;line-height:20px;padding-left:4px;font-size:11px;font-weight:700;color:#0F1E3A;border-left:1px solid #D5D9DF;white-space:nowrap;overflow:hidden}
+.fer-dias{position:absolute;top:20px;left:0;right:0;height:20px}.fer-dia{position:absolute;top:0;height:20px;line-height:20px;font-size:10px;color:var(--ink-2);text-align:center}.fer-dia.fds{background:rgba(15,30,58,.05)}.fer-dia.fer{color:#B3261E;font-weight:700}
+.fer-trk{position:relative;height:34px}.fer-ml{position:absolute;inset:0;pointer-events:none}.fer-ml i{position:absolute;top:0;bottom:0;border-left:1px solid #E6E9ED}
+.fer-hoje{position:absolute;top:0;bottom:0;width:0;border-left:2px solid #D6421F;z-index:2;pointer-events:none}
+.fer-feriado{position:absolute;top:0;bottom:0;background:rgba(214,66,31,.08);pointer-events:none}
+.fer-b{position:absolute;top:8px;height:18px;border-radius:4px;background:#1F5FA8;color:#fff;font-size:10.5px;font-weight:700;line-height:18px;padding:0 4px;overflow:hidden;white-space:nowrap;z-index:1;cursor:pointer;box-sizing:border-box}
+.fer-b.st-planejada{background:#fff;color:#1F5FA8;border:1.5px dashed #1F5FA8;line-height:15px}.fer-b.st-gozo{background:#2F7D4F}.fer-b.st-gozada,.fer-b.st-historico{background:#9AA3AF}.fer-b.st-gozadaNA{background:#B7A27A}
+.fer-dobra{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(45deg,rgba(179,38,30,.85) 0 4px,rgba(179,38,30,.45) 4px 8px)}
+.fer-ativo{position:absolute;top:16px;height:2px;background:#8AA3C2;z-index:0}.fer-ativo.lim{background:#D9A33A}
+.fer-ativo span{position:absolute;left:6px;top:-13px;font-size:10px;color:#56657A;white-space:nowrap}
+.fer-ms{position:absolute;top:12px;width:10px;height:10px;transform:rotate(45deg);background:#0F1E3A;z-index:2}.fer-ms.ms-vencido,.fer-ms.ms-vencendo{background:#B3261E}.fer-ms.ms-aquisicao{background:#9AA3AF}
+.fer-conc{position:absolute;top:5px;height:24px;width:0;border-left:2px solid #B3261E;z-index:1}
+.fer-adq{position:absolute;top:24px;height:6px;width:0;border-left:2px solid #2F7D4F}
+.fer-loadw{position:absolute;inset:0}.fer-load{position:absolute;bottom:4px;background:#8AA3C2;color:#fff;font-size:9.5px;font-weight:700;text-align:center;line-height:1;border-radius:2px;overflow:hidden}.fer-load.over{background:#B3261E}
+.fer-tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:700;background:#EEF1F5;color:#3B4656;white-space:nowrap}
+.fer-tag.r{background:#FBE9E7;color:#9F1E16}.fer-tag.a{background:#FFF4DB;color:#8A5B00}.fer-tag.i{background:#E8F0FB;color:#1F5FA8}.fer-tag.ok,.fer-tag.st-gozada{background:#E7F4EC;color:#21643D}.fer-tag.st-gozo{background:#2F7D4F;color:#fff}.fer-tag.st-aprovada{background:#1F5FA8;color:#fff}
+.fer-al{background:#FFF8E6;border:1px solid #F0DCA6;border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.45}
+.fer-resumo{background:#F6F7F9;border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.5}.fer-e{color:#B3261E;font-weight:600}.fer-w{color:#8A5B00}
+.fer-regras{margin:12px 0 30px;font-size:13px}.fer-regras summary{cursor:pointer;font-weight:700}.fer-regras ul{margin:8px 0 0;padding-left:18px;line-height:1.55}
+@media (max-width:760px){.fer-lc{grid-template-columns:150px;gap:0}.fer-lc .fer-cc,.fer-lc .fer-ad,.fer-lc .fer-sd,.fer-lc .fer-li{display:none}.fer-scroll{max-height:none}}
+`; document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -57942,6 +58373,7 @@ CONFIG.version = "v0.14.109";   /* fundo padrão nos módulos; Funcionários no 
 CONFIG.version = "v0.14.110";   /* RH › Funcionários: máscaras, limites e padrão gravado de CPF, PIS, CNH, RG, celular e telefone */
 CONFIG.version = "v0.14.111";   /* RH › Funcionários: datas com limite e conferência; CPF conferido ao digitar; máscaras de CNH, RG, agência e conta; obrigatórios com * (CNH e celular para motoristas); Painel › Banco de Dados escreve a divergência com o RH na linha */
 CONFIG.version = "v0.14.112";   /* RH › Funcionários: volta da ficha para a lista sem a página subir e descer (rolagem controlada pelo ERP) */
+CONFIG.version = "v0.14.113";   /* RH › Programação de Férias: cronograma no molde do MS Project, períodos e limites da CLT, conflitos por centro de custo, pendências, aviso de férias */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

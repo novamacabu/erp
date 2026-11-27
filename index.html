@@ -58706,6 +58706,470 @@ const timLocais = () => { const set = new Map(); TIM_LOCAIS.filter(l => l !== "O
         const sv = $("mSave"); if (sv) sv.addEventListener("click", ev => { if (TIO.edit != null && !tioOk()) { ev.stopImmediatePropagation(); ev.preventDefault(); return; } const n = $("tioNova"); if (n && n.value.trim()) tioLancar(); const o = $("taObs"); if (o) o.value = rhfObsTexto(TIO.lista) || ""; }, true); }
     } catch (e) { console.warn("timAtivoForm v0.14.117", e); }
     return r; }; }
+
+/* =====================================================================
+   v0.14.117 (Rafael, 27/11 11:17 · item 1) · TI › Controle de Estoque
+   Espelho de RH › Consumíveis, adaptado à TI:
+   - Itens controlados por quantidade (cabos, toners, mouses…) ou por número de série (monitores, modems, notebooks…).
+   - Unidades com série: status (em estoque, em uso, em manutenção, emprestado, baixado), usuário do RH, patrimônio, garantia.
+   - Movimentações: Entrada, Saída (para funcionário do RH), Devolução, Transferência de local, Baixa (descarte) e Ajuste.
+   - Saldo e custo médio calculados pelas movimentações (média ponderada); mínimo para repor.
+   - Acréscimos de TI: ligação com o chamado de TI, "Transformar em ativo" (TI › Manutenção de Equipamentos) e garantia.
+   - Painel: indicadores e gráficos (entradas × saídas por mês, valor por categoria, saídas por departamento, mais retirados).
+   ===================================================================== */
+MODULES.push({ id: "ti_estoque", path: "#/ti/controle-de-estoque", icon: "box", name: "Controle de Estoque", area: "TI", groups: ["ti"], status: "piloto", wide: true });
+if (typeof AG_MOD_SITES !== "undefined") AG_MOD_SITES.ti_estoque = [];
+const TIE_CATS = ["Monitor", "Periférico (teclado, mouse, headset, webcam)", "Rede (modem, roteador, switch, access point)", "Cabo e adaptador", "Computador e notebook", "Componente (memória, SSD, fonte)", "Impressão (toner, cartucho, fita)", "Energia (nobreak, bateria, filtro)", "Celular e acessório", "Armazenamento (pen drive, HD externo)", "Outros"];
+const TIE_UNID = ["un", "par", "cx", "pct", "m", "rolo", "kit"];
+const TIE_CTRL = ["Quantidade", "Número de série"];
+const TIE_TIPOS = ["Entrada", "Saída", "Devolução", "Transferência", "Baixa", "Ajuste"];
+const TIE_UST = ["Em estoque", "Em uso", "Em manutenção", "Emprestado", "Baixado"];
+const TIE_SUGEST = ["Monitor 22\"", "Monitor 24\"", "Teclado USB", "Mouse USB", "Kit teclado e mouse sem fio", "Headset USB", "Webcam", "Modem 4G", "Roteador Wi-Fi", "Switch 8 portas", "Access point", "Cabo de rede (patch cord)", "Cabo HDMI", "Cabo de força", "Adaptador HDMI / VGA", "Toner", "Cartucho de tinta", "Memória RAM", "SSD", "Fonte de alimentação", "Nobreak", "Bateria de nobreak", "Filtro de linha", "Pen drive", "HD externo", "Carregador de notebook", "Carregador de celular", "Película / capa de celular"];
+LISTS.ti_est = {
+  key: "ti_est", displayName: "TI — Estoque", siteKey: "ti", titleAs: "Item",
+  description: "TI NMB · itens do estoque de TI (por quantidade ou por número de série), mínimo para repor, local e custo médio. Editada em TI › Controle de Estoque.",
+  columns: [
+    { name: "Categoria",   displayName: "Categoria",            choice: choice(TIE_CATS, true) },
+    { name: "Unidade",     displayName: "Unidade",              choice: choice(TIE_UNID, true) },
+    { name: "Controle",    displayName: "Controle",             required: true, choice: choice(TIE_CTRL) },
+    { name: "Marca",       displayName: "Marca",                text: { allowMultipleLines: false, maxLength: 60 } },
+    { name: "Modelo",      displayName: "Modelo",               text: { allowMultipleLines: false, maxLength: 100 } },
+    { name: "Codigo",      displayName: "Código interno",       text: { allowMultipleLines: false, maxLength: 40 } },
+    { name: "TipoAtivo",   displayName: "Tipo de ativo (TI)",   choice: choice(TIM_TIPOS_ATIVO, true) },
+    { name: "Minimo",      displayName: "Estoque mínimo",       number: integer(0, null) },
+    { name: "Saldo",       displayName: "Saldo (calculado)",    number: { decimalPlaces: "none", displayAs: "number" } },
+    { name: "CustoMedio",  displayName: "Custo médio (R$)",     number: { decimalPlaces: "two", displayAs: "number", minimum: 0 } },
+    { name: "Local",       displayName: "Local de guarda",      text: { allowMultipleLines: false, maxLength: 80 } },
+    { name: "Fornecedor",  displayName: "Fornecedor habitual",  text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "Bloqueado",   displayName: "Bloqueado (sem novas movimentações)", boolean: {} },
+    { name: "Observacoes", displayName: "Observações",          text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+LISTS.ti_est_un = {
+  key: "ti_est_un", displayName: "TI — Estoque · Unidades", siteKey: "ti", titleAs: "Nº de série",
+  description: "TI NMB · unidades com número de série dos itens do estoque de TI: status, usuário, patrimônio, garantia e ligação com o ativo. Editada em TI › Controle de Estoque.",
+  columns: [
+    { name: "ItemId",      displayName: "Item (id)",          required: true, text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Item",        displayName: "Item",               text: { allowMultipleLines: false, maxLength: 160 } },
+    { name: "Patrimonio",  displayName: "Patrimônio",         text: { allowMultipleLines: false, maxLength: 40 } },
+    { name: "Status",      displayName: "Status",             required: true, choice: choice(TIE_UST) },
+    { name: "Usuario",     displayName: "Usuário",            text: { allowMultipleLines: false, maxLength: 100 } },
+    { name: "Departamento", displayName: "Departamento",      choice: choice(CENTROS_CUSTO, true) },
+    { name: "Local",       displayName: "Local",              text: { allowMultipleLines: false, maxLength: 80 } },
+    { name: "DataEntrada", displayName: "Data de entrada",    dateTime: dateOnly },
+    { name: "Custo",       displayName: "Custo (R$)",         number: { decimalPlaces: "two", displayAs: "number", minimum: 0 } },
+    { name: "NotaFiscal",  displayName: "Nota fiscal",        text: { allowMultipleLines: false, maxLength: 40 } },
+    { name: "GarantiaAte", displayName: "Garantia até",       dateTime: dateOnly },
+    { name: "AtivoId",     displayName: "Ativo de TI (id)",   text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Historico",   displayName: "Histórico (JSON)",   text: { allowMultipleLines: true, textType: "plain" } }
+  ]
+};
+LISTS.ti_est_mov = {
+  key: "ti_est_mov", displayName: "TI — Estoque · Movimentações", siteKey: "ti", titleAs: "Protocolo",
+  description: "TI NMB · entradas, saídas, devoluções, transferências, baixas e ajustes do estoque de TI. Editada em TI › Controle de Estoque.",
+  columns: [
+    { name: "ItemId",      displayName: "Item (id)",          required: true, text: { allowMultipleLines: false, maxLength: 20 } },
+    { name: "Item",        displayName: "Item",               text: { allowMultipleLines: false, maxLength: 160 } },
+    { name: "Tipo",        displayName: "Tipo",               required: true, choice: choice(TIE_TIPOS) },
+    { name: "Data",        displayName: "Data",               required: true, dateTime: dateOnly },
+    { name: "Quantidade",  displayName: "Quantidade",         number: { decimalPlaces: "none", displayAs: "number" } },
+    { name: "CustoUnitario", displayName: "Custo unitário (R$)", number: { decimalPlaces: "two", displayAs: "number", minimum: 0 } },
+    { name: "Valor",       displayName: "Valor (R$)",         number: { decimalPlaces: "two", displayAs: "number" } },
+    { name: "Funcionario", displayName: "Funcionário",        text: { allowMultipleLines: false, maxLength: 100 } },
+    { name: "Departamento", displayName: "Departamento",      choice: choice(CENTROS_CUSTO, true) },
+    { name: "Chamado",     displayName: "Chamado de TI",      text: { allowMultipleLines: false, maxLength: 40 } },
+    { name: "Local",       displayName: "Local",              text: { allowMultipleLines: false, maxLength: 80 } },
+    { name: "Series",      displayName: "Números de série",   text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "NotaFiscal",  displayName: "Nota fiscal",        text: { allowMultipleLines: false, maxLength: 40 } },
+    { name: "Fornecedor",  displayName: "Fornecedor",         text: { allowMultipleLines: false, maxLength: 120 } },
+    { name: "Motivo",      displayName: "Motivo / observação", text: { allowMultipleLines: true, textType: "plain" } },
+    { name: "LancadoPor",  displayName: "Lançado por",        text: { allowMultipleLines: false, maxLength: 100 } }
+  ]
+};
+SETUP_ORDER.push("ti_est", "ti_est_un", "ti_est_mov");
+SETUP_TEXT.ti_est = `Cria no site TI a lista "TI — Estoque" (v0.14.117): itens do estoque de TI (por quantidade ou por número de série), mínimo, local e custo médio. Editada em TI › Controle de Estoque.`;
+SETUP_TEXT.ti_est_un = `Cria no site TI a lista "TI — Estoque · Unidades" (v0.14.117): unidades com número de série (status, usuário, patrimônio, garantia, ativo). Editada em TI › Controle de Estoque.`;
+SETUP_TEXT.ti_est_mov = `Cria no site TI a lista "TI — Estoque · Movimentações" (v0.14.117): entradas, saídas, devoluções, transferências, baixas e ajustes. Editada em TI › Controle de Estoque.`;
+const TIE = { site: null, L: {}, itens: [], uns: [], movs: [], ready: false, erro: "", aba: "painel", f: { q: "", cat: "", sit: "" }, fu: { q: "", st: "", item: "" }, fm: { q: "", tipo: "", per: "90" } };
+MOD_RESET.ti_estoque = () => { TIE.aba = "painel"; TIE.f = { q: "", cat: "", sit: "" }; TIE.fu = { q: "", st: "", item: "" }; TIE.fm = { q: "", tipo: "", per: "90" }; };
+const tiePode = () => TIE.ready && podeEditar("ti_estoque");
+const tieItem = id => TIE.itens.find(x => x._id === String(id));
+const tieUn = id => TIE.uns.find(x => x._id === String(id));
+const tieSerie = it => it && it.Controle === "Número de série";
+const tieN = v => Number(v) || 0;
+const tieQ = v => Math.round(tieN(v)).toLocaleString("pt-BR");
+const tieRot = it => it ? [it.Title, [it.Marca, it.Modelo].filter(Boolean).join(" ")].filter(Boolean).join(" · ") : "";
+async function tieCarregar(force) {
+  TIE.erro = "";
+  try {
+    if (!TIE.site) TIE.site = await SP.site(CONFIG.sites.ti);
+    if (force || !TIE.L.i) { const ls = await SP.lists(TIE.site.id); ["ti_est", "ti_est_un", "ti_est_mov"].forEach((k, i) => { TIE.L["ium"[i]] = ls.find(l => l.displayName === LISTS[k].displayName) || null; }); }
+    if (!TIE.L.i || !TIE.L.u || !TIE.L.m) { TIE.itens = []; TIE.uns = []; TIE.movs = []; TIE.ready = false; return; }
+    const map = it => Object.assign({ _id: String(it.id), _lm: it.lastModifiedDateTime || "" }, it.fields || {});
+    const [a, b, c] = await Promise.all([SP.items(TIE.site.id, TIE.L.i.id), SP.items(TIE.site.id, TIE.L.u.id), SP.items(TIE.site.id, TIE.L.m.id)]);
+    TIE.itens = a.map(map); TIE.uns = b.map(map); TIE.movs = c.map(map); TIE.ready = true; tieCalcular();
+  } catch (e) { TIE.erro = String((e && e.message) || e); TIE.ready = false; TIE.L = {}; }
+}
+/* saldo e custo médio pelas movimentações, em ordem de data (média ponderada móvel) */
+function tieCalcular() {
+  const por = new Map(TIE.itens.map(it => [it._id, { saldo: 0, cm: 0, ent: 0, sai: 0 }]));
+  const ord = TIE.movs.slice().sort((x, y) => (timD(x.Data) || "").localeCompare(timD(y.Data) || "") || Number(x._id) - Number(y._id));
+  ord.forEach(m => { const s = por.get(String(m.ItemId)); if (!s) return; const q = tieN(m.Quantidade);
+    if (m.Tipo === "Entrada") { const c = tieN(m.CustoUnitario); if (q > 0) { s.cm = s.saldo + q > 0 && c > 0 ? (s.saldo * s.cm + q * c) / (s.saldo + q) : s.cm || c; s.saldo += q; s.ent += q; } }
+    else if (m.Tipo === "Devolução") s.saldo += q;
+    else if (m.Tipo === "Saída") { s.saldo -= q; s.sai += q; }
+    else if (m.Tipo === "Baixa") s.saldo -= q;
+    else if (m.Tipo === "Ajuste") s.saldo += q; });
+  TIE.itens.forEach(it => { const s = por.get(it._id); it._saldo = tieSerie(it) ? TIE.uns.filter(u => String(u.ItemId) === it._id && u.Status === "Em estoque").length : s.saldo; it._cm = s.cm || tieN(it.CustoMedio);
+    it._emUso = TIE.uns.filter(u => String(u.ItemId) === it._id && u.Status === "Em uso").length;
+    const min = tieN(it.Minimo); it._sit = it.Bloqueado ? "Bloqueado" : it._saldo <= 0 && min > 0 ? "Zerado" : min > 0 && it._saldo < min ? "Repor" : it._saldo <= 0 ? "Sem saldo" : "OK"; });
+}
+const tieSitPill = s => `<span class="status ${({ OK: "st-pago", Repor: "st-pend", Zerado: "st-venc", Bloqueado: "st-cinza", "Sem saldo": "st-cinza" })[s] || "st-cinza"}">${esc(s)}</span>`;
+const tieUstPill = s => `<span class="status ${({ "Em estoque": "st-pago", "Em uso": "st-aguardando", "Em manutenção": "st-pend", Emprestado: "st-pend", Baixado: "st-cinza" })[s] || "st-cinza"}">${esc(s || "—")}</span>`;
+function tieProto() { const d = new Date(), pre = `EST-${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, "0")}-`; const n = TIE.movs.filter(m => String(m.Title || "").startsWith(pre)).map(m => Number(String(m.Title).slice(pre.length)) || 0); return pre + String((n.length ? Math.max(...n) : 0) + 1).padStart(4, "0"); }
+function tieHist(v, txt) { const h = timJson(v, []); h.push({ em: new Date().toISOString(), por: (session.me && session.me.displayName) || "", o: txt }); return JSON.stringify(h.slice(-60)); }
+function pageTiEstoque() {
+  return `<div class="page" id="tieRoot">
+    <div class="cap-topo"><div><h1 style="margin:0">Controle de Estoque</h1><p class="sup" style="margin:2px 0 0">Estoque de TI: monitores, modems, teclados, cabos, toners… por quantidade ou por número de série, com entrada, saída para o funcionário, devolução, baixa e transformação em ativo</p></div><span class="grow"></span><div id="tieActions" class="page-actions"></div></div>
+    <div id="tieBody"><div class="cap-empty"><h3>Carregando…</h3><p>Buscando as listas no SharePoint.</p></div></div></div>`;
+}
+async function renderTiEstoque() { const b = $("tieBody"); if (!b) return; await tieCarregar(true); paintTiEstoque(); }
+window.renderTiEstoque = renderTiEstoque;
+const tieKpi = (lbl, val, sub, cls, on) => `<button type="button" class="kpi ${cls || ""}" ${on ? `onclick="${on}"` : 'tabindex="-1"'}><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div><div class="sub">${esc(sub)}</div></button>`;
+function paintTiEstoque() {
+  const body = $("tieBody"), acts = $("tieActions"); if (!body) return; const ed = tiePode();
+  if (acts) acts.innerHTML = `<button class="btn" onclick="renderTiEstoque()">Atualizar</button>${TIE.ready ? `<button class="btn" onclick="tieExcel()">Exportar Excel</button>` : ""}${ed ? `<button class="btn" onclick="tieItemForm()">Cadastrar Item</button><button class="btn" onclick="tieMov('Entrada')">Entrada</button><button class="btn primary" onclick="tieMov('Saída')">Saída</button>` : ""}`;
+  if (!TIE.ready) { body.innerHTML = TIE.erro ? `<div class="cap-empty"><h3>Não foi possível ler as listas</h3><p>${esc(TIE.erro)}</p><button class="btn" onclick="renderTiEstoque()">Tentar de Novo</button></div>` : `<div class="cap-empty"><h3>As listas do Controle de Estoque ainda não existem</h3><p>Um administrador cria em Configuração › Executar tudo ("TI — Estoque", "TI — Estoque · Unidades" e "TI — Estoque · Movimentações", no site TI).</p></div>`; return; }
+  const abas = [["painel", "Painel"], ["est", "Estoque"], ["un", "Unidades (série)"], ["mov", "Movimentações"]], nRep = TIE.itens.filter(i => i._sit === "Repor" || i._sit === "Zerado").length;
+  const tabs = `<div class="seg-tabs" role="tablist">${abas.map(([k, l]) => `<button role="tab" class="${TIE.aba === k ? "on" : ""}" onclick="tieAba('${k}')">${l}${k === "est" && nRep ? ` <span class="tim-badge">${nRep}</span>` : ""}</button>`).join("")}</div>`;
+  const h = TIE.aba === "est" ? tieEstHtml() : TIE.aba === "un" ? tieUnHtml() : TIE.aba === "mov" ? tieMovHtml() : tiePainelHtml();
+  body.innerHTML = `<div class="op-topo"><span class="grow"></span>${tabs}</div>${h}`;
+  tieWire(); if (TIE.aba === "painel") tiePainelDesenhar();
+}
+window.paintTiEstoque = paintTiEstoque;
+window.tieAba = k => { TIE.aba = k; paintTiEstoque(); };
+function tieWire() {
+  const on = (id, fn, ev) => { const el = $(id); if (el) el.addEventListener(ev || "input", fn); };
+  on("tieQ", e => { TIE.f.q = e.target.value; erpDeb("tie", () => { const t = $("tieTab"); if (t) t.innerHTML = tieEstTabela(); }); });
+  on("tieCat", e => { TIE.f.cat = e.target.value; paintTiEstoque(); }, "change"); on("tieSit", e => { TIE.f.sit = e.target.value; paintTiEstoque(); }, "change");
+  on("tieUQ", e => { TIE.fu.q = e.target.value; erpDeb("tieu", () => { const t = $("tieUTab"); if (t) t.innerHTML = tieUnTabela(); }); });
+  on("tieUSt", e => { TIE.fu.st = e.target.value; paintTiEstoque(); }, "change"); on("tieUIt", e => { TIE.fu.item = e.target.value; paintTiEstoque(); }, "change");
+  on("tieMQ", e => { TIE.fm.q = e.target.value; erpDeb("tiem", () => { const t = $("tieMTab"); if (t) t.innerHTML = tieMovTabela(); }); });
+  on("tieMT", e => { TIE.fm.tipo = e.target.value; paintTiEstoque(); }, "change"); on("tieMP", e => { TIE.fm.per = e.target.value; paintTiEstoque(); }, "change");
+}
+/* ---------- Estoque ---------- */
+function tieEstLista() { const f = TIE.f, q = normName(f.q);
+  return TIE.itens.filter(i => (!f.cat || i.Categoria === f.cat) && (!f.sit || (f.sit === "repor" ? i._sit === "Repor" || i._sit === "Zerado" : i._sit === f.sit)) && (!q || normName([i.Title, i.Marca, i.Modelo, i.Codigo, i.Categoria, i.Local].join(" ")).includes(q)))
+    .sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR")); }
+function tieEstTabela() { const its = tieEstLista();
+  return its.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Item</th><th>Categoria</th><th>Controle</th><th class="n">Saldo</th><th class="n">Mínimo</th><th class="n">Em uso</th><th class="n">Custo médio</th><th class="n">Valor em estoque</th><th>Local</th><th>Situação</th></tr></thead><tbody>${its.map(i => `<tr onclick="tieItemAbrir(${jsArg(i._id)})"><td><b>${esc(i.Title || "")}</b><div class="sup">${esc([i.Marca, i.Modelo, i.Codigo ? "cód. " + i.Codigo : ""].filter(Boolean).join(" · "))}</div></td><td>${esc(i.Categoria || "—")}</td><td>${tieSerie(i) ? "Nº de série" : "Quantidade"}</td><td class="n"><b>${tieQ(i._saldo)}</b> <span class="sup">${esc(i.Unidade || "un")}</span></td><td class="n">${i.Minimo != null && i.Minimo !== "" ? tieQ(i.Minimo) : "—"}</td><td class="n">${tieSerie(i) ? tieQ(i._emUso) : "—"}</td><td class="n">${i._cm ? fmtBRL(i._cm) : "—"}</td><td class="n">${i._cm && i._saldo > 0 ? fmtBRL(i._cm * i._saldo) : "—"}</td><td>${esc(i.Local || "—")}</td><td>${tieSitPill(i._sit)}</td></tr>`).join("")}</tbody></table></div><p class="hint">${its.length} item(ns). Clique para ver o item, as unidades e as movimentações.</p>` : `<div class="cap-empty"><h3>Nenhum item${TIE.itens.length ? " neste filtro" : " cadastrado"}</h3><p>${TIE.itens.length ? "Mude os filtros." : "Comece por \"Cadastrar Item\" (ex.: Monitor 24\", Teclado USB, Cabo de rede)."}</p></div>`; }
+function tieEstHtml() { const f = TIE.f, cats = [...new Set(TIE.itens.map(i => i.Categoria).filter(Boolean))].sort();
+  return `<div class="filters" role="search"><input type="search" id="tieQ" class="span-2" placeholder="Buscar: item, marca, modelo, código, local…" value="${esc(f.q)}">${timFiltroSel("tieCat", "Todas as categorias", cats, f.cat)}<select id="tieSit" aria-label="Situação"><option value="">Todas as situações</option>${[["repor", "Para repor (abaixo do mínimo)"], ["OK", "OK"], ["Sem saldo", "Sem saldo"], ["Bloqueado", "Bloqueado"]].map(([v, l]) => `<option value="${v}" ${f.sit === v ? "selected" : ""}>${l}</option>`).join("")}</select><button class="btn ghost" onclick="TIE.f={q:'',cat:'',sit:''}; paintTiEstoque()">Limpar</button></div><div id="tieTab">${tieEstTabela()}</div>`; }
+/* ---------- Unidades ---------- */
+function tieUnLista() { const f = TIE.fu, q = normName(f.q);
+  return TIE.uns.filter(u => (!f.st || u.Status === f.st) && (!f.item || String(u.ItemId) === f.item) && (!q || normName([u.Title, u.Item, u.Patrimonio, u.Usuario, u.Departamento, u.Local, u.NotaFiscal].join(" ")).includes(q)))
+    .sort((a, b) => String(a.Item || "").localeCompare(String(b.Item || ""), "pt-BR") || String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR", { numeric: true })); }
+function tieUnTabela() { const us = tieUnLista();
+  return us.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Nº de série</th><th>Item</th><th>Patrimônio</th><th>Status</th><th>Usuário</th><th>Local</th><th>Entrada</th><th>Garantia</th><th>Ativo</th></tr></thead><tbody>${us.map(u => { const gd = timDias(timD(u.GarantiaAte)), a = u.AtivoId && typeof timAtivo === "function" ? timAtivo(u.AtivoId) : null;
+    return `<tr onclick="tieUnAbrir(${jsArg(u._id)})"><td class="nw"><b>${esc(u.Title || "")}</b></td><td>${esc(u.Item || "")}</td><td>${esc(u.Patrimonio || "—")}</td><td>${tieUstPill(u.Status)}</td><td>${esc(u.Usuario || "—")}<div class="sup">${esc(u.Departamento || "")}</div></td><td>${esc(u.Local || "—")}</td><td class="nw">${u.DataEntrada ? fmtDate(u.DataEntrada) : "—"}</td><td class="nw">${u.GarantiaAte ? `${fmtDate(u.GarantiaAte)}${gd != null && gd < 0 ? ` <span class="sup">vencida</span>` : gd != null && gd <= 60 ? ` <span class="sup">${gd} dia(s)</span>` : ""}` : "—"}</td><td>${u.AtivoId ? `<span class="status st-aguardando">${esc(a ? a.Title : "ativo")}</span>` : "—"}</td></tr>`; }).join("")}</tbody></table></div><p class="hint">${us.length} unidade(s).</p>` : `<div class="cap-empty"><h3>Nenhuma unidade${TIE.uns.length ? " neste filtro" : ""}</h3><p>Unidades com número de série nascem na Entrada de um item controlado por série.</p></div>`; }
+function tieUnHtml() { const f = TIE.fu, its = TIE.itens.filter(tieSerie);
+  return `<div class="filters" role="search"><input type="search" id="tieUQ" class="span-2" placeholder="Buscar: série, patrimônio, usuário, local, NF…" value="${esc(f.q)}">${timFiltroSel("tieUSt", "Todos os status", TIE_UST, f.st)}<select id="tieUIt" aria-label="Item"><option value="">Todos os itens</option>${its.map(i => `<option value="${esc(i._id)}" ${f.item === i._id ? "selected" : ""}>${esc(i.Title)}</option>`).join("")}</select><button class="btn ghost" onclick="TIE.fu={q:'',st:'',item:''}; paintTiEstoque()">Limpar</button></div><div id="tieUTab">${tieUnTabela()}</div>`; }
+/* ---------- Movimentações ---------- */
+function tieMovLista() { const f = TIE.fm, q = normName(f.q), lim = f.per ? (() => { const d = new Date(); d.setDate(d.getDate() - Number(f.per)); return ymd(d); })() : "";
+  return TIE.movs.filter(m => (!f.tipo || m.Tipo === f.tipo) && (!lim || timD(m.Data) >= lim) && (!q || normName([m.Title, m.Item, m.Funcionario, m.Departamento, m.Chamado, m.Series, m.NotaFiscal, m.Motivo, m.Local].join(" ")).includes(q)))
+    .sort((a, b) => (timD(b.Data) || "").localeCompare(timD(a.Data) || "") || Number(b._id) - Number(a._id)); }
+function tieMovTabela() { const ms = tieMovLista();
+  return ms.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Protocolo</th><th>Data</th><th>Tipo</th><th>Item</th><th class="n">Qtde</th><th class="n">Valor</th><th>Funcionário / Local</th><th>Chamado</th><th>Lançado por</th></tr></thead><tbody>${ms.map(m => `<tr onclick="tieMovVer(${jsArg(m._id)})"><td class="nw"><b>${esc(m.Title || "")}</b></td><td class="nw">${m.Data ? fmtDate(m.Data) : "—"}</td><td><span class="tie-tp tie-${({ "Entrada": "e", "Saída": "s", "Devolução": "d", "Transferência": "t", "Baixa": "b", "Ajuste": "a" })[m.Tipo] || "a"}">${esc(m.Tipo || "")}</span></td><td>${esc(m.Item || "")}${m.Series ? `<div class="sup">S/N ${esc(String(m.Series).split(/\n/).slice(0, 3).join(", "))}${String(m.Series).split(/\n/).length > 3 ? "…" : ""}</div>` : ""}</td><td class="n">${tieQ(m.Quantidade)}</td><td class="n">${m.Valor ? fmtBRL(Math.abs(tieN(m.Valor))) : "—"}</td><td>${esc(m.Funcionario || m.Local || "—")}<div class="sup">${esc(m.Funcionario ? m.Departamento || "" : "")}</div></td><td>${esc(m.Chamado || "—")}</td><td>${esc(m.LancadoPor || "")}</td></tr>`).join("")}</tbody></table></div><p class="hint">${ms.length} movimentação(ões).</p>` : `<div class="cap-empty"><h3>Nenhuma movimentação neste filtro</h3><p>Mude o período ou o tipo.</p></div>`; }
+function tieMovHtml() { const f = TIE.fm;
+  return `<div class="filters" role="search"><input type="search" id="tieMQ" class="span-2" placeholder="Buscar: protocolo, item, funcionário, chamado, série, NF…" value="${esc(f.q)}">${timFiltroSel("tieMT", "Todos os tipos", TIE_TIPOS, f.tipo)}<select id="tieMP" aria-label="Período">${[["30", "Últimos 30 dias"], ["90", "Últimos 90 dias"], ["365", "Últimos 12 meses"], ["", "Todo o período"]].map(([v, l]) => `<option value="${v}" ${f.per === v ? "selected" : ""}>${l}</option>`).join("")}</select><button class="btn ghost" onclick="TIE.fm={q:'',tipo:'',per:'90'}; paintTiEstoque()">Limpar</button></div><div id="tieMTab">${tieMovTabela()}</div>`; }
+window.tieMovVer = id => { const m = TIE.movs.find(x => x._id === String(id)); if (!m) return; const dl = (l, v) => v ? `<div><dt>${esc(l)}</dt><dd>${v}</dd></div>` : "";
+  $("modal").className = "modal";
+  modal(`<div class="modal-head"><h2>${esc(m.Title || "Movimentação")} · ${esc(m.Tipo || "")}</h2><button class="x" onclick="closeModal()">×</button></div><div class="modal-body"><dl class="tim-dl">${dl("Data", m.Data ? fmtDate(m.Data) : "")}${dl("Item", esc(m.Item || ""))}${dl("Quantidade", tieQ(m.Quantidade))}${dl("Custo unitário", m.CustoUnitario ? fmtBRL(m.CustoUnitario) : "")}${dl("Valor", m.Valor ? fmtBRL(Math.abs(tieN(m.Valor))) : "")}${dl("Funcionário", esc(m.Funcionario || ""))}${dl("Departamento", esc(m.Departamento || ""))}${dl("Chamado", esc(m.Chamado || ""))}${dl("Local", esc(m.Local || ""))}${dl("Nº de série", esc(m.Series || "").replace(/\n/g, "<br>"))}${dl("Nota fiscal", esc(m.NotaFiscal || ""))}${dl("Fornecedor", esc(m.Fornecedor || ""))}${dl("Motivo / observação", esc(m.Motivo || "").replace(/\n/g, "<br>"))}${dl("Lançado por", esc(m.LancadoPor || ""))}</dl></div><div class="modal-foot">${tiePode() && podeExcluir("ti_estoque") ? `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="tieMovExcluir(${jsArg(m._id)})">Excluir</button>` : ""}<button class="btn" onclick="closeModal()">Fechar</button></div>`); };
+window.tieMovExcluir = async id => { const m = TIE.movs.find(x => x._id === String(id)); if (!m) return;
+  if (m.Series) { toast("Movimentação com número de série: corrija com uma nova movimentação (devolução, ajuste) para manter o histórico das unidades.", 7000); return; }
+  if (!(await erpConfirmar({ titulo: "Excluir movimentação", html: `Excluir <b>${esc(m.Title)}</b> (${esc(m.Tipo)} de ${tieQ(m.Quantidade)} · ${esc(m.Item || "")})? O saldo é recalculado. Vai para a Lixeira por 30 dias.`, sim: "Excluir", perigo: true }))) return;
+  try { await SP.delete(TIE.site.id, TIE.L.m.id, m._id); TIE.movs = TIE.movs.filter(x => x !== m); tieCalcular(); await tieSaldoGravar(tieItem(m.ItemId)); closeModal(); toast("Movimentação excluída."); paintTiEstoque(); } catch (e) { toast("Não foi possível excluir: " + e.message, 6000); } };
+async function tieSaldoGravar(it) { if (!it) return; try { const f = { Saldo: Math.round(it._saldo), CustoMedio: it._cm ? Math.round(it._cm * 100) / 100 : null }; if (tieN(it.Saldo) !== f.Saldo || tieN(it.CustoMedio) !== tieN(f.CustoMedio)) { await SP.update(TIE.site.id, TIE.L.i.id, it._id, f); Object.assign(it, f); } } catch (e) {} }
+/* ---------- Item: cadastro e ficha ---------- */
+window.tieItemForm = id => {
+  if (!tiePode()) { toast("Seu acesso ao Controle de Estoque é só de leitura."); return; }
+  const x = id ? tieItem(id) : null, v = x || { Controle: "Quantidade", Unidade: "un", Minimo: 0 }, temMov = x && TIE.movs.some(m => String(m.ItemId) === x._id);
+  const dl = (i, arr, val) => `<input id="${i}" list="${i}L" value="${esc(val || "")}" autocomplete="off"><datalist id="${i}L">${arr.map(o => `<option value="${esc(o)}">`).join("")}</datalist>`;
+  const locais = [...new Set(TIE.itens.map(i => i.Local).concat(TIE.uns.map(u => u.Local)).filter(Boolean))].sort();
+  $("modal").className = "modal wide";
+  openModal(x ? `Editar ${x.Title}` : "Cadastrar item", `<div class="form-grid">
+    <div class="field"><label>Item<span class="req">*</span></label>${dl("teNome", TIE_SUGEST, v.Title)}<div class="hint">Nome curto e genérico (ex.: Monitor 24", Teclado USB). Marca e modelo vão ao lado.</div></div>
+    <div class="field"><label>Categoria<span class="req">*</span></label>${dl("teCat", TIE_CATS, v.Categoria)}</div>
+    <div class="field"><label>Controle<span class="req">*</span></label><select id="teCtrl" ${temMov ? "disabled title=\"Já tem movimentações: o controle não muda\"" : ""}>${opt(TIE_CTRL, v.Controle, false)}</select><div class="hint">Por número de série: cada unidade tem série, usuário e status (monitores, modems, notebooks). Por quantidade: cabos, toners, mouses.</div></div>
+    <div class="field"><label>Unidade</label>${dl("teUn", TIE_UNID, v.Unidade)}</div>
+    <div class="field"><label>Marca</label><input id="teMarca" maxlength="60" value="${esc(v.Marca || "")}"></div>
+    <div class="field"><label>Modelo</label><input id="teModelo" maxlength="100" value="${esc(v.Modelo || "")}"></div>
+    <div class="field"><label>Código interno</label><input id="teCod" maxlength="40" value="${esc(v.Codigo || "")}"></div>
+    <div class="field"><label>Tipo de ativo (ao transformar em ativo)</label>${dl("teTipoA", TIM_TIPOS_ATIVO, v.TipoAtivo)}</div>
+    <div class="field"><label>Estoque mínimo</label><input type="number" min="0" max="99999" step="1" id="teMin" value="${v.Minimo ?? ""}"><div class="hint">Abaixo dele o item aparece em "Para repor".</div></div>
+    <div class="field"><label>Local de guarda</label>${dl("teLocal", locais.length ? locais : ["Sala da TI"], v.Local)}</div>
+    <div class="field"><label>Fornecedor habitual</label><input id="teForn" maxlength="120" value="${esc(v.Fornecedor || "")}"></div>
+    <div class="field"><label class="chk"><input type="checkbox" id="teBloq" ${v.Bloqueado ? "checked" : ""}> Bloqueado (sem novas movimentações)</label></div>
+    <div class="field full"><label>Observações</label><textarea id="teObs" rows="2" maxlength="1500">${esc(v.Observacoes || "")}</textarea></div>
+  </div><div class="err-msg" id="teErr" style="display:none;color:var(--err);margin-top:10px;font-size:13px"></div>`, async () => {
+    const g = k => ($(k).value || "").trim(), err = m => { $("teErr").style.display = "block"; $("teErr").textContent = m; return false; };
+    const nome = g("teNome"); if (!nome) return err("Informe o item.");
+    const marca = g("teMarca"), modelo = g("teModelo");
+    if (TIE.itens.some(i => i._id !== (x && x._id) && normName(i.Title) === normName(nome) && normName(i.Marca || "") === normName(marca) && normName(i.Modelo || "") === normName(modelo))) return err("Já existe este item com a mesma marca e modelo.");
+    if (!g("teCat")) return err("Informe a categoria.");
+    const min = g("teMin") === "" ? 0 : Number(g("teMin")); if (!Number.isInteger(min) || min < 0) return err("Estoque mínimo: número inteiro a partir de 0.");
+    const f = { Title: nome, Categoria: g("teCat"), Controle: temMov ? x.Controle : $("teCtrl").value, Unidade: g("teUn") || "un", Marca: marca || null, Modelo: modelo || null, Codigo: g("teCod") || null, TipoAtivo: g("teTipoA") || null, Minimo: min, Local: g("teLocal") || null, Fornecedor: g("teForn") || null, Bloqueado: $("teBloq").checked, Observacoes: g("teObs") || null };
+    try { if (x) { await SP.update(TIE.site.id, TIE.L.i.id, x._id, f); Object.assign(x, f); } else { const it = await SP.create(TIE.site.id, TIE.L.i.id, f); TIE.itens.push(Object.assign({ _id: String(it.id) }, it.fields || f)); } }
+    catch (e) { return err("Não foi possível gravar: " + e.message); }
+    tieCalcular(); toast(x ? "Item atualizado." : `Item ${nome} cadastrado.`); paintTiEstoque(); return true;
+  });
+};
+window.tieItemAbrir = id => {
+  const it = tieItem(id); if (!it) return; const ed = tiePode(), dl = (l, v) => v ? `<div><dt>${esc(l)}</dt><dd>${v}</dd></div>` : "";
+  const uns = TIE.uns.filter(u => String(u.ItemId) === it._id), movs = TIE.movs.filter(m => String(m.ItemId) === it._id).sort((a, b) => (timD(b.Data) || "").localeCompare(timD(a.Data) || "") || Number(b._id) - Number(a._id));
+  const bt = t => `<button class="btn" onclick="closeModal(); tieMov('${t}', ${jsArg(it._id)})">${t}</button>`;
+  $("modal").className = "modal wide";
+  modal(`<div class="modal-head"><h2>${esc(it.Title)}${it.Marca || it.Modelo ? ` <span class="sup">${esc([it.Marca, it.Modelo].filter(Boolean).join(" "))}</span>` : ""}</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body"><div class="tim-ficha-top">${tieSitPill(it._sit)} <span class="sup">${tieSerie(it) ? "Controle por número de série" : "Controle por quantidade"}</span></div>
+    <dl class="tim-dl">${dl("Saldo", `<b>${tieQ(it._saldo)}</b> ${esc(it.Unidade || "un")}`)}${dl("Mínimo", tieQ(it.Minimo))}${tieSerie(it) ? dl("Em uso", tieQ(it._emUso)) : ""}${dl("Custo médio", it._cm ? fmtBRL(it._cm) : "")}${dl("Valor em estoque", it._cm && it._saldo > 0 ? fmtBRL(it._cm * it._saldo) : "")}${dl("Categoria", esc(it.Categoria || ""))}${dl("Código", esc(it.Codigo || ""))}${dl("Local", esc(it.Local || ""))}${dl("Fornecedor", esc(it.Fornecedor || ""))}${dl("Tipo de ativo", esc(it.TipoAtivo || ""))}${dl("Observações", esc(it.Observacoes || "").replace(/\n/g, "<br>"))}</dl>
+    ${ed && !it.Bloqueado ? `<div class="tie-acoes">${bt("Entrada")}${bt("Saída")}${bt("Devolução")}${bt("Transferência")}${bt("Baixa")}${tieSerie(it) ? "" : bt("Ajuste")}</div>` : it.Bloqueado ? `<p class="import-help">Item bloqueado: sem novas movimentações. Desbloqueie em Editar.</p>` : ""}
+    ${tieSerie(it) ? `<h3 class="tim-h3">Unidades <span class="sup">${uns.length}</span></h3>${uns.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Nº de série</th><th>Patrimônio</th><th>Status</th><th>Usuário</th><th>Local</th></tr></thead><tbody>${uns.map(u => `<tr onclick="closeModal(); tieUnAbrir(${jsArg(u._id)})"><td><b>${esc(u.Title)}</b></td><td>${esc(u.Patrimonio || "—")}</td><td>${tieUstPill(u.Status)}</td><td>${esc(u.Usuario || "—")}</td><td>${esc(u.Local || "—")}</td></tr>`).join("")}</tbody></table></div>` : `<p class="sup">Nenhuma unidade ainda.</p>`}` : ""}
+    <h3 class="tim-h3">Movimentações <span class="sup">${movs.length}</span></h3>${movs.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Data</th><th>Tipo</th><th class="n">Qtde</th><th>Funcionário / Local</th><th>Chamado</th></tr></thead><tbody>${movs.slice(0, 30).map(m => `<tr onclick="tieMovVer(${jsArg(m._id)})"><td class="nw">${m.Data ? fmtDate(m.Data) : "—"}</td><td>${esc(m.Tipo)}</td><td class="n">${tieQ(m.Quantidade)}</td><td>${esc(m.Funcionario || m.Local || "—")}</td><td>${esc(m.Chamado || "—")}</td></tr>`).join("")}</tbody></table></div>` : `<p class="sup">Nenhuma movimentação ainda.</p>`}
+    </div><div class="modal-foot">${ed && podeExcluir("ti_estoque") && !movs.length && !uns.length ? `<button class="btn" style="margin-right:auto;color:var(--err)" onclick="tieItemExcluir(${jsArg(it._id)})">Excluir</button>` : ""}<button class="btn" onclick="closeModal()">Fechar</button>${ed ? `<button class="btn primary" onclick="closeModal(); tieItemForm(${jsArg(it._id)})">Editar</button>` : ""}</div>`);
+};
+window.tieItemExcluir = async id => { const it = tieItem(id); if (!it) return;
+  if (!(await erpConfirmar({ titulo: "Excluir item", html: `Excluir <b>${esc(it.Title)}</b>? Vai para a Lixeira por 30 dias.`, sim: "Excluir", perigo: true }))) return;
+  try { await SP.delete(TIE.site.id, TIE.L.i.id, it._id); TIE.itens = TIE.itens.filter(x => x !== it); closeModal(); toast("Item excluído."); paintTiEstoque(); } catch (e) { toast("Não foi possível excluir: " + e.message, 6000); } };
+/* ---------- Unidade (série) ---------- */
+window.tieUnAbrir = id => {
+  const u = tieUn(id); if (!u) return; const it = tieItem(u.ItemId), ed = tiePode(), dl = (l, v) => v ? `<div><dt>${esc(l)}</dt><dd>${v}</dd></div>` : "";
+  const hist = timJson(u.Historico, []).slice().reverse(), a = u.AtivoId && typeof timAtivo === "function" ? timAtivo(u.AtivoId) : null;
+  const pode = t => ed && it && !it.Bloqueado && ({ "Saída": ["Em estoque"], "Devolução": ["Em uso", "Emprestado", "Em manutenção"], "Transferência": ["Em estoque", "Em uso", "Emprestado", "Em manutenção"], "Baixa": ["Em estoque", "Em uso", "Emprestado", "Em manutenção"] })[t].includes(u.Status);
+  const bt = t => pode(t) ? `<button class="btn" onclick="closeModal(); tieMov('${t}', ${jsArg(u.ItemId)}, [${jsArg(u._id)}])">${t}</button>` : "";
+  $("modal").className = "modal wide";
+  modal(`<div class="modal-head"><h2>S/N ${esc(u.Title)} · ${esc(u.Item || "")}</h2><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-body"><div class="tim-ficha-top">${tieUstPill(u.Status)} ${u.AtivoId ? `<span class="status st-aguardando">Ativo ${esc(a ? a.Title : "")}</span>` : ""}</div>
+    <dl class="tim-dl">${dl("Patrimônio", esc(u.Patrimonio || ""))}${dl("Usuário", esc(u.Usuario || ""))}${dl("Departamento", esc(u.Departamento || ""))}${dl("Local", esc(u.Local || ""))}${dl("Entrada", u.DataEntrada ? fmtDate(u.DataEntrada) : "")}${dl("Custo", u.Custo ? fmtBRL(u.Custo) : "")}${dl("Nota fiscal", esc(u.NotaFiscal || ""))}${dl("Garantia até", u.GarantiaAte ? fmtDate(u.GarantiaAte) : "")}</dl>
+    ${ed ? `<div class="tie-acoes">${bt("Saída")}${bt("Devolução")}${bt("Transferência")}${bt("Baixa")}${!u.AtivoId && u.Status !== "Baixado" && podeEditar("ti_manut") ? `<button class="btn primary" onclick="tieVirarAtivo(${jsArg(u._id)})" title="Cria o equipamento em TI › Manutenção de Equipamentos com os dados desta unidade">Transformar em ativo</button>` : ""}${a ? `<a class="btn" href="#/ti/manutencao-de-equipamentos" onclick="closeModal(); setTimeout(() => timAtivoAbrir(${jsArg(a._id)}), 900)">Abrir o ativo</a>` : ""}</div>` : ""}
+    ${hist.length ? `<h3 class="tim-h3">Histórico</h3><ul class="pb-hist">${hist.map(h => `<li><div class="pb-hist-top"><b>${esc(h.por || "—")}</b> · <span class="sup">${esc(tioFmt(h.em))}</span></div><div class="pb-hist-txt">${esc(h.o || "")}</div></li>`).join("")}</ul>` : ""}
+    </div><div class="modal-foot"><button class="btn" onclick="closeModal()">Fechar</button>${ed ? `<button class="btn primary" onclick="tieUnForm(${jsArg(u._id)})">Editar</button>` : ""}</div>`);
+};
+window.tieUnForm = id => { const u = tieUn(id); if (!u || !tiePode()) return;
+  $("modal").className = "modal";
+  openModal(`Editar unidade S/N ${u.Title}`, `<div class="form-grid">
+    <div class="field"><label>Nº de série<span class="req">*</span></label><input id="tuSerie" maxlength="80" value="${esc(u.Title || "")}"></div>
+    <div class="field"><label>Patrimônio</label><input id="tuPat" maxlength="40" value="${esc(u.Patrimonio || "")}"></div>
+    <div class="field"><label>Nota fiscal</label><input id="tuNF" maxlength="40" value="${esc(u.NotaFiscal || "")}"></div>
+    <div class="field"><label>Garantia até</label><input type="date" id="tuGar" min="2000-01-01" max="2099-12-31" value="${esc(timD(u.GarantiaAte))}"></div>
+    <div class="field"><label>Custo (R$)</label><input type="number" min="0" step="0.01" id="tuCusto" value="${u.Custo ?? ""}"></div>
+  </div><p class="hint">Status, usuário e local mudam pelas movimentações (saída, devolução, transferência, baixa), para manter o histórico.</p><div class="err-msg" id="tuErr" style="display:none"></div>`, async () => {
+    const g = k => ($(k).value || "").trim(), err = m => { $("tuErr").style.display = "block"; $("tuErr").textContent = m; return false; };
+    const s = g("tuSerie"); if (!s) return err("Informe o número de série.");
+    if (TIE.uns.some(x => x._id !== u._id && normName(x.Title) === normName(s) && String(x.ItemId) === String(u.ItemId))) return err("Já existe esta série neste item.");
+    const custo = g("tuCusto") === "" ? null : Number(g("tuCusto")); if (custo != null && (isNaN(custo) || custo < 0)) return err("Custo inválido.");
+    const f = { Title: s, Patrimonio: g("tuPat") || null, NotaFiscal: g("tuNF") || null, GarantiaAte: g("tuGar") || null, Custo: custo }; f.Historico = tieHist(u.Historico, "dados da unidade editados");
+    try { await SP.update(TIE.site.id, TIE.L.u.id, u._id, f); Object.assign(u, f); } catch (e) { return err("Não foi possível gravar: " + e.message); }
+    toast("Unidade atualizada."); paintTiEstoque(); setTimeout(() => tieUnAbrir(u._id), 0); return true; });
+};
+/* transformar a unidade em ativo de TI (Manutenção de Equipamentos) */
+window.tieVirarAtivo = async id => {
+  const u = tieUn(id), it = u && tieItem(u.ItemId); if (!u || !it) return;
+  try { if (!TIM.ready) await timCarregar(); } catch (e) {}
+  if (!TIM.ready) { toast("As listas de TI › Manutenção de Equipamentos não estão disponíveis.", 6000); return; }
+  const tipo = it.TipoAtivo || (/Monitor/i.test(it.Categoria || it.Title) ? "Monitor" : /Rede/i.test(it.Categoria || "") ? "Roteador" : /Computador|notebook/i.test(it.Categoria || "") ? "Notebook" : "");
+  $("modal").className = "modal";
+  openModal("Transformar em ativo", `<p class="sup" style="margin-top:0">Cria o equipamento em TI › Manutenção de Equipamentos com marca, modelo, série, usuário, local, custo e garantia desta unidade.</p><div class="form-grid">
+    <div class="field"><label>Patrimônio / etiqueta<span class="req">*</span></label><input id="tvPat" maxlength="40" value="${esc(u.Patrimonio || "")}" placeholder="Ex.: TI-0001"></div>
+    <div class="field"><label>Tipo do ativo<span class="req">*</span></label><input id="tvTipo" list="tvTipoL" value="${esc(tipo)}"><datalist id="tvTipoL">${TIM_TIPOS_ATIVO.map(o => `<option value="${esc(o)}">`).join("")}</datalist></div>
+  </div><div class="err-msg" id="tvErr" style="display:none"></div>`, async () => {
+    const g = k => ($(k).value || "").trim(), err = m => { $("tvErr").style.display = "block"; $("tvErr").textContent = m; return false; };
+    const pat = g("tvPat"), tp = g("tvTipo"); if (!pat) return err("Informe o patrimônio."); if (!tp) return err("Informe o tipo do ativo.");
+    if (TIM.ativos.some(a => normName(a.Title) === normName(pat))) return err(`Já existe um equipamento com o patrimônio ${pat}.`);
+    const per = timPeriodoPadrao(tp);
+    const f = { Title: pat, Tipo: tp, Marca: it.Marca || null, Modelo: it.Modelo || null, NumeroSerie: u.Title, Responsavel: u.Usuario || null, Departamento: u.Departamento || null, Local: u.Local || it.Local || null,
+      Situacao: u.Status === "Em uso" ? "Em uso" : u.Status === "Emprestado" ? "Emprestado" : u.Status === "Em manutenção" ? "Em manutenção" : "Em estoque / reserva", DataAquisicao: timD(u.DataEntrada) || null, GarantiaAte: timD(u.GarantiaAte) || null,
+      Fornecedor: it.Fornecedor || null, ValorAquisicao: u.Custo != null && u.Custo !== "" ? Number(u.Custo) : null, PeriodicidadeMeses: per, Historico: timHist(null, `cadastrado pelo Controle de Estoque (S/N ${u.Title})`) };
+    let novo; try { novo = await timGrava("a", null, f); } catch (e) { return err("Não foi possível criar o ativo: " + e.message); }
+    try { const uf = { AtivoId: String(novo._id), Patrimonio: pat, Historico: tieHist(u.Historico, `transformada no ativo ${pat}`) }; await SP.update(TIE.site.id, TIE.L.u.id, u._id, uf); Object.assign(u, uf); } catch (e) { toast("Ativo criado; a unidade não guardou a ligação: " + e.message, 7000); }
+    toast(`Ativo ${pat} criado em Manutenção de Equipamentos.`); paintTiEstoque(); setTimeout(() => tieUnAbrir(u._id), 0); return true; });
+};
+/* ---------- Movimentação ---------- */
+async function tieChamadosAbertos() { try { if (!TI_STATE.ready) await loadTi(); } catch (e) {} return (TI_STATE.itens || []).filter(c => !["Resolvido", "Fechado", "Cancelado"].includes(c.Status)).map(c => ({ p: tiProtocolo(c), a: c.Assunto || "", sol: c.Solicitante || "" })); }
+window.tieMov = async (tipo, itemId, unIds) => {
+  if (!tiePode()) { toast("Seu acesso ao Controle de Estoque é só de leitura."); return; }
+  const its = TIE.itens.filter(i => !i.Bloqueado).sort((a, b) => String(a.Title).localeCompare(String(b.Title), "pt-BR"));
+  if (!its.length) { toast("Cadastre um item primeiro (ou desbloqueie)."); return; }
+  const locais = [...new Set(TIE.itens.map(i => i.Local).concat(TIE.uns.map(u => u.Local), typeof TIM_LOCAIS !== "undefined" ? TIM_LOCAIS.filter(l => l !== "Outro") : []).filter(Boolean))].sort();
+  $("modal").className = "modal wide";
+  openModal(`${tipo} de estoque`, `<div class="form-grid">
+    <div class="field"><label>Tipo<span class="req">*</span></label><select id="tmTipo">${opt(TIE_TIPOS, tipo, false)}</select></div>
+    <div class="field"><label>Data<span class="req">*</span></label><input type="date" id="tmData" min="2000-01-01" max="${todayISO()}" value="${todayISO()}"></div>
+    <div class="field full"><label>Item<span class="req">*</span></label><select id="tmItem">${its.map(i => `<option value="${esc(i._id)}" ${String(itemId) === i._id ? "selected" : ""}>${esc(tieRot(i))} · saldo ${tieQ(i._saldo)} ${esc(i.Unidade || "un")}</option>`).join("")}</select></div>
+    <div id="tmCorpo" class="field full" style="display:contents"></div>
+    <div class="field full"><label>Motivo / observação<span class="req" id="tmMotReq" style="display:none">*</span></label><textarea id="tmMot" rows="2" maxlength="1500"></textarea></div>
+  </div><datalist id="tmLocL">${locais.map(o => `<option value="${esc(o)}">`).join("")}</datalist><datalist id="tmFuncL"></datalist><datalist id="tmChL"></datalist><div class="err-msg" id="tmErr" style="display:none"></div>`, async () => {
+    const g = k => ($(k) ? $(k).value || "" : "").trim(), err = m => { $("tmErr").style.display = "block"; $("tmErr").textContent = m; return false; };
+    const tp = $("tmTipo").value, it = tieItem($("tmItem").value), data = g("tmData"), ser = tieSerie(it), mot = g("tmMot");
+    if (!it) return err("Escolha o item."); if (!data || data > todayISO() || data < "2000-01-01") return err("Data inválida (não pode ser futura).");
+    if ((tp === "Baixa" || tp === "Ajuste") && !mot) return err(`Informe o motivo da ${tp.toLowerCase()}.`);
+    const func = g("tmFunc"), dep = g("tmDep"), ch = g("tmCh"), loc = g("tmLoc"), nf = g("tmNF"), forn = g("tmForn");
+    if (tp === "Saída" && !func) return err("Informe o funcionário que recebe (RH › Funcionários).");
+    if (func && TIE.funcs && TIE.funcs.length && !TIE.funcs.some(f => f.Title === func)) return err(`"${func}" não está em RH › Funcionários. Escolha um nome da lista.`);
+    if (tp === "Transferência" && !loc) return err("Informe o local de destino.");
+    const eu = (session.me && session.me.displayName) || "";
+    const base = { ItemId: it._id, Item: tieRot(it), Tipo: tp, Data: data, Funcionario: func || null, Departamento: dep || null, Chamado: ch || null, Local: loc || null, NotaFiscal: nf || null, Fornecedor: forn || null, Motivo: mot || null, LancadoPor: eu };
+    let qtd = 0, custo = null, series = [], unsSel = [];
+    if (ser) {
+      if (tp === "Ajuste") return err("Item por número de série: use Entrada (unidades novas) ou Baixa (unidades que saíram).");
+      if (tp === "Entrada") { series = g("tmSeries").split(/[\n,;]+/).map(s => s.trim()).filter(Boolean); if (!series.length) return err("Informe os números de série (um por linha).");
+        const rep = series.filter((s, i) => series.findIndex(z => normName(z) === normName(s)) !== i); if (rep.length) return err("Série repetida na lista: " + rep.join(", "));
+        const ja = series.filter(s => TIE.uns.some(u => String(u.ItemId) === it._id && normName(u.Title) === normName(s))); if (ja.length) return err("Já cadastrada(s) neste item: " + ja.join(", "));
+        qtd = series.length; }
+      else { unsSel = [...document.querySelectorAll("#tmUns input:checked")].map(c => tieUn(c.value)).filter(Boolean); if (!unsSel.length) return err("Marque as unidades."); qtd = unsSel.length; series = unsSel.map(u => u.Title); }
+    } else {
+      qtd = Number(g("tmQtd")); if (!Number.isInteger(qtd) || qtd === 0 || (tp !== "Ajuste" && qtd < 0) || Math.abs(qtd) > 99999) return err(tp === "Ajuste" ? "Ajuste: número inteiro diferente de 0 (negativo tira, positivo põe)." : "Quantidade: número inteiro maior que 0.");
+      if ((tp === "Saída" || tp === "Baixa") && qtd > it._saldo) return err(`Saldo insuficiente: há ${tieQ(it._saldo)} ${it.Unidade || "un"}.`);
+      if (tp === "Ajuste" && it._saldo + qtd < 0) return err(`O ajuste deixaria o saldo negativo (há ${tieQ(it._saldo)}).`);
+    }
+    if (tp === "Entrada") { custo = g("tmCusto") === "" ? null : Number(g("tmCusto")); if (custo != null && (isNaN(custo) || custo < 0 || custo > 9999999)) return err("Custo unitário inválido."); }
+    const cu = tp === "Entrada" ? custo : (it._cm || null), sinal = tp === "Saída" || tp === "Baixa" ? -1 : 1;
+    const f = Object.assign({}, base, { Title: tieProto(), Quantidade: tp === "Transferência" ? qtd : qtd, CustoUnitario: cu != null ? Math.round(cu * 100) / 100 : null, Valor: cu != null && tp !== "Transferência" ? Math.round(sinal * Math.abs(qtd) * cu * 100) / 100 : null, Series: series.length ? series.join("\n") : null });
+    try {
+      const mv = await SP.create(TIE.site.id, TIE.L.m.id, f); TIE.movs.push(Object.assign({ _id: String(mv.id) }, mv.fields || f));
+      if (ser) {
+        if (tp === "Entrada") { const gar = g("tmGar") || null;
+          for (const s of series) { const uf = { Title: s, ItemId: it._id, Item: tieRot(it), Status: "Em estoque", Local: loc || it.Local || null, DataEntrada: data, Custo: custo, NotaFiscal: nf || null, GarantiaAte: gar, Historico: tieHist(null, `entrada ${f.Title}${nf ? " · NF " + nf : ""}`) };
+            const nu = await SP.create(TIE.site.id, TIE.L.u.id, uf); TIE.uns.push(Object.assign({ _id: String(nu.id) }, nu.fields || uf)); } }
+        else for (const u of unsSel) {
+          const uf = tp === "Saída" ? { Status: "Em uso", Usuario: func, Departamento: dep || null, Local: loc || u.Local || null }
+            : tp === "Devolução" ? { Status: "Em estoque", Usuario: null, Departamento: null, Local: loc || it.Local || u.Local || null }
+            : tp === "Baixa" ? { Status: "Baixado" } : { Local: loc };
+          uf.Historico = tieHist(u.Historico, `${tp.toLowerCase()} ${f.Title}${func ? " · " + func : ""}${loc ? " · " + loc : ""}${mot ? " · " + mot : ""}`);
+          await SP.update(TIE.site.id, TIE.L.u.id, u._id, uf); Object.assign(u, uf); }
+      }
+    } catch (e) { await tieCarregar(true).catch(() => {}); paintTiEstoque(); return err("Não foi possível gravar tudo: " + e.message + ". A tela foi relida; confira antes de repetir."); }
+    tieCalcular(); await tieSaldoGravar(it);
+    toast(`${tp} lançada (${f.Title}).`); paintTiEstoque(); return true;
+  });
+  const corpo = () => {
+    const tp = $("tmTipo").value, it = tieItem($("tmItem").value); if (!it) return; const ser = tieSerie(it), box = $("tmCorpo");
+    const sel = ser && tp !== "Entrada" ? TIE.uns.filter(u => String(u.ItemId) === it._id && ({ "Saída": ["Em estoque"], "Devolução": ["Em uso", "Emprestado", "Em manutenção"], "Transferência": ["Em estoque", "Em uso", "Emprestado", "Em manutenção"], "Baixa": ["Em estoque", "Em uso", "Emprestado", "Em manutenção"] })[tp]?.includes(u.Status)) : [];
+    const pre = new Set(unIds || []);
+    box.innerHTML = `${ser ? (tp === "Entrada" ? `<div class="field full"><label>Números de série<span class="req">*</span></label><textarea id="tmSeries" rows="3" placeholder="Um por linha (ou separados por vírgula)"></textarea><div class="hint">Cada série vira uma unidade "Em estoque".</div></div>`
+        : tp === "Ajuste" ? `<div class="field full"><div class="import-help">Item por número de série: o saldo é a contagem das unidades em estoque. Use Entrada para unidades novas e Baixa para as que saíram.</div></div>`
+        : `<div class="field full"><label>Unidades<span class="req">*</span></label><div id="tmUns" class="tie-uns">${sel.length ? sel.map(u => `<label class="chk"><input type="checkbox" value="${esc(u._id)}" ${pre.has(u._id) ? "checked" : ""}> <b>${esc(u.Title)}</b> <span class="sup">${esc([u.Patrimonio, u.Status, u.Usuario, u.Local].filter(Boolean).join(" · "))}</span></label>`).join("") : `<span class="sup">Nenhuma unidade disponível para ${esc(tp.toLowerCase())}.</span>`}</div></div>`)
+      : `<div class="field"><label>Quantidade<span class="req">*</span></label><input type="number" id="tmQtd" step="1" ${tp === "Ajuste" ? "" : 'min="1"'} max="99999" placeholder="${tp === "Ajuste" ? "Ex.: -2 ou 3" : "0"}"><div class="hint">Saldo atual: ${tieQ(it._saldo)} ${esc(it.Unidade || "un")}${tp === "Ajuste" ? " · negativo tira, positivo põe" : ""}</div></div>`}
+      ${tp === "Entrada" ? `<div class="field"><label>Custo unitário (R$)</label><input type="number" id="tmCusto" min="0" step="0.01"><div class="hint">Entra no custo médio.</div></div><div class="field"><label>Nota fiscal</label><input id="tmNF" maxlength="40"></div><div class="field"><label>Fornecedor</label><input id="tmForn" maxlength="120" value="${esc(it.Fornecedor || "")}"></div>${ser ? `<div class="field"><label>Garantia até</label><input type="date" id="tmGar" min="2000-01-01" max="2099-12-31"></div>` : ""}` : ""}
+      ${tp === "Saída" || tp === "Devolução" ? `<div class="field"><label>Funcionário${tp === "Saída" ? '<span class="req">*</span>' : ""}</label><input id="tmFunc" list="tmFuncL" autocomplete="off" placeholder="Nome (RH › Funcionários)"><div class="hint" id="tmFuncH"></div></div><div class="field"><label>Departamento</label><input id="tmDep" list="tmDepL" autocomplete="off"><datalist id="tmDepL">${CENTROS_CUSTO.map(o => `<option value="${esc(o)}">`).join("")}</datalist></div>` : ""}
+      ${tp === "Saída" || tp === "Devolução" || tp === "Baixa" ? `<div class="field"><label>Chamado de TI</label><input id="tmCh" list="tmChL" autocomplete="off" placeholder="Protocolo (opcional)"></div>` : ""}
+      ${tp !== "Baixa" && tp !== "Ajuste" ? `<div class="field"><label>${tp === "Transferência" ? "Local de destino" : "Local"}${tp === "Transferência" ? '<span class="req">*</span>' : ""}</label><input id="tmLoc" list="tmLocL" maxlength="80" autocomplete="off" value="${tp === "Entrada" ? esc(it.Local || "") : ""}"></div>` : ""}`;
+    $("tmMotReq").style.display = tp === "Baixa" || tp === "Ajuste" ? "" : "none";
+    const fi = $("tmFunc"); if (fi) { const ligar = fs => { const d = $("tmFuncL"); if (d) d.innerHTML = fs.map(f => `<option value="${esc(f.Title || "")}">${esc([f.Cargo, f.Departamento || f.Setor].filter(Boolean).join(" · "))}</option>`).join("");
+        const chk = () => { const v = fi.value.trim(), h = $("tmFuncH"); if (!v || !h) { if (h) h.textContent = ""; return; } const f = fs.find(z => z.Title === v) || fs.find(z => normName(z.Title) === normName(v));
+          if (f) { if (f.Title !== v) fi.value = f.Title; h.textContent = "✓ " + ([f.Cargo, f.Departamento || f.Setor].filter(Boolean).join(" · ") || "Funcionário do RH"); const dp = $("tmDep"); if (dp && !dp.value && (f.Departamento || f.Setor)) dp.value = f.Departamento || f.Setor; }
+          else h.innerHTML = fs.length ? `<span style="color:var(--err,#b3271e)">Não está em RH › Funcionários.</span>` : "Lista do RH indisponível nesta sessão."; };
+        fi.addEventListener("change", chk); fi.addEventListener("blur", chk); };
+      if (TIE.funcs) ligar(TIE.funcs); else tercRhFuncs().then(fs => { TIE.funcs = fs; ligar(fs); }).catch(() => { TIE.funcs = []; ligar([]); }); }
+    if ($("tmCh")) tieChamadosAbertos().then(cs => { const d = $("tmChL"); if (d) d.innerHTML = cs.map(c => `<option value="${esc(c.p)}">${esc(c.a)}${c.sol ? " · " + esc(c.sol) : ""}</option>`).join(""); });
+  };
+  $("tmTipo").addEventListener("change", corpo); $("tmItem").addEventListener("change", corpo); corpo();
+};
+/* ---------- Painel ---------- */
+function tiePainelHtml() {
+  const hoje = todayISO(), d30 = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return ymd(d); })();
+  const valor = TIE.itens.reduce((s, i) => s + (i._cm && i._saldo > 0 ? i._cm * i._saldo : 0), 0), repor = TIE.itens.filter(i => i._sit === "Repor" || i._sit === "Zerado");
+  const sai30 = TIE.movs.filter(m => m.Tipo === "Saída" && timD(m.Data) >= d30), emUso = TIE.uns.filter(u => u.Status === "Em uso").length;
+  const gar = TIE.uns.filter(u => u.Status !== "Baixado" && (() => { const d = timDias(timD(u.GarantiaAte)); return d != null && d >= 0 && d <= 60; })());
+  const kpis = `<div class="cap-kpis cap-kpis-6">${tieKpi("Itens cadastrados", TIE.itens.length, `${TIE.itens.filter(tieSerie).length} por número de série`, "", "tieAba('est')")}${tieKpi("Valor em estoque", fmtBRL(valor), "pelo custo médio", "")}${tieKpi("Para repor", repor.length, "abaixo do mínimo", repor.length ? "venc" : "pago", "TIE.f.sit='repor'; tieAba('est')")}${tieKpi("Saídas em 30 dias", sai30.reduce((s, m) => s + tieN(m.Quantidade), 0), `${sai30.length} movimentação(ões)`, "", "TIE.fm={q:'',tipo:'Saída',per:'30'}; tieAba('mov')")}${tieKpi("Unidades em uso", emUso, `${TIE.uns.filter(u => u.Status === "Em estoque").length} em estoque`, "", "TIE.fu={q:'',st:'Em uso',item:''}; tieAba('un')")}${tieKpi("Garantias em 60 dias", gar.length, "unidades com série", gar.length ? "hoje" : "", "tieAba('un')")}</div>`;
+  const card = (id, t, sub, cls) => `<section class="cap-card tie-card ${cls || ""}"><div class="cap-card-h"><h3>${t}</h3>${sub ? `<span class="sup">${sub}</span>` : ""}</div><div class="tie-ch dp-chart ${cls === "w2" ? "" : "auto"}" data-tie="${id}"></div></section>`;
+  return `${kpis}<div class="tie-grid">${card("mes", "Entradas × Saídas por mês", "quantidade · últimos 12 meses", "w2")}${card("cat", "Valor em estoque por categoria", "pelo custo médio")}${card("dep", "Saídas por departamento", "últimos 90 dias")}${card("top", "Itens mais retirados", "últimos 90 dias")}
+    <section class="cap-card tie-card"><div class="cap-card-h"><h3>Para repor</h3><span class="sup">${repor.length} item(ns)</span></div>${repor.length ? `<div class="table-wrap"><table class="cap-table"><thead><tr><th>Item</th><th class="n">Saldo</th><th class="n">Mínimo</th><th class="n">Faltam</th></tr></thead><tbody>${repor.sort((a, b) => (a._saldo - tieN(a.Minimo)) - (b._saldo - tieN(b.Minimo))).slice(0, 12).map(i => `<tr onclick="tieItemAbrir(${jsArg(i._id)})"><td><b>${esc(i.Title)}</b><div class="sup">${esc([i.Marca, i.Modelo].filter(Boolean).join(" "))}</div></td><td class="n">${tieQ(i._saldo)}</td><td class="n">${tieQ(i.Minimo)}</td><td class="n"><b>${tieQ(tieN(i.Minimo) - i._saldo)}</b></td></tr>`).join("")}</tbody></table></div>` : `<p class="sup" style="padding:0 14px 12px">Nada abaixo do mínimo.</p>`}</section></div>
+    ${TIE.itens.length ? "" : `<div class="cap-empty"><h3>Estoque vazio</h3><p>Cadastre os itens e lance as entradas para o painel ganhar números.</p></div>`}`;
+}
+/* barras horizontais (d3), reaproveitada no Painel de Operação da TI */
+function tiBarrasH(el, rows, o) {
+  o = o || {}; if (!rows.length) { el.innerHTML = `<div class="dp-msg">${esc(o.vazio || "Sem dados.")}</div>`; return; }
+  el.replaceChildren(); const W = el.clientWidth || 420, lh = o.lh || 26, H = Math.max(60, rows.length * lh + 12), m = { t: 4, r: 64, b: 4, l: Math.min(190, Math.max(90, W * 0.38)) };
+  const s = d3.select(el).append("svg").attr("width", W).attr("height", H).attr("role", "img").attr("aria-label", o.aria || "");
+  const x = d3.scaleLinear().domain([0, d3.max(rows, r => r.v) || 1]).range([0, Math.max(10, W - m.l - m.r)]), tp = typeof dipTip === "function" ? dipTip(el) : null;
+  rows.forEach((r, i) => { const y = m.t + i * lh, g = s.append("g").attr("transform", `translate(0,${y})`).style("cursor", r.on ? "pointer" : "default");
+    const rot = String(r.rot || ""), corta = rot.length > 30 ? rot.slice(0, 29) + "…" : rot;
+    g.append("text").attr("x", m.l - 8).attr("y", lh / 2 + 4).attr("text-anchor", "end").style("font-size", "12px").style("fill", "#1D242B").text(corta);
+    g.append("rect").attr("x", m.l).attr("y", 4).attr("height", lh - 8).attr("width", Math.max(2, x(r.v))).attr("rx", 2).style("fill", r.cor || o.cor || "#0F1E3A");
+    g.append("text").attr("x", m.l + Math.max(2, x(r.v)) + 6).attr("y", lh / 2 + 4).style("font-size", "12px").style("font-weight", "700").style("fill", "#1D242B").text(o.fmt ? o.fmt(r.v) : Math.round(r.v).toLocaleString("pt-BR"));
+    if (tp) g.on("mousemove", ev => tp.show(ev, [rot, ...(r.tip || [])])).on("mouseleave", () => tp.hide());
+    if (r.on) g.on("click", r.on); });
+}
+async function tiePainelDesenhar() {
+  try { await erpLib("d3"); } catch (e) { document.querySelectorAll("[data-tie]").forEach(el => { el.innerHTML = `<div class="dp-msg">Biblioteca de gráficos indisponível.</div>`; }); return; }
+  const d90 = (() => { const d = new Date(); d.setDate(d.getDate() - 90); return ymd(d); })();
+  const meses = [...Array(12)].map((_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 11 + i); return ymd(d).slice(0, 7); });
+  const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  document.querySelectorAll("[data-tie]").forEach(el => { const k = el.dataset.tie; try {
+    if (k === "mes") { const v = (c, s) => TIE.movs.filter(m => (timD(m.Data) || "").startsWith(c) && m.Tipo === s).reduce((a, m) => a + Math.abs(tieN(m.Quantidade)), 0);
+      if (!TIE.movs.length) { el.innerHTML = `<div class="dp-msg">Sem movimentações ainda.</div>`; return; }
+      tieColunasDuplas(el, meses, [{ k: "Entrada", nome: "Entradas", cor: "#56B37F" }, { k: "Saída", nome: "Saídas", cor: "#E57368" }], v, c => MES[Number(c.slice(5)) - 1] + "/" + c.slice(2, 4)); }
+    else if (k === "cat") { const mp = new Map(); TIE.itens.forEach(i => { if (i._cm && i._saldo > 0) mp.set(i.Categoria || "Sem categoria", (mp.get(i.Categoria || "Sem categoria") || 0) + i._cm * i._saldo); });
+      tiBarrasH(el, [...mp].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([rot, v]) => ({ rot, v, on: () => { TIE.f = { q: "", cat: rot === "Sem categoria" ? "" : rot, sit: "" }; tieAba("est"); } })), { fmt: v => fmtBRL(v), cor: "#1A2E52", vazio: "Sem valor em estoque (lance entradas com custo)." }); }
+    else if (k === "dep") { const mp = new Map(); TIE.movs.filter(m => m.Tipo === "Saída" && timD(m.Data) >= d90).forEach(m => mp.set(m.Departamento || "Sem departamento", (mp.get(m.Departamento || "Sem departamento") || 0) + Math.abs(tieN(m.Quantidade))));
+      tiBarrasH(el, [...mp].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([rot, v]) => ({ rot, v })), { cor: "#D6421F", vazio: "Nenhuma saída nos últimos 90 dias." }); }
+    else if (k === "top") { const mp = new Map(); TIE.movs.filter(m => m.Tipo === "Saída" && timD(m.Data) >= d90).forEach(m => mp.set(String(m.ItemId), (mp.get(String(m.ItemId)) || 0) + Math.abs(tieN(m.Quantidade))));
+      tiBarrasH(el, [...mp].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id, v]) => { const i = tieItem(id); return { rot: i ? i.Title : "Item removido", v, on: i ? () => tieItemAbrir(i._id) : null }; }), { cor: "#0F1E3A", vazio: "Nenhuma saída nos últimos 90 dias." }); }
+  } catch (e) { el.innerHTML = `<div class="dp-msg">Não foi possível desenhar este gráfico.</div>`; } });
+}
+/* colunas lado a lado (entradas × saídas) */
+function tieColunasDuplas(el, cats, series, valor, rotulo) {
+  el.replaceChildren(); const W = el.clientWidth || 600, H = el.clientHeight || 240, m = { t: 24, r: 8, b: 26, l: 40 };
+  const s = d3.select(el).append("svg").attr("width", W).attr("height", H).attr("role", "img").attr("aria-label", series.map(x => x.nome).join(" × ") + " por mês");
+  const x0 = d3.scaleBand().domain(cats).range([m.l, W - m.r]).padding(0.22), x1 = d3.scaleBand().domain(series.map(q => q.k)).range([0, x0.bandwidth()]).padding(0.08);
+  const y = d3.scaleLinear().domain([0, (d3.max(cats, c => d3.max(series, q => valor(c, q.k))) || 1) * 1.15]).nice().range([H - m.b, m.t]);
+  s.append("g").attr("class", "dp-grid").attr("transform", `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4).tickFormat(v => Math.round(v).toLocaleString("pt-BR")).tickSize(-(W - m.l - m.r))).call(g => g.select(".domain").remove()).call(g => g.selectAll(".tick").filter(v => v !== Math.round(v)).remove());
+  s.append("g").attr("transform", `translate(0,${H - m.b})`).call(d3.axisBottom(x0).tickFormat(rotulo).tickSizeOuter(0));
+  const tp = typeof dipTip === "function" ? dipTip(el) : null;
+  cats.forEach(c => series.forEach(q => { const v = valor(c, q.k); if (!v) return; s.append("rect").attr("x", x0(c) + x1(q.k)).attr("width", x1.bandwidth()).attr("y", y(v)).attr("height", Math.max(0, y(0) - y(v))).style("fill", q.cor)
+    .on("mousemove", ev => tp && tp.show(ev, [rotulo(c), ...series.map(z => z.nome + ": " + Math.round(valor(c, z.k)).toLocaleString("pt-BR"))])).on("mouseleave", () => tp && tp.hide()); }));
+  const lg = s.append("g").attr("transform", `translate(${Math.max(m.l, W - m.r - series.length * 90)},${8})`); series.forEach((q, i) => { lg.append("rect").attr("x", i * 90).attr("y", -9).attr("width", 10).attr("height", 10).style("fill", q.cor); lg.append("text").attr("x", i * 90 + 14).attr("y", 0).style("font-size", "11.5px").text(q.nome); });
+}
+/* ---------- Excel ---------- */
+window.tieExcel = async () => {
+  try {
+    if (TIE.aba === "mov") { const ms = tieMovLista();
+      const wb = await erpXlsxModelo({ titulo: "TI › Controle de Estoque · Movimentações", sub: `Transportadora Nova Macabu · ERP NMB · ${ms.length} movimentação(ões) · exportado em ${new Date().toLocaleDateString("pt-BR")}`, aba: "Movimentações", rodape: "TI › Controle de Estoque", nLin: ms.length + 20,
+        cols: [{ h: "Protocolo", w: 15, tipo: "texto" }, { h: "Data", w: 12, tipo: "data" }, { h: "Tipo", w: 14, tipo: "texto" }, { h: "Item", w: 34, tipo: "texto" }, { h: "Quantidade", w: 11, tipo: "texto" }, { h: "Custo unitário", w: 14, tipo: "moeda" }, { h: "Valor", w: 14, tipo: "texto" }, { h: "Funcionário", w: 26, tipo: "texto" }, { h: "Departamento", w: 18, tipo: "texto" }, { h: "Chamado", w: 14, tipo: "texto" }, { h: "Local", w: 20, tipo: "texto" }, { h: "Nº de série", w: 26, tipo: "texto" }, { h: "Nota fiscal", w: 14, tipo: "texto" }, { h: "Motivo", w: 30, tipo: "texto" }, { h: "Lançado por", w: 22, tipo: "texto" }],
+        linhas: ms.map(m => [m.Title || "", m.Data ? erpXlsxData(timD(m.Data)) : null, m.Tipo || "", m.Item || "", tieN(m.Quantidade), m.CustoUnitario != null ? Number(m.CustoUnitario) : null, m.Valor != null ? Number(m.Valor) : null, m.Funcionario || "", m.Departamento || "", m.Chamado || "", m.Local || "", String(m.Series || "").replace(/\n/g, ", "), m.NotaFiscal || "", m.Motivo || "", m.LancadoPor || ""]) });
+      await xlsxBaixar(wb, `TI - Estoque - Movimentacoes - ${todayISO()}.xlsx`); return; }
+    if (TIE.aba === "un") { const us = tieUnLista();
+      const wb = await erpXlsxModelo({ titulo: "TI › Controle de Estoque · Unidades", sub: `Transportadora Nova Macabu · ERP NMB · ${us.length} unidade(s) · exportado em ${new Date().toLocaleDateString("pt-BR")}`, aba: "Unidades", rodape: "TI › Controle de Estoque", nLin: us.length + 20,
+        cols: [{ h: "Nº de série", w: 22, tipo: "texto" }, { h: "Item", w: 34, tipo: "texto" }, { h: "Patrimônio", w: 14, tipo: "texto" }, { h: "Status", w: 16, tipo: "texto" }, { h: "Usuário", w: 26, tipo: "texto" }, { h: "Departamento", w: 18, tipo: "texto" }, { h: "Local", w: 20, tipo: "texto" }, { h: "Entrada", w: 12, tipo: "data" }, { h: "Custo", w: 14, tipo: "moeda" }, { h: "Nota fiscal", w: 14, tipo: "texto" }, { h: "Garantia até", w: 12, tipo: "data" }],
+        linhas: us.map(u => [u.Title || "", u.Item || "", u.Patrimonio || "", u.Status || "", u.Usuario || "", u.Departamento || "", u.Local || "", u.DataEntrada ? erpXlsxData(timD(u.DataEntrada)) : null, u.Custo != null && u.Custo !== "" ? Number(u.Custo) : null, u.NotaFiscal || "", u.GarantiaAte ? erpXlsxData(timD(u.GarantiaAte)) : null]) });
+      await xlsxBaixar(wb, `TI - Estoque - Unidades - ${todayISO()}.xlsx`); return; }
+    const its = TIE.aba === "est" ? tieEstLista() : TIE.itens.slice().sort((a, b) => String(a.Title).localeCompare(String(b.Title), "pt-BR"));
+    const wb = await erpXlsxModelo({ titulo: "TI › Controle de Estoque", sub: `Transportadora Nova Macabu · ERP NMB · ${its.length} item(ns) · exportado em ${new Date().toLocaleDateString("pt-BR")}`, aba: "Estoque", rodape: "TI › Controle de Estoque", nLin: its.length + 20,
+      cols: [{ h: "Item", w: 30, tipo: "texto" }, { h: "Marca", w: 14, tipo: "texto" }, { h: "Modelo", w: 22, tipo: "texto" }, { h: "Categoria", w: 26, tipo: "texto" }, { h: "Controle", w: 16, tipo: "texto" }, { h: "Unidade", w: 9, tipo: "texto" }, { h: "Saldo", w: 10, tipo: "texto" }, { h: "Mínimo", w: 10, tipo: "int" }, { h: "Custo médio", w: 14, tipo: "moeda" }, { h: "Valor em estoque", w: 16, tipo: "moeda" }, { h: "Local", w: 20, tipo: "texto" }, { h: "Situação", w: 12, tipo: "texto" }],
+      linhas: its.map(i => [i.Title || "", i.Marca || "", i.Modelo || "", i.Categoria || "", i.Controle || "", i.Unidade || "", Math.round(i._saldo), tieN(i.Minimo), i._cm ? Math.round(i._cm * 100) / 100 : null, i._cm && i._saldo > 0 ? Math.round(i._cm * i._saldo * 100) / 100 : null, i.Local || "", i._sit]) });
+    await xlsxBaixar(wb, `TI - Estoque - ${todayISO()}.xlsx`);
+  } catch (e) { toast("Não foi possível exportar: " + e.message, 6000); }
+};
+(function () { const st = document.createElement("style"); st.id = "erp-v014117c"; st.textContent = `
+.tie-grid,.timx-grid,.tie-vars{--dnavy:#0F1E3A;--dnavy2:#1A2E52;--dor:#D6421F;--dmut:#5B6670;--dline:#E2E5E9;--dok:#2F7D4F;--dbad:#B3261E}
+.tie-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}.tie-card.w2{grid-column:1/-1}.tie-ch{min-height:220px;padding:4px 12px 10px;position:relative}.tie-card .cap-card-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.tie-card .dp-msg{padding:30px 10px;text-align:center;color:var(--ink-2);font-size:13px}.tie-ch.dp-chart{height:240px;margin:0 12px 10px;width:auto}.tie-ch.dp-chart.auto{height:auto;min-height:120px}
+.tie-grid{align-items:start}.tie-card .cap-table{min-width:0}
+.tie-acoes{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.tie-uns{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.tie-tp{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700;background:#EEF1F5;color:#3B4656}.tie-e{background:#E7F4EC;color:#21643D}.tie-s{background:#FBE9E7;color:#9F1E16}.tie-d{background:#E8F0FB;color:#1F5FA8}.tie-b{background:#EDEFF2;color:#5B6670}.tie-t{background:#FFF1C7;color:#8A5B00}
+@media (max-width:820px){.tie-grid{grid-template-columns:1fr}}`; document.head.appendChild(st); })();
+window.pageTiEstoque = pageTiEstoque;
+{ const r0 = route;
+  route = function () {
+    const hash = (location.hash || "").split("?")[0];
+    if (hash !== "#/ti/controle-de-estoque") return r0.apply(this, arguments);
+    const m = MODULES.find(x => x.id === "ti_estoque"); if (!canSee(m)) { location.hash = "#/inicio"; return; }
+    session.modAtual = "ti_estoque"; session.pagAtual = ""; navAtivo("ti_estoque"); document.body.classList.remove("nav-open", "lista-aberta"); document.body.classList.add("wide");
+    $("main").innerHTML = pageTiEstoque(); addCrumbs(m); renderTiEstoque(); window.scrollTo(0, 0);
+  };
+}
+window.addEventListener("resize", () => { if (session.modAtual !== "ti_estoque" || TIE.aba !== "painel") return; clearTimeout(TIE.rzT); TIE.rzT = setTimeout(() => { if ($("tieBody")) tiePainelDesenhar(); }, 250); });
+{ const a = AREAS.find(x => x.name === "TI"); if (a) a.desc = "Chamados, manutenção de equipamentos, controle de estoque e painel de operação"; }
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */

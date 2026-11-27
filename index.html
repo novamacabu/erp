@@ -59170,6 +59170,219 @@ window.pageTiEstoque = pageTiEstoque;
 }
 window.addEventListener("resize", () => { if (session.modAtual !== "ti_estoque" || TIE.aba !== "painel") return; clearTimeout(TIE.rzT); TIE.rzT = setTimeout(() => { if ($("tieBody")) tiePainelDesenhar(); }, 250); });
 { const a = AREAS.find(x => x.name === "TI"); if (a) a.desc = "Chamados, manutenção de equipamentos, controle de estoque e painel de operação"; }
+
+/* =====================================================================
+   v0.14.117 (Rafael, 27/11 11:17 · itens 2 e 3)
+   2) TI › Manutenção de Equipamentos › Painel vira um painel executivo para os coordenadores: indicadores com meta,
+      gráficos do período (manutenções por mês e tipo, custo, plano preventivo, disponibilidade, parque, reincidência, idade)
+      e, embaixo, o que pede ação (preventivas vencidas, próximas manutenções, garantias).
+   3) TI › Painel de Operação: espelho do Painel de Operação da Diretoria (topo azul, relógio, Atualizar, Modo TV),
+      com as operações da TI: chamados (fila, severidade, categoria, prazo de solução, carga por técnico), equipamentos
+      (disponibilidade, preventivas, manutenções) e estoque, mais uma lista única de prioridades.
+   ===================================================================== */
+const tixMes = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const tixMeses = n => [...Array(n)].map((_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - n + 1 + i); return ymd(d).slice(0, 7); });
+const tixRotMes = c => tixMes[Number(c.slice(5)) - 1] + "/" + c.slice(2, 4);
+function tixParque() { const at = TIM.ativos.filter(a => a.Situacao !== "Baixado / descartado"), fora = at.filter(a => a.Situacao === "Em manutenção" || a.Situacao === "Defeituoso / aguardando reparo");
+  const prog = at.map(a => timPlano(a)).filter(p => p.sit !== "sem"), emdia = prog.filter(p => p.sit !== "vencida");
+  return { at, fora, disp: at.length ? (at.length - fora.length) / at.length * 100 : 0, prog, emdia, pctPrev: prog.length ? emdia.length / prog.length * 100 : 0 }; }
+function tixDiasReparo(m) { const ini = timD(m.DataInicio) || timD(m.DataPrevista), fim = timD(m.DataConclusao); if (!ini || !fim || fim < ini) return null; return Math.round((dLocal(fim) - dLocal(ini)) / 86400000); }
+/* ---------------- 2) Painel executivo da Manutenção de Equipamentos ---------------- */
+TIM.pp = TIM.pp || 12;
+const timPainelAcoes = timPainelHtml;   /* listas "para agir" (tabelas da versão anterior), embaixo do painel */
+timPainelHtml = function () {
+  const n = TIM.pp, meses = tixMeses(n), ini = meses[0] + "-01", P = tixParque();
+  const noPer = TIM.mans.filter(m => (timD(m.DataConclusao) || timD(m.DataPrevista) || timD(m.DataInicio) || "") >= ini);
+  const concl = noPer.filter(m => m.Status === "Concluída" && timD(m.DataConclusao) >= ini), corr = concl.filter(m => m.Tipo === "Corretiva");
+  const rep = corr.map(tixDiasReparo).filter(v => v != null), mttr = rep.length ? rep.reduce((a, b) => a + b, 0) / rep.length : null;
+  const custo = concl.reduce((s, m) => s + tieN(m.Custo), 0), abertas = TIM.mans.filter(timAberta), atras = abertas.filter(m => timStatusEf(m) === "Atrasada");
+  const prevPct = concl.length ? concl.filter(m => m.Tipo === "Preventiva").length / concl.length * 100 : 0;
+  const k = (lbl, val, sub, cls, meta) => `<div class="timx-k ${cls || ""}"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div><div class="sub">${esc(sub)}</div>${meta ? `<div class="meta">${esc(meta)}</div>` : ""}</div>`;
+  const ok = (v, m) => v >= m ? "bom" : v >= m - 10 ? "aten" : "ruim";
+  const per = `<div class="timx-per" role="group" aria-label="Período">${[[3, "3 meses"], [6, "6 meses"], [12, "12 meses"]].map(([v, l]) => `<button type="button" class="${n === v ? "on" : ""}" onclick="TIM.pp=${v}; paintTiManut()">${l}</button>`).join("")}<button type="button" class="btn sm" onclick="timPainelImprimir()" title="Imprimir ou salvar em PDF para a reunião">Imprimir</button></div>`;
+  const card = (id, t, sub, cls) => `<section class="cap-card tie-card ${cls || ""}"><div class="cap-card-h"><h3>${t}</h3>${sub ? `<span class="sup">${sub}</span>` : ""}</div><div class="tie-ch dp-chart ${/w2|gauge/.test(cls || "") ? "" : "auto"}" data-timx="${id}"></div></section>`;
+  return `<div class="timx"><div class="timx-top"><div><h2 class="timx-h">Resumo para a coordenação</h2><p class="sup" style="margin:2px 0 0">Últimos ${n} meses · parque de ${P.at.length} equipamento(s) · atualizado em ${new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</p></div>${per}</div>
+    <div class="timx-ks">${k("Disponibilidade do parque", P.at.length ? dipDec(P.disp) + "%" : "—", `${P.fora.length} fora de uso agora`, P.at.length ? ok(P.disp, 95) : "", "meta 95%")}
+      ${k("Preventivas em dia", P.prog.length ? dipDec(P.pctPrev) + "%" : "—", `${P.prog.length - P.emdia.length} vencida(s) de ${P.prog.length}`, P.prog.length ? ok(P.pctPrev, 90) : "", "meta 90%")}
+      ${k("Manutenções concluídas", concl.length, `${dipDec(prevPct)}% preventivas`, "", "")}
+      ${k("Tempo médio de reparo", mttr == null ? "—" : dipDec(mttr) + " dia(s)", `${rep.length} corretiva(s) com início e fim`, "", "")}
+      ${k("Custo no período", fmtBRL(custo), P.at.length ? `${fmtBRL(custo / P.at.length)} por equipamento` : "", "", "")}
+      ${k("Em aberto", abertas.length, `${atras.length} atrasada(s)`, atras.length ? "ruim" : abertas.length ? "aten" : "bom", "")}</div>
+    <div class="tie-grid timx-grid">${card("mes", "Manutenções por mês", "concluídas, por tipo", "w2")}${card("disp", "Disponibilidade do parque", "em uso ÷ ativos · traço verde = meta 95%", "gauge")}${card("prev", "Plano preventivo em dia", "equipamentos com preventiva programada · meta 90%", "gauge")}
+      ${card("custo", "Custo por mês", "manutenções concluídas (R$)", "w2")}${card("sit", "Parque por situação", "clique para ver os equipamentos")}${card("tipo", "Parque por tipo", "")}
+      ${card("reinc", "Equipamentos com mais corretivas", `reincidência nos últimos ${n} meses`)}${card("idade", "Idade do parque", "pela data de aquisição")}</div>
+    <h2 class="timx-h" style="margin-top:22px">Para agir</h2></div>${(() => { const t = document.createElement("div"); t.innerHTML = timPainelAcoes(); const kp = t.querySelector(".cap-kpis"); if (kp) kp.remove(); return t.innerHTML; })()}`;
+};
+window.timPainelImprimir = () => { setTimeout(() => window.print(), 50); };
+function timPainelDesenhar() {
+  if (!window.d3) { erpLib("d3").then(timPainelDesenhar).catch(() => {}); return; }
+  const n = TIM.pp, meses = tixMeses(n), ini = meses[0] + "-01", P = tixParque();
+  const concl = TIM.mans.filter(m => m.Status === "Concluída" && timD(m.DataConclusao) >= ini);
+  document.querySelectorAll("[data-timx]").forEach(el => { const k = el.dataset.timx; try {
+    if (k === "mes") { const tp = m => m.Tipo === "Preventiva" ? "p" : m.Tipo === "Corretiva" ? "c" : "o";
+      if (!concl.length) { el.innerHTML = `<div class="dp-msg">Nenhuma manutenção concluída no período.</div>`; return; }
+      dipColunas(el, { aria: "Manutenções concluídas por mês e tipo", cats: meses, rotulo: tixRotMes, series: [{ k: "p", nome: "Preventivas", cor: "#2F7D4F" }, { k: "c", nome: "Corretivas", cor: "#D6421F" }, { k: "o", nome: "Outras", cor: "#8A9099" }], valor: (c, q) => concl.filter(m => timD(m.DataConclusao).startsWith(c) && tp(m) === q).length }); }
+    else if (k === "custo") { if (!concl.some(m => tieN(m.Custo))) { el.innerHTML = `<div class="dp-msg">Sem custo lançado no período.</div>`; return; }
+      dipColunas(el, { aria: "Custo das manutenções por mês", cats: meses, rotulo: tixRotMes, prefixo: () => "R$ ", series: [{ k: "v", nome: "Custo (R$)", cor: "#1A2E52" }], valor: c => Math.round(concl.filter(m => timD(m.DataConclusao).startsWith(c)).reduce((s, m) => s + tieN(m.Custo), 0)) }); }
+    else if (k === "disp") { if (!P.at.length) { el.innerHTML = `<div class="dp-msg">Nenhum equipamento cadastrado.</div>`; return; } dipMedidor(el, { aria: "Disponibilidade do parque", valor: P.disp, meta: 95, rotulo: "em uso ou em reserva" }); }
+    else if (k === "prev") { if (!P.prog.length) { el.innerHTML = `<div class="dp-msg">Nenhum equipamento com preventiva programada.</div>`; return; } dipMedidor(el, { aria: "Plano preventivo em dia", valor: P.pctPrev, meta: 90, rotulo: "preventivas em dia" }); }
+    else if (k === "sit") { const mp = new Map(); P.at.forEach(a => mp.set(a.Situacao || "—", (mp.get(a.Situacao || "—") || 0) + 1));
+      const cor = { "Em uso": "#2F7D4F", "Em estoque / reserva": "#1A2E52", "Em manutenção": "#D99100", "Emprestado": "#5B6670", "Defeituoso / aguardando reparo": "#B3261E" };
+      tiBarrasH(el, TIM_SITU.filter(s => mp.has(s)).map(s => ({ rot: s, v: mp.get(s), cor: cor[s], on: () => { TIM.fa = { q: "", tipo: "", sit: s, local: "", dep: "" }; timAba("ativos"); } })), { vazio: "Nenhum equipamento." }); }
+    else if (k === "tipo") { const mp = new Map(); P.at.forEach(a => mp.set(a.Tipo || "—", (mp.get(a.Tipo || "—") || 0) + 1));
+      tiBarrasH(el, [...mp].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([rot, v]) => ({ rot, v, on: () => { TIM.fa = { q: "", tipo: rot, sit: "", local: "", dep: "" }; timAba("ativos"); } })), { cor: "#1A2E52", vazio: "Nenhum equipamento." }); }
+    else if (k === "reinc") { const mp = new Map(); TIM.mans.filter(m => m.Tipo === "Corretiva" && (timD(m.DataConclusao) || timD(m.DataPrevista) || timD(m.DataInicio) || "") >= ini).forEach(m => mp.set(m.AtivoId, (mp.get(m.AtivoId) || 0) + 1));
+      tiBarrasH(el, [...mp].filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id, v]) => { const a = timAtivo(id); return { rot: a ? `${a.Title} · ${a.Tipo || ""}` : "Equipamento removido", v, cor: v >= 3 ? "#B3261E" : "#D6421F", on: a ? () => timAtivoAbrir(a._id) : null }; }), { vazio: "Nenhuma corretiva no período." }); }
+    else if (k === "idade") { const hoje = new Date(), fx = [["Até 1 ano", 0, 1], ["1 a 3 anos", 1, 3], ["3 a 5 anos", 3, 5], ["Mais de 5 anos", 5, 99]], cont = fx.map(() => 0); let sem = 0;
+      P.at.forEach(a => { const d = timD(a.DataAquisicao); if (!d) { sem++; return; } const anos = (hoje - dLocal(d)) / (365.25 * 86400000); const i = fx.findIndex(f => anos >= f[1] && anos < f[2]); if (i >= 0) cont[i]++; });
+      tiBarrasH(el, fx.map((f, i) => ({ rot: f[0], v: cont[i], cor: i === 3 ? "#B3261E" : i === 2 ? "#D99100" : "#2F7D4F" })).concat(sem ? [{ rot: "Sem data de aquisição", v: sem, cor: "#8A9099" }] : []).filter(r => r.v), { vazio: "Nenhum equipamento." }); }
+  } catch (e) { el.innerHTML = `<div class="dp-msg">Não foi possível desenhar este gráfico.</div>`; } });
+}
+{ const p0 = paintTiManut; paintTiManut = function () { const r = p0.apply(this, arguments); if (TIM.ready && TIM.aba === "painel" && $("timBody")) timPainelDesenhar(); return r; }; window.paintTiManut = paintTiManut; }
+window.addEventListener("resize", () => { if (session.modAtual !== "ti_manut" || TIM.aba !== "painel") return; clearTimeout(TIM.rzT); TIM.rzT = setTimeout(() => { if ($("timBody")) timPainelDesenhar(); }, 250); });
+/* ---------------- 3) TI › Painel de Operação ---------------- */
+const TIP_BASE = "#/ti/painel-de-operacao";
+MODULES.push({ id: "ti_painel", path: TIP_BASE, icon: "tv", name: "Painel de Operação", area: "TI", groups: ["ti"], status: "piloto", wide: true });
+if (typeof AG_MOD_SITES !== "undefined") AG_MOD_SITES.ti_painel = [];
+const TIP = { tv: false, relT: null, refT: null, tvT: null, em: 0, st: { ch: "carregando", man: "carregando", est: "carregando" } };
+const tipFechado = c => ["Resolvido", "Fechado", "Cancelado"].includes(c.Status);
+const TIP_SEV = ["Crítica", "Alta", "Média", "Baixa"], TIP_SEV_COR = { "Crítica": "#B3261E", "Alta": "#D6421F", "Média": "#D99100", "Baixa": "#2F7D4F" };
+async function tipLer() {
+  TIP.st = { ch: "carregando", man: "carregando", est: "carregando" }; tipPintar();
+  await Promise.all([
+    (async () => { try { if (!canSee(MODULES.find(m => m.id === "ti_chamados"))) { TIP.st.ch = "sem acesso"; return; } await loadTi(true); TIP.st.ch = TI_STATE.ready ? "ok" : "sem lista"; } catch (e) { TIP.st.ch = "erro"; } })(),
+    (async () => { try { if (!canSee(MODULES.find(m => m.id === "ti_manut"))) { TIP.st.man = "sem acesso"; return; } await timCarregar(true); TIP.st.man = TIM.ready ? "ok" : "sem lista"; } catch (e) { TIP.st.man = "erro"; } })(),
+    (async () => { try { if (!canSee(MODULES.find(m => m.id === "ti_estoque"))) { TIP.st.est = "sem acesso"; return; } await tieCarregar(true); TIP.st.est = TIE.ready ? "ok" : "sem lista"; } catch (e) { TIP.st.est = "erro"; } })()]);
+  TIP.em = Date.now(); tipPintar();
+}
+const TIP_ST_TXT = { carregando: "Carregando…", "sem acesso": "sem acesso a este módulo", "sem lista": "a lista ainda não existe (Configuração › Executar tudo)", erro: "não foi possível ler" };
+function tipKpis() {
+  const k = (lbl, val, sub, cls, href) => `<a class="tip-k ${cls || ""}" ${href ? `href="${href}"` : ""}><span class="lbl">${esc(lbl)}</span><span class="val">${esc(String(val))}</span><span class="sub">${esc(sub)}</span></a>`;
+  const out = [];
+  if (TIP.st.ch === "ok") { const ab = TI_STATE.itens.filter(c => !tipFechado(c)), crit = ab.filter(c => c.Severidade === "Crítica" || c.Severidade === "Alta"), d30 = Date.now() - 30 * 86400000;
+    const res = TI_STATE.itens.filter(c => c.DataResolucao && new Date(c.DataResolucao) >= d30 && c.DataAbertura), h = res.map(c => (new Date(c.DataResolucao) - new Date(c.DataAbertura)) / 3600000).filter(v => v >= 0);
+    out.push(k("Chamados abertos", ab.length, `${ab.filter(c => c.Status === "Aguardando usuário").length} aguardando usuário`, ab.length > 10 ? "aten" : "", "#/ti/chamados"), k("Críticos e altos", crit.length, "abertos agora", crit.length ? "ruim" : "bom", "#/ti/chamados"),
+      k("Resolvidos em 30 dias", res.length, h.length ? `média ${h.reduce((a, b) => a + b, 0) / h.length < 48 ? dipDec(h.reduce((a, b) => a + b, 0) / h.length) + " h" : dipDec(h.reduce((a, b) => a + b, 0) / h.length / 24) + " dias"} para resolver` : "sem tempo medido", "", "#/ti/chamados")); }
+  else out.push(k("Chamados", "—", TIP_ST_TXT[TIP.st.ch] || "", "", ""));
+  if (TIP.st.man === "ok") { const P = tixParque(), ab = TIM.mans.filter(timAberta), atr = ab.filter(m => timStatusEf(m) === "Atrasada");
+    out.push(k("Disponibilidade do parque", P.at.length ? dipDec(P.disp) + "%" : "—", `${P.fora.length} equipamento(s) fora de uso`, P.at.length ? (P.disp >= 95 ? "bom" : P.disp >= 85 ? "aten" : "ruim") : "", "#/ti/manutencao-de-equipamentos"),
+      k("Manutenções em aberto", ab.length, `${atr.length} atrasada(s)`, atr.length ? "ruim" : "", "#/ti/manutencao-de-equipamentos"), k("Preventivas vencidas", P.prog.length - P.emdia.length, `de ${P.prog.length} programada(s)`, P.prog.length - P.emdia.length ? "ruim" : "bom", "#/ti/manutencao-de-equipamentos")); }
+  else out.push(k("Equipamentos", "—", TIP_ST_TXT[TIP.st.man] || "", "", ""));
+  if (TIP.st.est === "ok") { const rep = TIE.itens.filter(i => i._sit === "Repor" || i._sit === "Zerado"), val = TIE.itens.reduce((s, i) => s + (i._cm && i._saldo > 0 ? i._cm * i._saldo : 0), 0);
+    out.push(k("Itens para repor", rep.length, `${fmtBRL(val)} em estoque`, rep.length ? "aten" : "bom", "#/ti/controle-de-estoque")); }
+  else out.push(k("Estoque", "—", TIP_ST_TXT[TIP.st.est] || "", "", ""));
+  return `<div class="tip-ks">${out.join("")}</div>`;
+}
+function tipPrioridades() {
+  const L = [], agora = Date.now(), idade = d => { if (!d) return ""; const h = (agora - new Date(d)) / 3600000; return h < 24 ? `${Math.max(0, Math.round(h))} h` : `${Math.round(h / 24)} dia(s)`; };
+  if (TIP.st.ch === "ok") TI_STATE.itens.filter(c => !tipFechado(c)).forEach(c => { const sv = TIP_SEV.indexOf(c.Severidade || "Média"); L.push({ peso: (sv < 0 ? 2 : sv) * 10 + (c.Status === "Aguardando usuário" ? 5 : 0) - Math.min(9, ((agora - new Date(c.DataAbertura || agora)) / 86400000) / 2), tipo: "Chamado", cor: TIP_SEV_COR[c.Severidade] || "#5B6670", sev: c.Severidade || "—", txt: `${tiProtocolo(c)} · ${c.Assunto || ""}`, det: [c.Solicitante, c.Departamento, c.Status, c.Responsavel ? "com " + c.Responsavel : "sem responsável"].filter(Boolean).join(" · "), qd: idade(c.DataAbertura), href: "#/ti/chamados" }); });
+  if (TIP.st.man === "ok") { TIM.mans.filter(m => timStatusEf(m) === "Atrasada").forEach(m => L.push({ peso: 12, tipo: "Manutenção atrasada", cor: "#D6421F", sev: m.Prioridade || "—", txt: `${m.Title || ""} · ${m.Ativo || ""} ${m.AtivoDesc ? "· " + m.AtivoDesc : ""}`, det: [m.Tipo, m.Tecnico].filter(Boolean).join(" · "), qd: m.DataPrevista ? `prevista ${fmtDate(m.DataPrevista)}` : "", href: "#/ti/manutencao-de-equipamentos" }));
+    TIM.ativos.filter(a => a.Situacao !== "Baixado / descartado").forEach(a => { const p = timPlano(a); if (p.sit === "vencida") L.push({ peso: 22, tipo: "Preventiva vencida", cor: "#D99100", sev: "—", txt: `${a.Title} · ${a.Tipo || ""}`, det: [a.Responsavel, a.Local].filter(Boolean).join(" · "), qd: p.nunca ? "nunca feita" : p.prox ? `desde ${fmtDate(p.prox)}` : "", href: "#/ti/manutencao-de-equipamentos" });
+      const gd = timDias(timD(a.GarantiaAte)); if (gd != null && gd >= 0 && gd <= 30) L.push({ peso: 34, tipo: "Garantia vencendo", cor: "#5B6670", sev: "—", txt: `${a.Title} · ${a.Tipo || ""}`, det: a.Fornecedor || "", qd: `em ${gd} dia(s)`, href: "#/ti/manutencao-de-equipamentos" }); }); }
+  if (TIP.st.est === "ok") TIE.itens.filter(i => i._sit === "Zerado" || i._sit === "Repor").forEach(i => L.push({ peso: i._sit === "Zerado" ? 14 : 26, tipo: i._sit === "Zerado" ? "Estoque zerado" : "Estoque baixo", cor: i._sit === "Zerado" ? "#B3261E" : "#D99100", sev: "—", txt: tieRot(i), det: `saldo ${tieQ(i._saldo)} · mínimo ${tieQ(i.Minimo)}`, qd: "", href: "#/ti/controle-de-estoque" }));
+  L.sort((a, b) => a.peso - b.peso);
+  const vis = L.slice(0, 14);
+  return `<div class="dp-card c12"><h3 class="dp-h">Prioridades agora <span class="tip-cnt">${L.length}</span></h3><p class="dp-sub">Chamados críticos e altos primeiro, depois manutenções atrasadas, estoque zerado, preventivas vencidas e garantias · os mais antigos sobem</p>
+    ${vis.length ? `<ol class="tip-pri">${vis.map(x => `<li><a href="${x.href}"><i style="background:${x.cor}"></i><span class="tp">${esc(x.tipo)}${x.sev && x.sev !== "—" ? ` · ${esc(x.sev)}` : ""}</span><b>${esc(x.txt)}</b><span class="det">${esc(x.det)}</span><span class="qd">${esc(x.qd)}</span></a></li>`).join("")}</ol>${L.length > vis.length ? `<p class="dp-sub">e mais ${L.length - vis.length}.</p>` : ""}` : `<div class="dp-msg">Nada pendente agora. 👍</div>`}</div>`;
+}
+function tipCorpo() {
+  const card = (id, cls, t, sub, alto) => `<div class="dp-card ${cls}"><h3 class="dp-h">${esc(t)}</h3>${sub ? `<p class="dp-sub">${sub}</p>` : ""}<div class="dp-chart ${alto || ""}" data-tip="${id}"></div></div>`;
+  return `${tipKpis()}
+  <section class="dp-sec"><h2 class="dp-st">Prioridades <small>o que a TI precisa resolver primeiro</small></h2><div class="dp-row">${tipPrioridades()}</div></section>
+  <section class="dp-sec"><h2 class="dp-st">Chamados <small>TI › Chamados</small></h2>
+    <div class="dp-row">${card("sem", "c8", "Abertos × resolvidos por semana", "Últimas 12 semanas")}${card("sev", "c4", "Fila por severidade", "Chamados abertos agora")}</div>
+    <div class="dp-row">${card("cat", "c4", "Por categoria", "Abertos nos últimos 90 dias", "alto")}${card("tempo", "c4", "Tempo médio de solução", "Resolvidos nos últimos 90 dias, por severidade (horas)", "alto")}${card("carga", "c4", "Carga por técnico", "Chamados e manutenções em aberto por responsável", "alto")}</div></section>
+  <section class="dp-sec"><h2 class="dp-st">Equipamentos <small>TI › Manutenção de Equipamentos</small></h2>
+    <div class="dp-row">${card("disp", "c4", "Disponibilidade do parque", "Em uso ÷ ativos · traço verde = meta 95%")}${card("prev", "c4", "Plano preventivo em dia", "Equipamentos com preventiva programada · meta 90%")}${card("man", "c4", "Manutenções por mês", "Concluídas · últimos 6 meses")}</div></section>
+  <section class="dp-sec"><h2 class="dp-st">Estoque <small>TI › Controle de Estoque</small></h2>
+    <div class="dp-row">${card("est", "c6", "Entradas × saídas por mês", "Quantidade · últimos 6 meses", "baixo")}${card("rep", "c6", "Para repor", "Itens abaixo do mínimo · quanto falta", "baixo")}</div></section>`;
+}
+function pageTip() {
+  return `<div class="page dp" id="tipRoot">
+    <nav class="crumbs" aria-label="Você está em"><a href="#/inicio">Início</a><span>›</span><a href="#/area/TI">TI</a><span>›</span><b>Painel de Operação</b></nav>
+    <header class="dp-top"><div class="dp-marca"><span class="dp-plate"><img class="dp-logo" src="${LOGO_NMB}" alt="Nova Macabu"></span><div><div class="dp-sis"><b>TI</b> | Nova Macabu</div><h1 class="dp-t1">Painel de Operação da TI</h1></div></div>
+      <div class="dp-dir"><div><div class="dp-hora" id="tipHora">—</div><div class="dp-hoje" id="tipHoje">—</div></div>
+        <div class="dp-acoes"><button type="button" class="dp-btn" onclick="tipLer()" title="Ler de novo as origens">⟳ Atualizar</button><button type="button" class="dp-btn" id="tipTvBtn" aria-pressed="${TIP.tv}" onclick="tipTv()" title="Tela cheia com rolagem automática a cada 20 segundos">▣ Modo TV</button><span class="dp-stamp" id="tipStamp"></span></div></div></header>
+    <div id="tipBody">${tipCorpo()}</div>
+    <footer class="dp-pe"><span>ERP NMB · Painel de Operação da TI · chamados, equipamentos e estoque lidos do SharePoint com o seu login · recarga a cada 15 minutos</span><span>Disponibilidade = equipamentos fora de manutenção ÷ ativos</span></footer></div>`;
+}
+function tipPintar() {
+  const b = $("tipBody"); if (!b) return; b.innerHTML = tipCorpo(); const st = $("tipStamp"); if (st) st.textContent = TIP.em ? "lido às " + new Date(TIP.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+  if (!window.d3) return;
+  const msg = (el, t) => { el.innerHTML = `<div class="dp-msg">${esc(t)}</div>`; };
+  const semana = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return ymd(x); };
+  b.querySelectorAll("[data-tip]").forEach(el => { const k = el.dataset.tip; try {
+    const ch = ["sem", "sev", "cat", "tempo"].includes(k), mn = ["disp", "prev", "man"].includes(k), es = ["est", "rep"].includes(k);
+    if (ch && TIP.st.ch !== "ok") return msg(el, "Chamados: " + (TIP_ST_TXT[TIP.st.ch] || "")); if (mn && TIP.st.man !== "ok") return msg(el, "Equipamentos: " + (TIP_ST_TXT[TIP.st.man] || "")); if (es && TIP.st.est !== "ok") return msg(el, "Estoque: " + (TIP_ST_TXT[TIP.st.est] || ""));
+    const d90 = Date.now() - 90 * 86400000;
+    if (k === "sem") { const sems = [...Array(12)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - 7 * (11 - i)); return semana(d); });
+      tieColunasDuplas(el, sems, [{ k: "a", nome: "Abertos", cor: "#1A2E52" }, { k: "r", nome: "Resolvidos", cor: "#2F7D4F" }], (c, q) => TI_STATE.itens.filter(x => { const d = q === "a" ? x.DataAbertura : x.DataResolucao; return d && semana(d) === c; }).length, c => c.slice(8, 10) + "/" + c.slice(5, 7)); }
+    else if (k === "sev") { const ab = TI_STATE.itens.filter(c => !tipFechado(c)); tiBarrasH(el, TIP_SEV.map(s => ({ rot: s, v: ab.filter(c => (c.Severidade || "Média") === s).length, cor: TIP_SEV_COR[s] })).filter(r => r.v), { vazio: "Nenhum chamado aberto." }); }
+    else if (k === "cat") { const mp = new Map(); TI_STATE.itens.filter(c => c.DataAbertura && new Date(c.DataAbertura) >= d90).forEach(c => mp.set(c.Categoria || "Sem categoria", (mp.get(c.Categoria || "Sem categoria") || 0) + 1)); tiBarrasH(el, [...mp].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([rot, v]) => ({ rot, v })), { cor: "#1A2E52", vazio: "Nenhum chamado nos últimos 90 dias." }); }
+    else if (k === "tempo") { const rs = TI_STATE.itens.filter(c => c.DataResolucao && c.DataAbertura && new Date(c.DataResolucao) >= d90);
+      tiBarrasH(el, TIP_SEV.map(s => { const h = rs.filter(c => (c.Severidade || "Média") === s).map(c => (new Date(c.DataResolucao) - new Date(c.DataAbertura)) / 3600000).filter(v => v >= 0); return { rot: `${s} (${h.length})`, v: h.length ? h.reduce((a, b) => a + b, 0) / h.length : 0, cor: TIP_SEV_COR[s], n: h.length }; }).filter(r => r.n), { fmt: v => v < 48 ? dipDec(v) + " h" : dipDec(v / 24) + " d", vazio: "Nenhum chamado resolvido nos últimos 90 dias." }); }
+    else if (k === "carga") { const mp = new Map(), add = (n, t) => { n = String(n || "").trim() || "Sem responsável"; const o = mp.get(n) || { c: 0, m: 0 }; o[t]++; mp.set(n, o); };
+      if (TIP.st.ch === "ok") TI_STATE.itens.filter(c => !tipFechado(c)).forEach(c => add(c.Responsavel, "c")); if (TIP.st.man === "ok") TIM.mans.filter(timAberta).forEach(m => add(m.Tecnico, "m"));
+      tiBarrasH(el, [...mp].sort((a, b) => (b[1].c + b[1].m) - (a[1].c + a[1].m)).slice(0, 8).map(([rot, o]) => ({ rot, v: o.c + o.m, tip: [`${o.c} chamado(s)`, `${o.m} manutenção(ões)`], cor: rot === "Sem responsável" ? "#B3261E" : "#0F1E3A" })), { vazio: "Nada em aberto." }); }
+    else if (k === "disp") { const P = tixParque(); if (!P.at.length) return msg(el, "Nenhum equipamento cadastrado."); dipMedidor(el, { aria: "Disponibilidade do parque", valor: P.disp, meta: 95, rotulo: "em uso ou em reserva" }); }
+    else if (k === "prev") { const P = tixParque(); if (!P.prog.length) return msg(el, "Nenhum equipamento com preventiva programada."); dipMedidor(el, { aria: "Plano preventivo em dia", valor: P.pctPrev, meta: 90, rotulo: "preventivas em dia" }); }
+    else if (k === "man") { const ms = tixMeses(6), cc = TIM.mans.filter(m => m.Status === "Concluída"); const tp = m => m.Tipo === "Preventiva" ? "p" : m.Tipo === "Corretiva" ? "c" : "o";
+      if (!cc.some(m => timD(m.DataConclusao) >= ms[0])) return msg(el, "Nenhuma manutenção concluída nos últimos 6 meses.");
+      dipColunas(el, { aria: "Manutenções por mês", cats: ms, rotulo: tixRotMes, series: [{ k: "p", nome: "Preventivas", cor: "#2F7D4F" }, { k: "c", nome: "Corretivas", cor: "#D6421F" }, { k: "o", nome: "Outras", cor: "#8A9099" }], valor: (c, q) => cc.filter(m => timD(m.DataConclusao).startsWith(c) && tp(m) === q).length }); }
+    else if (k === "est") { const ms = tixMeses(6); if (!TIE.movs.length) return msg(el, "Sem movimentações ainda.");
+      tieColunasDuplas(el, ms, [{ k: "Entrada", nome: "Entradas", cor: "#56B37F" }, { k: "Saída", nome: "Saídas", cor: "#E57368" }], (c, s) => TIE.movs.filter(m => (timD(m.Data) || "").startsWith(c) && m.Tipo === s).reduce((a, m) => a + Math.abs(tieN(m.Quantidade)), 0), tixRotMes); }
+    else if (k === "rep") { tiBarrasH(el, TIE.itens.filter(i => i._sit === "Repor" || i._sit === "Zerado").map(i => ({ rot: i.Title, v: tieN(i.Minimo) - i._saldo, tip: [`saldo ${tieQ(i._saldo)} · mínimo ${tieQ(i.Minimo)}`], cor: i._sit === "Zerado" ? "#B3261E" : "#D99100" })).sort((a, b) => b.v - a.v).slice(0, 8), { fmt: v => "faltam " + Math.round(v), vazio: "Nada abaixo do mínimo." }); }
+  } catch (e) { msg(el, "Não foi possível desenhar este gráfico."); } });
+}
+function tipRelogio() { const h = $("tipHora"), d = $("tipHoje"); if (!h) return false; const n = new Date(); h.textContent = n.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); if (d) d.textContent = n.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }); return true; }
+function tipParar() { clearInterval(TIP.relT); clearInterval(TIP.refT); clearInterval(TIP.tvT); TIP.relT = TIP.refT = TIP.tvT = null; TIP.tv = false; }
+window.tipLer = tipLer;
+window.tipTv = async () => {
+  const on = !TIP.tv, root = $("tipRoot"); TIP.tv = on; const bt = $("tipTvBtn"); if (bt) bt.setAttribute("aria-pressed", String(on));
+  try { if (on && root && root.requestFullscreen && !document.fullscreenElement) await root.requestFullscreen(); if (!on && document.fullscreenElement) await document.exitFullscreen(); } catch (e) {}
+  clearInterval(TIP.tvT); TIP.tvT = null;
+  if (on && window.matchMedia("(prefers-reduced-motion: no-preference)").matches) { let i = 0; TIP.tvT = setInterval(() => { const secs = [...document.querySelectorAll("#tipRoot .dp-top, #tipRoot .dp-sec")]; if (!secs.length) { clearInterval(TIP.tvT); return; } i = (i + 1) % secs.length; secs[i].scrollIntoView({ behavior: "smooth", block: "start" }); }, 20000); }
+};
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && TIP.tv) { TIP.tv = false; clearInterval(TIP.tvT); TIP.tvT = null; const bt = $("tipTvBtn"); if (bt) bt.setAttribute("aria-pressed", "false"); } if (session.modAtual === "ti_painel") setTimeout(tipPintar, 250); });
+window.addEventListener("resize", () => { if (session.modAtual !== "ti_painel") return; clearTimeout(TIP.rzT); TIP.rzT = setTimeout(tipPintar, 200); });
+async function tipAbrir() {
+  tipParar(); tipRelogio(); TIP.relT = setInterval(() => { if (!tipRelogio()) tipParar(); }, 10000);
+  TIP.refT = setInterval(() => { if (session.modAtual === "ti_painel" && $("tipRoot")) tipLer(); else tipParar(); }, 15 * 60 * 1000);
+  try { await erpLib("d3"); } catch (e) {}
+  await tipLer();
+}
+{ const r0 = route; route = function () {
+    const h = (location.hash || "").split("?")[0];
+    if (h !== TIP_BASE) { if (session.modAtual === "ti_painel" || TIP.relT) tipParar(); return r0.apply(this, arguments); }
+    const m = MODULES.find(x => x.id === "ti_painel"); if (!canSee(m)) { location.hash = "#/inicio"; return; }
+    session.modAtual = "ti_painel"; session.pagAtual = "ti_painel";
+    document.body.classList.remove("nav-open", "lista-aberta"); document.body.classList.add("wide");
+    $("main").innerHTML = pageTip(); navAtivo("ti_painel"); window.scrollTo(0, 0); tipAbrir();
+  }; }
+(function () {
+  const base = document.getElementById("erp-v014105"), st = document.createElement("style"); st.id = "erp-v014117d";
+  st.textContent = (base ? base.textContent.replace(/#dipRoot/g, "#tipRoot") : "") + `
+#tipRoot .tip-ks{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:clamp(8px,.8vw,14px)}
+#tipRoot .tip-k{display:flex;flex-direction:column;gap:2px;background:#fff;border:1px solid var(--dline);border-radius:2px;padding:clamp(10px,.9vw,16px);text-decoration:none;color:var(--ink);border-top:3px solid var(--dnavy)}
+#tipRoot .tip-k .lbl{font-size:.72em;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--dmut)}#tipRoot .tip-k .val{font-size:clamp(24px,2.1vw,40px);font-weight:800;color:var(--dnavy);line-height:1.1;font-variant-numeric:tabular-nums}#tipRoot .tip-k .sub{font-size:.8em;color:var(--dmut)}
+#tipRoot .tip-k.bom{border-top-color:var(--dok)}#tipRoot .tip-k.aten{border-top-color:#D99100}#tipRoot .tip-k.ruim{border-top-color:var(--dbad)}#tipRoot .tip-k.ruim .val{color:var(--dbad)}
+#tipRoot .tip-cnt{display:inline-block;min-width:24px;text-align:center;font-size:.75em;background:var(--dor);color:#fff;border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+#tipRoot .tip-pri{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 18px}
+#tipRoot .tip-pri a{display:grid;grid-template-columns:10px minmax(0,1fr) auto;grid-template-rows:auto auto auto;column-gap:10px;padding:8px 10px;border:1px solid var(--dline);border-radius:2px;text-decoration:none;color:var(--ink);background:#fff}
+#tipRoot .tip-pri a:hover{border-color:var(--dnavy)}#tipRoot .tip-pri i{grid-row:1/4;width:6px;border-radius:2px}#tipRoot .tip-pri .tp{font-size:.72em;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--dmut)}
+#tipRoot .tip-pri b{grid-column:2;font-size:.92em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#tipRoot .tip-pri .det{grid-column:2;font-size:.78em;color:var(--dmut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#tipRoot .tip-pri .qd{grid-column:3;grid-row:1/4;align-self:center;font-size:.8em;font-weight:700;color:var(--dnavy);white-space:nowrap}
+@media (max-width:900px){#tipRoot .tip-pri{grid-template-columns:1fr}}
+#tipRoot .dp-pe>span{min-width:0;flex:1 1 260px;overflow-wrap:anywhere}#tipRoot.dp{border-radius:0;white-space:normal;letter-spacing:normal;border:0;font-weight:400;max-width:100%}
+.timx{margin-top:6px}.timx-top{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;justify-content:space-between;margin-bottom:10px}.timx-h{margin:0;font-size:18px;color:#0F1E3A}
+.timx-per{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.timx-per>button:not(.btn){font:inherit;font-size:13px;font-weight:700;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer;color:var(--ink)}.timx-per>button.on{background:#0F1E3A;border-color:#0F1E3A;color:#fff}
+.timx-ks{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}.timx-k{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;border-top:4px solid #0F1E3A}.timx-k .lbl{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+.timx-k .val{font-size:26px;font-weight:800;color:#0F1E3A;margin-top:2px;font-variant-numeric:tabular-nums}.timx-k .sub{font-size:12.5px;color:var(--ink-2)}.timx-k .meta{font-size:11.5px;color:#2F7D4F;font-weight:700;margin-top:4px}
+.timx-k.bom{border-top-color:#2F7D4F}.timx-k.aten{border-top-color:#D99100}.timx-k.ruim{border-top-color:#B3261E}.timx-k.ruim .val{color:#B3261E}
+.timx-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.timx-grid .tie-card{grid-column:span 2}.timx-grid .tie-card.gauge{grid-column:span 1}.timx-grid .tie-card.w2{grid-column:span 2}
+@media (max-width:1100px){.timx-ks{grid-template-columns:repeat(3,minmax(0,1fr))}.timx-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.timx-grid .tie-card,.timx-grid .tie-card.w2{grid-column:1/-1}.timx-grid .tie-card.gauge{grid-column:span 1}}
+@media (max-width:640px){.timx-ks{grid-template-columns:repeat(2,minmax(0,1fr))}.timx-grid .tie-card.gauge{grid-column:1/-1}}
+@media print{.timx-per,#timActions,.seg-tabs{display:none!important}.timx-ks{grid-template-columns:repeat(3,1fr)}.tie-card{break-inside:avoid}}`;
+  document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */

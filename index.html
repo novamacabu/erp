@@ -57605,9 +57605,9 @@ window.rhfAprovar = async id => {
     try { if (sub !== "funcs" || !RHDB_STATE.ready) return r; const body = $("rhdbBody"); if (!body || body.querySelector(".rhf-fila")) return r;
       const pend = (RHDB_STATE.itens || []).filter(rhfPend).sort((a, b) => String(a.Title || "").localeCompare(String(b.Title || ""), "pt-BR")); if (!pend.length) return r;
       const ed = !!podeEditar("rh_db") && !(typeof vcAtivo === "function" && vcAtivo());
-      body.insertAdjacentHTML("afterbegin", `<div class="cap-card rhf-fila"><div class="cap-card-h"><h3>Cadastros aguardando aprovação</h3><span class="cap-card-s">${pend.length} vindo(s) do Painel de Infrações · já valem lá; aqui faltam conferência e aprovação</span></div>
+      body.insertAdjacentHTML("afterbegin", `<div class="cap-card rhf-fila"><div class="cap-card-h"><h3>Cadastros aguardando aprovação</h3><span class="cap-card-s">${pend.length} vindo(s) do Painel de Infrações · entram no espelho do painel depois de aprovados; reprovar exclui o cadastro</span></div>
         <div class="table-wrap"><table class="cap-table"><thead><tr><th>Nome</th><th>Matrícula</th><th>Função</th><th>Contato</th><th>Origem</th><th></th></tr></thead><tbody>${pend.map(x => `<tr><td><b>${esc(x.Title || "")}</b></td><td>${esc(x.Matricula || "—")}</td><td>${esc(x.Cargo || "—")}</td><td>${esc(x.Contato || "—")}</td><td class="sup">${esc(String(rhfObsResumo(x.Observacoes)).split(";")[0])}</td>
-          <td class="nw"><button class="btn mini" onclick="rhfAbrir('${esc(x._id)}')">Abrir</button>${ed ? ` <button class="btn mini primary" onclick="rhfAprovar('${esc(x._id)}')">Aprovar</button>` : ""}</td></tr>`).join("")}</tbody></table></div></div>`);
+          <td class="nw"><button class="btn mini" onclick="rhfAbrir('${esc(x._id)}')">Abrir</button>${ed ? ` <button class="btn mini primary" onclick="rhfAprovar('${esc(x._id)}')">Aprovar</button>` : ""}${ed && (session.n1 || podeExcluir("rh_db")) ? ` <button class="btn mini danger" onclick="rhfReprovar('${esc(x._id)}')">Reprovar</button>` : ""}</td></tr>`).join("")}</tbody></table></div></div>`);
       body.querySelectorAll("tr.rhf-linha").forEach(tr => { const x = pend.find(p => String(p._id) === tr.dataset.id); if (x) { const td = tr.querySelector("td"); if (td && !td.querySelector(".rhf-pend")) td.insertAdjacentHTML("beforeend", ` <span class="rhf-pend" title="Aguarda aprovação do RH">pendente</span>`); } });
     } catch (e) {} return r; }; }
 /* v0.14.108 (Rafael, 10:33): o CPF passa a ser a chave do motorista; a lista "Cadastro Motoristas" ganha CPF e Matrícula (RH) pela Configuração
@@ -59399,6 +59399,65 @@ async function tipAbrir() {
 @media (max-width:640px){.timx-ks{grid-template-columns:repeat(2,minmax(0,1fr))}.timx-grid .tie-card.gauge{grid-column:1/-1}}
 @media print{.timx-per,#timActions,.seg-tabs{display:none!important}.timx-ks{grid-template-columns:repeat(3,1fr)}.tie-card{break-inside:avoid}}`;
   document.head.appendChild(st); })();
+
+/* =====================================================================
+   v0.14.119 (Rafael, 27/11 12:48) · RH › Funcionários › Cadastros aguardando aprovação: "Reprovar" exclui o cadastro
+   pendente (com confirmação). Leva junto os documentos que vieram com ele (ex.: CNH lançada pelo Painel de Infrações);
+   o cadastro vai para a Lixeira por 30 dias. Só administrador ou proprietário do módulo (é uma exclusão).
+   ===================================================================== */
+window.rhfReprovar = async id => {
+  if (!(session.n1 || podeExcluir("rh_db"))) { toast("Reprovar exclui o cadastro: é do Proprietário do módulo ou do administrador."); return; }
+  const x = (RHDB_STATE.itens || []).find(i => String(i._id) === String(id)); if (!x || !rhfPend(x)) return;
+  try { await rhDocsCarregar(true); } catch (e) {}
+  const docs = rhDocsDe(id);
+  if (!(await erpConfirmar({ titulo: "Reprovar cadastro", html: `Reprovar e <b>excluir</b> o cadastro de <b>${esc(x.Title || "")}</b> (${esc(x.Cargo || "—")}, matrícula ${esc(x.Matricula || "—")})?<br><br>${docs.length ? `Os ${docs.length} documento(s) que vieram com ele (${esc([...new Set(docs.map(d => d.Tipo))].join(", "))}) também são excluídos. ` : ""}O cadastro vai para a Lixeira por 30 dias. No Painel de Infrações, o motorista deixa de aparecer como "Em aprovação".`, sim: "Reprovar e excluir", perigo: true }))) return;
+  try {
+    for (const d of docs) { let a = null; try { a = JSON.parse(d.Arquivo || "null"); } catch (e) {}
+      await graph(`/sites/${RHF_DOCS.site.id}/lists/${RHF_DOCS.list.id}/items/${d._id}`, { method: "DELETE" });
+      if (a && a.id && docIdOk(a.d) && docIdOk(a.id)) { try { await graph(`/drives/${a.d}/items/${a.id}`, { method: "DELETE" }); } catch (e) {} } }
+    await rhDocsCarregar(true);
+  } catch (e) { toast("Não foi possível excluir os documentos do cadastro: " + e.message + ". Nada mais foi alterado.", 8000); return; }
+  const c0 = window.confirm; window.confirm = () => true;
+  try { await rhDbExcluir("funcs", String(id)); } finally { window.confirm = c0; }
+  if (!(RHDB_STATE.itens || []).some(i => String(i._id) === String(id))) { toast(`Cadastro de ${x.Title || ""} reprovado e excluído.`); try { if (typeof INFM === "object") INFM.em = 0; } catch (e) {} }
+};
+
+/* =====================================================================
+   v0.14.119 (Rafael, 27/11 12:49) · CPF é a chave do cadastro, também nos pedidos vindos do Painel de Infrações
+   - Painel → RH (novo motorista, "→ RH", "Enviar ao RH" na atualização do espelho): sem CPF válido não cria; CPF que já é
+     de alguém no RH (aprovado ou em aprovação) não cria outro cadastro; mesmo nome de alguém ativo no RH também para
+     (para conferir). Antes os pedidos do painel não conferiam o CPF e nasceram cadastros em dobro.
+   - Fila de aprovação do RH: cada pendente mostra "Possível duplicado" quando o CPF ou o nome já existe no RH.
+   ===================================================================== */
+{ const g0 = infRhGravar; infRhGravar = async function (m, criar) {
+    if (criar && !infRhDeM(m)) {
+      const cpf = infDigs(m.cpf || "") || (infDigs(m.mat).length === 11 ? infDigs(m.mat) : "");
+      if (cpf.length !== 11 || !rhfCpfOk(cpf)) throw new Error("informe o CPF do motorista: é a chave para saber se ele já está no RH");
+      if (!rhPesAtivo()) throw new Error("sem acesso aos dados pessoais do RH para conferir o CPF; peça ao RH para cadastrar");
+      try { if (RH_PES.prom) await RH_PES.prom; } catch (e) {}
+      const vivo = f => String(f.Situacao || "") !== "Desligado";
+      const dono = (INFM.rh || []).find(f => infRhCpf(f) === cpf);
+      if (dono) throw new Error(`o CPF ${rhfCpfFmt(cpf)} já é de ${dono.Title}${dono.Matricula ? ` (matrícula ${dono.Matricula})` : ""} no RH${infRhPend(dono) ? ", em aprovação" : ""}; não foi criado outro cadastro`);
+      const hom = (INFM.rh || []).find(f => vivo(f) && normName(f.Title) === normName(m.nome));
+      if (hom) throw new Error(`já existe ${hom.Title}${hom.Matricula ? ` (matrícula ${hom.Matricula})` : ""} no RH${infRhCpf(hom) ? "" : " sem CPF"}; confira no RH se é a mesma pessoa antes de criar outro cadastro`);
+      m = Object.assign({}, m, { cpf });
+    }
+    return g0.call(this, m, criar); }; }
+{ const f0 = window.infMotForm; window.infMotForm = function (id) { const r = f0.apply(this, arguments);
+    try { if (!id) { const c = $("imCpf"), lb = c && c.closest(".field").querySelector("label"); if (lb) lb.innerHTML = `CPF<span class="req">*</span>`; } } catch (e) {} return r; }; }
+{ const p0 = paintRhDbSub; paintRhDbSub = function (sub) { const r = p0.apply(this, arguments);
+    try { if (sub !== "funcs") return r; const fila = document.querySelector("#rhdbBody .rhf-fila"); if (!fila) return r;
+      const todos = RHDB_STATE.itens || [], cpfDe = f => { const p = typeof RH_PES === "object" && RH_PES.map ? RH_PES.map.get(String(f._id)) : null; return rhfDig((p && p.CPF) || ""); };
+      let n = 0;
+      fila.querySelectorAll("tbody tr").forEach(tr => { const bt = tr.querySelector("[onclick^=rhfAbrir]"), m = bt && /'([^']+)'/.exec(bt.getAttribute("onclick")); if (!m) return; const x = todos.find(i => String(i._id) === m[1]); if (!x) return;
+        const c = cpfDe(x), outros = todos.filter(o => o !== x && String(o.Situacao || "") !== "Desligado");
+        const porCpf = c ? outros.find(o => cpfDe(o) === c) : null, porNome = porCpf ? null : outros.find(o => normName(o.Title) === normName(x.Title));
+        const d = porCpf || porNome; if (!d) return; n++;
+        tr.classList.add("rhf-dup"); const td = tr.querySelector("td.sup") || tr.children[4];
+        if (td) td.innerHTML = `<span class="rhf-dup-tag">⚠ Possível duplicado</span> ${porCpf ? "mesmo CPF" : "mesmo nome"} de <b>${esc(d.Title || "")}</b>${d.Matricula ? ` (matrícula ${esc(d.Matricula)})` : ""}${rhfPend(d) ? ", também pendente" : ""}. Confira e reprove o que sobrar.`; });
+      if (n) { const s = fila.querySelector(".cap-card-s"); if (s) s.insertAdjacentHTML("beforeend", ` · <b style="color:var(--err,#b3271e)">${n} possível(is) duplicado(s)</b>`); }
+    } catch (e) {} return r; }; }
+(function () { const st = document.createElement("style"); st.id = "erp-v014119"; st.textContent = `.rhf-fila tr.rhf-dup td{background:#FFF7E0}.rhf-dup-tag{display:inline-block;padding:1px 8px;border-radius:999px;background:#FBE9E7;color:#9F1E16;font-weight:800;font-size:11px;margin-right:4px}`; document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -59642,6 +59701,7 @@ CONFIG.version = "v0.14.115";   /* RH › Funcionários: editar cadastro na pró
 CONFIG.version = "v0.14.116";   /* Sistema › Lixeira (administradores): cópia de toda exclusão por 30 dias, com quem/quando/de onde, restaurar e excluir de vez; Excluir na página do funcionário */
 CONFIG.version = "v0.14.117";   /* Infrações: Banco de Dados espelho do RH (seções, diferenças na célula, em aprovação, conflito de matrícula, atualização por grupos) e Ctrl+clique nos gráficos · TI: Controle de Estoque, painel executivo da Manutenção, Painel de Operação da TI, cadastro do ativo (local novo, usuário do RH, observações) */
 CONFIG.version = "v0.14.118";   /* RH › Funcionários: sai o campo Apelido (pedido do Rafael: sem informalidade nos dados) */
+CONFIG.version = "v0.14.119";   /* RH › Funcionários: Reprovar (exclui com confirmação) na fila de aprovação; CPF é a chave nos pedidos do Painel de Infrações; aviso de possível duplicado na fila */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL

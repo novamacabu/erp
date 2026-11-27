@@ -58180,6 +58180,100 @@ window.rhfRapido = id => {
 .rhq-bts{display:flex;flex-direction:column;gap:10px}.rhq-bts .btn{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:12px 14px;height:auto}.rhq-bts small{font-weight:500;font-size:11.5px;opacity:.8;margin-top:2px}
 @media (max-width:640px){.rhq{grid-template-columns:1fr}.rhq-bts{flex-direction:row}.rhq-bts .btn{flex:1}}
 `; document.head.appendChild(st); })();
+
+/* =====================================================================
+   v0.14.115 (Rafael, 27/11 10:33 e 10:35) · RH › Funcionários
+   1) "Editar cadastro" na página do funcionário edita ali mesmo, no cartão Cadastro (sem janela por cima).
+   2) Campos novos, a partir da ficha do sistema da telemetria (Globalbus) e do que o RH costuma pedir:
+      - RH — Funcionários: Apelido, Sexo, Código de integração (telemetria), Identificação (RFID), Carga horária e período.
+      - Lista restrita de dados pessoais: emissão e órgão emissor da identidade; emissão e 1ª habilitação da CNH;
+        endereço (CEP, logradouro, número, complemento, bairro, cidade, UF); contato de emergência.
+      - "Senha do dispositivo móvel" não entra: senha não se guarda no ERP.
+   ===================================================================== */
+LISTS.rh_func.columns.push(
+  { name: "Apelido",           displayName: "Apelido",                        text: { allowMultipleLines: false, maxLength: 60 } },
+  { name: "Sexo",              displayName: "Sexo",                           choice: choice(["Masculino", "Feminino", "Não informado"]) },
+  { name: "CodigoIntegracao",  displayName: "Código de integração (telemetria)", text: { allowMultipleLines: false, maxLength: 40 } },
+  { name: "RFID",              displayName: "Identificação (RFID)",           text: { allowMultipleLines: false, maxLength: 40 } },
+  { name: "CargaHoraria",      displayName: "Carga horária (horas)",          number: { decimalPlaces: "none", displayAs: "number" } },
+  { name: "PeriodoCarga",      displayName: "Período da carga horária",       choice: choice(["Semanal", "Mensal"]) });
+const RH_PES_NOVOS = [
+  ["RGEmissao", "Identidade · data de emissão", { dateTime: dateOnly }], ["RGOrgao", "Identidade · órgão emissor", { text: { allowMultipleLines: false, maxLength: 30 } }],
+  ["CNHEmissao", "CNH · data de emissão", { dateTime: dateOnly }], ["CNHPrimeira", "CNH · 1ª habilitação", { dateTime: dateOnly }],
+  ["CEP", "CEP", { text: { allowMultipleLines: false, maxLength: 9 } }], ["Logradouro", "Logradouro", { text: { allowMultipleLines: false, maxLength: 120 } }],
+  ["Numero", "Número", { text: { allowMultipleLines: false, maxLength: 12 } }], ["Complemento", "Complemento", { text: { allowMultipleLines: false, maxLength: 60 } }],
+  ["Bairro", "Bairro", { text: { allowMultipleLines: false, maxLength: 60 } }], ["Cidade", "Cidade", { text: { allowMultipleLines: false, maxLength: 60 } }],
+  ["UF", "UF", { text: { allowMultipleLines: false, maxLength: 2 } }], ["ContatoEmergencia", "Contato de emergência", { text: { allowMultipleLines: false, maxLength: 120 } }]];
+LISTS.rh_func_pes.columns.push(...RH_PES_NOVOS.map(([name, displayName, t]) => Object.assign({ name, displayName }, t)));
+RH_PES_CAMPOS.push(...RH_PES_NOVOS.map(x => x[0]));
+RH_PES_NOVOS.forEach(([k, r]) => { RH_PES_ROT[k] = r.toLowerCase(); });
+/* sem as colunas novas na lista restrita (antes do Executar tudo), esses campos não vão — o resto grava */
+{ const g0 = rhPesGravar; rhPesGravar = async function (funcId, nome, pes) {
+    try { const ks = RH_PES_NOVOS.map(x => x[0]).filter(k => pes && k in pes); if (ks.length) { const cols = await mstColsDe(RH_PES.site.id, RH_PES.list.id); const fora = cols.size ? ks.filter(k => !cols.has(k)) : []; if (fora.length) { const tinha = fora.some(k => !rhPesVazio(pes[k])); fora.forEach(k => delete pes[k]); if (tinha) toast(`Endereço e os novos dados de identidade/CNH ainda não têm coluna na lista de dados pessoais: rode Sistema › Configuração › "Executar tudo". O resto foi gravado.`, 8000); } } } catch (e) {}
+    return g0.apply(this, arguments);
+  }; }
+/* máscaras: CEP 00000-000, UF em maiúsculas */
+{ const m0 = rhfMascara; rhfMascara = function (tipo, v) { if (tipo === "cep") { const d = rhfDig(v).slice(0, 8); return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d; } if (tipo === "uf") return String(v || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2); return m0.apply(this, arguments); }; }
+Object.assign(RHF_MASCARAS, { rdFuCEP: ["cep", 9], rdFuUF: ["uf", 2] });
+/* formulário: campos novos nas seções certas; seção "Endereço" depois de Contato (envolve por último: depois do organizador de seções) */
+setTimeout(() => { const f0 = RHDB_FORMS.funcs; RHDB_FORMS.funcs = function (v) { const h = f0.apply(this, arguments); v = v || {};
+    try {
+      const box = document.createElement("div"); box.innerHTML = h; const grid = box.querySelector(".form-grid"); if (!grid) return h;
+      const campo = id => { const e = grid.querySelector("#" + id); return e ? e.closest(".field") : null; };
+      const novo = html => { const t = document.createElement("div"); t.innerHTML = html.trim(); return [...t.children]; };
+      const depois = (ancora, els) => { if (!ancora) return false; let ref = ancora; els.forEach(e => { ref.after(e); ref = e; }); return true; };
+      const inp = (id, rot, k, extra) => `<div class="field"><label>${rot}</label><input id="${id}" value="${esc(v[k] == null ? "" : String(v[k]))}" autocomplete="off" ${extra || ""}></div>`;
+      const dat = (id, rot, k) => `<div class="field"><label>${rot}</label><input type="date" id="${id}" min="1900-01-01" max="2099-12-31" value="${esc(v[k] ? ymd(v[k]) : "")}"></div>`;
+      const sel = (id, rot, k, ops) => `<div class="field"><label>${rot}</label><select id="${id}"><option value="">—</option>${ops.map(o => `<option ${v[k] === o ? "selected" : ""}>${o}</option>`).join("")}</select></div>`;
+      depois(campo("rdFuSob"), novo(inp("rdFuApel", "Apelido", "Apelido", `maxlength="60" placeholder="Como é chamado na operação"`) + sel("rdFuSexo", "Sexo", "Sexo", ["Masculino", "Feminino", "Não informado"])));
+      const pes = rhPesAtivo();
+      if (pes) {
+        depois(campo("rdFuRG"), novo(dat("rdFuRGEm", "Identidade · emissão", "RGEmissao") + inp("rdFuRGOrg", "Identidade · órgão emissor", "RGOrgao", `maxlength="30" placeholder="Ex.: DETRAN/RJ"`)));
+        depois(campo("rdFuCNHv") || campo("rdFuCNHc"), novo(dat("rdFuCNHem", "CNH · emissão", "CNHEmissao") + dat("rdFuCNH1", "CNH · 1ª habilitação", "CNHPrimeira")));
+        const fimContato = campo("rdFuE") || campo("rdFuT") || campo("rdFuTel");
+        const end = `<div class="field full form-sec">Endereço</div>` + inp("rdFuCEP", "CEP", "CEP", `inputmode="numeric" placeholder="00000-000"`) + inp("rdFuLog", "Logradouro", "Logradouro", `maxlength="120" placeholder="Rua, avenida…"`) + inp("rdFuNum", "Número", "Numero", `maxlength="12" placeholder="Ex.: 73"`) + inp("rdFuComp", "Complemento", "Complemento", `maxlength="60" placeholder="Casa, apto…"`) + inp("rdFuBai", "Bairro", "Bairro", `maxlength="60"`) + inp("rdFuCid", "Cidade", "Cidade", `maxlength="60" placeholder="Ex.: Conceição de Macabu"`) + inp("rdFuUF", "UF", "UF", `maxlength="2" placeholder="RJ"`);
+        if (fimContato) { depois(fimContato, novo(inp("rdFuEmerg", "Contato de emergência", "ContatoEmergencia", `maxlength="120" placeholder="Nome, parentesco e telefone"`))); depois(campo("rdFuEmerg"), novo(end)); }
+      }
+      const cs = typeof RHF_STATE === "object" && RHF_STATE.cols, falta = cs && !cs.has("CodigoIntegracao");
+      const vinc = inp("rdFuCodInt", "Código de integração (telemetria)", "CodigoIntegracao", `maxlength="40" placeholder="Código no sistema da telemetria"`) + inp("rdFuRFID", "Identificação (RFID)", "RFID", `maxlength="40" placeholder="Nº do cartão/crachá"`) + `<div class="field"><label>Carga horária</label><input type="number" id="rdFuCH" min="0" max="300" value="${esc(v.CargaHoraria == null ? "" : String(v.CargaHoraria))}" placeholder="Ex.: 44"></div>` + sel("rdFuCHP", "Período da carga horária", "PeriodoCarga", ["Semanal", "Mensal"]) + (falta ? `<div class="field full"><div class="hint">Apelido, sexo, código de integração, RFID e carga horária ainda não têm coluna em "RH — Funcionários": rode Sistema › Configuração › "Executar tudo" para gravá-los.</div></div>` : "");
+      depois(campo("rdFuDem") || campo("rdFuA"), novo(vinc));
+      return box.innerHTML;
+    } catch (e) { return h; } }; }, 0);
+{ const r0 = RHDB_READ.funcs; RHDB_READ.funcs = function () { const o = r0.apply(this, arguments); if (!o || typeof o !== "object") return o; const g = id => ($(id) ? $(id).value : "").trim();
+    if ($("rdFuApel")) Object.assign(o, { Apelido: g("rdFuApel") || null, Sexo: g("rdFuSexo") || null, CodigoIntegracao: g("rdFuCodInt") || null, RFID: g("rdFuRFID") || null, CargaHoraria: g("rdFuCH") === "" ? null : Math.max(0, parseInt(g("rdFuCH"), 10) || 0), PeriodoCarga: g("rdFuCHP") || null });
+    if ($("rdFuCEP")) { const cep = rhfDig(g("rdFuCEP")); if (cep && cep.length !== 8) { const e = $("rdErr"); if (e) { e.style.display = "block"; e.textContent = "CEP: são 8 dígitos (00000-000)."; } throw new Error("CEP inválido."); }
+      Object.assign(o, { CEP: cep ? `${cep.slice(0, 5)}-${cep.slice(5)}` : null, Logradouro: g("rdFuLog") || null, Numero: g("rdFuNum") || null, Complemento: g("rdFuComp") || null, Bairro: g("rdFuBai") || null, Cidade: g("rdFuCid") || null, UF: g("rdFuUF").toUpperCase() || null, ContatoEmergencia: g("rdFuEmerg") || null }); }
+    if ($("rdFuRGEm")) Object.assign(o, { RGEmissao: g("rdFuRGEm") || null, RGOrgao: g("rdFuRGOrg") || null });
+    if ($("rdFuCNHem")) Object.assign(o, { CNHEmissao: g("rdFuCNHem") || null, CNHPrimeira: g("rdFuCNH1") || null });
+    for (const [id, rot] of [["rdFuRGEm", "Identidade · emissão"], ["rdFuCNHem", "CNH · emissão"], ["rdFuCNH1", "CNH · 1ª habilitação"]]) { const d = g(id); if (d && (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d < "1900-01-01" || d > todayISO())) { const e = $("rdErr"); if (e) { e.style.display = "block"; e.textContent = `${rot}: data inválida ou no futuro.`; } throw new Error(`${rot}: data inválida.`); } }
+    return o; }; }
+/* CEP: completa o endereço (ViaCEP) quando os campos estão vazios */
+document.addEventListener("input", async ev => { const el = ev.target; if (!el || el.id !== "rdFuCEP") return; const d = rhfDig(el.value); if (d.length !== 8 || el.dataset.buscou === d) return; el.dataset.buscou = d;
+  try { const r = await fetch(`https://viacep.com.br/ws/${d}/json/`); const j = await r.json(); if (!j || j.erro) return; const set = (id, val) => { const x = $(id); if (x && !x.value.trim() && val) x.value = val; }; set("rdFuLog", j.logradouro); set("rdFuBai", j.bairro); set("rdFuCid", j.localidade); set("rdFuUF", j.uf); } catch (e) {} });
+
+/* 1) Editar cadastro na própria página */
+window.rhfEditarAqui = async id => {
+  if (RHF_PAG.aba !== "cadastro") rhfAba("cadastro");
+  await rhDbForm("funcs", String(id));
+  const m = $("modal"), mb = m && m.querySelector(".modal-body"), mf = m && m.querySelector(".modal-foot"), card = document.querySelector("#rhFuncBody .rhf-cad");
+  if (!mb || !mf || !card || !$("rdFuN")) return;   /* não montou: fica a janela */
+  card.innerHTML = `<div class="cap-card-h"><h3>Editar cadastro</h3><span class="cap-card-s">altere os campos e clique em Salvar</span></div><div class="rhf-dock"></div>`;
+  const dock = card.querySelector(".rhf-dock"); while (mb.firstChild) dock.appendChild(mb.firstChild); mf.classList.add("rhf-dock-foot"); dock.appendChild(mf);
+  closeModal(); m.innerHTML = "";
+  dock.querySelectorAll(".form-sec.sec-fechada").forEach(hd => { try { hd.click(); } catch (e) {} });
+  dock.querySelectorAll(".sec-oculto").forEach(e => e.classList.remove("sec-oculto"));
+  const ed = document.querySelector("#rhFuncTopo button[data-rhf-edit]"); if (ed) ed.disabled = true;
+  const cancelar = [...mf.querySelectorAll("button")].find(b => /cancelar/i.test(b.textContent)); if (cancelar) cancelar.onclick = () => rhFuncPintar();
+  const s = mf.querySelector("#mSave"); if (s) { const h = s.onclick; s.onclick = async () => { await h(); if (s.disabled) { try { await renderRhFunc(String(id)); } catch (e) { rhFuncPintar(); } } }; }
+  card.scrollIntoView({ block: "start", behavior: "smooth" }); const n = $("rdFuN"); if (n) try { n.focus({ preventScroll: true }); } catch (e) {}
+};
+{ const p0 = rhFuncPintar; rhFuncPintar = function () { const r = p0.apply(this, arguments);
+    const b = document.querySelector(`#rhFuncTopo button[onclick^="rhDbForm('funcs'"]`); if (b) { const id = (b.getAttribute("onclick").match(/'funcs',\s*'([^']+)'/) || [])[1]; if (id) { b.setAttribute("onclick", `rhfEditarAqui('${id}')`); b.dataset.rhfEdit = "1"; } }
+    return r; }; }
+(function () { const st = document.createElement("style"); st.id = "erp-v014115"; st.textContent = `
+.rhf-dock{padding:12px 16px 0}
+.rhf-dock-foot{position:sticky;bottom:0;background:var(--surface,#fff);border-top:1px solid var(--line);margin:12px -16px 0;padding:12px 16px;display:flex;gap:8px;justify-content:flex-end;z-index:5}
+`; document.head.appendChild(st); })();
 CONFIG.version = "v0.14.17";   /* leitura ponta a ponta: correções e ajustes */
 CONFIG.version = "v0.14.17.1";   /* decisões D1, D3, D4, D5 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.1" */
 CONFIG.version = "v0.14.17.2";   /* decisões D2, D6, D7 da leitura (25/10) — trocas no lugar, marcadas "v0.14.17.2" */
@@ -58419,6 +58513,7 @@ CONFIG.version = "v0.14.111";   /* RH › Funcionários: datas com limite e conf
 CONFIG.version = "v0.14.112";   /* RH › Funcionários: volta da ficha para a lista sem a página subir e descer (rolagem controlada pelo ERP) */
 CONFIG.version = "v0.14.113";   /* RH › Programação de Férias: cronograma no molde do MS Project, períodos e limites da CLT, conflitos por centro de custo, pendências, aviso de férias */
 CONFIG.version = "v0.14.114";   /* RH › Funcionários: formulário espera os dados pessoais carregarem; remover observação volta ao formulário; duplo clique abre janela rápida com Cadastro e Perfil completo */
+CONFIG.version = "v0.14.115";   /* RH › Funcionários: editar cadastro na própria página; apelido, sexo, código de integração, RFID, carga horária, endereço, emissão/órgão da identidade, emissão/1ª habilitação da CNH, contato de emergência */
 
 /* ADQ:INICIO =====================================================================
    v0.14.5 (R1) · v0.14.6 (R2: Painel pelo Ponto e Demanda) · v0.14.7 (R3: Escala) · Diretoria › Adequação 6x1 (EC 141/2026 — fim da escala 6x1) · MÓDULO ISOLADO E REMOVÍVEL
